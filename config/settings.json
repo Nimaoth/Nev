@@ -960,4 +960,6 @@
         },
     },
 
+    "selector.min-score": -0.5,
+
 }

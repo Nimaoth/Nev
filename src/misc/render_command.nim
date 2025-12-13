@@ -18,6 +18,7 @@ defineBitFlagSized(uint64):
     AllowAlpha
     MaskContent
     DrawText
+    TextMultiLine
     TextItalic
     TextBold
     TextWrap

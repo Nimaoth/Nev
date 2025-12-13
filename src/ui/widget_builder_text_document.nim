@@ -137,58 +137,25 @@ proc getScreenPos(self: TextDocumentEditor, builder: UINodeBuilder, state: var L
   return Vec2.none
 
 proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
-  let totalLineHeight = app.platform.totalLineHeight
-  let charWidth = app.platform.charWidth
-
   let backgroundColor = app.themes.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
   let borderColor = app.themes.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
-  let docsColor = app.themes.theme.color("editor.foreground", color(1, 1, 1))
-
-  let numLinesToShow = min(10, self.hoverText.countLines)
-  let (top, bottom) = (
-    cursorBounds.yh.float - floor(builder.charWidth * 0.5),
-    cursorBounds.yh.float + totalLineHeight * numLinesToShow.float - floor(builder.charWidth * 0.5))
-  let height = bottom - top
-
-  const docsWidth = 50.0
-  let totalWidth = charWidth * docsWidth
-  var clampedX = cursorBounds.x
-  if clampedX + totalWidth > builder.root.w:
-    clampedX = max(builder.root.w - totalWidth, 0)
-
-  let border = ceil(builder.charWidth * 0.5)
+  let activeHoverColor = app.themes.theme.color("editor.foreground", color(1, 1, 1))
 
   var hoverPanel: UINode = nil
-  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, MouseHover, SnapInitialBounds}, x = clampedX, y = top, h = height + border * 2, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = borderColor, userId = self.hoverId.newPrimaryId):
+  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical}, backgroundColor = backgroundColor, borderColor = borderColor, border = border(1), userId = self.hoverId.newPrimaryId):
     hoverPanel = currentNode
 
-    var textNode: UINode = nil
-    builder.panel(&{SizeToContentX}, x = border, y = border, w = 0, h = height):
-      # todo: height
-      builder.panel(&{DrawText, SizeToContentX}, x = 0, y = self.hoverScrollOffset, w = 0, h = 1000, text = self.hoverText, textColor = docsColor):
-        textNode = currentNode
+    builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextMultiLine}, text = self.hoverText, textColor = activeHoverColor)
 
-    currentNode.w = currentNode.w + border
+  var clampedX = cursorBounds.x
+  if clampedX + hoverPanel.bounds.w > builder.root.w:
+    clampedX = max(builder.root.w - hoverPanel.bounds.w, 0)
 
-    onScroll:
-      let scrollSpeed = self.config.get("text.hover-scroll-speed", 20.0)
-      # todo: clamp bottom
-      self.hoverScrollOffset = clamp(self.hoverScrollOffset + delta.y * scrollSpeed, -1000, 0)
-      self.markDirty()
-
-    onBeginHover:
-      self.cancelDelayedHideHover()
-
-    onEndHover:
-      self.hideHoverDelayed()
-
+  hoverPanel.rawX = clampedX
   hoverPanel.rawY = cursorBounds.y
   hoverPanel.pivot = vec2(0, 1)
 
 proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
-  let totalLineHeight = app.platform.totalLineHeight
-  let charWidth = app.platform.charWidth
-
   let backgroundColor = app.themes.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
   let borderColor = app.themes.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
   let inactiveSignatureColor = app.themes.theme.color("editor.foreground", color(1, 1, 1)).darken(0.15)
@@ -215,7 +182,7 @@ proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: 
       builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = ")", textColor = color)
 
   var signatureHelpPanel: UINode = nil
-  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical}, backgroundColor = backgroundColor, borderColor = borderColor, userId = self.signatureHelpId.newPrimaryId):
+  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical}, backgroundColor = backgroundColor, borderColor = borderColor, border = border(1), userId = self.signatureHelpId.newPrimaryId):
     signatureHelpPanel = currentNode
 
     for k, sig in self.signatures:

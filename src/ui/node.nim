@@ -38,6 +38,12 @@ type
       subId*: int32
     else: discard
 
+  UIBorder* = object
+    left: float
+    right: float
+    top: float
+    bottom: float
+
   UINode* = ref UINodeObject
   UINodeObject* = object
     aDebugData*: UINodeDebugData
@@ -70,6 +76,7 @@ type
     mBorderColor: Color
     mTextColor: Color
     mUnderlineColor: Color
+    mBorder: UIBorder
 
     pivot*: Vec2
     boundsRaw: Rect       # The target bounds, used for layouting.
@@ -260,7 +267,7 @@ proc textWidth*(builder: UINodeBuilder, text: string): float32 {.inline.} =
 proc textHeight*(builder: UINodeBuilder): float32 {.inline.} = roundPositive(builder.lineHeight + builder.lineGap)
 
 proc textBounds*(builder: UINodeBuilder, node: UINode): Vec2 {.inline.} =
-  if TextWrap in node.flags and builder.textBoundsImpl.isNotNil:
+  if (TextWrap in node.flags or TextMultiLine in node.flags) and builder.textBoundsImpl.isNotNil:
     builder.textBoundsImpl(node)
   else:
     vec2(builder.textWidth(node.mTextRuneLen), builder.textHeight)
@@ -572,6 +579,8 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
   node.mUnderlineColor.b = 1
   node.mUnderlineColor.a = 1
 
+  node.mBorder = UIBorder()
+
   node.mBorderColor.r = 0.5
   node.mBorderColor.g = 0.5
   node.mBorderColor.b = 0.5
@@ -645,33 +654,37 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
   # node.logp "preLayout"
   let parent = node.parent
 
+  var border = parent.mBorder
+  node.boundsRaw.x = border.left
+  node.boundsRaw.y = border.top
+
   if LayoutHorizontal in parent.flags:
     if node.prev.isNotNil:
       node.boundsRaw.x = node.prev.xw
     else:
-      node.boundsRaw.x = 0
+      node.boundsRaw.x = border.left
   elif LayoutHorizontalReverse in parent.flags:
     if node.prev.isNotNil:
       node.boundsRaw.x = node.prev.x
     else:
-      node.boundsRaw.x = parent.w
+      node.boundsRaw.x = parent.w - border.right
 
   if LayoutVertical in parent.flags:
     if node.prev.isNotNil:
       node.boundsRaw.y = node.prev.yh.roundPositive
     else:
-      node.boundsRaw.y = 0
+      node.boundsRaw.y = border.top
   elif LayoutVerticalReverse in parent.flags:
     if node.prev.isNotNil:
       node.boundsRaw.y = node.prev.y.roundPositive
     else:
-      node.boundsRaw.y = parent.h
+      node.boundsRaw.y = parent.h - border.bottom
 
   if node.flags.all &{SizeToContentX, FillX}:
     if DrawText in node.flags:
-      node.boundsRaw.w = max(parent.w - node.x, builder.textWidth(node))
+      node.boundsRaw.w = max((parent.w - border.right) - node.x, builder.textWidth(node))
     else:
-      node.boundsRaw.w = (parent.w - node.x)
+      node.boundsRaw.w = ((parent.w - border.right) - node.x)
   elif SizeToContentX in node.flags:
     if DrawText in node.flags:
       node.boundsRaw.w = builder.textWidth(node)
@@ -679,19 +692,19 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
     if LayoutHorizontalReverse in parent.flags:
       node.boundsRaw.w = node.boundsRaw.x
     else:
-      node.boundsRaw.w = (parent.w - node.x)
+      node.boundsRaw.w = ((parent.w - border.right) - node.x)
 
   if node.flags.all &{SizeToContentY, FillY}:
     if DrawText in node.flags:
-      if TextWrap in node.flags:
-        node.boundsRaw.h = max(parent.h - node.y, builder.textBounds(node).y).roundPositive
+      if TextWrap in node.flags or TextMultiLine in node.flags:
+        node.boundsRaw.h = max((parent.h - border.bottom) - node.y, builder.textBounds(node).y).roundPositive
       else:
-        node.boundsRaw.h = max(parent.h - node.y, builder.textHeight).roundPositive
+        node.boundsRaw.h = max((parent.h - border.bottom) - node.y, builder.textHeight).roundPositive
     else:
-      node.boundsRaw.h = (parent.h - node.y).roundPositive
+      node.boundsRaw.h = ((parent.h - border.bottom) - node.y).roundPositive
   elif SizeToContentY in node.flags:
     if DrawText in node.flags:
-      if TextWrap in node.flags:
+      if TextWrap in node.flags or TextMultiLine in node.flags:
         node.boundsRaw.h = builder.textBounds(node).y.roundPositive
       else:
         node.boundsRaw.h = builder.textHeight.roundPositive
@@ -699,7 +712,7 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
     if LayoutVerticalReverse in parent.flags:
       node.boundsRaw.h = node.boundsRaw.y.roundPositive
     else:
-      node.boundsRaw.h = (parent.h - node.y).roundPositive
+      node.boundsRaw.h = ((parent.h - border.bottom) - node.y).roundPositive
 
   assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
@@ -707,15 +720,18 @@ proc relayout*(builder: UINodeBuilder, node: UINode) =
   builder.preLayout node
   builder.postLayout node
 
+proc border*(width: float): UIBorder = UIBorder(left: width, right: width, top: width, bottom: width)
+proc border*(left, right, top, bottom: float): UIBorder = UIBorder(left: left, right: right, top: top, bottom: bottom)
+
 proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
   if IgnoreBoundsForSizeToContent in child.flags:
     return
 
   if SizeToContentX in node.flags and child.xw > node.w:
-    node.boundsRaw.w = child.xw
+    node.boundsRaw.w = child.xw + node.mBorder.right
 
   if SizeToContentY in node.flags and child.yh > node.h:
-    node.boundsRaw.h = child.yh.roundPositive
+    node.boundsRaw.h = child.yh.roundPositive + node.mBorder.bottom
 
   assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
@@ -744,7 +760,7 @@ proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
       builder.textWidth(node)
     else: 0
 
-    node.boundsRaw.w = max(node.w, max(childrenWidth, strWidth))
+    node.boundsRaw.w = max(node.w, max(childrenWidth, strWidth) + node.mBorder.left + node.mBorder.right)
 
   if SizeToContentY in node.flags:
     let childrenHeight = if node.first.isNotNil:
@@ -772,7 +788,7 @@ proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
         builder.textHeight
     else: 0
 
-    node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight)).roundPositive
+    node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight) + node.mBorder.top + node.mBorder.bottom).roundPositive
 
   assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
@@ -780,12 +796,17 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
   # node.logp "postLayout"
   builder.updateSizeToContent node
 
+  var border = if node.parent != nil:
+    node.parent.mBorder
+  else:
+    UIBorder()
+
   if FillX in node.flags:
     assert node.parent.isNotNil
     if LayoutHorizontalReverse in node.parent.flags:
       node.boundsRaw.w = node.boundsRaw.x
     else:
-      node.boundsRaw.w = max(node.boundsRaw.w, (node.parent.w - node.x))
+      node.boundsRaw.w = max(node.boundsRaw.w, ((node.parent.w - border.right) - node.x))
 
   if node.flags.any &{SizeToContentX, SizeToContentY}:
     for _, c in node.children:
@@ -801,14 +822,14 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
     if LayoutHorizontalReverse in node.parent.flags:
       node.boundsRaw.w = node.boundsRaw.x
     else:
-      node.boundsRaw.w = max(node.boundsRaw.w, (node.parent.w - node.x))
+      node.boundsRaw.w = max(node.boundsRaw.w, ((node.parent.w - border.right) - node.x))
 
   if FillY in node.flags:
     assert node.parent.isNotNil
     if LayoutVerticalReverse in node.parent.flags:
       node.boundsRaw.h = node.boundsRaw.y.roundPositive
     else:
-      node.boundsRaw.h = (node.parent.h - node.y).roundPositive
+      node.boundsRaw.h = ((node.parent.h - border.bottom) - node.y).roundPositive
 
   assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
@@ -1011,7 +1032,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
   node.insert(newNode, last)
   return newNode
 
-proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], inPivot: Option[Vec2], userId: var UIUserId, inAdditionalFlags: Option[UINodeFlags]): UINode =
+proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], inPivot: Option[Vec2], userId: var UIUserId, inAdditionalFlags: Option[UINodeFlags], inBorder: Option[UIBorder]): UINode =
   assert builder.currentParent.isNotNil
 
   var node = builder.getNextOrNewNode(builder.currentParent, builder.currentChild, userId)
@@ -1048,6 +1069,8 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
   node.boundsRaw.y = 0
   node.boundsRaw.w = 0
   node.boundsRaw.h = 0
+
+  node.mBorder = inBorder.get(UIBorder())
 
   if node.parent.isNotNil and AutoPivotChildren in node.parent.flags:
     if LayoutHorizontalReverse in node.parent.flags:
@@ -1292,6 +1315,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
   var inTextColor = genAst(): Color.none
   var inUnderlineColor = genAst(): Color.none
   var inAdditionalFlags = genAst(): UINodeFlags.none
+  var inBorder = genAst(): UIBorder.none
 
   for i, arg in args:
     case arg
@@ -1310,6 +1334,8 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
         inTextColor = genAst(value): some(value)
       of "underlineColor":
         inUnderlineColor = genAst(value): some(value)
+      of "border":
+        inBorder = genAst(value): some(value)
       of "x":
         inX = genAst(value): some(value).maybeFlatten.mapIt(it.float32)
       of "y":
@@ -1333,9 +1359,9 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
       # echo arg.treeRepr
       error("Only <name> = <value> is allowed here.", arg)
 
-  return genAst(builder, inFlags, inText, inX, inY, inW, inH, inPivot, body, inBackgroundColor, inBorderColor, inTextColor, inUnderlineColor, inUserId, inAdditionalFlags):
+  return genAst(builder, inFlags, inText, inX, inY, inW, inH, inPivot, body, inBackgroundColor, inBorderColor, inBorder, inTextColor, inUnderlineColor, inUserId, inAdditionalFlags):
     var userId = inUserId
-    var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH, inPivot, userId, inAdditionalFlags)
+    var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH, inPivot, userId, inAdditionalFlags, inBorder)
 
     if inBackgroundColor.isSome: node.backgroundColor = inBackgroundColor.get
     if inBorderColor.isSome:     node.borderColor     = inBorderColor.get

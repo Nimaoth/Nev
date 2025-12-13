@@ -3738,6 +3738,7 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
       return
     if hoverInfo.getSome(hoverInfo):
       self.showHover = true
+      self.showSignatureHelp = false
       self.hoverScrollOffset = 0
       self.hoverText = hoverInfo
       self.hoverLocation = cursor
@@ -3796,6 +3797,7 @@ proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpt
       self.showSignatureHelp = false
 
     else:
+      self.showHover = false
       self.signatureHelpLocation = cursor
       let move = self.settings.signatureHelpMove.get()
       let argListRanges = self.getSelectionsForMove(@[cursor.toSelection], move)
@@ -3818,15 +3820,38 @@ proc showHoverForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Does nothing if no language server is available or the language server doesn't return any info.
   asyncSpawn self.showHoverForAsync(self.selection.last)
 
-proc showSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc showHover*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Shows lsp hover information for the current selection.
   ## Does nothing if no language server is available or the language server doesn't return any info.
-  asyncSpawn self.showSignatureHelpAsync(self.selection.last, hideIfEmpty = false)
+  asyncSpawn self.showHoverForAsync(self.selection.last)
+
+proc toggleHover*(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Shows lsp hover information for the current selection.
+  ## Does nothing if no language server is available or the language server doesn't return any info.
+  if self.showHover:
+    self.showHover = false
+    self.markDirty()
+  else:
+    asyncSpawn self.showHoverForAsync(self.selection.last)
 
 proc hideHover*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Hides the hover information.
   self.showHover = false
   self.markDirty()
+
+proc showSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Shows lsp signature information for the current selection.
+  ## Does nothing if no language server is available or the language server doesn't return any info.
+  asyncSpawn self.showSignatureHelpAsync(self.selection.last, hideIfEmpty = false)
+
+proc toggleSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Shows lsp signature information for the current selection.
+  ## Does nothing if no language server is available or the language server doesn't return any info.
+  if self.showSignatureHelp:
+    self.showSignatureHelp = false
+    self.markDirty()
+  else:
+    asyncSpawn self.showSignatureHelpAsync(self.selection.last, hideIfEmpty = false)
 
 proc hideSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Hides the hover information.

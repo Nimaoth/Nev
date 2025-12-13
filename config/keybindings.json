@@ -574,9 +574,8 @@
         "go": ["switch-source-header"],
         "ga": ["select-code-action"],
         "gR": ["rename"],
-        "K": ["show-hover-for-current"],
-        "H": ["show-signature-help"],
-        // "H": ["show-diagnostics-for-current"],
+        "K": ["toggle-hover"],
+        "H": ["toggle-signature-help"],
 
         // scroll
         "z<ENTER>": ["vim.scroll-line-to-top-and-move-line-start"],
@@ -603,8 +602,8 @@
         "<C-t>": ["vim.indent"],
         "<C-d>": ["vim.unindent"],
         "<C-r>": ["set-mode", "vim.insert-register"],
-        "<C-k>": ["show-hover-for-current"],
-        "<C-h>": ["show-signature-help"],
+        "<C-k>": ["toggle-hover"],
+        "<C-h>": ["toggle-signature-help"],
     },
 
     "vim.visual": {
