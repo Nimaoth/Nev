@@ -2936,6 +2936,8 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
   env["count"] = newNumber(count)
   env["include-eol"] = newBool(includeEol)
   env["wrap"] = newBool(wrap)
+  env["ts?"] = newBool(not self.document.tsTree.isNil)
+  env["ts.to?"] = newBool(self.document.textObjectsQuery != nil and not self.document.tsTree.isNil)
 
   proc readOptions(env: var Env, options: JsonNode) =
     if options.kind == JObject:
@@ -3745,6 +3747,9 @@ proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpt
   if languageServer.getSome(ls):
     let signatureHelps = await ls.getSignatureHelp(self.document.filename, cursor)
     if self.document.isNil:
+      return
+
+    if self.selection.last.line != cursor.line:
       return
 
     self.signatureHelpText = "No signatures found"
