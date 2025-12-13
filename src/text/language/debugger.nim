@@ -959,6 +959,7 @@ proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bo
 
 proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
   log(lvlInfo, &"onStopped {data}")
+  self.platform.focusWindow()
 
   self.threads.setLen 0
   self.stackTraces.clear()

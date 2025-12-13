@@ -121,7 +121,7 @@
         "<LEADER>am": ["toggle-breakpoints-enabled"],
         "<LEADER>gb": ["show-debugger-view"],
         "<LEADER>al": { "command": ["all", "run-last-configuration", "show-debugger-view"], "description": "Run last configuration" },
-        "<LEADER>av": { "command": ["all", "choose-run-configuration"], "description": "Choose run configuration" },
+        "<LEADER>av": { "command": ["choose-run-configuration"], "description": "Choose run configuration" },
         "<LEADER>ab": { "command": ["toggle-breakpoint"], "description": "Toggle breakpoint" },
 
         "<LEADER>g": { "description": "Global pickers" },

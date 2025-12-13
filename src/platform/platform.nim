@@ -58,6 +58,7 @@ method layoutText*(self: Platform, text: string): seq[Rect] {.base, gcsafe, rais
 method setVsync*(self: Platform, enabled: bool) {.base, gcsafe, raises: [].} = discard
 method moveToMonitor*(self: Platform, index: int) {.base, gcsafe, raises: [].} = discard
 method createTexture*(self: Platform, image: Image): TextureId {.base, gcsafe, raises: [].} = discard
+method focusWindow*(self: Platform) {.base, gcsafe, raises: [].} = discard
 
 var texturesToUpload: seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.Color]]]
 var texturesToDelete: seq[TextureId]
