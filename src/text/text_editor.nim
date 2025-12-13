@@ -311,12 +311,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   # signatureHelp
   showSignatureHelpTask: DelayedTask    # for showing signatureHelp info after a delay
-  hideSignatureHelpTask: DelayedTask    # for hiding signatureHelp info after a delay
-  currentSignatureHelpLocation: Cursor  # the location of the mouse signatureHelp
   showSignatureHelp*: bool              # whether to show signatureHelp info in ui
-  signatureHelpText*: string            # the text to show in the signatureHelp info
   signatureHelpLocation*: Cursor        # where to show the signatureHelp info
-  signatureHelpScrollOffset*: float     # the scroll offset inside the signatureHelp window
   signatures*: seq[lsp_types.SignatureInformation]
   currentSignature*: int
   currentSignatureParam*: int
@@ -717,7 +713,6 @@ method deinit*(self: TextDocumentEditor) =
   if self.showHoverTask.isNotNil: self.showHoverTask.pause()
   if self.hideHoverTask.isNotNil: self.hideHoverTask.pause()
   if self.showSignatureHelpTask.isNotNil: self.showSignatureHelpTask.pause()
-  if self.hideSignatureHelpTask.isNotNil: self.hideSignatureHelpTask.pause()
 
   if self.completionEngine.isNotNil:
     self.completionEngine.onCompletionsUpdated.unsubscribe(self.onCompletionsUpdatedHandle)
@@ -3737,9 +3732,6 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
   self.markDirty()
 
 proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpty: bool): Future[void] {.async.} =
-  if self.hideSignatureHelpTask.isNotNil:
-    self.hideSignatureHelpTask.pause()
-
   let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
@@ -3752,13 +3744,9 @@ proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpt
     if self.selection.last.line != cursor.line:
       return
 
-    self.signatureHelpText = "No signatures found"
     if signatureHelps.isSuccess:
       self.showSignatureHelp = true
-      self.signatureHelpScrollOffset = 0
       var signatures: seq[lsp_types.SignatureInformation]
-      var text = ""
-      var k = 0
       var signatureIndex = 0
       var parameterIndex = 0
       for res in signatureHelps.result:
@@ -3769,26 +3757,12 @@ proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpt
           parameterIndex = res.activeParameter.get()
 
         for sig in res.signatures:
-          defer:
-            inc k
           signatures.add sig
 
-          if k > 0:
-            text.add "\n"
-          text.add sig.label
-          # for i, p in sig.parameters:
-          #   if i > 0:
-          #     text.add ", "
-          #   if p.label.kind == JString:
-          #     text.add p.label.getStr
-          #   else:
-          #     text.add $p.label
-
-      if text.len > 0:
+      if signatures.len > 0:
         self.signatures = signatures
         self.currentSignature = signatureIndex
         self.currentSignatureParam = parameterIndex
-        self.signatureHelpText = text
         self.signatureHelpLocation = cursor
 
         let move = self.settings.signatureHelpMove.get()
@@ -3865,26 +3839,8 @@ proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
 
   self.markDirty()
 
-proc hideSignatureHelpDelayed*(self: TextDocumentEditor) =
-  ## Hides the hover information after a delay.
-  if self.showSignatureHelpTask.isNotNil:
-    self.showSignatureHelpTask.pause()
-
-  let hoverDelayMs = self.settings.hoverDelay.get()
-  if self.hideSignatureHelpTask.isNil:
-    self.hideSignatureHelpTask = startDelayed(hoverDelayMs, repeat=false):
-      self.hideSignatureHelp()
-  else:
-    self.hideSignatureHelpTask.interval = hoverDelayMs
-    self.hideSignatureHelpTask.reschedule()
-
 proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
   ## Show hover information for the given cursor after a delay.
-  # self.currentSignatureHelpLocation = cursor
-
-  # if self.hideSignatureHelpTask.isNotNil:
-  #   self.hideSignatureHelpTask.pause()
-
   let hoverDelayMs = self.settings.hoverDelay.get()
   if self.showSignatureHelpTask.isNil:
     self.showSignatureHelpTask = startDelayed(hoverDelayMs, repeat=false):

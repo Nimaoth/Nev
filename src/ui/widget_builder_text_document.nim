@@ -194,15 +194,6 @@ proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: 
   let inactiveSignatureColor = app.themes.theme.color("editor.foreground", color(1, 1, 1)).darken(0.15)
   let activeSignatureColor = app.themes.theme.color("editor.foreground", color(1, 1, 1))
   let activeParamColor = app.themes.theme.color("editor.foreground.highlight", activeSignatureColor.lighten(0.15))
-  let docsColor = app.themes.theme.color("editor.foreground", color(1, 1, 1))
-
-  let numLinesToShow = min(10, self.signatureHelpText.countLines)
-  let (top, bottom) = (
-    cursorBounds.yh.float - floor(builder.charWidth * 0.5),
-    cursorBounds.yh.float + totalLineHeight * numLinesToShow.float - floor(builder.charWidth * 0.5))
-  let height = bottom - top
-
-  let border = ceil(builder.charWidth * 0.5)
 
   proc drawSignature(color: Color, sig: lsp_types.SignatureInformation) =
     let activeParameter = sig.activeParameter.get(self.currentSignatureParam)
@@ -233,6 +224,9 @@ proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: 
 
     if self.currentSignature in 0..self.signatures.high:
       drawSignature(activeSignatureColor, self.signatures[self.currentSignature])
+
+    if self.signatures.len == 0:
+      builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = "No signatures", textColor = activeSignatureColor)
 
   var clampedX = cursorBounds.x
   if clampedX + signatureHelpPanel.bounds.w > builder.root.w:
