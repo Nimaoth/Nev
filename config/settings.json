@@ -196,6 +196,9 @@
 
     "lsp-merge.timeout": 10000,
 
+    // use 'call.inner' scope from textobjects treesitter query if available, otherwise use 'surround'
+    "text.signature-help-move": "(if ts.to? (list (ts 'call.inner') (last))    (list (surround '(' ')') (last)))",
+
     "+lang": {
         "command-line": {
             "editor.save-in-session": false,

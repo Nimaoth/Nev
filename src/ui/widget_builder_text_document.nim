@@ -40,6 +40,7 @@ type
     displayMap: DisplayMap
     offset: Vec2
     bounds: Rect
+    absoluteBounds: Rect
     lastDisplayPoint: DisplayPoint
     lastDisplayEndPoint: DisplayPoint
     lastPoint: Point
@@ -126,6 +127,15 @@ proc getCursorPos2(self: TextDocumentEditor, builder: UINodeBuilder, text: openA
 
   byteIndex
 
+proc getScreenPos(self: TextDocumentEditor, builder: UINodeBuilder, state: var LineDrawerState, cursor: Cursor): Option[Vec2] =
+  let dp = self.displayMap.toDisplayPoint(cursor.toPoint)
+  let (_, lastIndexDisplay) = state.chunkBounds.binarySearchRange(dp, Bias.Left, cmp)
+  if lastIndexDisplay in 0..<state.chunkBounds.len and dp >= state.chunkBounds[lastIndexDisplay].displayRange.a:
+    let offset = (dp - state.chunkBounds[lastIndexDisplay].displayRange.a).toPoint.column.float * builder.charWidth
+    let chunkBounds = state.chunkBounds[lastIndexDisplay].bounds
+    return vec2(state.absoluteBounds.x + chunkBounds.x + offset, state.absoluteBounds.y + chunkBounds.y).some
+  return Vec2.none
+
 proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
@@ -192,14 +202,7 @@ proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: 
     cursorBounds.yh.float + totalLineHeight * numLinesToShow.float - floor(builder.charWidth * 0.5))
   let height = bottom - top
 
-  const docsWidth = 50.0
-  let totalWidth = charWidth * docsWidth
-  var clampedX = cursorBounds.x
-  if clampedX + totalWidth > builder.root.w:
-    clampedX = max(builder.root.w - totalWidth, 0)
-
   let border = ceil(builder.charWidth * 0.5)
-
 
   proc drawSignature(color: Color, sig: lsp_types.SignatureInformation) =
     let activeParameter = sig.activeParameter.get(self.currentSignatureParam)
@@ -221,7 +224,7 @@ proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: 
       builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = ")", textColor = color)
 
   var signatureHelpPanel: UINode = nil
-  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, MouseHover, SnapInitialBounds, LayoutVertical}, x = clampedX, y = top, h = height + border * 2, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = borderColor, userId = self.signatureHelpId.newPrimaryId):
+  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical}, backgroundColor = backgroundColor, borderColor = borderColor, userId = self.signatureHelpId.newPrimaryId):
     signatureHelpPanel = currentNode
 
     for k, sig in self.signatures:
@@ -230,29 +233,12 @@ proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: 
 
     if self.currentSignature in 0..self.signatures.high:
       drawSignature(activeSignatureColor, self.signatures[self.currentSignature])
-      # if self.signatures[self.currentSignature].documentation.isSome:
-      #   echo self.signatures[self.currentSignature].documentation.get
 
-    # var textNode: UINode = nil
-    # builder.panel(&{SizeToContentX}, x = border, y = border, w = 0, h = height):
-    #   # todo: height
-    #   builder.panel(&{DrawText, SizeToContentX}, x = 0, y = self.signatureHelpScrollOffset, w = 0, h = 1000, text = self.signatureHelpText, textColor = docsColor):
-    #     textNode = currentNode
+  var clampedX = cursorBounds.x
+  if clampedX + signatureHelpPanel.bounds.w > builder.root.w:
+    clampedX = max(builder.root.w - signatureHelpPanel.bounds.w, 0)
 
-    # currentNode.w = currentNode.w + border
-
-    # onScroll:
-    #   let scrollSpeed = self.config.get("text.hover-scroll-speed", 20.0)
-    #   # todo: clamp bottom
-    #   self.signatureHelpScrollOffset = clamp(self.signatureHelpScrollOffset + delta.y * scrollSpeed, -1000, 0)
-    #   self.markDirty()
-
-    # # onBeginHover:
-    # #   self.cancelDelayedHideHover()
-
-    # # onEndHover:
-    # #   self.hideHoverDelayed()
-
+  signatureHelpPanel.rawX = clampedX
   signatureHelpPanel.rawY = cursorBounds.y
   signatureHelpPanel.pivot = vec2(0, 1)
 
@@ -518,6 +504,7 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
 
   buildCommands(renderCommands):
     self.cursorHistories.setLen(self.selections.len)
+
     for i, s in self.selections:
       let p = s.last.toPoint
       var (_, lastIndex) = state.chunkBounds.binarySearchRange(p, Bias.Left, cmp)
@@ -616,10 +603,9 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
           self.lastHoverLocationBounds = (state.chunkBounds[lastIndexDisplay].bounds + currentNode.boundsAbsolute.xy).some
           self.lastSignatureHelpLocationBounds = (state.chunkBounds[lastIndexDisplay].bounds + currentNode.boundsAbsolute.xy).some
 
-  let dp = self.displayMap.toDisplayPoint(self.signatureHelpLocation.toPoint)
-  let (_, lastIndexDisplay) = state.chunkBounds.binarySearchRange(dp, Bias.Left, cmp)
-  if lastIndexDisplay in 0..<state.chunkBounds.len and dp >= state.chunkBounds[lastIndexDisplay].displayRange.a:
-    self.lastSignatureHelpLocationBounds = (state.chunkBounds[lastIndexDisplay].bounds + currentNode.boundsAbsolute.xy).some
+  let signatureHelpScreenPos = self.getScreenPos(builder, state, self.signatureHelpLocation)
+  if signatureHelpScreenPos.isSome:
+    self.lastSignatureHelpLocationBounds = rect(signatureHelpScreenPos.get.x, signatureHelpScreenPos.get.y, builder.charWidth, builder.textHeight).some
 
 proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode,
     selectionsNode: UINode, lineNumbersNode: UINode, backgroundColor: Color, textColor: Color, sizeToContentX: bool,
@@ -794,6 +780,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   var state = LineDrawerState(
     builder: builder,
     displayMap: self.displayMap,
+    absoluteBounds: rect(currentNode.boundsAbsolute.x + mainOffset, currentNode.boundsAbsolute.y, width, parentHeight),
     bounds: rect(mainOffset, 0, width, parentHeight),
     offset: vec2(mainOffset + scrollOffset.x, scrollOffset.y - startLineOffsetFromScrollOffset + (iter.displayPoint.row.int - startLine).float * builder.textHeight).floor,
     lastDisplayPoint: iter.displayPoint,
