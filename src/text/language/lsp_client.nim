@@ -698,7 +698,8 @@ proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
   while process.isAlive:
     let line = await process.recvErrorLine
     if logServerDebug:
-      log(lvlDebug, fmt"[server] {line}")
+      let l = line.strip(chars = {'\n'})
+      log(lvlDebug, fmt"[server] {l}")
 
 proc sendInitializationRequest(client: LSPClient) {.async, gcsafe.} =
   log(lvlInfo, "Initializing client...")
