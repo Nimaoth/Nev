@@ -76,6 +76,9 @@ proc setLen*(list: var ItemList, newLen: int) =
   assert newLen <= list.len
   list.data.getMut.items.setLen(newLen)
 
+proc isValidIndex*(list: ItemList, i: int): bool =
+  return i >= 0 and i < list.len
+
 proc `[]=`*(list: var ItemList, i: int, item: sink FinderItem) =
   assert i >= 0
   assert i < list.len

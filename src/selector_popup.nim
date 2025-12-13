@@ -16,6 +16,7 @@ logCategory "selector"
 
 declareSettings SelectorSettings, "selector":
   declare baseMode, string, "popup.selector"
+  declare minScore, float, 0
 
 type
   SelectorPopup* = ref object of Popup
@@ -194,7 +195,7 @@ proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
 proc updatePreview(self: SelectorPopup) =
-  if self.previewer.isSome and self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+  if self.previewer.isSome and self.finder.filteredItems.getSome(list) and list.filteredLen > 0 and list.isValidIndex(self.selected):
     let view = self.previewer.get.get.previewItem(list[self.selected])
     if view != self.previewView:
       if self.previewView != nil:
@@ -216,7 +217,7 @@ proc setPreviewVisible*(self: SelectorPopup, visible: bool) {.expose("popup.sele
   assert self.finder.isNotNil
   self.previewVisible = visible
 
-  if visible and self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+  if visible and self.finder.filteredItems.getSome(list) and list.filteredLen > 0 and list.isValidIndex(self.selected):
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
@@ -246,7 +247,7 @@ proc getNumItems*(self: SelectorPopup): int =
 proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] =
   assert self.finder.isNotNil
 
-  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0 and list.isValidIndex(self.selected):
     assert self.selected >= 0
     assert self.selected < list.filteredLen
     result = list[self.selected].some
@@ -263,7 +264,7 @@ proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
 
   assert self.finder.isNotNil
 
-  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0 and list.isValidIndex(self.selected):
     assert self.selected >= 0
     assert self.selected < list.filteredLen
     let handled = self.handleItemConfirmed list[self.selected]
@@ -310,7 +311,7 @@ proc prev*(self: SelectorPopup, count: int = 1) {.expose("popup.selector").} =
 
   assert self.finder.isNotNil
 
-  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0 and list.isValidIndex(self.selected):
     self.selected = (self.selected + max(0, list.filteredLen - count)) mod list.filteredLen
 
     if not self.handleItemSelected.isNil:
@@ -326,7 +327,7 @@ proc next*(self: SelectorPopup, count: int = 1) {.expose("popup.selector").} =
 
   assert self.finder.isNotNil
 
-  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0 and list.isValidIndex(self.selected):
     self.selected = (self.selected + count) mod list.filteredLen
 
     if not self.handleItemSelected.isNil:
@@ -405,7 +406,7 @@ proc handleTextChanged*(self: SelectorPopup) =
   if self.previewer.isSome:
     self.previewer.get.get.delayPreview()
 
-  if self.handleItemSelected.isNotNil and self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+  if self.handleItemSelected.isNotNil and self.finder.filteredItems.getSome(list) and list.filteredLen > 0 and list.isValidIndex(0):
 
     self.handleItemSelected list[0]
 
@@ -417,7 +418,7 @@ proc handleItemsUpdated*(self: SelectorPopup) {.gcsafe, raises: [].} =
 
   self.completionMatchPositions.clear()
 
-  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0 and list.isValidIndex(self.selected):
     self.selected = self.selected.clamp(0, list.filteredLen - 1)
 
     if not self.handleItemSelected.isNil:
@@ -458,6 +459,8 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.textEditor.disableScrolling = true
   popup.textEditor.disableCompletions = true
   popup.textEditor.active = true
+
+  finder.get.minScore = popup.settings.minScore.get()
 
   discard popup.textEditor.document.textChanged.subscribe (arg: TextDocument) =>
     popup.handleTextChanged()
