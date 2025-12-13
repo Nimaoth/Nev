@@ -34,6 +34,7 @@ For examples and default values see [here](../config/settings.json)
 | `plugins.command-load-behaviour` | PluginCommandLoadBehaviour | "async-or-wait" | Defines if and how to run commands which trigger a plugin to load. "dont-run": Don't run the command after the plugin is loaded. You have to manually run the command again. "async-run": Asynchronously load the plugin and run the command afterwards. If the command returns something              then the return value will not be available if the command is e.g. called from a plugin. "wait-and-run": Synchronously load the plugin and run the command afterwards. Return values work fine, but the editor                 will freeze while loading the plugin. "async-or-wait": Use "async-run" behaviour for commands with no return value and "wait-and-run" for commands with return values. |
 | `plugins.watch-plugin-directories` | bool | true | Whether to watch the plugin directories for changes and load new plugins |
 | `selector.base-mode` | string | "popup.selector" |  |
+| `selector.min-score` | float | 0 |  |
 | `terminal.base-mode` | string | "terminal" | Input mode which is always active while a terminal view is active. |
 | `terminal.default-mode` | string | "" | Input mode to activate when creating a new terminal, if no mode is specified otherwise. |
 | `terminal.idle-threshold` | int | 500 | After how many milliseconds of no data received from a terminal it is considered idle, and can be reused for running more commands. |
@@ -92,7 +93,9 @@ For examples and default values see [here](../config/settings.json)
 | `text.search-regexes.workspace-symbols` | regex \| null | null | Regex to use when using the workspace-symbols feature. |
 | `text.search-regexes.workspace-symbols-by-kind` | { [key: string]: regex } \| null | null | Regex to use when using the workspace-symbols feature. Keys are LSP symbol kinds, values are the corresponding regex. |
 | `text.search-workspace-regex-max-results` | int | 50000 | Maximum number of results to display for regex based workspace symbol search. |
-| `text.signature-help-move` | string | "(ts 'call.inner') (grow -1) (last)" | Which move to use to find the beginning of the argument list when showing signature help. |
+| `text.signature-help-delay` | int | 200 | How often (in milliseconds) to update signature help while typing. |
+| `text.signature-help-enabled` | bool | true | Whether signature help is enabled. |
+| `text.signature-help-move` | string | "(ts 'call.inner') (overlapping) (last)" | Which move to use to find the beginning of the argument list when showing signature help. |
 | `text.signature-help-trigger-chars` | (string \| string[])[] | ["("] | Which characters trigger signature help when inserted. |
 | `text.signature-help-trigger-on-edit-in-args` | bool | true | Trigger signature help when editing inside an argument list, as defined by 'signature-help-move' |
 | `text.signs.max-width` | int \| null | 2 | If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width. |

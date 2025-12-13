@@ -148,7 +148,7 @@ type
     name*: Option[string]
     path*: Option[string]
     sourceReference*: Option[int]
-    presentationHint*: Option[string]
+    presentationHint*: Option[JsonNode]
     origin*: Option[string]
     sources*: seq[Source]
     adapterData*: Option[JsonNode]
@@ -280,7 +280,7 @@ type
 
   Scope* = object
     name*: string
-    presentationHint*: Option[string]
+    presentationHint*: Option[JsonNode]
     variablesReference*: VariablesReference
     namedVariables*: Option[int]
     indexedVariables*: Option[int]
@@ -298,7 +298,7 @@ type
     name*: string
     value*: string
     `type`*: Option[string]
-    presentationHint*: Option[string]
+    presentationHint*: Option[JsonNode]
     evaluateName*: Option[string]
     variablesReference*: VariablesReference
     namedVariables*: Option[int]
@@ -613,6 +613,11 @@ proc setBreakpoints*(client: DAPClient, source: Source, breakpoints: seq[SourceB
     var args = newJObject()
     args["source"] = source.toJson
     args["breakpoints"] = breakpoints.toJson
+
+    var lines = newSeqOfCap[int](breakpoints.len)
+    for b in breakpoints:
+      lines.add b.line
+    args["lines"] = lines.toJson
 
     let res = await client.sendRequest("setBreakpoints", args.some)
     if res.isError:

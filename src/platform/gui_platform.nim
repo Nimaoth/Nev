@@ -891,3 +891,16 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
 
   except GLerror, Exception:
     discard
+
+when defined(windows):
+  import winim/lean
+
+method focusWindow*(self: GuiPlatform) {.gcsafe, raises: [].} =
+  when defined(windows):
+    if GetForegroundWindow() == self.window.platformHandle:
+      return
+    discard SetForegroundWindow(self.window.platformHandle)
+    discard SetFocus(self.window.platformHandle)
+    discard SetActiveWindow(self.window.platformHandle)
+    discard ShowWindow(self.window.platformHandle, SW_RESTORE)
+    self.window.maximized = true
