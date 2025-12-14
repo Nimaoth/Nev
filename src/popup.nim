@@ -36,6 +36,8 @@ proc init*(self: Popup) =
 
 method deinit*(self: Popup) {.base.} = discard
 
+method cancel*(self: Popup) {.base.} = discard
+
 method getEventHandlers*(self: Popup): seq[EventHandler] {.base.} =
   return @[]
 

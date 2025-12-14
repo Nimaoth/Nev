@@ -36,6 +36,7 @@ type
     handleCanceled*: proc() {.gcsafe, raises: [].}
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
+    accepted: bool = false
 
     settings: SelectorSettings
 
@@ -256,6 +257,7 @@ proc pop*(self: SelectorPopup) {.expose("popup.selector").} =
   self.layout.popPopup(self)
 
 proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
+  self.accepted = true
   if self.textEditor.isNil:
     return
 
@@ -271,13 +273,15 @@ proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
     if handled:
       self.layout.popPopup(self)
 
-proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
+method cancel*(self: SelectorPopup) =
+  if self.accepted:
+    return
+
   if self.textEditor.isNil:
     return
 
   if self.handleCanceled != nil:
     self.handleCanceled()
-  self.layout.popPopup(self)
 
 proc sort*(self: SelectorPopup, sort: ToggleBool) {.expose("popup.selector").} =
   if self.textEditor.isNil:
