@@ -1,4 +1,4 @@
-import std/[strformat, options, tables]
+import std/[strformat, options, tables, sets, strutils]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -81,6 +81,12 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
   let ids = debugger.currentVariablesContext().getOr:
     return
 
+  let filteredBackgroundColor = builder.theme.color("editorSuggestWidget.selectedBackground", color(0.6, 0.5, 0.2)).withAlpha(1)
+  let textColorHighlight = builder.theme.color("editor.foreground.highlight", color(0.9, 0.8, 0.8))
+  let typeColor = builder.theme.tokenColor("type", color(0.9, 0.8, 0.8))
+  let valueColor = builder.theme.tokenColor("string", color(0.9, 0.8, 0.8))
+  let nameColor = builder.theme.color("editor.foreground.highlight", color(0.9, 0.8, 0.8))
+
   let variables {.cursor.} = debugger.variables[ids & variablesReference]
   for i, variable in variables.variables:
     let collapsed = debugger.isCollapsed(ids & variable.variablesReference)
@@ -101,13 +107,32 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
 
       let isSelected = debugger.isSelected(variablesReference, i)
 
+      var nameColor = textColor
+      var highlightIndices = newSeq[int]()
+      if debugger.filteredVariables.contains((i, variablesReference)):
+        nameColor = textColorHighlight
+        let i = variable.name.find(debugger.variablesFilter)
+        if i != -1:
+          for k in 0..<debugger.variablesFilter.len:
+            highlightIndices.add(i + k)
+
+      proc createText() =
+        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = collapsedText, textColor = textColor)
+        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = " ")
+        if highlightIndices.len > 0:
+          discard builder.highlightedText(variable.name, highlightIndices, textColor, textColorHighlight)
+        else:
+          builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = variable.name, textColor = nameColor)
+        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = typeText, textColor = typeColor)
+        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = " = ", textColor = textColor)
+        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = variable.value, textColor = valueColor)
+
       if isSelected:
-        builder.panel(&{SizeToContentY, FillX, FillBackground},
-            backgroundColor = selectedBackgroundColor):
-          builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = text, textColor = textColor)
+        builder.panel(&{SizeToContentY, FillX, FillBackground, LayoutHorizontal}, backgroundColor = selectedBackgroundColor):
+          createText()
           output.selectedNode = currentNode
       else:
-        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = text, textColor = textColor)
+        createText()
 
     if showChildren:
       builder.panel(&{SizeToContentY, FillX, LayoutVertical}, x = 2 * builder.charWidth):
@@ -156,6 +181,8 @@ proc createScope*(self: VariablesView, builder: UINodeBuilder, debugger: Debugge
 proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
   let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let selectionColor = builder.theme.color("list.activeSelectionBackground", color(0.8, 0.8, 0.8)).withAlpha(1)
+  var backgroundColor = builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).darken(0.025)
+  let borderColor = builder.theme.color("panel.border", color(0, 0, 0))
   let threads {.cursor.} = debugger.getThreads()
 
   proc handleScroll(delta: float) = discard
@@ -211,6 +238,7 @@ method createUI*(self: ThreadsView, builder: UINodeBuilder): seq[OverlayFunction
 
 method createUI*(self: VariablesView, builder: UINodeBuilder): seq[OverlayFunction] =
   let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  let textColorHighlight = builder.theme.color("editor.foreground.highlight", color(0.9, 0.8, 0.8))
   let selectionColor = builder.theme.color("list.activeSelectionBackground", color(0.8, 0.8, 0.8)).withAlpha(1)
   if getDebugger().getSome(debugger):
     self.renderView(builder,
@@ -219,6 +247,10 @@ method createUI*(self: VariablesView, builder: UINodeBuilder): seq[OverlayFuncti
       ,
       proc(): seq[OverlayFunction] =
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Variables")
+
+        if debugger.variablesFilter.len > 0:
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = " - Filter: ")
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColorHighlight, text = debugger.variablesFilter)
     )
   else:
     @[]

@@ -61,6 +61,7 @@ type
     variablesCursor: VariableCursor
     variablesScrollOffset*: float
     collapsedVariables: HashSet[(ThreadId, FrameId, VariablesReference)]
+    variablesFilter*: string = ""
 
     breakpointsEnabled*: bool = true
 
@@ -76,6 +77,10 @@ type
     stackTraces: Table[ThreadId, StackTraceResponse]
     scopes*: Table[(ThreadId, FrameId), Scopes]
     variables*: Table[(ThreadId, FrameId, VariablesReference), Variables]
+
+    filteredVariables*: HashSet[(int, VariablesReference)]
+    filteredCursors*: seq[VariableCursor]
+    filterVersion: int = 0
 
   DebuggerView* = ref object of View
     threads*: ThreadsView
@@ -256,6 +261,15 @@ proc handleSessionRestored(self: Debugger, session: SessionService) =
   except:
     discard
 
+proc findVariable(self: Debugger, filter: string) {.async.}
+proc refilterVariables(self: Debugger) =
+  inc self.filterVersion
+  self.filteredVariables.clear()
+  self.filteredCursors.setLen(0)
+  if self.variablesFilter.len > 0:
+    asyncSpawn self.findVariable(self.variablesFilter)
+  self.platform.requestRender()
+
 proc waitForApp(self: Debugger) {.async: (raises: []).} =
   try:
     # todo
@@ -294,8 +308,10 @@ proc waitForApp(self: Debugger) {.async: (raises: []).} =
   assignEventHandler(self.variablesEventHandler, self.events.getEventHandlerConfig("debugger.variables")):
     onAction:
       self.handleAction action, arg
-    # onInput:
-    #   self.handleInput input
+    onInput:
+      self.variablesFilter.add input
+      self.refilterVariables()
+      Handled
 
   assignEventHandler(self.outputEventHandler, self.events.getEventHandlerConfig("debugger.output")):
     onAction:
@@ -360,6 +376,16 @@ proc getStackTrace*(self: Debugger, threadId: ThreadId): Option[StackTraceRespon
 
 proc isCollapsed*(self: Debugger, ids: (ThreadId, FrameId, VariablesReference)): bool =
   ids in self.collapsedVariables
+
+proc deleteLastVariableFilterChar(self: Debugger) {.expose("debugger").} =
+  if self.variablesFilter.len > 0:
+    self.variablesFilter.setLen(self.variablesFilter.len - 1)
+    self.refilterVariables()
+
+proc clearVariableFilter(self: Debugger) {.expose("debugger").} =
+  if self.variablesFilter.len > 0:
+    self.variablesFilter.setLen(0)
+    self.refilterVariables()
 
 proc prevDebuggerView*(self: Debugger) {.expose("debugger").} =
   self.activeView = case self.activeView
@@ -621,6 +647,20 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
   let scopes = self.currentScopes().getOr:
     return
 
+  if self.filteredCursors.len > 0:
+    let i = self.filteredCursors.find(self.variablesCursor)
+    if i != -1:
+      let i2 = (i + self.filteredCursors.len - 1) mod self.filteredCursors.len
+      self.variablesCursor = self.filteredCursors[i2]
+      self.variablesScrollOffset = self.maxVariablesScrollOffset * 0.5
+      self.platform.requestRender()
+      return
+    else:
+      self.variablesCursor = self.filteredCursors[self.filteredCursors.high]
+      self.variablesScrollOffset = self.maxVariablesScrollOffset * 0.5
+      self.platform.requestRender()
+      return
+
   if scopes[].scopes.len == 0 or self.variables.len == 0:
     return
 
@@ -664,6 +704,20 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
 proc nextVariable*(self: Debugger) {.expose("debugger").} =
   let scopes = self.currentScopes().getOr:
     return
+
+  if self.filteredCursors.len > 0:
+    let i = self.filteredCursors.find(self.variablesCursor)
+    if i != -1:
+      let i2 = (i + 1) mod self.filteredCursors.len
+      self.variablesCursor = self.filteredCursors[i2]
+      self.variablesScrollOffset = self.maxVariablesScrollOffset * 0.5
+      self.platform.requestRender()
+      return
+    else:
+      self.variablesCursor = self.filteredCursors[0]
+      self.variablesScrollOffset = self.maxVariablesScrollOffset * 0.5
+      self.platform.requestRender()
+      return
 
   let ids = self.currentVariablesContext().getOr:
     return
@@ -1565,3 +1619,40 @@ method getActiveEditor*(self: DebuggerView): Option[DocumentEditor] =
     if gDebugger.isNil or gDebugger.activeView != ActiveView.Output or gDebugger.outputEditor.isNil:
       return DocumentEditor.none
     return gDebugger.outputEditor.DocumentEditor.some
+
+proc findVariable(self: Debugger, filter: string, vr: VariablesReference, cursor: VariableCursor, filterVersion: int) {.async.} =
+  let thread = self.currentThread()
+  if thread.isNone:
+    return
+  let frame = self.currentStackFrame()
+  if frame.isNone:
+    return
+  let key = (thread.get.id, frame.get.id, vr)
+  if key in self.variables:
+    let variables {.cursor.} = self.variables[key]
+    for i, v in variables.variables:
+      if v.name.contains(filter):
+        var cursor2 = cursor
+        cursor2.path.add((i, vr))
+        self.filteredVariables.incl (i, vr)
+        self.filteredCursors.add cursor2
+        self.platform.requestRender()
+
+        let key2 = (thread.get.id, frame.get.id, v.variablesReference)
+        await self.findVariable(filter, v.variablesReference, cursor2, filterVersion)
+
+proc findVariable(self: Debugger, filter: string) {.async.} =
+  let scopes = self.currentScopes()
+  if scopes.isNone:
+    return
+  let version = self.filterVersion
+  for scopeIndex, s in scopes.get.scopes:
+    let vr = s.variablesReference
+    var cursor = VariableCursor(scope: scopeIndex)
+    await self.findVariable(filter, vr, cursor, version)
+    if self.filterVersion != version:
+      return
+    if self.filteredCursors.len > 0:
+      let i = self.filteredCursors.find(self.variablesCursor)
+      if i == -1:
+        self.nextVariable()

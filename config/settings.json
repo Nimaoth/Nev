@@ -14,6 +14,10 @@
         "preset": "vim"
     },
 
+    "input.debugger.variables.handle-inputs": true,
+    "input.debugger.variables.handle-actions": true,
+    "input.debugger.variables.handle-keys": false,
+
     "+language-mappings": {
         "\\..(agda|lagda)$": "agda",
         "\\..(c|cc|h|inc)$": "c",
