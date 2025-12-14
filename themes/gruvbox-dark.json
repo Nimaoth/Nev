@@ -30,7 +30,7 @@
         "editorHoverWidget.background": "#32302f",
         "editorHoverWidget.border": "#504945",
         "editorSuggestWidget.background": "#32302f",
-        "editorSuggestWidget.border": "#32302f",
+        "editorSuggestWidget.border": "#504945",
         "editorSuggestWidget.selectedBackground": "#3c3836",
         "editorSuggestWidget.foreground": "#ebdbb2",
         "editorSuggestWidget.highlightForeground": "#fbf1c7",

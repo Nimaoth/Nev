@@ -133,6 +133,7 @@ For examples and default values see [here](../config/settings.json)
 | `ui.syntax-highlighting` | bool | true | Enable syntax highlighting. |
 | `ui.tab-header-width` | int | 30 | Width of tab layout headers in characters |
 | `ui.theme` | string | "app://themes/tokyo-night-color-theme.json" | VFS path of the theme. |
+| `ui.toast-animation` | bool | true | Animate toast positions |
 | `ui.toast-duration` | int | 8000 | How long toasts are displayed for, in milliseconds. |
 | `ui.vsync` | bool | true | Enable vertical sync to prevent screen tearing. |
 | `ui.which-key-delay` | int | 250 | After how many milliseconds the which key window opens. |

@@ -50,7 +50,7 @@ proc alignGrid*(root: UINode, gap: float, columnAlignments: openArray[GridAlignm
 proc renderCommandKeys*(builder: UINodeBuilder, nextPossibleInputs: openArray[tuple[input: string, description: string, continues: bool]], textColor: Color, continuesTextColor: Color, keysTextColor: Color, backgroundColor: Color, inputLines: int, bounds: Rect, padding: int = 1) =
   let height = (inputLines + padding * 2).float * builder.textHeight
   let padding = padding.float
-  builder.panel(&{FillX, FillBackground, MaskContent}, y = bounds.h - height, h = height, backgroundColor = backgroundColor):
+  builder.panel(&{FillX, FillBackground, MaskContent}, h = height, backgroundColor = backgroundColor):
     builder.panel(&{LayoutHorizontal}, x = builder.charWidth * padding, y = builder.textHeight * padding, w = currentNode.w - builder.charWidth * padding * 2, h = currentNode.h - builder.textHeight * padding * 2):
       var i = 0
       while i < nextPossibleInputs.len:
@@ -97,7 +97,7 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
     var bar: UINode
     if inRenderHeader:
       builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
-          backgroundColor = inHeaderColor):
+          backgroundColor = inHeaderColor, tag = "header"):
 
         bar = currentNode
 
@@ -117,7 +117,7 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
             rightFunc()
 
     else:
-      builder.panel(&{FillX}):
+      builder.panel(&{FillX}, tag = "header"):
         bar = currentNode
 
     bar

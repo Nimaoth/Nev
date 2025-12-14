@@ -80,7 +80,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
   var whichKeyHeight = app.config.runtime.get("ui.selector-popup.which-key-height", 5)
   whichKeyHeight = (nextPossibleInputs.len + 1) div 2
 
-  builder.panel(&{FillBackground, DrawBorder}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h,
+  builder.panel(&{FillBackground, DrawBorder, DrawBorderTerminal}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, border = border(1),
       backgroundColor = backgroundColor, borderColor = borderColor, userId = self.userId.newPrimaryId):
 
     builder.panel(&{FillX, MaskContent, OverlappingChildren} + yFlag): #, userId = id):
@@ -101,6 +101,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
 
           builder.panel(&{FillX, SizeToContentY}):
             result.add self.textEditor.createUI(builder)
+            builder.updateSizeToContent(currentNode)
 
             builder.panel(&{FillX, FillY, LayoutHorizontalReverse}):
               if self.finder.isNotNil and self.finder.filteredItems.getSome(items):
@@ -108,6 +109,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
                 builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = text, textColor = textColor, pivot = vec2(1, 0))
               if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.locked:
                 builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = "...", textColor = textColor, pivot = vec2(1, 0))
+          builder.updateSizeToContent(currentNode)
 
           if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.filteredLen > 0:
             let highlightColor = app.themes.theme.color("editor.foreground.highlight", textColor.lighten(0.18))
@@ -192,6 +194,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
                 node.rawX = x
                 x += maxWidths[col] + gap
 
+          builder.updateSizeToContent(currentNode)
           if app.nextPossibleInputs.len == 0:
             let textColor = app.themes.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
             let continuesTextColor = app.themes.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
@@ -211,4 +214,4 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
               result.add self.previewer.get.get.createUI(builder)
 
     if sizeToContentY:
-      currentNode.h = currentNode.last.h
+      currentNode.h = currentNode.last.h + currentNode.border.top + currentNode.border.bottom

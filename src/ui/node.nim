@@ -39,10 +39,10 @@ type
     else: discard
 
   UIBorder* = object
-    left: float
-    right: float
-    top: float
-    bottom: float
+    left*: float
+    right*: float
+    top*: float
+    bottom*: float
 
   UINode* = ref UINodeObject
   UINodeObject* = object
@@ -68,6 +68,7 @@ type
     mFlagsOld: UINodeFlags
     flags: UINodeFlags
 
+    tag*: string
     mText: string
     mTextRuneLen: int
     mTextNarrow: bool
@@ -117,6 +118,8 @@ type
     charWidth*: float32
     lineHeight*: float32
     lineGap*: float32
+
+    defaultBorderWidth*: float = 0
 
     draggedNodes*: seq[UINode]
     hoveredNodes*: seq[UINode]
@@ -174,6 +177,7 @@ func backgroundColor*(node: UINode): Color {.inline.} = node.mBackgroundColor
 func borderColor*(node: UINode): Color {.inline.} = node.mBorderColor
 func textColor*(node: UINode): Color {.inline.} = node.mTextColor
 func underlineColor*(node: UINode): Color {.inline.} = node.mUnderlineColor
+func border*(node: UINode): UIBorder {.inline.} = node.mBorder
 
 func flags*(node: UINode): UINodeFlags {.inline.} = node.flags
 
@@ -720,6 +724,10 @@ proc relayout*(builder: UINodeBuilder, node: UINode) =
   builder.preLayout node
   builder.postLayout node
 
+proc relayoutChildren*(builder: UINodeBuilder, node: UINode) =
+  for _, c in node.children:
+    builder.relayout(c)
+
 proc border*(width: float): UIBorder = UIBorder(left: width, right: width, top: width, bottom: width)
 proc border*(left, right, top, bottom: float): UIBorder = UIBorder(left: left, right: right, top: top, bottom: bottom)
 
@@ -807,10 +815,6 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
       node.boundsRaw.w = node.boundsRaw.x
     else:
       node.boundsRaw.w = max(node.boundsRaw.w, ((node.parent.w - border.right) - node.x))
-
-  if node.flags.any &{SizeToContentX, SizeToContentY}:
-    for _, c in node.children:
-      builder.relayout(c)
 
   if node.parent.isNotNil:
     builder.postLayoutChild(node.parent, node)
@@ -1316,6 +1320,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
   var inUnderlineColor = genAst(): Color.none
   var inAdditionalFlags = genAst(): UINodeFlags.none
   var inBorder = genAst(): UIBorder.none
+  var inTag = genAst(): string.none
 
   for i, arg in args:
     case arg
@@ -1336,6 +1341,8 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
         inUnderlineColor = genAst(value): some(value)
       of "border":
         inBorder = genAst(value): some(value)
+      of "tag":
+        inTag = genAst(value): some(value)
       of "x":
         inX = genAst(value): some(value).maybeFlatten.mapIt(it.float32)
       of "y":
@@ -1359,9 +1366,10 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
       # echo arg.treeRepr
       error("Only <name> = <value> is allowed here.", arg)
 
-  return genAst(builder, inFlags, inText, inX, inY, inW, inH, inPivot, body, inBackgroundColor, inBorderColor, inBorder, inTextColor, inUnderlineColor, inUserId, inAdditionalFlags):
+  return genAst(builder, inFlags, inText, inX, inY, inW, inH, inPivot, body, inBackgroundColor, inBorderColor, inBorder, inTextColor, inUnderlineColor, inUserId, inAdditionalFlags, inTag):
     var userId = inUserId
     var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH, inPivot, userId, inAdditionalFlags, inBorder)
+    node.tag = inTag.get("")
 
     if inBackgroundColor.isSome: node.backgroundColor = inBackgroundColor.get
     if inBorderColor.isSome:     node.borderColor     = inBorderColor.get
@@ -1542,7 +1550,8 @@ proc dump*(node: UINode, recurse = false): string =
   if node.isNil:
     return "nil"
   # result.add fmt"Node({node.userId}, {node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}, {node.mLastClearInvalidation}, {node.mLastDrawInvalidation}, {node.id} '{node.text}', {node.flags}, ({node.bounds}), {node.boundsActual}, {node.boundsOld})"
-  result.add fmt"Node({node.id} '{node.text}', ({node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}), {node.flags}, {node.boundsAbsolute}, bounds: {node.bounds}, raw: {node.boundsRaw}, actual: {node.boundsActual}), pivot: {node.pivot}"
+  # result.add fmt"Node({node.id} '{node.text}', ({node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}), {node.flags}, {node.boundsAbsolute}, bounds: {node.bounds}, raw: {node.boundsRaw}, actual: {node.boundsActual}), pivot: {node.pivot}"
+  result.add fmt"Node({node.tag} '{node.text}', {node.flags}, {node.border}, {node.boundsAbsolute}, bounds: {node.bounds}, raw: {node.boundsRaw}, actual: {node.boundsActual})"
   if recurse and node.first.isNotNil:
     result.add ":"
     for _, c in node.children:
