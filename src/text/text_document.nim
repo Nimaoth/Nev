@@ -711,6 +711,28 @@ proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Select
     for capture in match.captures:
       result.add capture.node.getRange.toSelection
 
+proc isAtExpressionStartBasic*(self: TextDocument, location: Cursor): bool =
+  let r = self.runeAt(location)
+  debugf"isAtExpressionStartBasic {r}"
+  if r <= char.high.Rune and r.char in {')', '}', ']', '>', '\n', ' ', ',', ';'}:
+    return false
+  return true
+
+proc isAtExpressionStart*(self: TextDocument, location: Cursor): bool =
+  if self.tsTree.isNil:
+    return self.isAtExpressionStartBasic(location)
+
+  var leaf = self.tsTree.root.descendantForRange(location.toSelection.tsRange)
+  if leaf.len == 0 and location >= leaf.getRange.toSelection.first and location <= leaf.getRange.toSelection.last:
+    return self.isAtExpressionStartBasic(location)
+
+  while not leaf.isNamed and not leaf.parent.isNull():
+    leaf = leaf.parent
+    if not leaf.isNamed and location >= leaf.getRange.toSelection.first and location <= leaf.getRange.toSelection.last:
+      return self.isAtExpressionStartBasic(location)
+
+  return location == leaf.getRange.toSelection.first
+
 proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   # logScope lvlInfo, &"loadTreesitterLanguage '{self.filename}'"
 
