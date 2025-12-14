@@ -713,7 +713,6 @@ proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Select
 
 proc isAtExpressionStartBasic*(self: TextDocument, location: Cursor): bool =
   let r = self.runeAt(location)
-  debugf"isAtExpressionStartBasic {r}"
   if r <= char.high.Rune and r.char in {')', '}', ']', '>', '\n', ' ', ',', ';'}:
     return false
   return true
