@@ -1474,25 +1474,21 @@ proc stepOut*(self: Debugger) {.expose("debugger").} =
   if self.currentThread.getSome(thread) and self.client.getSome(client):
     asyncSpawn client.stepOut(thread.id)
 
-proc showDebuggerView*(self: Debugger, slot: string = "#debugger") {.expose("debugger").} =
-  # todo: reuse existing
-  self.layout.addView(DebuggerView(), slot)
-
 proc closeAllViews(self: Debugger, T: typedesc) =
   let existing = self.layout.getViews(T)
   for v in existing:
     self.layout.closeView(v, keepHidden = false, restoreHidden = false)
 
-proc toggleView(self: Debugger, T: typedesc, slot: string) =
+proc toggleView(self: Debugger, T: typedesc, slot: string, focus: bool) =
   let existing = self.layout.getViews(T)
   for v in existing:
     if self.layout.isViewVisible(v):
       self.layout.closeView(v, keepHidden = false, restoreHidden = false)
     else:
-      self.layout.showView(v, slot)
+      self.layout.showView(v, slot, focus = focus)
 
   if existing.len == 0:
-    self.layout.addView(T(), slot)
+    self.layout.addView(T(), slot, focus = focus)
 
 proc closeDebuggerViews*(self: Debugger) {.expose("debugger").} =
   self.closeAllViews(ThreadsView)
@@ -1516,55 +1512,55 @@ proc closeDebuggerOutput*(self: Debugger) {.expose("debugger").} =
 proc closeDebuggerToolbar*(self: Debugger) {.expose("debugger").} =
   self.closeAllViews(ToolbarView)
 
-proc showDebuggerThreads*(self: Debugger, slot: string = "#debugger-threads") {.expose("debugger").} =
+proc showDebuggerThreads*(self: Debugger, focus: bool = true, slot: string = "#debugger-threads") {.expose("debugger").} =
   let existing = self.layout.getViews(ThreadsView)
   if existing.len > 0:
-    self.layout.showView(existing[0], slot)
+    self.layout.showView(existing[0], slot, focus = focus)
   else:
-    self.layout.addView(ThreadsView(), slot)
+    self.layout.addView(ThreadsView(), slot, focus = focus)
 
-proc showDebuggerStacktrace*(self: Debugger, slot: string = "#debugger-stacktrace") {.expose("debugger").} =
+proc showDebuggerStacktrace*(self: Debugger, focus: bool = true, slot: string = "#debugger-stacktrace") {.expose("debugger").} =
   let existing = self.layout.getViews(StacktraceView)
   if existing.len > 0:
-    self.layout.showView(existing[0], slot)
+    self.layout.showView(existing[0], slot, focus = focus)
   else:
-    self.layout.addView(StacktraceView(), slot)
+    self.layout.addView(StacktraceView(), slot, focus = focus)
 
-proc showDebuggerVariables*(self: Debugger, slot: string = "#debugger-variables") {.expose("debugger").} =
+proc showDebuggerVariables*(self: Debugger, focus: bool = true, slot: string = "#debugger-variables") {.expose("debugger").} =
   let existing = self.layout.getViews(VariablesView)
   if existing.len > 0:
-    self.layout.showView(existing[0], slot)
+    self.layout.showView(existing[0], slot, focus = focus)
   else:
-    self.layout.addView(VariablesView(), slot)
+    self.layout.addView(VariablesView(), slot, focus = focus)
 
-proc showDebuggerOutput*(self: Debugger, slot: string = "#debugger-output") {.expose("debugger").} =
+proc showDebuggerOutput*(self: Debugger, focus: bool = true, slot: string = "#debugger-output") {.expose("debugger").} =
   let existing = self.layout.getViews(OutputView)
   if existing.len > 0:
-    self.layout.showView(existing[0], slot)
+    self.layout.showView(existing[0], slot, focus = focus)
   else:
-    self.layout.addView(OutputView(), slot)
+    self.layout.addView(OutputView(), slot, focus = focus)
 
-proc showDebuggerToolbar*(self: Debugger, slot: string = "#debugger-toolbar") {.expose("debugger").} =
+proc showDebuggerToolbar*(self: Debugger, focus: bool = true, slot: string = "#debugger-toolbar") {.expose("debugger").} =
   let existing = self.layout.getViews(ToolbarView)
   if existing.len > 0:
-    self.layout.showView(existing[0], slot)
+    self.layout.showView(existing[0], slot, focus = focus)
   else:
-    self.layout.addView(ToolbarView(), slot)
+    self.layout.addView(ToolbarView(), slot, focus = focus)
 
-proc toggleDebuggerThreads*(self: Debugger, slot: string = "#debugger-threads") {.expose("debugger").} =
-  self.toggleView(ThreadsView, slot)
+proc toggleDebuggerThreads*(self: Debugger, focus: bool = true, slot: string = "#debugger-threads") {.expose("debugger").} =
+  self.toggleView(ThreadsView, slot, focus)
 
-proc toggleDebuggerStacktrace*(self: Debugger, slot: string = "#debugger-stacktrace") {.expose("debugger").} =
-  self.toggleView(StacktraceView, slot)
+proc toggleDebuggerStacktrace*(self: Debugger, focus: bool = true, slot: string = "#debugger-stacktrace") {.expose("debugger").} =
+  self.toggleView(StacktraceView, slot, focus)
 
-proc toggleDebuggerVariables*(self: Debugger, slot: string = "#debugger-variables") {.expose("debugger").} =
-  self.toggleView(VariablesView, slot)
+proc toggleDebuggerVariables*(self: Debugger, focus: bool = true, slot: string = "#debugger-variables") {.expose("debugger").} =
+  self.toggleView(VariablesView, slot, focus)
 
-proc toggleDebuggerOutput*(self: Debugger, slot: string = "#debugger-output") {.expose("debugger").} =
-  self.toggleView(OutputView, slot)
+proc toggleDebuggerOutput*(self: Debugger, focus: bool = true, slot: string = "#debugger-output") {.expose("debugger").} =
+  self.toggleView(OutputView, slot, focus)
 
-proc toggleDebuggerToolbar*(self: Debugger, slot: string = "#debugger-toolbar") {.expose("debugger").} =
-  self.toggleView(ToolbarView, slot)
+proc toggleDebuggerToolbar*(self: Debugger, focus: bool = true, slot: string = "#debugger-toolbar") {.expose("debugger").} =
+  self.toggleView(ToolbarView, slot, focus)
 
 genDispatcher("debugger")
 addGlobalDispatchTable "debugger", genDispatchTable("debugger")
