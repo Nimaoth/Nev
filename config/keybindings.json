@@ -135,6 +135,14 @@
         "<LEADER>f": { "description": "File" },
 
           // addCommandBlockDesc "editor", "<LEADER>log", "Show log file": logs(slot = "#default", focus = false, scrollToBottom = true)
+
+        "<F9>": ["toggle-breakpoint"],
+        "<F10>": ["step-over"],
+        "<F11>": ["step-into"],
+        "<F8>": ["step-out"],
+        "<F5>": ["continue-execution"],
+        "<S-F12>": ["toggle-debugger-output", false],
+        "<F12>": ["all", ["toggle-debugger-toolbar", false], ["toggle-debugger-threads", false], ["toggle-debugger-stacktrace", false], ["toggle-debugger-variables", false]],
     },
 
     "editor.text.completion": {
