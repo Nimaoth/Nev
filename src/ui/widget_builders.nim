@@ -316,6 +316,12 @@ method createUI*(self: CenterLayout, builder: UINodeBuilder): seq[OverlayFunctio
       let bounds = rect(xy, xwyh - xy)
       builder.panel(&{FillBackground}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = color(0, 0, 0))
 
+proc flushOverlays(builder: UINodeBuilder, overlays: var seq[OverlayFunction]) =
+  for overlay in overlays:
+    overlay()
+    builder.panel(&{FlushBorders})
+  overlays.setLen(0)
+
 proc updateWidgetTree*(self: App, frameIndex: int) =
   self.platform.builder.theme = self.themes.theme
 
@@ -341,6 +347,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     self.preRender(currentNode.bounds)
 
     var overlays: seq[OverlayFunction]
+    var commandLineOverlays: seq[OverlayFunction]
     var mainBounds: Rect
 
     builder.panel(&{FillX, FillY, LayoutVerticalReverse, DrawChildrenReverse}): # main panel
@@ -403,7 +410,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           builder.pushMaxBounds(rootBounds.wh * vec2(0.75, 0.5))
           defer:
             builder.popMaxBounds()
-          overlays.add self.commands.commandLineEditor.createUI(builder)
+          commandLineOverlays.add self.commands.commandLineEditor.createUI(builder)
 
       builder.panel(&{FlushBorders})
 
@@ -424,11 +431,13 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           overlays.add self.layout.layout.createUI(builder)
 
     builder.panel(&{FlushBorders})
+    builder.flushOverlays(overlays)
 
     # popups
     for i, popup in self.layout.popups:
       overlays.add popup.createUI(builder)
       builder.panel(&{FlushBorders})
+      builder.flushOverlays(overlays)
 
     let borderColor = builder.theme.color("panel.border", color(0, 0, 0))
     let textColor = self.themes.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
@@ -471,9 +480,8 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
     builder.panel(&{FlushBorders})
 
-    for overlay in overlays:
-      overlay()
-      builder.panel(&{FlushBorders})
+    builder.flushOverlays(overlays)
+    builder.flushOverlays(commandLineOverlays)
 
     if self.showNextPossibleInputs:
       let inputLines = self.uiSettings.whichKeyHeight.get()
