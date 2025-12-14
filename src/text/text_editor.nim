@@ -219,6 +219,9 @@ declareSettings TextEditorSettings, "text":
   ## Trigger signature help when editing inside an argument list, as defined by 'signature-help-move'
   declare signatureHelpTriggerOnEditInArgs, bool, true
 
+  ## Automatically insert closing parenthesis, braces, brackets and quotes.
+  declare autoInsertClose, bool, true
+
 type
   CodeActionKind {.pure.} = enum Command, CodeAction
   CodeActionOrCommand = object
@@ -305,6 +308,10 @@ type TextDocumentEditor* = ref object of DocumentEditor
   blinkCursor: bool = true
   blinkCursorTask: DelayedTask
   updateMatchingWordsTask: DelayedTask
+
+  # auto insert closing parens
+  lastAutoCloseText: string
+  lastAutoCloseLocations: seq[Anchor]
 
   # hover
   showHoverTask: DelayedTask    # for showing hover info after a delay
@@ -1861,7 +1868,7 @@ proc autoShowCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   else:
     self.hideCompletions()
 
-proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true) {.expose("editor.text").} =
+proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true, autoClose: Option[bool] = bool.none) {.expose("editor.text").} =
   if self.document.singleLine and text == "\n":
     return
 
@@ -1869,6 +1876,19 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
   var selections = originalSelections
 
   var texts = @[text]
+
+  var insertedExistingAutoClose = false
+  if text.len > 0 and text == self.lastAutoCloseText and self.lastAutoCloseLocations.len > 0:
+    var locations = initHashSet[Cursor]()
+    for anchor in self.lastAutoCloseLocations:
+      let cursor = anchor.summaryOpt(Point, self.document.buffer.snapshot)
+      if cursor.isSome:
+        locations.incl cursor.get.toCursor
+
+    for s in selections.mitems:
+      if s.isEmpty and s.last in locations and self.document.runeAt(s.last) == text.runeAt(0):
+        s.last.column += 1
+        insertedExistingAutoClose = true
 
   var allWhitespace = false
   if text == "\n":
@@ -1939,7 +1959,35 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
       texts.add indent & text
       s.first.column = 0
 
+  var insertedAutoClose = false
+  if not insertedExistingAutoClose and autoClose.get(self.settings.autoInsertClose.get()):
+    case text
+    of "(", "{", "[", "\"", "'", "<":
+      let close = case text
+      of "(": ")"
+      of "{": "}"
+      of "[": "]"
+      of "\"": "\""
+      of "'": "'"
+      of "<": ">"
+      else:
+        "?"
+
+      for t in texts.mitems:
+        t.add close
+      insertedAutoClose = true
+      self.lastAutoCloseText = close
+    else:
+      discard
+
   selections = self.document.edit(selections, selections, texts).mapIt(it.last.toSelection)
+
+  if insertedAutoClose:
+    self.lastAutoCloseLocations.setLen(0)
+    for s in selections.mitems:
+      s.first.column = s.first.column - 1
+      s.last.column = s.last.column - 1
+      self.lastAutoCloseLocations.add self.document.buffer.snapshot.anchorAfter(s.last.toPoint)
 
   if allWhitespace:
     for i in 0..min(self.selections.high, originalSelections.high):
