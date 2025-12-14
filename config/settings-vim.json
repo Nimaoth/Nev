@@ -15,7 +15,7 @@
     "lang.selector-popup-search-bar.text.modes": ["vim"],
     "lang.selector-popup-search-bar.text.default-mode": "vim.insert",
 
-    "input": {
+    "+input": {
         "editor.text.handle-inputs": true,
         "vim.insert.handle-inputs": true,
         "vim.replace.handle-inputs": true,
