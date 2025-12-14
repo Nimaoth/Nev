@@ -577,8 +577,9 @@ proc pushPopup*(self: LayoutService, popup: Popup) =
 
 proc popPopup*(self: LayoutService, popup: Popup = nil) =
   if self.popups.len > 0 and (popup == nil or self.popups[self.popups.high] == popup):
-    self.popups[self.popups.high].deinit()
-    discard self.popups.pop()
+    let popup = self.popups.pop()
+    popup.cancel()
+    popup.deinit()
   self.platform.requestRender()
 
 proc pushSelectorPopup*(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup =
