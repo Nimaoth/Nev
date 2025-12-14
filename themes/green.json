@@ -6,8 +6,10 @@
     "colors": {
         "list.activeSelectionBackground": "#2D4545",
         "editor.foreground": "#ABB2BF",
+        "editor.foreground.highlight": "#ABF2BF",
         "editor.background": "#0F1919",
         "panel.background": "#152323",
+        "panel.border": "#153323",
         "selection.background": "#49696966",
         "matching-text-highlight": "#79494956",
         "editor.findMatchBackground": "#89895966",

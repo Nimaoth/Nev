@@ -6,6 +6,8 @@
     "colors": {
         "list.activeSelectionBackground": "#3c3836",
         "editor.foreground": "#ebdbb2",
+        "editor.foreground.fade1": "#cbbb92",
+        "editor.foreground.fade2": "#ab9b72",
         "editor.foreground.highlight": "#fb4934",
         "editor.background": "#282828",
         "panel.background": "#32302f",
