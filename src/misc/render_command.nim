@@ -13,6 +13,7 @@ defineBitFlagSized(uint64):
     FillY
     DrawBorder
     DrawBorderTerminal
+    FlushBorders
     FillBackground
     LogLayout
     AllowAlpha
@@ -46,6 +47,7 @@ defineBitFlagSized(uint64):
     CursorBar
     CursorUnderline
     CursorBlinking
+    DrawChildrenReverse
 
 type
   RenderCommandKind* {.pure.} = enum

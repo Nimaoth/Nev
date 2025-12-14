@@ -933,12 +933,15 @@ type BoxBuffer* = ref object
   height: Natural
   buf: seq[BoxChar]
 
+proc resize*(bb: var BoxBuffer, width, height: Natural) =
+  bb.width = width
+  bb.height = height
+  bb.buf.newSeq(width * height)
+
 proc newBoxBuffer*(width, height: Natural): BoxBuffer =
   ## Creates a new box buffer of a fixed `width` and `height`.
   result = new BoxBuffer
-  result.width = width
-  result.height = height
-  newSeq(result.buf, width * height)
+  result.resize(width, height)
 
 func width*(bb: BoxBuffer): Natural =
   ## Returns the width of the box buffer.
@@ -955,6 +958,18 @@ proc `[]=`(bb: var BoxBuffer, x, y: Natural, c: BoxChar) =
 func `[]`(bb: BoxBuffer, x, y: Natural): BoxChar =
   if x < bb.width and y < bb.height:
     result = bb.buf[bb.width * y + x]
+
+proc clear*(bb: var BoxBuffer, x1, y1, x2, y2: int) =
+  if x1 < bb.width and y1 < bb.height:
+    let
+      xs = clamp(x1, 0, bb.width-1)
+      ys = clamp(y1, 0, bb.width-1)
+      xe = clamp(x2, 0, bb.width-1)
+      ye = clamp(y2, 0, bb.height-1)
+
+    for y in ys..ye:
+      for x in xs..xe:
+        bb[x, y] = 0
 
 proc copyFrom*(bb: var BoxBuffer,
                src: BoxBuffer, srcX, srcY, width, height: Natural,
@@ -1092,7 +1107,7 @@ proc drawRect*(bb: var BoxBuffer, x1, y1, x2, y2: int,
     bb[x2,y2] = c
 
 
-proc write*(tb: var TerminalBuffer, bb: var BoxBuffer) =
+proc write*(tb: var TerminalBuffer, bb: var BoxBuffer, writeStyle: bool = true) =
   ## Writes the contents of the box buffer into this terminal buffer with
   ## the current text attributes.
   let width = min(tb.width, bb.width)
@@ -1118,12 +1133,17 @@ proc write*(tb: var TerminalBuffer, bb: var BoxBuffer) =
           horizBoxCharCount = 0
           forceWrite = false
 
-        var c = TerminalChar(ch: toUTF8String(boxChar).runeAt(0),
-                             fg: tb.currFg, bg: tb[x, y].bg,
-                             fgColor: tb.currFgColor, bgColor: tb[x, y].bgColor,
-                             style: tb.currStyle, forceWrite: forceWrite)
-        tb[x,y] = c
-
+        if writeStyle:
+          var c = TerminalChar(ch: toUTF8String(boxChar).runeAt(0),
+                               fg: tb.currFg, bg: tb[x, y].bg,
+                               fgColor: tb.currFgColor, bgColor: tb[x, y].bgColor,
+                               style: tb.currStyle, forceWrite: forceWrite)
+          tb[x,y] = c
+        else:
+          var c = tb[x, y]
+          c.ch = toUTF8String(boxChar).runeAt(0)
+          c.forceWrite = c.forceWrite or forceWrite
+          tb[x,y] = c
 
 type
   TerminalCmd* = enum  ## commands that can be expressed as arguments

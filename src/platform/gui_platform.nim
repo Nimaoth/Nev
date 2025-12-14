@@ -102,6 +102,7 @@ method init*(self: GuiPlatform, options: AppOptions) =
 
     self.builder = newNodeBuilder()
     self.builder.useInvalidation = true
+    self.builder.defaultBorderWidth = 5
 
     if options.monitor.getSome(index):
       when defined(windows):
@@ -527,6 +528,15 @@ proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1, off
   except GLerror, Exception:
     discard
 
+proc drawBorder*(boxy: Boxy, bounds: Rect, color: Color, border: UIBorder) =
+  try:
+    boxy.drawRect(rect(bounds.x, bounds.y, border.left, bounds.h), color)
+    boxy.drawRect(rect(bounds.x, bounds.y, bounds.w, border.top), color)
+    boxy.drawRect(rect(bounds.xw - border.right, bounds.y, border.right, bounds.h), color)
+    boxy.drawRect(rect(bounds.x, bounds.yh - border.bottom, bounds.w, border.bottom), color)
+  except GLerror, Exception:
+    discard
+
 proc randomColor(node: UINode, a: float32): Color =
   let h = node.id.hash
   result.r = (((h shr 0) and 0xff).float32 / 255.0).sqrt
@@ -636,6 +646,7 @@ method render*(self: GuiPlatform, rerender: bool) =
 
           if DrawBorder in node.flags:
             self.boxy.strokeRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), color(c.r, c.g, c.b, 0.5), 5, offset = 0.5)
+
 
       # End this frame, flushing the draw commands. Draw to framebuffer.
       self.boxy.endFrame()
@@ -876,7 +887,8 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
       builder.drawNode(platform, c, nodePos, force)
 
     if DrawBorder in node.flags:
-      platform.boxy.strokeRect(bounds, node.borderColor)
+      if node.border != UIBorder():
+        platform.boxy.drawBorder(bounds, node.borderColor, node.border)
 
     var maskBounds: seq[Rect]
     for list in node.renderCommandList:

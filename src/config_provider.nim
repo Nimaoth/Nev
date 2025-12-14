@@ -1066,6 +1066,9 @@ declareSettings UiSettings, "ui":
   ## How long toasts are displayed for, in milliseconds.
   declare toastDuration, int, 8000
 
+  ## Animate toast positions
+  declare toastAnimation, bool, true
+
   # Defines the way views are layed out.
   # declare layout, JsonNodeEx, newJexObject()
 
