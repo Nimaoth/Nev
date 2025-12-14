@@ -147,3 +147,36 @@ proc nextRuneStart*(s: string, offset: Natural): Natural =
 
 proc runeSize*(s: string, offset: Natural): Natural =
   return s.toOA.runeSize(offset)
+
+proc getMatchingGroupChar*(text: string): string =
+  return case text
+  of "(": ")"
+  of "{": "}"
+  of "[": "]"
+  of "\"": "\""
+  of "'": "'"
+  of "<": ">"
+  else:
+    text
+
+proc getMatchingGroupChar*(c: char): char =
+  return case c
+  of '(': ')'
+  of '{': '}'
+  of '[': ']'
+  of '"': '"'
+  of '\'': '\''
+  of '<': '>'
+  else:
+    c
+
+proc getMatchingGroupChar*(c: Rune): Rune =
+  return case c
+  of '('.Rune: ')'.Rune
+  of '{'.Rune: '}'.Rune
+  of '['.Rune: ']'.Rune
+  of '"'.Rune: '"'.Rune
+  of '\''.Rune: '\''.Rune
+  of '<'.Rune: '>'.Rune
+  else:
+    c

@@ -1874,23 +1874,27 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
 
   let originalSelections = self.selections.normalized
   var selections = originalSelections
+  var resultSelectionsRelative = newSeq[Cursor]()
+  for i in 0..<selections.len:
+    resultSelectionsRelative.add TextSummary.init(text).lines.toCursor
 
   var texts = @[text]
 
+  var locations = initHashSet[Cursor]()
+  for anchor in self.lastAutoCloseLocations:
+    let cursor = anchor.summaryOpt(Point, self.document.buffer.snapshot)
+    if cursor.isSome:
+      locations.incl cursor.get.toCursor
+
   var insertedExistingAutoClose = false
   if text.len > 0 and text == self.lastAutoCloseText and self.lastAutoCloseLocations.len > 0:
-    var locations = initHashSet[Cursor]()
-    for anchor in self.lastAutoCloseLocations:
-      let cursor = anchor.summaryOpt(Point, self.document.buffer.snapshot)
-      if cursor.isSome:
-        locations.incl cursor.get.toCursor
-
     for s in selections.mitems:
       if s.isEmpty and s.last in locations and self.document.runeAt(s.last) == text.runeAt(0):
         s.last.column += 1
         insertedExistingAutoClose = true
 
   var allWhitespace = false
+  var insertedAutoIndent = false
   if text == "\n":
     allWhitespace = true
     for selection in selections:
@@ -1911,12 +1915,31 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
         s.last = s.first
 
     elif autoIndent:
+      insertedAutoIndent = true
       texts.setLen(selections.len)
+
+      let matchingClosingGroupText = getMatchingGroupChar(text)
+
       for i, selection in selections:
+        var indentClosing = false
+        if selection.first.column > 0:
+          let runeLeft = self.document.runeAt (selection.first.line, selection.first.column - 1)
+          let runeRight = self.document.runeAt selection.last
+
+          if runeLeft.getMatchingGroupChar() == runeRight:
+            indentClosing = true
+
         # todo: don't use getLine
         let line = $self.document.getLine(selection.last.line)
         let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, self.document.settings.indent.get(), self.document.settings.tabWidth.get(), selection.last.column)
-        texts[i] = "\n" & indent
+        if indent.len > 0:
+          texts[i].add indent
+          resultSelectionsRelative[i].column += indent.len
+
+          if indentClosing:
+            let indent2 = indentForNewLine(self.document.settings.indentAfter.get(), line, self.document.settings.indent.get(), self.document.settings.tabWidth.get(), selection.last.column, -1)
+            texts[i].add "\n"
+            texts[i].add indent2
 
   elif autoIndent and (text == "}" or text == ")" or text == "]"):
     # Adjust indent of closing paren by searching for the matching opening paren
@@ -1973,21 +1996,32 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
       else:
         "?"
 
-      for t in texts.mitems:
-        t.add close
-      insertedAutoClose = true
-      self.lastAutoCloseText = close
+      var isAtExpressionStart = false
+      for s in selections:
+        if self.document.isAtExpressionStart(s.last):
+          isAtExpressionStart = true
+          break
+
+      if not isAtExpressionStart:
+        for t in texts.mitems:
+          t.add close
+        insertedAutoClose = true
+        self.lastAutoCloseText = close
     else:
       discard
 
-  selections = self.document.edit(selections, selections, texts).mapIt(it.last.toSelection)
+  var newSelections = self.document.edit(selections, selections, texts)
+  selections = newSelections.mapIt(it.last.toSelection)
+
+  for i in 0..newSelections.high:
+    if i < resultSelectionsRelative.len:
+      selections[i].last = (newSelections[i].first.toPoint + resultSelectionsRelative[i].toPoint).toCursor
+      selections[i].first = selections[i].last
 
   if insertedAutoClose:
     self.lastAutoCloseLocations.setLen(0)
-    for s in selections.mitems:
-      s.first.column = s.first.column - 1
-      s.last.column = s.last.column - 1
-      self.lastAutoCloseLocations.add self.document.buffer.snapshot.anchorAfter(s.last.toPoint)
+    for s in newSelections.items:
+      self.lastAutoCloseLocations.add self.document.buffer.snapshot.anchorAfter(point(s.last.line, s.last.column - 1))
 
   if allWhitespace:
     for i in 0..min(self.selections.high, originalSelections.high):
