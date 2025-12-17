@@ -8,6 +8,7 @@ import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, config_provider, service, vfs, vfs_service, language_server_list
 import syntax_map
 import pkg/[chroma, results]
+import vcs/vcs, layout
 
 import diff
 
@@ -979,7 +980,9 @@ proc autoDetectIndentStyle(self: TextDocument) =
       containsTab = true
       break
     if c.currentRune == ' '.Rune:
-      minIndent = min(minIndent, self.rope.indentBytes(linePos.row.int))
+      let lineIndent = self.rope.indentBytes(linePos.row.int)
+      if lineIndent in {2, 4, 8}:
+        minIndent = min(minIndent, lineIndent)
       containsTab = false
       inc samples
       if samples == maxSamples:
