@@ -882,6 +882,26 @@ method deinit*(self: TextDocument) =
 method `$`*(self: TextDocument): string =
   return self.filename
 
+proc addFileVcsAsync*(self: TextDocument, prompt: bool = true) {.async.} =
+  let path = self.localizedPath
+  let vcsService = self.services.getService(VCSService).get
+  let vcs = vcsService.getVcsForFile(path).getOr:
+    return
+
+  if prompt:
+    let layoutService = self.services.getService(LayoutService).get
+    let text = await layoutService.prompt(@["Yes", "No"], "VCS: Add " & path)
+    if not self.isInitialized:
+      return
+    if text.isSome and text.get != "Yes":
+      return
+
+  let res = await vcs.addFile(path)
+  if not self.isInitialized:
+    return
+
+  log lvlInfo, &"Add result: {res}"
+
 proc saveAsync*(self: TextDocument) {.async.} =
   try:
     log lvlInfo, &"[save] '{self.filename}'"
@@ -903,6 +923,10 @@ proc saveAsync*(self: TextDocument) {.async.} =
     else:
       log lvlWarn, &"Don't trim whitespace"
 
+    var newFile = false
+    if self.vfs.getFileKind(self.filename).await.isNone:
+      newFile = true
+
     await self.vfs.write(self.filename, self.rope.slice())
 
     if not self.isInitialized:
@@ -914,6 +938,10 @@ proc saveAsync*(self: TextDocument) {.async.} =
 
     if self.settings.formatter.onSave.get():
       asyncSpawn self.format(runOnTempFile = false)
+
+    if newFile:
+      asyncSpawn self.addFileVcsAsync();
+
   except IOError as e:
     log lvlError, &"Failed to save file '{self.filename}': {e.msg}"
 
