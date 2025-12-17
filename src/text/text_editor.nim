@@ -2002,7 +2002,14 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
           isAtExpressionStart = true
           break
 
-      if not isAtExpressionStart:
+      var isAfterSpace = false
+      if text == "<":
+        for s in selections:
+          if s.last.column > 0 and self.document.runeAt((s.last.line, s.last.column - 1)) == ' '.Rune:
+            isAfterSpace = true
+            break
+
+      if not isAtExpressionStart and not isAfterSpace:
         for t in texts.mitems:
           t.add close
         insertedAutoClose = true
