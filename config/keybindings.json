@@ -138,7 +138,7 @@
 
         "<F9>": ["toggle-breakpoint"],
         "<F10>": ["step-over"],
-        "<F11>": ["step-into"],
+        "<F11>": ["step-in"],
         "<F8>": ["step-out"],
         "<F5>": ["continue-execution"],
         "<S-F12>": ["toggle-debugger-output", false],
