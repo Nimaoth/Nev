@@ -1312,7 +1312,8 @@ type Process* = ProcessResource
 when enableDynamicPluginApi:
   import plugin_api_dynamic
 
-  method dispatchDynamic*(self: PluginApi, name: string, args: LispVal, namedArgs: LispVal): LispVal =
+method dispatchDynamic*(self: PluginApi, name: string, args: LispVal, namedArgs: LispVal): LispVal =
+  when enableDynamicPluginApi:
     try:
       if args != nil and args.kind notin {LispValKind.List, Array}:
         raise newException(ValueError, &"'args' must be nil or a list/array")
@@ -1322,3 +1323,5 @@ when enableDynamicPluginApi:
     except CatchableError as e:
       log lvlError, &"Failed to dispatchDynamic '{name}' {args}: {e.msg}"
       return newNil()
+  else:
+    log lvlWarn, &"Dynamic plugin API not enabled in this build (trying to run command {name})"

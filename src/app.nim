@@ -465,6 +465,9 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
               let description = command.fields.getOrDefault("description", newJexString("")).getStr
               self.events.addCommandDescription(context, keys, description)
 
+          elif command.kind == JLispVal:
+            self.addCommandScript(context, "", keys, $command.lval, "", "", source = loc)
+
           else:
             log lvlError, &"Invalid command in keybinding settings '{filename}:{loc.line}{loc.column}': Expected string | array | object for '{context}.{keys}'"
         except CatchableError:
@@ -2711,13 +2714,17 @@ proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
     self.config.runtime.setSettings(newJexObject())
   asyncSpawn self.reloadConfigAsync()
 
-proc reloadPlugin*(self: App) {.expose("editor").} =
-  log lvlInfo, &"Reload current plugin"
-  # todo: delete
-
 proc reloadTheme*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload theme"
   asyncSpawn self.setTheme(self.themes.theme.path, force = true)
+
+proc currentFilePath*(self: App): string {.expose("editor").} =
+  if self.layout.tryGetCurrentEditorView().getSome(view) and view.editor != nil and view.editor.getDocument() != nil:
+    return view.editor.getDocument().filename
+
+proc currentLocalFilePath*(self: App): string {.expose("editor").} =
+  if self.layout.tryGetCurrentEditorView().getSome(view) and view.editor != nil and view.editor.getDocument() != nil:
+    return view.editor.getDocument().localizedPath()
 
 proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
