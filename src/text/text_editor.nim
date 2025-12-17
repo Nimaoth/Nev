@@ -1931,15 +1931,17 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
 
         # todo: don't use getLine
         let line = $self.document.getLine(selection.last.line)
-        let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, self.document.settings.indent.get(), self.document.settings.tabWidth.get(), selection.last.column)
+        let indentStyle = self.document.settings.indent.get()
+        let indentWidth = self.document.settings.tabWidth.get()
+        let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, indentStyle, indentWidth, selection.last.column)
         if indent.len > 0:
           texts[i].add indent
           resultSelectionsRelative[i].column += indent.len
 
           if indentClosing:
-            let indent2 = indentForNewLine(self.document.settings.indentAfter.get(), line, self.document.settings.indent.get(), self.document.settings.tabWidth.get(), selection.last.column, -1)
+            var indentLevel = indentLevelForLine(line, indentWidth)
             texts[i].add "\n"
-            texts[i].add indent2
+            texts[i].add getIndentString(indentStyle, indentWidth).repeat(indentLevel)
 
   elif autoIndent and (text == "}" or text == ")" or text == "]"):
     # Adjust indent of closing paren by searching for the matching opening paren
