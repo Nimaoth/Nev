@@ -562,14 +562,14 @@ proc extendJson*(a: var JsonNodeEx, b: JsonNodeEx) =
     a = b
     return
 
-  if (a.kind, b.kind) == (JObject, JObject):
+  if (a.kind, b.kind) == (jsonex.JObject, jsonex.JObject):
     for (key, value) in b.fields.pairs:
       if a.hasKey(key):
         a.fields[key].extendJson(value)
       else:
         a[key] = value
 
-  elif (a.kind, b.kind) == (JArray, JArray):
+  elif (a.kind, b.kind) == (jsonex.JArray, jsonex.JArray):
     for value in b.elems:
       a.elems.add value
 
@@ -654,7 +654,7 @@ proc set*[T](self: ConfigStore, key: string, value: T) =
       if i == -1:
         i = key.len
 
-    if node.kind != JObject:
+    if node.kind != jsonex.JObject:
       log lvlError, &"Failed to change setting '{key}', '{key[0..<prevI]}' is not an object:\n{node}"
       return
 
@@ -681,7 +681,7 @@ proc getImpl(self: ConfigStore, key: string): JsonNodeEx =
   var res = self.settings
   var extend = res.extend
   for keyRaw in key.splitOpenArray('.'):
-    if isNil(res) or res.kind != JObject:
+    if isNil(res) or res.kind != jsonex.JObject:
       res = nil
       break
     res = res.fields.getOrDefault(keyRaw.p.toOpenArray(0, keyRaw.len - 1))
@@ -820,7 +820,7 @@ proc getAllConfigKeys*(node: JsonNodeEx, prefix: string, res: var seq[tuple[key:
     return
 
   case node.kind
-  of JObject:
+  of jsonex.JObject:
     if prefix.len > 0:
       res.add (prefix, node)
     for key, value in node.fields.pairs:

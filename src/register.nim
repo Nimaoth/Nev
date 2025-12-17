@@ -126,6 +126,8 @@ static:
   addInjector(Registers, getRegisters)
 
 proc setRegisterText*(self: Registers, text: string, register: string = "") {.expose("registers").} =
+  if register.len == 0:
+    setSystemClipboardText(text)
   self.registers[register] = Register(kind: RegisterKind.Text, text: text)
 
 proc getRegisterText*(self: Registers, register: string): string {.expose("registers").} =
