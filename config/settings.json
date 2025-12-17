@@ -58,6 +58,7 @@
         "\\..lisp$": "lisp",
         "\\..talon$": "talon",
         "\\..lua$": "lua",
+        "\\..gleam$": "gleam",
         "\\..log$": "log",
         "\\..shell-command-results$": "shell-command-results",
         "\\..selector-popup-search-bar$": "selector-popup-search-bar",
@@ -100,6 +101,11 @@
                 "UnrealAngelscript": {
                 }
             }
+        },
+
+        "gleam-lsp": {
+            "languages": ["gleam"],
+            "command": ["gleam", "lsp"],
         },
 
         "zls": {
@@ -201,6 +207,16 @@
     "lsp-merge.timeout": 10000,
 
     "+lang": {
+        "gleam": {
+            "+text": {
+                "treesitter.repository": "gleam-lang/tree-sitter-gleam",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    "="
+                ]
+            }
+        },
         "command-line": {
             "editor.save-in-session": false,
             "+text": {

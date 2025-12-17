@@ -234,6 +234,9 @@ proc getOrCreateLanguageServerLSP*(self: LanguageServerLspService, name: string)
       return LanguageServerLSP.none
 
     let command = config["command"].jsonTo(seq[string])
+    if command.len == 0:
+      log lvlError, &"Empty command in config for language server '{name}'"
+      return LanguageServerLSP.none
 
     let initializationOptionsName = config.fields.getOrDefault("initialization-options-name", newJexNull()).jsonTo(string).catch("settings")
     let userOptions = config.fields.getOrDefault(initializationOptionsName, newJexNull()).toJson
@@ -241,7 +244,11 @@ proc getOrCreateLanguageServerLSP*(self: LanguageServerLspService, name: string)
     let workspaceInfo = self.workspace.info.some
     let killOnExit = config.fields.getOrDefault("kill-on-exit", newJexBool(true)).jsonTo(bool).catch(true)
 
-    let (exePath, args) = (command[0], command[1..^1])
+    let exePath = command[0]
+    var args = newSeq[string]()
+    if command.len > 1:
+      args = command[1..^1]
+
     let workspaces = @[self.workspace.getWorkspacePath()]
     var client = newLSPClient(workspaceInfo, userOptions, exePath, workspaces, args, killOnExit)
     client.name = name
@@ -288,6 +295,7 @@ proc getOrCreateLanguageServerLSP*(self: LanguageServerLspService, name: string)
       self.languageServers.del(name)
       return LanguageServerLSP.none
   except:
+    log lvlError, &"Failed to create language server '{name}': {getCurrentExceptionMsg()}"
     return LanguageServerLSP.none
 
 proc toVfsPath*(self: LanguageServerLSP, lspPath: string): string =
