@@ -2738,6 +2738,9 @@ proc checkoutFileAsync*(self: TextDocumentEditor, saveAfterwards: bool = false) 
 proc checkoutFile*(self: TextDocumentEditor, saveAfterwards: bool = false) {.expose("editor.text").} =
   asyncSpawn self.checkoutFileAsync(saveAfterwards)
 
+proc addFileVcs*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncSpawn self.document.addFileVcsAsync(prompt = false)
+
 # todo
 proc addNextFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true,
     wrap: bool = true) {.expose("editor.text").} =
