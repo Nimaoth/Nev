@@ -1627,15 +1627,15 @@ proc findVariable(self: Debugger, filter: string, vr: VariablesReference, cursor
   if key in self.variables:
     let variables {.cursor.} = self.variables[key]
     for i, v in variables.variables:
+      var cursor2 = cursor
+      cursor2.path.add((i, vr))
       if v.name.contains(filter):
-        var cursor2 = cursor
-        cursor2.path.add((i, vr))
         self.filteredVariables.incl (i, vr)
         self.filteredCursors.add cursor2
         self.platform.requestRender()
 
-        let key2 = (thread.get.id, frame.get.id, v.variablesReference)
-        await self.findVariable(filter, v.variablesReference, cursor2, filterVersion)
+      let key2 = (thread.get.id, frame.get.id, v.variablesReference)
+      await self.findVariable(filter, v.variablesReference, cursor2, filterVersion)
 
 proc findVariable(self: Debugger, filter: string) {.async.} =
   let scopes = self.currentScopes()
