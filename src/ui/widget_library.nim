@@ -13,6 +13,9 @@ logCategory "wigdet-library"
 
 type GridAlignment* {.pure.} = enum Left, Center, Right
 
+proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: openArray[int],
+    color: Color, highlightColor: Color, maxWidth: int = int.high): UINode
+
 proc alignGrid*(rows: seq[seq[UINode]], gap: float, columnAlignments: openArray[GridAlignment]) =
   # Align grid
   var maxWidths: seq[float] = @[]
@@ -48,8 +51,12 @@ proc alignGrid*(root: UINode, gap: float, columnAlignments: openArray[GridAlignm
   alignGrid(rows, gap, columnAlignments)
 
 proc renderCommandKeys*(builder: UINodeBuilder, nextPossibleInputs: openArray[tuple[input: string, description: string, continues: bool]], textColor: Color, continuesTextColor: Color, keysTextColor: Color, backgroundColor: Color, inputLines: int, bounds: Rect, padding: int = 1) =
+  let width = (builder.currentParent.bounds.w / builder.charWidth).int
   let height = (inputLines + padding * 2).float * builder.textHeight
   let padding = padding.float
+  let numColumns = (nextPossibleInputs.len / inputLines).ceil.int
+  let widthPerColumn = width div numColumns
+  let maxDescWidth = widthPerColumn - 4 - 4
   builder.panel(&{FillX, FillBackground, MaskContent}, h = height, backgroundColor = backgroundColor):
     builder.panel(&{LayoutHorizontal}, x = builder.charWidth * padding, y = builder.textHeight * padding, w = currentNode.w - builder.charWidth * padding * 2, h = currentNode.h - builder.textHeight * padding * 2):
       var i = 0
@@ -67,9 +74,9 @@ proc renderCommandKeys*(builder: UINodeBuilder, nextPossibleInputs: openArray[tu
               builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = input, textColor = keysTextColor)
               # builder.panel(&{}, w = builder.charWidth * 2)
               if continues:
-                builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = desc, textColor = continuesTextColor)
+                discard builder.highlightedText(desc, [], continuesTextColor, continuesTextColor, maxWidth = maxDescWidth)
               else:
-                builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = desc, textColor = textColor)
+                discard builder.highlightedText(desc, [], textColor, textColor, maxWidth = maxDescWidth)
 
             inc row
             inc i
@@ -147,7 +154,7 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
       if maxHeight.getSome(maxHeight) and builder.currentChild.bounds.y > maxHeight:
         break
 
-    if y < height: # fill remaining space with background color
+    if y < height and backgroundColor.a > 0: # fill remaining space with background color
       builder.panel(&{FillX, FillY, FillBackground}, y = y, backgroundColor = backgroundColor)
 
     y = scrollOffset
@@ -166,7 +173,7 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
       if maxHeight.isSome and builder.currentChild.bounds.yh < 0:
         break
 
-    if not sizeToContentY and y > 0: # fill remaining space with background color
+    if not sizeToContentY and y > 0 and backgroundColor.a > 0: # fill remaining space with background color
       builder.panel(&{FillX, FillBackground}, h = y, backgroundColor = backgroundColor)
 
 proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float,

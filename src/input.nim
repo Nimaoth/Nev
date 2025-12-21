@@ -175,17 +175,21 @@ proc getNextPossibleInputs(dfa: CommandDFA, state: CommandState, result: var seq
     if transition[0].len > 1:
       continue
     for currentInput in transition[0]:
-      for (modifier, transition) in transition[1].next.pairs:
+      for (modifiers, transition) in transition[1].next.pairs:
         var newState = state
         newState.current = transition.state
         newState.functionIndices.bitSetIntersect transition.functionIndices
-        newState.captures.mgetOrPut(transition.capture, "").add(inputToString(currentInput, modifier))
+        newState.captures.mgetOrPut(transition.capture, "").add(inputToString(currentInput, modifiers))
 
         var states: seq[CommandState]
         if dfa.states[transition.state].transitions.len > 0 or dfa.states[transition.state].epsilonTransitions.len == 0:
           states.add newState
         states.add dfa.stepEmpty(newState)
-        result.add (currentInput, modifier, states)
+        result.add (currentInput, modifiers, states)
+        if Modifier.Shift notin modifiers and currentInput > 0 and currentInput.Rune.isUpper:
+          result.add (currentInput.Rune.toLower.InputKey, modifiers + {Shift}, states)
+        if modifiers == {Modifier.Shift} and currentInput > 0 and currentInput.Rune.isAlpha:
+          result.add (currentInput.Rune.toUpper.InputKey, modifiers - {Shift}, states)
 
 proc getNextPossibleInputs*(dfa: CommandDFA, state: CommandState, beginEmpty: bool): seq[(InputKey, Modifiers, seq[CommandState])] =
   if beginEmpty:

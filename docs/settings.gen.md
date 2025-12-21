@@ -140,5 +140,6 @@ For examples and default values see [here](../config/settings.json)
 | `ui.which-key-delay` | int | 250 | After how many milliseconds the which key window opens. |
 | `ui.which-key-height` | int | 6 | How many rows tall the window showing next possible inputs should be. |
 | `ui.which-key-no-progress` | bool | false | If true then the window showing next possible inputs will be displayed even when no keybinding is in progress (i.e. it will always be shown). |
+| `ui.which-key-show-when-mod` | bool | false | Show which key window when holding down modifiers. |
 | `ui.whitespace-char` | string | "·" | Character to use when rendering whitespace. If this is the empty string or not set then spaces are not rendered. |
 | `ui.whitespace-color` | string | "comment" | Color of rendered whitespace. Can be a theme key or hex color (e.g #ff00ff). |

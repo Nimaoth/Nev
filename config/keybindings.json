@@ -652,7 +652,7 @@
 
         // cursor movement
         "o": ["vim.invert-selections"],
-        "gp": ["select-parent-current-ts", false],
+        "C": ["select-parent-current-ts", false],
         "gl": ["vim.add-next-same-node-to-selection"],
         "gh": ["vim.move-selection-to-next-same-node"],
         "gs": ["vim.add-next-sibling-to-selection"],

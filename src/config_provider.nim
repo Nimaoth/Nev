@@ -1014,6 +1014,9 @@ declareSettings UiSettings, "ui":
   ## After how many milliseconds the which key window opens.
   declare whichKeyDelay, int, 250
 
+  ## Show which key window when holding down modifiers.
+  declare whichKeyShowWhenMod, bool, false
+
   ## If true then the window showing next possible inputs will be displayed even when no keybinding is in progress (i.e. it will always be shown).
   declare whichKeyNoProgress, bool, false
 

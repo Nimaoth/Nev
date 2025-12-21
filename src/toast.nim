@@ -68,6 +68,7 @@ static:
   addInjector(ToastService, getToastService)
 
 proc showToast*(self: ToastService, title: string, message: string, color: string) {.expose("toast").} =
+  log lvlInfo, &"[{title}] {message}"
   self.toasts.add(Toast(timer: startTimer(), title: title, message: message, color: color))
   asyncSpawn self.updateToasts()
   self.platform.requestRender()
