@@ -61,9 +61,13 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
 
   let scale = (vec2(1, 1) - self.scale) * 0.5
 
-  let bounds = builder.currentParent.boundsActual.shrink(
+  var bounds = builder.currentParent.boundsActual.shrink(
     absolute(scale.x * builder.currentParent.boundsActual.w),
     absolute(scale.y * builder.currentParent.boundsActual.h))
+  bounds.x = bounds.x.round()
+  bounds.y = bounds.y.round()
+  bounds.w = bounds.w.round()
+  bounds.h = bounds.h.round()
 
   let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let backgroundColor = app.themes.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
