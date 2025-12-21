@@ -19,7 +19,6 @@ type
     window: Window
     ctx*: Context
     boxy: Boxy
-    currentModifiers: Modifiers
     currentMouseButtons: set[MouseButton]
 
     fontRegular: string
@@ -178,8 +177,8 @@ method init*(self: GuiPlatform, options: AppOptions) =
 
     self.window.onFocusChange = proc() =
       inc self.eventCounter
-      self.currentModifiers = {}
       self.currentMouseButtons = {}
+      self.setMods({})
       self.lastEvent = (int64, Modifiers, Button).none
       self.onFocusChanged.invoke self.window.focused
       self.focused = self.window.focused
@@ -237,10 +236,10 @@ method init*(self: GuiPlatform, options: AppOptions) =
         self.currentMouseButtons.incl button.toMouseButton
         if not self.builder.handleMousePressed(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
           self.onMousePress.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
-      of KeyLeftShift, KeyRightShift: self.currentModifiers = self.currentModifiers + {Shift}
-      of KeyLeftControl, KeyRightControl: self.currentModifiers = self.currentModifiers + {Control}
-      of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers + {Alt}
-      # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers + {Super}
+      of KeyLeftShift, KeyRightShift: self.setMods(self.currentModifiers + {Shift})
+      of KeyLeftControl, KeyRightControl: self.setMods(self.currentModifiers + {Control})
+      of KeyLeftAlt, KeyRightAlt: self.setMods(self.currentModifiers + {Alt})
+      # of KeyLeftSuper, KeyRightSuper: self.setMods(self.currentModifiers + {Super})
       else:
         # debugf"last event k: {button}, input: {inputToString(button.toInput, self.currentModifiers)}"
         self.lastEvent = (button.toInput, self.currentModifiers, button).some
@@ -259,10 +258,10 @@ method init*(self: GuiPlatform, options: AppOptions) =
         self.currentMouseButtons.excl button.toMouseButton
         if not self.builder.handleMouseReleased(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
           self.onMouseRelease.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
-      of KeyLeftShift, KeyRightShift: self.currentModifiers = self.currentModifiers - {Shift}
-      of KeyLeftControl, KeyRightControl: self.currentModifiers = self.currentModifiers - {Control}
-      of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers - {Alt}
-      # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers - {Super}
+      of KeyLeftShift, KeyRightShift: self.setMods(self.currentModifiers - {Shift})
+      of KeyLeftControl, KeyRightControl: self.setMods(self.currentModifiers - {Control})
+      of KeyLeftAlt, KeyRightAlt: self.setMods(self.currentModifiers - {Alt})
+      # of KeyLeftSuper, KeyRightSuper: self.setMods(self.currentModifiers - {Super})
       else:
         if not self.builder.handleKeyReleased(button.toInput, self.currentModifiers):
           self.onKeyRelease.invoke (button.toInput, self.currentModifiers)
@@ -914,5 +913,5 @@ method focusWindow*(self: GuiPlatform) {.gcsafe, raises: [].} =
     discard SetForegroundWindow(self.window.platformHandle)
     discard SetFocus(self.window.platformHandle)
     discard SetActiveWindow(self.window.platformHandle)
-    discard ShowWindow(self.window.platformHandle, SW_RESTORE)
+    discard ShowWindow(self.window.platformHandle, SW_SHOW)
     self.window.maximized = true

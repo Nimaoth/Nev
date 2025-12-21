@@ -173,6 +173,7 @@ method log*(self: AppLogger, level: Level, args: varargs[string, `$`]) =
 
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers)
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
+proc handleModsChanged*(self: App, old: Modifiers, new: Modifiers)
 proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
 
@@ -393,26 +394,29 @@ proc loadSession*(self: App) {.async: (raises: []).} =
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
-proc parseCommand(json: JsonNodeEx): tuple[command: string, args: string] {.raises: [ValueError].} =
+proc parseCommand(json: JsonNodeEx): tuple[command: string, args: string, ok: bool] {.raises: [ValueError].} =
   if json.kind == JString:
     let commandStr = json.getStr
     let spaceIndex = commandStr.find(" ")
 
     if spaceIndex == -1:
-      return (commandStr, "")
+      return (commandStr, "", true)
     else:
-      return (commandStr[0..<spaceIndex], commandStr[spaceIndex+1..^1])
+      return (commandStr[0..<spaceIndex], commandStr[spaceIndex+1..^1], true)
 
   elif json.kind == JArray:
     if json.elems.len > 0:
       let name = json[0].getStr
       let args = json.elems[1..^1].mapIt($it).join(" ")
-      return (name, args)
+      return (name, args, true)
     else:
       raise newException(ValueError, "Missing command name, got empty array")
 
+  elif json.kind == JLispVal:
+    return ($json.lval, "", true)
+
   else:
-    return ("", "")
+    return ("", "", false)
 
 proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
   try:
@@ -451,24 +455,26 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
       for (keys, command) in commands.fields.pairs:
         let loc = (filename: filename, line: command.loc.line.int, column: command.loc.column.int + 1)
         try:
-          if command.kind == JString or command.kind == JArray:
-            let (name, args) = command.parseCommand()
-            self.addCommandScript(context, "", keys, name, args, source = loc)
-
-          elif command.kind == JObject:
+          if command.kind == JObject:
             if command.hasKey("command"):
-              var (name, args) = command["command"].parseCommand()
-              let description = command.fields.getOrDefault("description", newJexString("")).getStr
-              self.addCommandScript(context, "", keys, name, args, description, source = loc)
+              let cmd = command["command"]
+              var (name, args, ok) = cmd.parseCommand()
+              if not ok:
+                log lvlError, &"Invalid command in keybinding settings '{filename}:{loc.line}:{loc.column}': {cmd}"
+              else:
+                let description = command.fields.getOrDefault("description", newJexString("")).getStr
+                self.addCommandScript(context, "", keys, name, args, description, source = loc)
             else:
               let description = command.fields.getOrDefault("description", newJexString("")).getStr
               self.events.addCommandDescription(context, keys, description)
 
-          elif command.kind == JLispVal:
-            self.addCommandScript(context, "", keys, $command.lval, "", "", source = loc)
-
           else:
-            log lvlError, &"Invalid command in keybinding settings '{filename}:{loc.line}{loc.column}': Expected string | array | object for '{context}.{keys}'"
+            let (name, args, ok) = command.parseCommand()
+            if not ok:
+              log lvlError, &"Invalid command in keybinding settings '{filename}:{loc.line}:{loc.column}': {command}"
+            else:
+              self.addCommandScript(context, "", keys, name, args, source = loc)
+
         except CatchableError:
           log(lvlError, &"Invalid command in '{filename}:{loc.line}{loc.column}': {getCurrentExceptionMsg()}")
 
@@ -860,6 +866,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   discard platform.onKeyPress.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyPress(event.input, event.modifiers)
   discard platform.onKeyRelease.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyRelease(event.input, event.modifiers)
+  discard platform.onModifiersChanged.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleModsChanged(event.old, event.new)
   discard platform.onRune.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleRune(event.input, event.modifiers)
   discard platform.onDropFile.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleDropFile(event.path, event.content)
   discard platform.onCloseRequested.subscribe proc() {.gcsafe, raises: [].} = self.closeRequested = true
@@ -942,6 +949,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   let showNextPossibleInputsDelay = self.uiSettings.whichKeyDelay.get()
   self.showNextPossibleInputsTask = startDelayedPaused(showNextPossibleInputsDelay, repeat=false):
     self.showNextPossibleInputs = self.nextPossibleInputs.len > 0
+    if self.uiSettings.whichKeyShowWhenMod.get() and self.platform.currentModifiers != {}:
+      self.showNextPossibleInputs = true
     self.platform.requestRender()
 
   if self.generalSettings.watchTheme.get():
@@ -2854,34 +2863,43 @@ proc getNextPossibleInputs*(self: App, inProgressOnly: bool, filter: proc(handle
 
     let nextPossibleInputs = handler.getNextPossibleInputs()
     for x in nextPossibleInputs:
+      if not inProgressOnly and x[1] != self.platform.currentModifiers:
+        continue
+
       let key = inputToString(x[0], x[1])
 
-      for i in 0..result.high:
-        if result[i].input == key:
-          result.removeSwap(i)
-          break
-
       for next in x[2]:
-        if x[1] == {Shift} and x[0] in 0..Rune.high.int and x[0].Rune.isAlpha:
+        if x[1] == {Shift} and x[0] in 0..Rune.high.int and x[0].Rune.isUpper:
           continue
 
+        var desc = ""
+        var continues = false
         let actions = handler.dfa.getActions(next)
         if actions.len > 1:
-          var desc = &"... ({handler.config.context})"
+          continues = true
+          desc = &"... ({handler.config.context})"
           handler.config.stateToDescription.withValue(next.current, val):
             desc = val[] & "..."
-          result.add (key, desc, true)
         elif actions.len > 0:
-          var desc = &"{actions[0][0]} {actions[0][1]}"
+          desc = &"{actions[0][0]} {actions[0][1]}"
           handler.config.stateToDescription.withValue(next.current, val):
             desc = val[]
-          result.add (key, desc, false)
+
+          for i in countdown(result.high, 0):
+            if result[i].input == key:
+              result.removeSwap(i)
+
+        if actions.len > 0:
+          result.add (key, desc, continues)
 
     result.sort proc(a, b: tuple[input: string, description: string, continues: bool]): int =
       cmp(a.input, b.input)
+    result = result.deduplicate(true)
 
 proc updateNextPossibleInputs*(self: App) =
-  let whichKeyInProgressOnly = not self.uiSettings.whichKeyNoProgress.get()
+  var whichKeyInProgressOnly = not self.uiSettings.whichKeyNoProgress.get()
+  if self.uiSettings.whichKeyShowWhenMod.get() and self.platform.currentModifiers != {}:
+    whichKeyInProgressOnly = false
   self.nextPossibleInputs = self.getNextPossibleInputs(whichKeyInProgressOnly)
 
   if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:
@@ -2956,6 +2974,9 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   except:
     discard
 
+  self.updateNextPossibleInputs()
+
+proc handleModsChanged*(self: App, old: Modifiers, new: Modifiers) =
   self.updateNextPossibleInputs()
 
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
@@ -3093,7 +3114,7 @@ proc all*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
   if args.kind == JArray:
     try:
       for command in args.elems:
-        let (command, args) = command.toJsonEx.parseCommand()
+        let (command, args, ok) = command.toJsonEx.parseCommand()
         if command.len > 0:
           discard self.commands.executeCommand(command & " " & args)
     except CatchableError:

@@ -21,6 +21,7 @@ type
     onKeyPress*: Event[tuple[input: int64, modifiers: Modifiers]]
     onKeyRelease*: Event[tuple[input: int64, modifiers: Modifiers]]
     onRune*: Event[tuple[input: int64, modifiers: Modifiers]]
+    onModifiersChanged*: Event[tuple[old: Modifiers, new: Modifiers]]
     onMousePress*: Event[tuple[button: MouseButton, modifiers: Modifiers, pos: Vec2]]
     onMouseRelease*: Event[tuple[button: MouseButton, modifiers: Modifiers, pos: Vec2]]
     onMouseMove*: Event[tuple[pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]]]
@@ -34,6 +35,7 @@ type
     lastEventTime*: Timer
     vfs*: VFS
     backend*: Backend
+    currentModifiers*: Modifiers
 
 method requestRender*(self: Platform, redrawEverything = false) {.base, gcsafe, raises: [].} = discard
 method render*(self: Platform, rerender: bool) {.base, gcsafe, raises: [].} = discard
@@ -99,3 +101,9 @@ proc totalBounds*(bounds: openArray[Rect]): Vec2 {.raises: [].} =
     let rect = bounds[i]
     result.x = max(result.x, rect.x + rect.w)
     result.y = max(result.y, rect.y + rect.h)
+
+proc setMods*(self: Platform, newMods: Modifiers) =
+  let oldMods = self.currentModifiers
+  self.currentModifiers = newMods
+  if oldMods != newMods:
+    self.onModifiersChanged.invoke (oldMods, newMods)
