@@ -400,6 +400,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   onSearchResultsUpdated*: Event[TextDocumentEditor]
   onModeChanged*: Event[tuple[removed: seq[string], added: seq[string]]]
+  onSelectionsChanged*: Event[tuple[editor: TextDocumentEditor]]
 
   uiSettings*: UiSettings
   debugSettings*: DebugSettings
@@ -575,6 +576,8 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections, addToHisto
   self.hideCompletions()
   self.updateMatchingWordHighlight()
   # self.document.addNextCheckpoint("move")
+
+  self.onSelectionsChanged.invoke (self,)
 
   self.markDirty()
 
@@ -1669,6 +1672,7 @@ proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
     self.cursorVisible = true
     if self.blinkCursorTask.isNotNil and self.active:
       self.blinkCursorTask.reschedule()
+  self.updateTargetColumn(Last)
   self.scrollToCursor(self.selection.last)
   self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
@@ -1681,6 +1685,7 @@ proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
     self.cursorVisible = true
     if self.blinkCursorTask.isNotNil and self.active:
       self.blinkCursorTask.reschedule()
+  self.updateTargetColumn(Last)
   self.scrollToCursor(self.selection.last)
   self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
@@ -1917,8 +1922,6 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
     elif autoIndent:
       insertedAutoIndent = true
       texts.setLen(selections.len)
-
-      let matchingClosingGroupText = getMatchingGroupChar(text)
 
       for i, selection in selections:
         var indentClosing = false
@@ -2969,14 +2972,14 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
       var foundTabStop = false
       while self.currentSnippetData.get.currentTabStop < self.currentSnippetData.get.highestTabStop:
         self.currentSnippetData.get.currentTabStop.inc
-        self.currentSnippetData.get.tabStops.withValue(self.currentSnippetData.get.currentTabStop, val):
-          result = val[]
+        self.currentSnippetData.get.tabStopAnchors.withValue(self.currentSnippetData.get.currentTabStop, val):
+          result = self.resolveAnchors(val[])
           foundTabStop = true
           break
 
       if not foundTabStop:
         self.currentSnippetData.get.currentTabStop = 0
-        result = self.currentSnippetData.get.tabStops[0]
+        result = self.resolveAnchors(self.currentSnippetData.get.tabStopAnchors[0])
 
     of "prev-tab-stop":
       result = @selections
@@ -2985,14 +2988,14 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
 
       if self.currentSnippetData.get.currentTabStop == 0:
         self.currentSnippetData.get.currentTabStop = self.currentSnippetData.get.highestTabStop
-        self.currentSnippetData.get.tabStops.withValue(self.currentSnippetData.get.currentTabStop, val):
-          result = val[]
+        self.currentSnippetData.get.tabStopAnchors.withValue(self.currentSnippetData.get.currentTabStop, val):
+          result = self.resolveAnchors(val[])
         return
 
       while self.currentSnippetData.get.currentTabStop > 1:
         self.currentSnippetData.get.currentTabStop.dec
-        self.currentSnippetData.get.tabStops.withValue(self.currentSnippetData.get.currentTabStop, val):
-          result = val[]
+        self.currentSnippetData.get.tabStopAnchors.withValue(self.currentSnippetData.get.currentTabStop, val):
+          result = self.resolveAnchors(val[])
           break
 
     of "ts-text-object", "ts":
@@ -3673,6 +3676,45 @@ proc hasTabStops*(self: TextDocumentEditor): bool =
 proc clearTabStops*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.currentSnippetData = SnippetData.none
 
+proc applyAutoIndent(self: TextDocumentEditor, edits: var seq[Selection], texts: var seq[string]) =
+  while texts.len < edits.len:
+    texts.add texts[^1]
+
+  for i, selection in edits:
+    if texts[i].find('\n') == -1:
+      continue
+
+    var indentClosing = false
+    if selection.first.column > 0:
+      let runeLeft = self.document.runeAt (selection.first.line, selection.first.column - 1)
+      let runeRight = self.document.runeAt selection.last
+
+      if runeLeft.getMatchingGroupChar() == runeRight:
+        indentClosing = true
+
+    let line = $self.document.getLine(selection.last.line)
+    let indentStyle = self.document.settings.indent.get()
+    let indentWidth = self.document.settings.tabWidth.get()
+    let indentLevel = indentLevelForLine(line, indentWidth)
+    let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, indentStyle, indentWidth, selection.last.column)
+
+    let originalText = texts[i]
+    texts[i].setLen(0)
+    var k = 0
+    for line in originalText.splitLines(keepEol = true):
+      texts[i].add line
+
+      if line.endsWith("\n"):
+        # todo: don't use getLine
+        if indent.len > 0:
+          texts[i].add indent
+
+    if indentClosing:
+      texts[i].add "\n"
+      texts[i].add getIndentString(indentStyle, indentWidth).repeat(indentLevel)
+
+      inc k
+
 proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   let completion = completion
   log(lvlInfo, fmt"Applying completion {completion.item.label}")
@@ -3760,30 +3802,42 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   var editSelections: seq[Selection] = @[]
   var insertTexts: seq[string] = @[]
 
+  editSelections.add cursorEditSelections
+  insertTexts.add cursorInsertTexts
+
+  let numOriginalEdits = editSelections.len
+
+  # Create anchors for additional edits before applying the completion so we can later apply the additional
+  # edits at the correct location
+  var additionalEditSelections = newSeq[Selection]()
   for edit in completion.item.additionalTextEdits:
     let runeSelection = (
       (edit.`range`.start.line, edit.`range`.start.character.RuneIndex),
       (edit.`range`.`end`.line, edit.`range`.`end`.character.RuneIndex),
     )
     let selection = self.document.runeSelectionToSelection(runeSelection)
-    editSelections.add selection
-    insertTexts.add edit.newText
+    additionalEditSelections.add selection
+  var additionalEditAnchors = self.createAnchors(additionalEditSelections)
 
-    let changedSelection = selection.getChangedSelection(edit.newText)
-
-    if snippetData.isSome:
-      snippetData.get.offset(changedSelection)
-
-  let numAdditionalEdits = editSelections.len
-
-  editSelections.add cursorEditSelections
-  insertTexts.add cursorInsertTexts
+  # Apply auto indenting to non-snippet completions
+  if snippetData.isNone:
+    self.applyAutoIndent(editSelections, insertTexts)
 
   let newSelections = self.document.edit(editSelections, self.selections, insertTexts)
-  self.selections = newSelections[numAdditionalEdits..^1].mapIt(it.last.toSelection)
+  self.selections = newSelections.mapIt(it.last.toSelection)
 
-  self.currentSnippetData = snippetData
-  self.move("(next-tab-stop)")
+  if snippetData.isSome:
+    for key, tabstops in snippetData.get.tabStops:
+      snippetData.get.tabStopAnchors[key] = self.createAnchors(tabstops)
+
+  for i, edit in completion.item.additionalTextEdits:
+    editSelections = self.resolveAnchors(@[additionalEditAnchors[i]])
+    insertTexts = @[completion.item.additionalTextEdits[i].newText]
+    discard self.document.edit(editSelections, self.selections, insertTexts)
+
+  if snippetData.isSome:
+    self.currentSnippetData = snippetData
+    self.move("(next-tab-stop)")
 
   if completion.item.showCompletionsAgain.get(false):
     self.autoShowCompletions()
