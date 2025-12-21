@@ -27,14 +27,14 @@ type
   DebuggerState* {.pure.} = enum None, Starting, Paused, Running
 
   VariableCursor* = object
-    scope: int
-    path: seq[tuple[index: int, varRef: VariablesReference]]
+    scope*: int
+    path*: seq[tuple[index: int, varRef: VariablesReference]]
 
   BreakpointInfo* = object
     path: string
     enabled: bool = true
     breakpoint: SourceBreakpoint
-    anchor: Anchor
+    anchor: Option[Anchor]
 
   Debugger* = ref object of Service
     platform: Platform
@@ -59,7 +59,6 @@ type
     outputEventHandler: EventHandler
 
     variablesCursor: VariableCursor
-    variablesScrollOffset*: float
     collapsedVariables: HashSet[(ThreadId, FrameId, VariablesReference)]
     variablesFilter*: string = ""
 
@@ -68,11 +67,14 @@ type
     lastEditor: Option[TextDocumentEditor]
     outputEditor*: TextDocumentEditor
 
+    currentStopData*: OnStoppedData
+
     # Data setup in the editor and sent to the server
     breakpoints: Table[string, seq[BreakpointInfo]]
-    editorCallbacks: Table[string, tuple[editor: TextDocumentEditor, document: TextDocument, id: Id]]
+    documentCallbacks: Table[string, tuple[document: TextDocument, id: Id]]
 
     # Cached data from server
+    timestamp*: int = 1
     threads: seq[ThreadInfo]
     stackTraces: Table[ThreadId, StackTraceResponse]
     scopes*: Table[(ThreadId, FrameId), Scopes]
@@ -82,6 +84,8 @@ type
     filteredCursors*: seq[VariableCursor]
     filterVersion: int = 0
 
+    variableViews: seq[VariablesView]
+
   DebuggerView* = ref object of View
     threads*: ThreadsView
     stacktrace*: StacktraceView
@@ -89,8 +93,17 @@ type
     output*: OutputView
 
   ThreadsView* = ref object of View
+    targetSelectionIndex*: Option[int]
+    baseIndex*: int
+    scrollOffset*: float
   StacktraceView* = ref object of View
+    targetSelectionIndex*: Option[int]
+    baseIndex*: int
+    scrollOffset*: float
   VariablesView* = ref object of View
+    targetSelectionIndex*: Option[int]
+    baseIndex*: VariableCursor
+    scrollOffset*: float
   OutputView* = ref object of View
   ToolbarView* = ref object of View
 
@@ -174,10 +187,11 @@ addBuiltinService(Debugger, SessionService, DocumentEditorService, LayoutService
 
 proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor)
 proc handleAction(self: Debugger, action: string, arg: string): EventResponse
-proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.async.}
+proc updateVariables(self: Debugger, containerVarRef: VariablesReference, maxDepth: int, force: bool = false) {.async.}
 proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.async.}
 proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]) {.async.}
 proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.async.}
+proc listenToDocumentChanges*(self: Debugger, document: TextDocument)
 
 var gDebugger: Debugger = nil
 
@@ -204,24 +218,28 @@ proc getEventHandlers*(inject: Table[string, EventHandler]): seq[EventHandler] =
       if gDebugger.outputEditor.isNotNil:
         result.add gDebugger.outputEditor.getEventHandlers(inject)
 
-proc getStateJson*(self: Debugger): JsonNode =
-  return %*{
-    # "breakpoints": self.breakpoints,
-    "breakpoints": newJArray(),
-  }
-
 proc updateBreakpointsForFile(self: Debugger, path: string) =
+  let doc = self.editors.getDocument(path)
+  if doc.isNone or not (doc.get of TextDocument):
+    log lvlWarn, &"Failed to update breakpoints for '{path}': document not found"
+    return
+
+  let document = doc.get.TextDocument
+  self.listenToDocumentChanges(document)
+  if not document.isReady:
+    return
+
   self.breakpoints.withValue(path, val):
     for b in val[].mitems:
-      if path in self.editorCallbacks:
-        let editor = self.editorCallbacks[path].editor
-        let resolved = b.anchor.summaryOpt(Point, editor.document.buffer.snapshot)
+      if b.anchor.isSome:
+        let resolved = b.anchor.get.summaryOpt(Point, document.buffer.snapshot)
         if resolved.isSome:
           b.breakpoint.line = resolved.get.row.int + 1
-          b.anchor = editor.document.buffer.snapshot.anchorAfter(point(resolved.get.row.int, 0))
+      b.anchor = document.buffer.snapshot.anchorAfter(point(b.breakpoint.line - 1, 0)).some
 
-  if self.layout.tryOpenExisting(path).getSome(editor) and editor of TextDocumentEditor:
-    self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
+  for editor in self.editors.getEditorsForDocument(document):
+    if editor of TextDocumentEditor:
+      self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
 
 proc flushBreakpointsForFile(self: Debugger, path: string) =
   self.updateBreakpointsForFile(path)
@@ -244,22 +262,13 @@ proc handleEditorRegistered*(self: Debugger, editor: DocumentEditor) =
   if editor.document.isNil:
     return
 
-  if editor.document.isLoadingAsync:
+  if not editor.document.isReady:
     var id = new Id
     id[] = editor.document.onLoaded.subscribe proc(args: tuple[document: TextDocument, changed: seq[Selection]]) =
       args.document.onLoaded.unsubscribe(id[])
-      self.applyBreakpointSignsToEditor(editor)
+      self.updateBreakpointsForFile(args.document.filename)
   else:
-    self.applyBreakpointSignsToEditor(editor)
-
-proc handleSessionRestored(self: Debugger, session: SessionService) =
-  try:
-    if session.sessionData.isNotNil and session.sessionData.kind == JObject:
-      if session.sessionData.fields.contains("breakpoints"):
-        # self.breakpoints = session.sessionData["breakpoints"].jsonTo(Table[string, seq[BreakpointInfo]])
-        discard
-  except:
-    discard
+    self.updateBreakpointsForFile(editor.document.filename)
 
 proc findVariable(self: Debugger, filter: string) {.async.}
 proc refilterVariables(self: Debugger) =
@@ -279,9 +288,10 @@ proc waitForApp(self: Debugger) {.async: (raises: []).} =
 
   let document = newTextDocument(self.services, createLanguageServer=false)
   document.usage = "debugger-output"
+  document.setReadOnly(true)
   self.outputEditor = newTextEditor(document, self.services)
   self.outputEditor.usage = "debugger-output"
-  self.outputEditor.renderHeader = false
+  self.outputEditor.renderHeader = true
   self.outputEditor.disableCompletions = true
 
   discard self.outputEditor.onMarkedDirty.subscribe () =>
@@ -334,8 +344,6 @@ method init*(self: Debugger): Future[Result[void, ref CatchableError]] {.async: 
   self.platform = self.services.getService(PlatformService).get.platform
   self.workspace = self.services.getService(Workspace).get
 
-  discard self.services.getService(SessionService).get.onSessionRestored.subscribe (session: SessionService) => self.handleSessionRestored(session)
-
   discard self.editors.onEditorRegistered.subscribe (e: DocumentEditor) {.gcsafe, raises: [].} =>
     self.handleEditorRegistered(e)
 
@@ -349,13 +357,53 @@ method init*(self: Debugger): Future[Result[void, ref CatchableError]] {.async: 
     return StacktraceView()
 
   self.layout.addViewFactory "debugger.variables", proc(config: JsonNode): View {.raises: [ValueError].} =
-    return VariablesView()
+    let view = VariablesView()
+    self.variableViews.add view
+    return view
 
   self.layout.addViewFactory "debugger.output", proc(config: JsonNode): View {.raises: [ValueError].} =
     return OutputView()
 
   self.layout.addViewFactory "debugger.toolbar", proc(config: JsonNode): View {.raises: [ValueError].} =
     return ToolbarView()
+
+  proc save(): JsonNode =
+    result = newJObject()
+    var breakpoints = newJArray()
+    for (file, bps) in self.breakpoints.pairs:
+      for bp in bps:
+        breakpoints.elems.add(%*{
+          "path": bp.path,
+          "enabled": bp.enabled,
+          "breakpoint": bp.breakpoint,
+        })
+
+    result["breakpoints"] = breakpoints
+
+  proc load(data: JsonNode) =
+    try:
+      log lvlInfo, &"Restore debugger from session"
+      if data.hasKey("breakpoints"):
+        for b in data["breakpoints"]:
+          try:
+            let bp = b.jsonTo(BreakpointInfo, opt = Joptions(allowMissingKeys: true, allowExtraKeys: true))
+
+            if bp.path notin self.breakpoints:
+              self.breakpoints[bp.path] = @[]
+
+            self.breakpoints[bp.path].add bp
+
+          except Exception as e:
+            log lvlError, &"Failed to restore breakpoint from session: {e.msg}\n{b.pretty}"
+
+      for path in self.breakpoints.keys:
+        self.flushBreakpointsForFile(path)
+
+    except Exception as e:
+      log lvlError, &"Failed to restore debugger state from session: {e.msg}\n{data.pretty}"
+
+  let session = self.services.getService(SessionService).get
+  session.addSaveHandler "debugger", save, load
 
   asyncSpawn self.waitForApp()
 
@@ -416,6 +464,8 @@ proc isScopeSelected*(self: Debugger, index: int): bool =
 proc selectedVariable*(self: Debugger): Option[tuple[index: int, varRef: VariablesReference]] =
   if self.variablesCursor.path.len > 0:
     return self.variablesCursor.path[self.variablesCursor.path.high].some
+
+proc cursor*(self: Debugger): VariableCursor = self.variablesCursor
 
 proc currentStackTrace*(self: Debugger): Option[ptr StackTraceResponse] =
   if self.currentThread().getSome(t):
@@ -522,7 +572,7 @@ proc lastChild*(self: Debugger, cursor: VariableCursor): VariableCursor =
     return
 
   result = cursor
-  if result.path.len == 0:
+  if result.path.len == 0 and result.scope in 0..scopes[].scopes.high:
     let scope = scopes[].scopes[result.scope]
 
     if self.isCollapsed(ids & scope.variablesReference):
@@ -537,7 +587,7 @@ proc lastChild*(self: Debugger, cursor: VariableCursor): VariableCursor =
 
     result.path.add (variables.variables.high, scope.variablesReference)
 
-  while true:
+  while result.path.len > 0:
     let (index, r) = result.path[result.path.high]
     let variables {.cursor.} = self.variables[ids & r]
     result.path[result.path.high].index =
@@ -553,7 +603,6 @@ proc lastChild*(self: Debugger, cursor: VariableCursor): VariableCursor =
     result.path.add (self.variables[ids & childRef].variables.high, childRef)
 
 proc selectFirstVariable*(self: Debugger) {.expose("debugger").} =
-  self.variablesScrollOffset = 0
   self.variablesCursor = VariableCursor()
   self.platform.requestRender()
 
@@ -562,13 +611,11 @@ proc selectLastVariable*(self: Debugger) {.expose("debugger").} =
     return
 
   if scopes[].scopes.len == 0 or self.variables.len == 0:
-    self.variablesScrollOffset = 0
     self.variablesCursor = VariableCursor()
     self.platform.requestRender()
     return
 
   self.variablesCursor = self.lastChild(VariableCursor(scope: scopes[].scopes.high))
-  self.variablesScrollOffset = self.maxVariablesScrollOffset
   self.platform.requestRender()
 
 proc prevThread*(self: Debugger) {.expose("debugger").} =
@@ -643,7 +690,7 @@ proc openFileForCurrentFrame*(self: Debugger, slot: string = "") {.expose("debug
       frame[].source.get.path.getSome(path):
     asyncSpawn self.tryOpenFileInWorkspace(path, (frame[].line - 1, frame[].column - 1), slot)
 
-proc prevVariable*(self: Debugger) {.expose("debugger").} =
+proc prevVariable*(self: Debugger, skipChildren: bool = false) {.expose("debugger").} =
   let scopes = self.currentScopes().getOr:
     return
 
@@ -652,12 +699,10 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
     if i != -1:
       let i2 = (i + self.filteredCursors.len - 1) mod self.filteredCursors.len
       self.variablesCursor = self.filteredCursors[i2]
-      self.variablesScrollOffset = self.maxVariablesScrollOffset * 0.5
       self.platform.requestRender()
       return
     else:
       self.variablesCursor = self.filteredCursors[self.filteredCursors.high]
-      self.variablesScrollOffset = self.maxVariablesScrollOffset * 0.5
       self.platform.requestRender()
       return
 
@@ -671,37 +716,26 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
 
   if self.variablesCursor.path.len == 0:
     if self.variablesCursor.scope > 0:
-      self.variablesCursor = self.lastChild(VariableCursor(scope: self.variablesCursor.scope - 1))
-      if self.variablesScrollOffset > 0:
-        self.variablesScrollOffset -= self.platform.totalLineHeight
+      dec self.variablesCursor.scope
+      if not skipChildren:
+        self.variablesCursor = self.lastChild(VariableCursor(scope: self.variablesCursor.scope))
       return
 
   else:
-    if self.variablesCursor.path.len == 0 and self.variablesCursor.scope > 0:
-      self.variablesCursor = self.lastChild(VariableCursor(
-        scope: self.variablesCursor.scope - 1,
-        path: @[(int.high, scopes[].scopes[self.variablesCursor.scope - 1].variablesReference)],
-      ))
-      if self.variablesScrollOffset > 0:
-        self.variablesScrollOffset -= self.platform.totalLineHeight
-      return
-
     let (index, currentRef) = self.variablesCursor.path[self.variablesCursor.path.high]
     if not self.variables.contains(ids & currentRef):
       return
 
     if index > 0:
       dec self.variablesCursor.path[self.variablesCursor.path.high].index
-      self.variablesCursor = self.lastChild(self.variablesCursor)
-      if self.variablesScrollOffset > 0:
-        self.variablesScrollOffset -= self.platform.totalLineHeight
+      if not skipChildren:
+        self.variablesCursor = self.lastChild(self.variablesCursor)
       return
 
-    discard self.variablesCursor.path.pop
-    if self.variablesScrollOffset > 0:
-      self.variablesScrollOffset -= self.platform.totalLineHeight
+    if not skipChildren:
+      discard self.variablesCursor.path.pop
 
-proc nextVariable*(self: Debugger) {.expose("debugger").} =
+proc nextVariable*(self: Debugger, skipChildren: bool = false) {.expose("debugger").} =
   let scopes = self.currentScopes().getOr:
     return
 
@@ -710,12 +744,10 @@ proc nextVariable*(self: Debugger) {.expose("debugger").} =
     if i != -1:
       let i2 = (i + 1) mod self.filteredCursors.len
       self.variablesCursor = self.filteredCursors[i2]
-      self.variablesScrollOffset = self.maxVariablesScrollOffset * 0.5
       self.platform.requestRender()
       return
     else:
       self.variablesCursor = self.filteredCursors[0]
-      self.variablesScrollOffset = self.maxVariablesScrollOffset * 0.5
       self.platform.requestRender()
       return
 
@@ -728,21 +760,19 @@ proc nextVariable*(self: Debugger) {.expose("debugger").} =
   self.clampCurrentCursor()
 
   if self.variablesCursor.path.len == 0:
-    let scope = scopes[].scopes[self.variablesCursor.scope]
-    let collapsed = self.isCollapsed(ids & scope.variablesReference)
-    if self.variables.contains(ids & scope.variablesReference) and
-        self.variables[ids & scope.variablesReference].variables.len > 0 and
-        not collapsed:
-      self.variablesCursor.path.add (0, scope.variablesReference)
-      if self.variablesScrollOffset < self.maxVariablesScrollOffset:
-        self.variablesScrollOffset += self.platform.totalLineHeight
-      return
+    if self.variablesCursor.scope in 0..scopes[].scopes.high:
+      let scope = scopes[].scopes[self.variablesCursor.scope]
+      let collapsed = self.isCollapsed(ids & scope.variablesReference)
+      if not skipChildren and
+          self.variables.contains(ids & scope.variablesReference) and
+          self.variables[ids & scope.variablesReference].variables.len > 0 and
+          not collapsed:
+        self.variablesCursor.path.add (0, scope.variablesReference)
+        return
 
-    if self.variablesCursor.scope + 1 < scopes[].scopes.len:
-      self.variablesCursor = VariableCursor(scope: self.variablesCursor.scope + 1)
-      if self.variablesScrollOffset < self.maxVariablesScrollOffset:
-        self.variablesScrollOffset += self.platform.totalLineHeight
-      return
+      if self.variablesCursor.scope + 1 < scopes[].scopes.len:
+        self.variablesCursor = VariableCursor(scope: self.variablesCursor.scope + 1)
+        return
 
   else:
     var descending = true
@@ -756,34 +786,120 @@ proc nextVariable*(self: Debugger) {.expose("debugger").} =
       if index < variables.variables.len:
         let childrenRef = variables.variables[index].variablesReference
         let collapsed = self.isCollapsed(ids & childrenRef)
-        if descending and childrenRef != 0.VariablesReference and
+        if not skipChildren and descending and childrenRef != 0.VariablesReference and
             self.variables.contains(ids & childrenRef) and
             self.variables[ids & childrenRef].variables.len > 0 and
             not collapsed:
           self.variablesCursor.path.add (0, childrenRef)
-          if self.variablesScrollOffset < self.maxVariablesScrollOffset:
-            self.variablesScrollOffset += self.platform.totalLineHeight
           return
 
         if index < variables.variables.high:
           inc self.variablesCursor.path[self.variablesCursor.path.high].index
-          if self.variablesScrollOffset < self.maxVariablesScrollOffset:
-            self.variablesScrollOffset += self.platform.totalLineHeight
           return
+
+      if skipChildren:
+        return
 
       descending = false
       discard self.variablesCursor.path.pop
 
     if self.variablesCursor.scope + 1 < scopes[].scopes.len:
       self.variablesCursor = VariableCursor(scope: self.variablesCursor.scope + 1)
-      if self.variablesScrollOffset < self.maxVariablesScrollOffset:
-        self.variablesScrollOffset += self.platform.totalLineHeight
       return
 
     self.variablesCursor = self.lastChild(VariableCursor(
       scope: scopes[].scopes.high,
       path: @[(int.high, scopes[].scopes[scopes[].scopes.high].variablesReference)],
     ))
+
+proc movePrev*(self: Debugger, cursor: VariableCursor): Option[VariableCursor] =
+  let scopes = self.currentScopes().getOr:
+    return VariableCursor.none
+
+  if scopes[].scopes.len == 0 or self.variables.len == 0:
+    return VariableCursor.none
+
+  let ids = self.currentVariablesContext().getOr:
+    return VariableCursor.none
+
+  var cursor = self.clampCursor(cursor)
+  if cursor.path.len == 0:
+    if cursor.scope > 0:
+      cursor = self.lastChild(VariableCursor(scope: cursor.scope - 1))
+      return cursor.some
+
+  else:
+    let (index, currentRef) = cursor.path[cursor.path.high]
+    if not self.variables.contains(ids & currentRef):
+      return VariableCursor.none
+
+    if index > 0:
+      dec cursor.path[cursor.path.high].index
+      let l = cursor
+      cursor = self.lastChild(cursor)
+      return cursor.some
+
+    discard cursor.path.pop
+    return cursor.some
+
+proc moveNext*(self: Debugger, cursor: VariableCursor): Option[VariableCursor] =
+  let scopes = self.currentScopes().getOr:
+    return
+
+  let ids = self.currentVariablesContext().getOr:
+    return
+
+  if scopes[].scopes.len == 0 or self.variables.len == 0:
+    return
+
+  var cursor = self.clampCursor(cursor)
+  if cursor.path.len == 0:
+    if cursor.scope in 0..scopes[].scopes.high:
+      let scope = scopes[].scopes[cursor.scope]
+      let collapsed = self.isCollapsed(ids & scope.variablesReference)
+      if self.variables.contains(ids & scope.variablesReference) and
+          self.variables[ids & scope.variablesReference].variables.len > 0 and
+          not collapsed:
+        cursor.path.add (0, scope.variablesReference)
+        return cursor.some
+
+      if cursor.scope + 1 < scopes[].scopes.len:
+        cursor = VariableCursor(scope: cursor.scope + 1)
+        return cursor.some
+
+    return VariableCursor.none
+
+  else:
+    var descending = true
+    while cursor.path.len > 0:
+      let (index, currentRef) = cursor.path[cursor.path.high]
+      if not self.variables.contains(ids & currentRef):
+        return VariableCursor.none
+
+      let variables {.cursor.} = self.variables[ids & currentRef]
+
+      if index < variables.variables.len:
+        let childrenRef = variables.variables[index].variablesReference
+        let collapsed = self.isCollapsed(ids & childrenRef)
+        if descending and childrenRef != 0.VariablesReference and
+            self.variables.contains(ids & childrenRef) and
+            self.variables[ids & childrenRef].variables.len > 0 and
+            not collapsed:
+          cursor.path.add (0, childrenRef)
+          return cursor.some
+
+        if index < variables.variables.high:
+          inc cursor.path[cursor.path.high].index
+          return cursor.some
+
+      descending = false
+      discard cursor.path.pop
+
+    if cursor.scope + 1 < scopes[].scopes.len:
+      cursor = VariableCursor(scope: cursor.scope + 1)
+      return cursor.some
+
+    return VariableCursor.none
 
 proc expandVariable*(self: Debugger) {.expose("debugger").} =
   let scopes = self.currentScopes().getOr:
@@ -812,6 +928,44 @@ proc expandVariable*(self: Debugger) {.expose("debugger").} =
   else:
     self.collapsedVariables.excl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
 
+  self.platform.requestRender()
+
+proc expandVariableChildren*(self: Debugger) {.expose("debugger").} =
+  let scopes = self.currentScopes().getOr:
+    log lvlError, &"Failed to expand scope, no scope"
+    return
+
+  let ids = self.currentVariablesContext().getOr:
+    log lvlError, &"Failed to expand scope, no ids"
+    return
+
+  if scopes[].scopes.len == 0 or self.variables.len == 0:
+    log lvlError, &"Failed to expand scope, no scopes or variables"
+    return
+
+  self.clampCurrentCursor()
+  if self.selectedVariable().getSome(v):
+    if self.variables.contains(ids & v.varRef):
+      let va {.cursor.} = self.variables[ids & v.varRef].variables[v.index]
+
+      if va.variablesReference != 0.VariablesReference:
+        self.collapsedVariables.excl ids & va.variablesReference
+
+        if self.variables.contains(ids & va.variablesReference):
+          for childVariable in self.variables[ids & va.variablesReference].variables:
+            self.collapsedVariables.excl ids & childVariable.variablesReference
+            if childVariable.variablesReference != 0.VariablesReference:
+              asyncSpawn self.updateVariables(childVariable.variablesReference, 0)
+        else:
+          asyncSpawn self.updateVariables(va.variablesReference, 0)
+    else:
+      log lvlError, &"Failed to find variable {ids & v.varRef}"
+
+  else:
+    self.collapsedVariables.excl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
+
+  self.platform.requestRender()
+
 proc collapseVariable*(self: Debugger) {.expose("debugger").} =
   let scopes = self.currentScopes().getOr:
     return
@@ -833,14 +987,39 @@ proc collapseVariable*(self: Debugger) {.expose("debugger").} =
 
         let currentLen = self.variablesCursor.path.len
         if currentLen > 0:
-          while self.variablesCursor.path.len >= currentLen:
-            self.prevVariable()
+          discard self.variablesCursor.path.pop()
 
       elif va.variablesReference != 0.VariablesReference:
         self.collapsedVariables.incl ids & va.variablesReference
 
   else:
     self.collapsedVariables.incl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
+
+  self.platform.requestRender()
+
+proc collapseVariableChildren*(self: Debugger) {.expose("debugger").} =
+  let scopes = self.currentScopes().getOr:
+    return
+
+  let ids = self.currentVariablesContext().getOr:
+    return
+
+  if scopes[].scopes.len == 0 or self.variables.len == 0:
+    return
+
+  self.clampCurrentCursor()
+  if self.selectedVariable().getSome(v):
+    if self.variables.contains(ids & v.varRef):
+      let va {.cursor.} = self.variables[ids & v.varRef].variables[v.index]
+
+      if self.variables.contains(ids & va.variablesReference):
+        for childVariable in self.variables[ids & va.variablesReference].variables:
+          self.collapsedVariables.incl ids & childVariable.variablesReference
+
+  else:
+    self.collapsedVariables.incl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
+
+  self.platform.requestRender()
 
 proc stopDebugSession*(self: Debugger) {.expose("debugger").} =
   log lvlInfo, "[stopDebugSession] Stopping session"
@@ -950,39 +1129,99 @@ proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[Th
   else:
     return ThreadId.none
 
+  let timestamp = self.timestamp
   if self.client.getSome(client):
-    let stackTrace = await client.stackTrace(threadId)
+    var stackTrace = await client.stackTrace(threadId)
     if stackTrace.isError:
       log lvlError, &"Failed to get stacktrace for thread {threadId}: {stackTrace}"
       return ThreadId.none
+    if timestamp != self.timestamp:
+      return
     self.stackTraces[threadId] = stackTrace.result
+    self.currentFrameIndex = 0
     self.platform.requestRender()
 
     asyncSpawn self.updateScopes(threadId, self.currentFrameIndex, force=false)
 
   return threadId.some
 
-proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.async.} =
+proc updateVariables(self: Debugger, containerVarRef: VariablesReference, maxDepth: int, force: bool = false) {.async.} =
   let ids = self.currentVariablesContext().getOr:
     return
 
+  let containerId = ids & containerVarRef
+  if not force and self.variables.contains(containerId) and self.variables[containerId].timestamp == self.timestamp:
+    return
+
+  let timestamp = self.timestamp
   if self.client.getSome(client):
-    let variables = await client.variables(variablesReference)
+    var variables = await client.variables(containerVarRef)
     if variables.isError:
-      log lvlError, &"Failed to get variables {variablesReference}: {variables}"
+      log lvlError, &"Failed to get variables {containerVarRef}: {variables}"
       return
 
-    self.variables[ids & variablesReference] = variables.result
+    if timestamp != self.timestamp:
+      return
+
+    variables.result.timestamp = self.timestamp
+
+    var childrenToUpdate = newSeq[int]()
+    if self.variables.contains(containerId) and self.variables[containerId].timestamp != self.timestamp:
+      # Variable was fetched before
+      var varsToDelete = newSeq[VariablesReference]()
+      for i, oldChild in self.variables[containerId].variables:
+        let oldChildId = ids & oldChild.variablesReference
+        if i < variables.result.variables.len:
+          var newChild = variables.result.variables[i].addr
+          let newChildId = ids & newChild.variablesReference
+
+          if self.variables.contains(oldChildId):
+            childrenToUpdate.add i
+            self.variables[newChildId] = self.variables[oldChildId]
+            varsToDelete.add oldChildId.varRef
+
+            for p in self.variablesCursor.path.mitems:
+              if p.varRef == oldChildId.varRef:
+                p.varRef = newChildId.varRef
+
+            for vw in self.variableViews:
+              for p in vw.baseIndex.path.mitems:
+                if p.varRef == oldChildId.varRef:
+                  p.varRef = newChildId.varRef
+
+          if self.collapsedVariables.contains(oldChildId):
+            self.collapsedVariables.excl(oldChildId)
+            self.collapsedVariables.incl(newChildId)
+
+          if oldChild.name == newChild.name and oldChild.value != newChild.value:
+            newChild.valueChanged = true.some
+
+      # Remove old cached values
+      for v in varsToDelete:
+        self.variables.del(ids & v)
+
+    self.variables[containerId] = variables.result
     self.platform.requestRender()
-    if maxDepth == 0:
+
+    if maxDepth <= 0 and childrenToUpdate.len == 0:
       return
 
-    let futures = collect:
-      for variable in variables.result.variables:
-        if variable.variablesReference != 0.VariablesReference:
-          self.updateVariables(variable.variablesReference, maxDepth - 1)
+    if childrenToUpdate.len > 0:
+      let vars {.cursor.} = self.variables[containerId]
+      let futures = collect:
+        for i in childrenToUpdate:
+          if i in 0..vars.variables.high and vars.variables[i].variablesReference != 0.VariablesReference:
+            if not self.collapsedVariables.contains(ids & vars.variables[i].variablesReference):
+              self.updateVariables(vars.variables[i].variablesReference, maxDepth - 1, force)
 
-    await futures.allFutures
+      await futures.allFutures
+    else:
+      let futures = collect:
+        for variable in variables.result.variables:
+          if variable.variablesReference != 0.VariablesReference:
+            self.updateVariables(variable.variablesReference, maxDepth - 1, force)
+
+      await futures.allFutures
 
 proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.async.} =
   if self.client.getSome(client):
@@ -992,22 +1231,28 @@ proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bo
 
       let frame {.cursor.} = stack[].stackFrames[frameIndex]
 
-      let scopes = if force or not self.scopes.contains((threadId, frame.id)):
-        let scopes = await client.scopes(frame.id)
+      let timestamp = self.timestamp
+      if force or not self.scopes.contains((threadId, frame.id)):
+        var scopes = await client.scopes(frame.id)
         if scopes.isError:
           return
+
+        if timestamp != self.timestamp:
+          return
+
+        scopes.result.timestamp = self.timestamp
         self.scopes[(threadId, frame.id)] = scopes.result
-        scopes.result
-      else:
-        self.scopes[(threadId, frame.id)]
       self.platform.requestRender()
 
       let futures = collect:
-        for scope in scopes.scopes:
+        for scope in self.scopes[(threadId, frame.id)].scopes:
           if force or not self.variables.contains((threadId, frame.id, scope.variablesReference)):
             self.updateVariables(scope.variablesReference, 0)
 
       await futures.allFutures
+
+      if timestamp != self.timestamp:
+        return
 
       self.reevaluateCurrentCursor()
 
@@ -1015,15 +1260,20 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
   log(lvlInfo, &"onStopped {data}")
   self.platform.focusWindow()
 
-  self.threads.setLen 0
-  self.stackTraces.clear()
-  self.variables.clear()
+  self.timestamp.inc()
+  self.debuggerState = DebuggerState.Paused
+  self.currentStopData = data
   self.platform.requestRender()
+
+  let timestamp = self.timestamp
 
   if self.client.getSome(client):
     let threads = await client.getThreads
     if threads.isError:
       log lvlError, &"Failed to get threads: {threads}"
+      return
+
+    if timestamp != self.timestamp:
       return
 
     self.threads = threads.result.threads
@@ -1041,6 +1291,8 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
     self.lastEditor = TextDocumentEditor.none
 
   let threadId = await self.getStackTrace(data.threadId)
+  if timestamp != self.timestamp:
+    return
   self.platform.requestRender()
 
   if threadId.getSome(threadId) and self.stackTraces.contains(threadId):
@@ -1056,14 +1308,11 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
       await self.tryOpenFileInWorkspace(path, (frame.line - 1, frame.column - 1))
 
 proc handleStopped(self: Debugger, data: OnStoppedData) =
-  self.debuggerState = DebuggerState.Paused
   asyncSpawn self.handleStoppedAsync(data)
 
 proc handleContinued(self: Debugger, data: OnContinuedData) =
   log(lvlInfo, &"onContinued {data}")
   self.debuggerState = DebuggerState.Running
-  self.scopes.clear()
-  self.variables.clear()
   if self.lastEditor.isSome:
     self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
   self.platform.requestRender()
@@ -1081,14 +1330,16 @@ proc handleOutput(self: Debugger, data: OnOutputData) =
     log(lvlInfo, &"[dap-{data.category}] {data.output}")
     return
 
-  if data.category == "stdout".some:
+  if data.category == "stdout".some or data.category == "stderr".some:
     let document = self.outputEditor.document
 
     let selection = document.lastCursor.toSelection
+    let cursorAtEnd = self.outputEditor.selection == selection
     discard document.edit([selection], [selection], [data.output.replace("\r\n", "\n")])
 
-    if self.outputEditor.selection == selection:
+    if cursorAtEnd:
       self.outputEditor.selection = document.lastCursor.toSelection
+      self.outputEditor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
       self.outputEditor.scrollToCursor()
 
   else:
@@ -1274,19 +1525,16 @@ proc flushBreakpointsForFileDelayedAsync(self: Debugger, path: string, delay: in
 proc flushBreakpointsForFileDelayed(self: Debugger, path: string, delay: int) =
   asyncSpawn self.flushBreakpointsForFileDelayedAsync(path, delay)
 
-proc listenToEditorChanges*(self: Debugger, editorId: EditorId) =
-  if self.editors.getEditorForId(editorId.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    let path = editor.TextDocumentEditor.document.filename
-    if path notin self.editorCallbacks:
-      let id = editor.TextDocumentEditor.document.onSaved.subscribe proc() =
-        self.flushBreakpointsForFileDelayed(path, 1000)
-      let id2 = editor.TextDocumentEditor.document.textChanged.subscribe proc(doc: TextDocument) =
-        self.updateBreakpointsForFile(path)
-      self.editorCallbacks[path] = (editor.TextDocumentEditor, editor.TextDocumentEditor.document, id)
+proc listenToDocumentChanges*(self: Debugger, document: TextDocument) =
+  if document.filename notin self.documentCallbacks:
+    let id = document.onSaved.subscribe proc() =
+      self.flushBreakpointsForFileDelayed(document.filename, 1000)
+    let id2 = document.textChanged.subscribe proc(doc: TextDocument) =
+      self.updateBreakpointsForFile(document.filename)
+    self.documentCallbacks[document.filename] = (document, id)
 
 proc toggleBreakpointAt*(self: Debugger, editorId: EditorId, line: int) {.expose("debugger").} =
   ## Line is 0-based
-  self.listenToEditorChanges(editorId)
   if self.editors.getEditorForId(editorId.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let path = editor.TextDocumentEditor.document.filename
     if not self.breakpoints.contains(path):
@@ -1304,7 +1552,7 @@ proc toggleBreakpointAt*(self: Debugger, editorId: EditorId, line: int) {.expose
     self.breakpoints[path].add BreakpointInfo(
       path: path,
       breakpoint: SourceBreakpoint(line: line + 1),
-      anchor: snapshot.anchorAfter(point(line, 0))
+      anchor: snapshot.anchorAfter(point(line, 0)).some,
     )
 
     self.flushBreakpointsForFile(path)
@@ -1458,7 +1706,13 @@ proc editBreakpoints(self: Debugger) {.expose("debugger").} =
 
   discard self.layout.pushSelectorPopup(builder)
 
+proc pauseExecution*(self: Debugger) {.expose("debugger").} =
+  if self.currentThread.getSome(thread) and self.client.getSome(client):
+    asyncSpawn client.pauseExecution(thread.id)
+
 proc continueExecution*(self: Debugger) {.expose("debugger").} =
+  if self.debuggerState != DebuggerState.Paused:
+    return
   if self.currentThread.getSome(thread) and self.client.getSome(client):
     asyncSpawn client.continueExecution(thread.id)
 
@@ -1488,9 +1742,13 @@ proc toggleView(self: Debugger, T: typedesc, slot: string, focus: bool) =
       self.layout.showView(v, slot, focus = focus)
 
   if existing.len == 0:
-    self.layout.addView(T(), slot, focus = focus)
+    let view = T()
+    when T is VariablesView:
+      self.variableViews.add view
+    self.layout.addView(view, slot, focus = focus)
 
 proc closeDebuggerViews*(self: Debugger) {.expose("debugger").} =
+  self.variableViews.setLen(0)
   self.closeAllViews(ThreadsView)
   self.closeAllViews(StacktraceView)
   self.closeAllViews(VariablesView)
@@ -1504,6 +1762,7 @@ proc closeDebuggerStacktrace*(self: Debugger) {.expose("debugger").} =
   self.closeAllViews(StacktraceView)
 
 proc closeDebuggerVariables*(self: Debugger) {.expose("debugger").} =
+  self.variableViews.setLen(0)
   self.closeAllViews(VariablesView)
 
 proc closeDebuggerOutput*(self: Debugger) {.expose("debugger").} =
@@ -1531,7 +1790,9 @@ proc showDebuggerVariables*(self: Debugger, focus: bool = true, slot: string = "
   if existing.len > 0:
     self.layout.showView(existing[0], slot, focus = focus)
   else:
-    self.layout.addView(VariablesView(), slot, focus = focus)
+    let view = VariablesView()
+    self.variableViews.add view
+    self.layout.addView(view, slot, focus = focus)
 
 proc showDebuggerOutput*(self: Debugger, focus: bool = true, slot: string = "#debugger-output") {.expose("debugger").} =
   let existing = self.layout.getViews(OutputView)
