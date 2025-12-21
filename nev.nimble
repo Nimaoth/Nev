@@ -178,7 +178,7 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
 proc buildPlugin(name: string) =
   withDir &"plugins/{name}":
     exec &"nimble setup"
-    exec &"nim c -d:release --disablevalidation --skipParentCfg --passL:\"-o {name}.m.wasm\" {getCommandLineParams()} {name}.nim"
+    exec &"nim c -d:release --skipParentCfg --passL:\"-o {name}.m.wasm\" {getCommandLineParams()} {name}.nim"
     # exec &"nim c -d:release --skipParentCfg -d:pluginWorld=plugin-thread-safe --passL:\"-o {name}_thread.m.wasm\" {getCommandLineParams()} {name}_thread.nim"
 
 task buildWasmModule, "":
