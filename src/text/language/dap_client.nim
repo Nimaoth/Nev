@@ -292,6 +292,7 @@ type
     endColumn*: Option[int]
 
   Scopes* = object
+    timestamp*: int = 0
     scopes*: seq[Scope]
 
   Variable* = object
@@ -304,8 +305,10 @@ type
     namedVariables*: Option[int]
     indexedVariables*: Option[int]
     memoryReference*: Option[string]
+    valueChanged*: Option[bool]
 
   Variables* = object
+    timestamp*: int = 0
     variables*: seq[Variable]
 
   OnInitializedData* = void
@@ -634,6 +637,20 @@ proc configurationDone*(client: DAPClient) {.async.} =
   let res = await client.sendRequest("configurationDone", JsonNode.none)
   if res.isError:
     log lvlError, &"Failed to finish configuration: {res}"
+    return
+
+proc pauseExecution*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none) {.async.} =
+  log lvlInfo, &"pauseExecution (threadId={threadId}, singleThreaded={singleThreaded})"
+
+  var args = %*{
+    "threadId": threadId,
+  }
+  if singleThreaded.getSome(singleThreaded):
+    args["singleThreaded"] = singleThreaded.toJson
+
+  let res = await client.sendRequest("pause", args.some)
+  if res.isError:
+    log lvlError, &"Failed to pause execution: {res}"
     return
 
 proc continueExecution*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none) {.async.} =

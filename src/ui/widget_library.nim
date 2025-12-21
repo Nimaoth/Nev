@@ -156,6 +156,9 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
     for i in countdown(min(previousBaseIndex - 1, maxLine), 0):
       handleLine(i, y, false)
 
+      if builder.currentChild.pivot == vec2():
+        builder.currentChild.rawY = builder.currentChild.boundsRaw.y - builder.currentChild.bounds.h
+
       y = builder.currentChild.y
       if not sizeToContentY and builder.currentChild.bounds.yh < 0:
         break

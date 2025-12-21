@@ -272,6 +272,9 @@ proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer): 
 
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
 
+proc isReady*(self: TextDocument): bool =
+  return not (self.requiresLoad or self.isLoadingAsync)
+
 method getStatisticsString*(self: TextDocument): string =
   try:
     let visibleTextStats = stats(self.buffer.snapshot.visibleText.tree)

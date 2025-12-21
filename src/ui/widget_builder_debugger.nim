@@ -1,6 +1,6 @@
 import std/[strformat, options, tables, sets, strutils]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger]
+import misc/[util, custom_logger, timer]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
 import platform_service
@@ -49,7 +49,9 @@ proc createStackTrace*(self: StacktraceView, builder: UINodeBuilder, debugger: D
     else:
       builder.panel(&{SizeToContentY, FillX, DrawText}, y = y, text = text, textColor = textColor)
 
-  builder.createLines(0, 0, stackTrace.stackFrames.high, color(0, 0, 0, 0), handleScroll, handleLine)
+  let height = builder.currentParent.bounds.h
+  updateBaseIndexAndScrollOffset(height, self.baseIndex, self.scrollOffset, stackTrace.stackFrames.len, builder.textHeight, debugger.currentFrameIndex.some)
+  builder.createLines(self.baseIndex, self.scrollOffset, stackTrace.stackFrames.high, color(0, 0, 0, 0), handleScroll, handleLine)
 
 proc createThreads*(self: ThreadsView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
   let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
@@ -69,144 +71,174 @@ proc createThreads*(self: ThreadsView, builder: UINodeBuilder, debugger: Debugge
     else:
       builder.panel(&{SizeToContentY, FillX, DrawText}, y = y, text = text, textColor = textColor)
 
-  builder.createLines(0, 0, threads.high, color(0, 0, 0, 0), handleScroll, handleLine)
-
-type CreateVariablesOutput = object
-  selectedNode: UINode
-
-proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Debugger,
-    variablesReference: VariablesReference, selectedBackgroundColor: Color,
-    textColor: Color, output: var CreateVariablesOutput) =
-
-  let ids = debugger.currentVariablesContext().getOr:
-    return
-
-  let filteredBackgroundColor = builder.theme.color("editorSuggestWidget.selectedBackground", color(0.6, 0.5, 0.2)).withAlpha(1)
-  let textColorHighlight = builder.theme.color("editor.foreground.highlight", color(0.9, 0.8, 0.8))
-  let typeColor = builder.theme.tokenColor("type", color(0.9, 0.8, 0.8))
-  let valueColor = builder.theme.tokenColor("string", color(0.9, 0.8, 0.8))
-  let nameColor = builder.theme.color("editor.foreground.highlight", color(0.9, 0.8, 0.8))
-
-  let variables {.cursor.} = debugger.variables[ids & variablesReference]
-  for i, variable in variables.variables:
-    let collapsed = debugger.isCollapsed(ids & variable.variablesReference)
-    let hasChildren = variable.variablesReference != 0.VariablesReference
-    let childrenCached = debugger.variables.contains(ids & variable.variablesReference)
-    let showChildren = hasChildren and childrenCached and not collapsed
-
-    builder.panel(&{SizeToContentY, FillX, LayoutHorizontal}):
-      let typeText = variable.`type`.mapIt(": " & it).get("")
-      let collapsedText = if hasChildren and showChildren:
-        "-"
-      elif hasChildren and not showChildren:
-        "+"
-      else:
-        " "
-
-      let text = fmt"{collapsedText} {variable.name}{typeText} = {variable.value}"
-
-      let isSelected = debugger.isSelected(variablesReference, i)
-
-      var nameColor = textColor
-      var highlightIndices = newSeq[int]()
-      if debugger.filteredVariables.contains((i, variablesReference)):
-        nameColor = textColorHighlight
-        let i = variable.name.find(debugger.variablesFilter)
-        if i != -1:
-          for k in 0..<debugger.variablesFilter.len:
-            highlightIndices.add(i + k)
-
-      proc createText() =
-        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = collapsedText, textColor = textColor)
-        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = " ")
-        if highlightIndices.len > 0:
-          discard builder.highlightedText(variable.name, highlightIndices, textColor, textColorHighlight)
-        else:
-          builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = variable.name, textColor = nameColor)
-        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = typeText, textColor = typeColor)
-        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = " = ", textColor = textColor)
-        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = variable.value, textColor = valueColor)
-
-      if isSelected:
-        builder.panel(&{SizeToContentY, FillX, FillBackground, LayoutHorizontal}, backgroundColor = selectedBackgroundColor):
-          createText()
-          output.selectedNode = currentNode
-      else:
-        createText()
-
-    if showChildren:
-      builder.panel(&{SizeToContentY, FillX, LayoutVertical}, x = 2 * builder.charWidth):
-        self.createVariables(builder, debugger, variable.variablesReference,
-          selectedBackgroundColor, textColor, output)
-
-proc createScope*(self: VariablesView, builder: UINodeBuilder, debugger: Debugger, scopeId: int,
-    selectedBackgroundColor: Color, textColor: Color, output: var CreateVariablesOutput):
-    seq[OverlayFunction] =
-
-  let ids = debugger.currentVariablesContext().getOr:
-    return
-
-  let scopes = debugger.currentScopes().get
-
-  let scope {.cursor.} = scopes[].scopes[scopeId]
-
-  builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
-    let collapsed = debugger.isCollapsed(ids & scope.variablesReference)
-    let hasChildren = scope.variablesReference != 0.VariablesReference
-    let childrenCached = debugger.variables.contains(ids & scope.variablesReference)
-    let showChildren = hasChildren and childrenCached and not collapsed
-
-    let collapsedText = if hasChildren and showChildren:
-      "-"
-    elif hasChildren and not showChildren:
-      "+"
-    else:
-      " "
-
-    let text = &"{collapsedText} {scope.name}"
-
-    let isSelected = debugger.isScopeSelected(scopeId)
-    if isSelected:
-      builder.panel(&{SizeToContentY, FillX, FillBackground}, backgroundColor = selectedBackgroundColor):
-        builder.panel(&{SizeToContentY, FillX, DrawText}, text = text, textColor = textColor)
-        output.selectedNode = currentNode
-    else:
-      builder.panel(&{SizeToContentY, FillX, DrawText}, text = text, textColor = textColor)
-
-    if showChildren:
-      builder.panel(&{SizeToContentY, FillX, LayoutVertical}, x = 2 * builder.charWidth):
-        self.createVariables(builder, debugger, scope.variablesReference,
-          selectedBackgroundColor, textColor, output)
+  let height = builder.currentParent.bounds.h
+  updateBaseIndexAndScrollOffset(height, self.baseIndex, self.scrollOffset, threads.len, builder.textHeight, debugger.currentThreadIndex.some)
+  builder.createLines(self.baseIndex, self.scrollOffset, threads.high, color(0, 0, 0, 0), handleScroll, handleLine)
 
 proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
   let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  let selectionColor = builder.theme.color("list.activeSelectionBackground", color(0.8, 0.8, 0.8)).withAlpha(1)
-  var backgroundColor = builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).darken(0.025)
+  let changedColor = builder.theme.color("diffEditor.insertedTextBackground", color(0.8, 0.8, 0.8))
+  let selectionColor = builder.theme.color("list.activeSelectionBackground", color(0.8, 0.8, 0.8))
   let borderColor = builder.theme.color("panel.border", color(0, 0, 0))
   let threads {.cursor.} = debugger.getThreads()
-
-  proc handleScroll(delta: float) = discard
-
-  var createVariablesOutput = CreateVariablesOutput()
-
-  var res: seq[OverlayFunction]
-  proc handleLine(line: int, y: float, down: bool) =
-    builder.panel(&{SizeToContentY, FillX}, y = y):
-      res.add self.createScope(builder, debugger, line, selectionColor, textColor, createVariablesOutput)
+  let textColorHighlight = builder.theme.color("editor.foreground.highlight", color(0.9, 0.8, 0.8))
+  let typeColor = builder.theme.tokenColor("type", color(0.9, 0.8, 0.8))
+  let valueColor = builder.theme.tokenColor("string", color(0.9, 0.8, 0.8))
+  let nameColor = builder.theme.tokenColor("variable", color(0.9, 0.8, 0.8))
 
   let scopes = debugger.currentScopes().getOr:
     return
 
-  var scrolledNode: UINode
-  builder.panel(builder.currentSizeFlags):
-    scrolledNode = currentNode
-    builder.createLines(0, 0, scopes[].scopes.high, color(0, 0, 0, 0), handleScroll, handleLine)
-    debugger.maxVariablesScrollOffset = currentNode.bounds.h - builder.lineHeight
+  let ids = debugger.currentVariablesContext().getOr:
+    return
 
-  if createVariablesOutput.selectedNode.isNotNil:
-    let bounds = createVariablesOutput.selectedNode.transformBounds(builder.currentParent)
-    let scrollOffset = debugger.variablesScrollOffset - bounds.y
-    scrolledNode.rawY = scrolledNode.boundsRaw.y + scrollOffset
+  let height = builder.currentParent.bounds.h
+  let variablesCursor = debugger.cursor()
+
+  builder.panel(&{FillX, FillY, MaskContent}):
+    buildCommands(currentNode.renderCommands):
+
+      var selectedY = float.none
+
+      proc drawVariable(cursor: VariableCursor, y: float) =
+        if cursor.path.len > 0:
+          let v = cursor.path.last
+          debugger.variables.withValue(ids & v.varRef, vars):
+            let indent = cursor.path.len.float * builder.charWidth * 3
+            if v.index in 0..vars.variables.high:
+              let va {.cursor.} = vars.variables[v.index]
+              let collapsed = debugger.isCollapsed(ids & va.variablesReference)
+              let hasChildren = va.variablesReference != 0.VariablesReference
+              let childrenCached = debugger.variables.contains(ids & va.variablesReference)
+              let showChildren = hasChildren and childrenCached and not collapsed
+              let isSelected = debugger.isSelected(v.varRef, v.index)
+              let valueChanged = va.valueChanged.get(false)
+
+              var upToDate = true
+              if hasChildren and childrenCached and debugger.variables[ids & va.variablesReference].timestamp != debugger.timestamp:
+                upToDate = false
+
+              let typeText = va.`type`.mapIt(": " & it).get("")
+              var collapsedText = if hasChildren and showChildren:
+                "-"
+              elif hasChildren and not showChildren:
+                "+"
+              else:
+                " "
+
+              var nameColor = nameColor
+              var typeColor = typeColor
+              var valueColor = valueColor
+              if not upToDate:
+                nameColor = nameColor.darken(0.15)
+                typeColor = typeColor.darken(0.15)
+                valueColor = valueColor.darken(0.15)
+
+              # if valueChanged:
+              #   fillRect(rect(indent, y, builder.currentParent.bounds.w, builder.textHeight), changedColor)
+
+              if isSelected:
+                selectedY = y.some
+                fillRect(rect(indent, y, builder.currentParent.bounds.w, builder.textHeight), selectionColor)
+
+              var highlightIndices = newSeq[int]()
+              var highlightIndex = -1
+              if debugger.filteredVariables.contains(v):
+                highlightIndex = va.name.find(debugger.variablesFilter)
+
+              var x = indent
+              drawText(collapsedText, rect(x, y, 1, 1), textColor.darken(0.15), 0.UINodeFlags)
+              x += builder.charWidth * (collapsedText.len + 1).float
+
+              if highlightIndex >= 0:
+                let a = highlightIndex
+                let b = highlightIndex + debugger.variablesFilter.len
+                if a > 0:
+                  drawText(va.name[0..<a], rect(x, y, 1, 1), nameColor, 0.UINodeFlags)
+                drawText(va.name[a..<b], rect(x + a.float * builder.charWidth, y, 1, 1), textColorHighlight, 0.UINodeFlags)
+                if b < va.name.len:
+                  drawText(va.name[b..^1], rect(x + b.float * builder.charWidth, y, 1, 1), nameColor, 0.UINodeFlags)
+              else:
+                drawText(va.name, rect(x, y, 1, 1), nameColor, 0.UINodeFlags)
+
+              x += builder.charWidth * va.name.len.float
+
+              if va.`type`.isSome:
+                drawText(": ", rect(x, y, 1, 1), textColor, 0.UINodeFlags)
+                x += builder.charWidth * 2
+                drawText(va.`type`.get, rect(x, y, 1, 1), typeColor, 0.UINodeFlags)
+                x += builder.charWidth * va.`type`.get.len.float
+
+              if va.value != "":
+                drawText(" = ", rect(x, y, 1, 1), textColor, 0.UINodeFlags)
+                x += builder.charWidth * 3
+
+                if valueChanged:
+                  fillRect(rect(x, y, va.value.len.float * builder.charWidth, builder.textHeight), changedColor)
+                drawText(va.value, rect(x, y, 1, 1), valueColor, 0.UINodeFlags)
+
+        elif cursor.scope in 0..scopes[].scopes.high:
+          let scope = scopes[].scopes[cursor.scope]
+          let collapsed = debugger.isCollapsed(ids & scope.variablesReference)
+          let hasChildren = scope.variablesReference != 0.VariablesReference
+          let childrenCached = debugger.variables.contains(ids & scope.variablesReference)
+          let showChildren = hasChildren and childrenCached and not collapsed
+          let isSelected = debugger.isScopeSelected(cursor.scope)
+
+          let collapsedText = if hasChildren and showChildren:
+            "-"
+          elif hasChildren and not showChildren:
+            "+"
+          else:
+            " "
+
+          if isSelected:
+            selectedY = y.some
+            fillRect(rect(0, y, builder.currentParent.bounds.w, builder.textHeight), selectionColor)
+          let text = &"{collapsedText} {scope.name}"
+          drawText(text, rect(0, y, 1, 1), nameColor, 0.UINodeFlags)
+
+      proc drawVariables() =
+        currentNode.renderCommands.clear()
+        var cursor = self.baseIndex
+        var y = self.scrollOffset
+        let variablesUp = (y / builder.textHeight).int + 1
+        let variablesDown = ((height - y) / builder.textHeight).int + 1
+        for i in 0..variablesDown:
+          drawVariable(cursor, y)
+          y += builder.textHeight
+          let newCursor = debugger.moveNext(cursor)
+          if newCursor.isNone:
+            break
+          cursor = newCursor.get
+
+        y = self.scrollOffset
+        cursor = self.baseIndex
+        for i in 0..<variablesUp:
+          y -= builder.textHeight
+          let newCursor = debugger.movePrev(cursor)
+          if newCursor.isNone:
+            break
+          cursor = newCursor.get
+          drawVariable(cursor, y)
+
+      var t = startTimer()
+      drawVariables()
+      self.baseIndex = variablesCursor
+      if selectedY.isNone:
+        self.scrollOffset = height * 0.5
+        drawVariables()
+      elif selectedY.get > height - builder.textHeight:
+        self.scrollOffset = height - builder.textHeight
+        drawVariables()
+      elif selectedY.get < 0:
+        self.scrollOffset = 0
+        drawVariables()
+      else:
+        self.scrollOffset = selectedY.get
+      let ms = t.elapsed.ms
+      # debugf"draw variables took {ms}"
+      currentNode.markDirty(builder)
 
 method createUI*(self: StacktraceView, builder: UINodeBuilder): seq[OverlayFunction] =
   let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
@@ -276,14 +308,22 @@ method createUI*(self: OutputView, builder: UINodeBuilder): seq[OverlayFunction]
 method createUI*(self: ToolbarView, builder: UINodeBuilder): seq[OverlayFunction] =
   let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   self.renderView(builder,
-    proc(): seq[OverlayFunction] = @[],
+    proc(): seq[OverlayFunction] =
+      if getDebugger().getSome(debugger):
+        if debugger.debuggerState == DebuggerState.Paused:
+          if debugger.currentStopData.description.isSome:
+            builder.panel(&{FillX, SizeToContentY, DrawText, TextWrap}, textColor = textColor, text = debugger.currentStopData.description.get)
+    ,
     proc(): seq[OverlayFunction] =
       var text = &"Debugger"
       if getDebugger().getSome(debugger):
         case debugger.debuggerState
         of DebuggerState.None: text.add " - Not started"
         of DebuggerState.Starting: text.add " - Starting"
-        of DebuggerState.Paused: text.add " - Paused"
+        of DebuggerState.Paused:
+          text.add " - Paused"
+          if debugger.currentStopData.reason != "":
+            text.add " (" & debugger.currentStopData.reason & ")"
         of DebuggerState.Running: text.add " - Running"
 
         if debugger.lastConfiguration.getSome(config):

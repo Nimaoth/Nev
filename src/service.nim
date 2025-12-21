@@ -27,6 +27,10 @@ type
 
 var gServices*: Services
 
+proc getServices*(): Services {.gcsafe.} =
+  {.gcsafe.}:
+    return gServices
+
 method init*(self: Service): Future[Result[void, ref CatchableError]] {.base, async: (raises: []).} = discard
 method deinit*(self: Service) {.base.} = discard
 method tick*(self: Service) {.base.} = discard

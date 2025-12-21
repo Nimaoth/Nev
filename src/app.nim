@@ -66,7 +66,6 @@ type EditorState = object
   astProjectWorkspaceId: string
   astProjectPath: Option[string]
 
-  debuggerState: Option[JsonNode]
   sessionData: JsonNode
 
 type
@@ -1206,9 +1205,6 @@ proc saveAppState*(self: App) {.expose("editor").} =
 
   state.commandHistory = self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory
   state.sessionData = self.session.saveSession()
-
-  if getDebugger().getSome(debugger):
-    state.debuggerState = debugger.getStateJson().some
 
   # Save open workspace folders
   state.workspaceFolder = OpenWorkspace(

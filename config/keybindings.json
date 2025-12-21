@@ -113,14 +113,15 @@
         "<LEADER>fs": ["write-file"],
         "<LEADER>gP": ["show-plugins"],
 
+        "<LEADER>ax": ["stop-debug-session"],
         "<LEADER>ac": ["continue-execution"],
+        "<LEADER>ap": ["pause-execution"],
         "<LEADER>ar": ["step-over"],
         "<LEADER>at": ["step-in"],
         "<LEADER>an": ["step-out"],
         "<LEADER>ae": ["edit-breakpoints"],
         "<LEADER>am": ["toggle-breakpoints-enabled"],
-        "<LEADER>gb": ["show-debugger-view"],
-        "<LEADER>al": { "command": ["all", "run-last-configuration", "show-debugger-view"], "description": "Run last configuration" },
+        "<LEADER>al": { "command": "run-last-configuration", "description": "Run last configuration" },
         "<LEADER>av": { "command": ["choose-run-configuration"], "description": "Choose run configuration" },
         "<LEADER>ab": { "command": ["toggle-breakpoint"], "description": "Toggle breakpoint" },
 
@@ -141,8 +142,8 @@
         "<F11>": ["step-in"],
         "<F8>": ["step-out"],
         "<F5>": ["continue-execution"],
-        "<S-F12>": ["toggle-debugger-output", false],
-        "<F12>": ["all", ["toggle-debugger-toolbar", false], ["toggle-debugger-threads", false], ["toggle-debugger-stacktrace", false], ["toggle-debugger-variables", false]],
+        "<A-e>": ["toggle-debugger-output", false],
+        "<A-a>": ["all", ["toggle-debugger-toolbar", false], ["toggle-debugger-threads", false], ["toggle-debugger-stacktrace", false], ["toggle-debugger-variables", false]],
     },
 
     "editor.text.completion": {
@@ -260,12 +261,16 @@
 
     "debugger.variables": {
         "<UP>": "prev-variable",
+        "<S-UP>": ["prev-variable", true], // skip children
         "<C-p>": "prev-variable",
         "<DOWN>": "next-variable",
+        "<S-DOWN>": ["next-variable", true], // skip children
         "<C-n>": "next-variable",
         "<RIGHT>": "expand-variable",
+        "<S-RIGHT>": "expand-variable-children",
         "<C-y>": "expand-variable",
         "<LEFT>": "collapse-variable",
+        "<S-LEFT>": "collapse-variable-children",
         "<HOME>": "select-first-variable",
         "<END>": "select-last-variable",
         "<BACKSPACE>": "delete-last-variable-filter-char",
