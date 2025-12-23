@@ -56,51 +56,74 @@ proc newAsyncProcessConnection*(path: string, args: seq[string]):
 
   return ConnectionAsyncProcess(process: process)
 
-# todo
-# type ConnectionAsyncSocket* = ref object of Connection
-#   socket: AsyncSocket
-#   activeRequests: int = 0 # Required because AsyncSocket asserts that we don't close the socket while
-#                           # recvLine is in progress
-#   closeRequested: bool = false
+import chronos/transports/stream
 
-# method close*(connection: ConnectionAsyncSocket) =
-#   if connection.activeRequests > 0:
-#     connection.closeRequested = true
-#   else:
-#     connection.socket.close()
-#     connection.socket = nil
+type ConnectionAsyncSocket* = ref object of Connection
+  # socket: AsyncSocket
+  transport: StreamTransport
+  activeRequests: int = 0 # Required because AsyncSocket asserts that we don't close the socket while
+                          # recvLine is in progress
+  closeRequested: bool = false
 
-# template handleClose(connection: Connection): untyped =
-#   inc connection.activeRequests
-#   defer:
-#     dec connection.activeRequests
-#     if connection.closeRequested and connection.activeRequests == 0:
-#       connection.closeRequested = false
-#       connection.close()
+method close*(connection: ConnectionAsyncSocket) =
+  try:
+    if connection.activeRequests > 0:
+      connection.closeRequested = true
+    else:
+      connection.transport.close()
+      connection.transport = nil
+  except Exception:
+    discard
 
-# method recvLine*(connection: ConnectionAsyncSocket): Future[string] {.async.} =
-#   if connection.socket.isNil or connection.socket.isClosed:
-#     return ""
+template handleClose(connection: Connection): untyped =
+  inc connection.activeRequests
+  defer:
+    dec connection.activeRequests
+    if connection.closeRequested and connection.activeRequests == 0:
+      connection.closeRequested = false
+      try:
+        connection.close()
+      except Exception:
+        discard
 
-#   connection.handleClose()
-#   return await connection.socket.recvLine()
+method recvLine*(connection: ConnectionAsyncSocket): Future[string] {.async.} =
+  if connection.transport.isNil or connection.transport.closed:
+    return ""
 
-# method recv*(connection: ConnectionAsyncSocket, length: int): Future[string] {.async.} =
-#   if connection.socket.isNil or connection.socket.isClosed:
-#     return ""
+  connection.handleClose()
+  return await connection.transport.readLine()
 
-#   connection.handleClose()
-#   return await connection.socket.recv(length)
+method recv*(connection: ConnectionAsyncSocket, length: int): Future[string] {.async.} =
+  if connection.transport.isNil or connection.transport.closed:
+    return ""
 
-# method send*(connection: ConnectionAsyncSocket, data: string): Future[void] {.async.} =
-#   if connection.socket.isNil or connection.socket.isClosed:
-#     return
+  connection.handleClose()
+  let bytes = await connection.transport.read(length)
+  var res = newString(bytes.len)
+  if bytes.len > 0:
+    copyMem(res[0].addr, bytes[0].addr, bytes.len)
+  return res
 
-#   connection.handleClose()
-#   await connection.socket.send(data)
+method send*(connection: ConnectionAsyncSocket, data: string): Future[void] {.async.} =
+  if connection.transport.isNil or connection.transport.closed:
+    return
 
-# proc newAsyncSocketConnection*(host: string, port: Port): Future[ConnectionAsyncSocket] {.async.} =
-#   log lvlInfo, fmt"Creating async socket connection at {host}:{port.int}"
-#   let socket = newAsyncSocket()
-#   await socket.connect(host, port)
-#   return ConnectionAsyncSocket(socket: socket)
+  connection.handleClose()
+  if data.len > 0:
+    let written = await connection.transport.write(data[0].addr, data.len)
+
+proc newAsyncSocketConnection*(host: string, port: Port): Future[ConnectionAsyncSocket] {.async.} =
+  log lvlInfo, fmt"Creating async socket connection at {host}:{port.int}"
+
+  let ipAddress = host
+  let port = port.int
+  let addressess = resolveTAddress(ipAddress & ":" & $port)
+  if addressess.len == 0:
+    raise newException(IOError, &"Failed to resolve address '{ipAddress}:{port}'")
+
+  let address = addressess[0]
+  let transport = await connect(address, bufferSize = 1024 * 1024)
+
+  # let socket = newAsyncSocket()
+  # await socket.connect(host, port)
+  return ConnectionAsyncSocket(transport: transport)
