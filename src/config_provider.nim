@@ -56,7 +56,8 @@ type
     docs*: string
     noInit*: bool
 
-  RegexSetting* = distinct JsonNodeEx
+  RegexSetting* = object
+    impl: JsonNodeEx
 
   RuneSetSetting* = distinct HashSet[Rune]
 
@@ -86,7 +87,7 @@ proc toJsonExHook*[T](a: Setting[T]): JsonNodeEx {.raises: [].} =
   return v.toJsonEx(defaultToJsonOptions)
 
 proc fromJsonExHook*(t: var RegexSetting, jsonNode: JsonNodeEx) =
-  t = jsonNode.RegexSetting
+  t = RegexSetting(impl: jsonNode)
 
 proc camelCaseToHyphenCase(str: string): string =
   for c in str:
@@ -766,7 +767,7 @@ proc decodeRegex*(value: JsonNodeEx, default: string = ""): string =
     return default
 
 proc decodeRegex*(value: RegexSetting, default: string = ""): string =
-  return value.JsonNodeEx.decodeRegex(default)
+  return value.impl.decodeRegex(default)
 
 proc getRegexValue*(self: ConfigStore, path: string, default: string = ""): string =
   let value = self.get(path, JsonNodeEx, nil)
@@ -798,7 +799,7 @@ proc get*[T](self: Setting[Option[T]], default: T): T =
   return default
 
 proc getRegex*(self: Setting[RegexSetting], default: string = ""): string =
-  let value = self.get().JsonNodeEx
+  let value = self.get().impl
   if value == nil:
     return default
   return value.decodeRegex(default)
