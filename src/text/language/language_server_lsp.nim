@@ -234,6 +234,9 @@ proc getOrCreateLanguageServerLSP*(self: LanguageServerLspService, name: string)
       return LanguageServerLSP.none
 
     let command = config["command"].jsonTo(seq[string])
+    if command.len == 0:
+      log lvlError, &"Empty command in config for language server '{name}'"
+      return LanguageServerLSP.none
 
     let initializationOptionsName = config.fields.getOrDefault("initialization-options-name", newJexNull()).jsonTo(string).catch("settings")
     let userOptions = config.fields.getOrDefault(initializationOptionsName, newJexNull()).toJson
@@ -241,7 +244,11 @@ proc getOrCreateLanguageServerLSP*(self: LanguageServerLspService, name: string)
     let workspaceInfo = self.workspace.info.some
     let killOnExit = config.fields.getOrDefault("kill-on-exit", newJexBool(true)).jsonTo(bool).catch(true)
 
-    let (exePath, args) = (command[0], command[1..^1])
+    let exePath = command[0]
+    var args = newSeq[string]()
+    if command.len > 1:
+      args = command[1..^1]
+
     let workspaces = @[self.workspace.getWorkspacePath()]
     var client = newLSPClient(workspaceInfo, userOptions, exePath, workspaces, args, killOnExit)
     client.name = name
@@ -288,6 +295,7 @@ proc getOrCreateLanguageServerLSP*(self: LanguageServerLspService, name: string)
       self.languageServers.del(name)
       return LanguageServerLSP.none
   except:
+    log lvlError, &"Failed to create language server '{name}': {getCurrentExceptionMsg()}"
     return LanguageServerLSP.none
 
 proc toVfsPath*(self: LanguageServerLSP, lspPath: string): string =
@@ -492,31 +500,51 @@ method getHover*(self: LanguageServerLSP, filename: string, location: Cursor):
   # important: the order of these checks is important
   if parsedResponse.contents.asMarkedStringVariantSeq().getSome(markedStrings):
     for markedString in markedStrings:
-      if markedString.asString().getSome(str):
+      if markedString.asString().getSome(str) and str.len > 0:
         return str.some
-      if markedString.asMarkedStringObject().getSome(str):
+      if markedString.asMarkedStringObject().getSome(str) and str.value.len > 0:
         # todo: language
         return str.value.some
 
     return string.none
 
-  if parsedResponse.contents.asMarkupContent().getSome(markupContent):
+  if parsedResponse.contents.asMarkupContent().getSome(markupContent) and markupContent.value.len > 0:
     return markupContent.value.some
 
   if parsedResponse.contents.asMarkedStringVariant().getSome(markedString):
     debugf"marked string variant: {markedString}"
 
-    if markedString.asString().getSome(str):
+    if markedString.asString().getSome(str) and str.len > 0:
       debugf"string: {str}"
       return str.some
 
-    if markedString.asMarkedStringObject().getSome(str):
+    if markedString.asMarkedStringObject().getSome(str) and str.value.len > 0:
       debugf"string object lang: {str.language}, value: {str.value}"
       return str.value.some
 
     return string.none
 
   return string.none
+
+method getSignatureHelp*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
+
+  if self.serverCapabilities.signatureHelpProvider.isNone:
+    return success[seq[lsp_types.SignatureHelpResponse]](@[])
+
+  let localizedPath = self.vfs.localize(filename)
+  let response = await self.client.getSignatureHelp(localizedPath, location.line, location.column)
+  if response.isError:
+    log(lvlWarn, &"[{self.name}] Error in getSignatureHelp('{filename}', {location}): {response.error}")
+    return response.to(seq[lsp_types.SignatureHelpResponse])
+
+  if response.isCanceled:
+    # log(lvlInfo, &"[{self.name}] Canceled inlay hints ({response.id}) for '{filename}':{selection} ")
+    return response.to(seq[lsp_types.SignatureHelpResponse])
+
+  let parsedResponse = response.result
+  var res = newSeq[lsp_types.SignatureHelpResponse](1)
+  res[0] = parsedResponse
+  return success[seq[lsp_types.SignatureHelpResponse]](res)
 
 method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Selection):
     Future[Response[seq[language_server_base.InlayHint]]] {.async.} =

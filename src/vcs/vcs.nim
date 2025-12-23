@@ -53,6 +53,8 @@ method getFileChanges*(self: VersionControlSystem, path: string, staged: bool = 
 
 method checkoutFile*(self: VersionControlSystem, path: string): Future[string] {.base.} = "".toFuture
 
+method addFile*(self: VersionControlSystem, path: string): Future[string] {.base.} = "".toFuture
+
 import vcs_git, vcs_perforce
 
 proc detectVersionControlSystemIn(self: VCSService, path: string): Option[VersionControlSystem] =

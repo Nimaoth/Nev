@@ -9,6 +9,9 @@ import parsejsonex
 when defined(nimPreviewSlimSystem):
   import std/[syncio, assertions, formatfloat]
 
+import lisp
+export lisp
+
 # export
 #   tables.`$`
 
@@ -18,6 +21,16 @@ when defined(nimPreviewSlimSystem):
 #   errorMsg, errorMsgExpected, next, JsonParsingError, raiseParseErr, nimIdentNormalize
 
 type
+  JsonexNodeKind* = enum ## possible JSON node types
+    JNull,
+    JBool,
+    JInt,
+    JFloat,
+    JString,
+    JObject,
+    JArray,
+    JLispVal,
+
   JsonNodeEx* = ref JsonNodeExObj ## JSON node
   JsonNodeExObj* {.acyclic.} = object
     isUnquoted: bool # the JString was a number-like token and
@@ -25,78 +38,80 @@ type
     extend*: bool
     userData*: int
     loc*: tuple[line, column: int32]
-    case kind*: JsonNodeKind
-    of JString:
+    case kind*: JsonexNodeKind
+    of JsonexNodeKind.JString:
       str*: string
-    of JInt:
+    of JsonexNodeKind.JInt:
       num*: BiggestInt
-    of JFloat:
+    of JsonexNodeKind.JFloat:
       fnum*: float
-    of JBool:
+    of JsonexNodeKind.JBool:
       bval*: bool
-    of JNull:
+    of JsonexNodeKind.JNull:
       nil
-    of JObject:
+    of JsonexNodeKind.JObject:
       fields*: OrderedTable[string, JsonNodeEx]
-    of JArray:
+    of JsonexNodeKind.JArray:
       elems*: seq[JsonNodeEx]
+    of JsonexNodeKind.JLispVal:
+      lval*: LispVal
 
 const DepthLimit = 1000
 
 proc newJexString*(s: string): JsonNodeEx =
   ## Creates a new `JString JsonNodeEx`.
-  result = JsonNodeEx(kind: JString, str: s)
+  result = JsonNodeEx(kind: JsonexNodeKind.JString, str: s)
 
 proc newJexRawNumber(s: string): JsonNodeEx =
   ## Creates a "raw JS number", that is a number that does not
   ## fit into Nim's `BiggestInt` field. This is really a `JString`
   ## with the additional information that it should be converted back
   ## to the string representation without the quotes.
-  result = JsonNodeEx(kind: JString, str: s, isUnquoted: true)
+  result = JsonNodeEx(kind: JsonexNodeKind.JString, str: s, isUnquoted: true)
 
 proc newJexInt*(n: BiggestInt): JsonNodeEx =
   ## Creates a new `JInt JsonNodeEx`.
-  result = JsonNodeEx(kind: JInt, num: n)
+  result = JsonNodeEx(kind: JsonexNodeKind.JInt, num: n)
 
 proc newJexFloat*(n: float): JsonNodeEx =
   ## Creates a new `JFloat JsonNodeEx`.
-  result = JsonNodeEx(kind: JFloat, fnum: n)
+  result = JsonNodeEx(kind: JsonexNodeKind.JFloat, fnum: n)
 
 proc newJexBool*(b: bool): JsonNodeEx =
   ## Creates a new `JBool JsonNodeEx`.
-  result = JsonNodeEx(kind: JBool, bval: b)
+  result = JsonNodeEx(kind: JsonexNodeKind.JBool, bval: b)
 
 proc newJexNull*(): JsonNodeEx =
   ## Creates a new `JNull JsonNodeEx`.
-  result = JsonNodeEx(kind: JNull)
+  result = JsonNodeEx(kind: JsonexNodeKind.JNull)
 
 proc newJexObject*(): JsonNodeEx =
   ## Creates a new `JObject JsonNodeEx`
-  result = JsonNodeEx(kind: JObject, fields: initOrderedTable[string, JsonNodeEx](2))
+  result = JsonNodeEx(kind: JsonexNodeKind.JObject, fields: initOrderedTable[string, JsonNodeEx](2))
 
 proc newJexArray*(): JsonNodeEx =
   ## Creates a new `JArray JsonNodeEx`
-  result = JsonNodeEx(kind: JArray, elems: @[])
+  result = JsonNodeEx(kind: JsonexNodeKind.JArray, elems: @[])
 
 proc getStr*(n: JsonNodeEx, default: string = ""): string =
   ## Retrieves the string value of a `JString JsonNodeEx`.
   ##
   ## Returns `default` if `n` is not a `JString`, or if `n` is nil.
-  if n.isNil or n.kind != JString: return default
+  if n.isNil or n.kind != JsonexNodeKind.JString: return default
   else: return n.str
 
 proc getInt*(n: JsonNodeEx, default: int = 0): int =
   ## Retrieves the int value of a `JInt JsonNodeEx`.
   ##
   ## Returns `default` if `n` is not a `JInt`, or if `n` is nil.
-  if n.isNil or n.kind != JInt: return default
+  if n.isNil or n.kind != JsonexNodeKind.JInt: return default
   else: return int(n.num)
 
 proc getBiggestInt*(n: JsonNodeEx, default: BiggestInt = 0): BiggestInt =
   ## Retrieves the BiggestInt value of a `JInt JsonNodeEx`.
   ##
   ## Returns `default` if `n` is not a `JInt`, or if `n` is nil.
-  if n.isNil or n.kind != JInt: return default
+  if n.isNil or n.kind != JsonexNodeKind.JInt: return default
   else: return n.num
 
 proc getFloat*(n: JsonNodeEx, default: float = 0.0): float =
@@ -105,15 +120,15 @@ proc getFloat*(n: JsonNodeEx, default: float = 0.0): float =
   ## Returns `default` if `n` is not a `JFloat` or `JInt`, or if `n` is nil.
   if n.isNil: return default
   case n.kind
-  of JFloat: return n.fnum
-  of JInt: return float(n.num)
+  of JsonexNodeKind.JFloat: return n.fnum
+  of JsonexNodeKind.JInt: return float(n.num)
   else: return default
 
 proc getBool*(n: JsonNodeEx, default: bool = false): bool =
   ## Retrieves the bool value of a `JBool JsonNodeEx`.
   ##
   ## Returns `default` if `n` is not a `JBool`, or if `n` is nil.
-  if n.isNil or n.kind != JBool: return default
+  if n.isNil or n.kind != JsonexNodeKind.JBool: return default
   else: return n.bval
 
 proc getFields*(n: JsonNodeEx,
@@ -122,68 +137,68 @@ proc getFields*(n: JsonNodeEx,
   ## Retrieves the key, value pairs of a `JObject JsonNodeEx`.
   ##
   ## Returns `default` if `n` is not a `JObject`, or if `n` is nil.
-  if n.isNil or n.kind != JObject: return default
+  if n.isNil or n.kind != JsonexNodeKind.JObject: return default
   else: return n.fields
 
 proc getElems*(n: JsonNodeEx, default: seq[JsonNodeEx] = @[]): seq[JsonNodeEx] =
   ## Retrieves the array of a `JArray JsonNodeEx`.
   ##
   ## Returns `default` if `n` is not a `JArray`, or if `n` is nil.
-  if n.isNil or n.kind != JArray: return default
+  if n.isNil or n.kind != JsonexNodeKind.JArray: return default
   else: return n.elems
 
 proc add*(father, child: JsonNodeEx) =
   ## Adds `child` to a JArray node `father`.
-  assert father.kind == JArray
+  assert father.kind == JsonexNodeKind.JArray
   father.elems.add(child)
 
 proc add*(obj: JsonNodeEx, key: string, val: JsonNodeEx) =
   ## Sets a field from a `JObject`.
-  assert obj.kind == JObject
+  assert obj.kind == JsonexNodeKind.JObject
   obj.fields[key] = val
 
 proc `%%`*(s: string): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JString JsonNodeEx`.
-  result = JsonNodeEx(kind: JString, str: s)
+  result = JsonNodeEx(kind: JsonexNodeKind.JString, str: s)
 
 proc `%%`*(n: uint): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JInt JsonNodeEx`.
   if n > cast[uint](int.high):
     result = newJexRawNumber($n)
   else:
-    result = JsonNodeEx(kind: JInt, num: BiggestInt(n))
+    result = JsonNodeEx(kind: JsonexNodeKind.JInt, num: BiggestInt(n))
 
 proc `%%`*(n: int): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JInt JsonNodeEx`.
-  result = JsonNodeEx(kind: JInt, num: n)
+  result = JsonNodeEx(kind: JsonexNodeKind.JInt, num: n)
 
 proc `%%`*(n: BiggestUInt): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JInt JsonNodeEx`.
   if n > cast[BiggestUInt](BiggestInt.high):
     result = newJexRawNumber($n)
   else:
-    result = JsonNodeEx(kind: JInt, num: BiggestInt(n))
+    result = JsonNodeEx(kind: JsonexNodeKind.JInt, num: BiggestInt(n))
 
 proc `%%`*(n: BiggestInt): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JInt JsonNodeEx`.
-  result = JsonNodeEx(kind: JInt, num: n)
+  result = JsonNodeEx(kind: JsonexNodeKind.JInt, num: n)
 
 proc `%%`*(n: float): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JFloat JsonNodeEx`.
   runnableExamples:
     assert $(%%[NaN, Inf, -Inf, 0.0, -0.0, 1.0, 1e-2]) == """["nan","inf","-inf",0.0,-0.0,1.0,0.01]"""
-    assert (%%NaN).kind == JString
-    assert (%%0.0).kind == JFloat
+    assert (%%NaN).kind == JsonexNodeKind.JString
+    assert (%%0.0).kind == JsonexNodeKind.JFloat
   # for those special cases, we could also have used `newJexRawNumber` but then
   # it would've been inconsisten with the case of `parseJsonex` vs `%%` for representing them.
   if n != n: newJexString("nan")
   elif n == Inf: newJexString("inf")
   elif n == -Inf: newJexString("-inf")
-  else: JsonNodeEx(kind: JFloat, fnum: n)
+  else: JsonNodeEx(kind: JsonexNodeKind.JFloat, fnum: n)
 
 proc `%%`*(b: bool): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JBool JsonNodeEx`.
-  result = JsonNodeEx(kind: JBool, bval: b)
+  result = JsonNodeEx(kind: JsonexNodeKind.JBool, bval: b)
 
 proc `%%`*(keyVals: openArray[tuple[key: string, val: JsonNodeEx]]): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JObject JsonNodeEx`
@@ -223,7 +238,7 @@ when false:
 
 proc `[]=`*(obj: JsonNodeEx, key: string, val: JsonNodeEx) {.inline.} =
   ## Sets a field from a `JObject`.
-  assert(obj.kind == JObject)
+  assert(obj.kind == JsonexNodeKind.JObject)
   obj.fields[key] = val
 
 proc `%%`*[T: object](o: T): JsonNodeEx =
@@ -283,20 +298,22 @@ proc `==`*(a, b: JsonNodeEx): bool {.noSideEffect, raises: [].} =
     return false
   else:
     case a.kind
-    of JString:
+    of JsonexNodeKind.JLispVal:
+      result = a.lval == b.lval
+    of JsonexNodeKind.JString:
       result = a.str == b.str
-    of JInt:
+    of JsonexNodeKind.JInt:
       result = a.num == b.num
-    of JFloat:
+    of JsonexNodeKind.JFloat:
       result = a.fnum == b.fnum
-    of JBool:
+    of JsonexNodeKind.JBool:
       result = a.bval == b.bval
-    of JNull:
+    of JsonexNodeKind.JNull:
       result = true
-    of JArray:
+    of JsonexNodeKind.JArray:
       {.cast(raises: []).}: # bug #19303
         result = a.elems == b.elems
-    of JObject:
+    of JsonexNodeKind.JObject:
       # we cannot use OrderedTable's equality here as
       # the order does not matter for equality here.
       if a.fields.len != b.fields.len: return false
@@ -315,20 +332,22 @@ proc hash*(n: OrderedTable[string, JsonNodeEx]): Hash {.noSideEffect.}
 proc hash*(n: JsonNodeEx): Hash {.noSideEffect.} =
   ## Compute the hash for a JSON node
   case n.kind
-  of JArray:
+  of JsonexNodeKind.JArray:
     result = hash(n.elems)
-  of JObject:
+  of JsonexNodeKind.JObject:
     result = hash(n.fields)
-  of JInt:
+  of JsonexNodeKind.JInt:
     result = hash(n.num)
-  of JFloat:
+  of JsonexNodeKind.JFloat:
     result = hash(n.fnum)
-  of JBool:
+  of JsonexNodeKind.JBool:
     result = hash(n.bval.int)
-  of JString:
+  of JsonexNodeKind.JString:
     result = hash(n.str)
-  of JNull:
+  of JsonexNodeKind.JNull:
     result = Hash(0)
+  of JsonexNodeKind.JLispVal:
+    result = hash(0) # todo
 
 proc hash*(n: OrderedTable[string, JsonNodeEx]): Hash =
   for key, val in n:
@@ -340,15 +359,15 @@ proc len*(n: JsonNodeEx): int =
   ## If `n` is a `JObject`, it returns the number of pairs.
   ## Else it returns 0.
   case n.kind
-  of JArray: result = n.elems.len
-  of JObject: result = n.fields.len
+  of JsonexNodeKind.JArray: result = n.elems.len
+  of JsonexNodeKind.JObject: result = n.fields.len
   else: discard
 
 proc `[]`*(node: JsonNodeEx, name: string): JsonNodeEx {.inline.} =
   ## Gets a field from a `JObject`, which must not be nil.
   ## If the value at `name` does not exist, raises KeyError.
   assert(not isNil(node))
-  assert(node.kind == JObject)
+  assert(node.kind == JsonexNodeKind.JObject)
   when defined(nimJsonGet):
     if not node.fields.hasKey(name): return nil
   result = node.fields[name]
@@ -358,7 +377,7 @@ proc `[]`*(node: JsonNodeEx, index: int): JsonNodeEx {.inline.} =
   ## is out of bounds, but as long as array bound checks are enabled it will
   ## result in an exception.
   assert(not isNil(node))
-  assert(node.kind == JArray)
+  assert(node.kind == JsonexNodeKind.JArray)
   return node.elems[index]
 
 proc `[]`*(node: JsonNodeEx, index: BackwardsIndex): JsonNodeEx {.inline, since: (1, 5, 1).} =
@@ -385,7 +404,7 @@ proc `[]`*[U, V](a: JsonNodeEx, x: HSlice[U, V]): JsonNodeEx =
     doAssert arr[2..^2] == %%[2,3,4]
     doAssert arr[^4..^2] == %%[2,3,4]
 
-  assert(a.kind == JArray)
+  assert(a.kind == JsonexNodeKind.JArray)
   result = newJexArray()
   let xa = (when x.a is BackwardsIndex: a.len - int(x.a) else: int(x.a))
   let L = (when x.b is BackwardsIndex: a.len - int(x.b) else: int(x.b)) - xa + 1
@@ -394,17 +413,17 @@ proc `[]`*[U, V](a: JsonNodeEx, x: HSlice[U, V]): JsonNodeEx =
 
 proc hasKey*(node: JsonNodeEx, key: string): bool =
   ## Checks if `key` exists in `node`.
-  assert(node.kind == JObject)
+  assert(node.kind == JsonexNodeKind.JObject)
   result = node.fields.hasKey(key)
 
 proc contains*(node: JsonNodeEx, key: string): bool =
   ## Checks if `key` exists in `node`.
-  assert(node.kind == JObject)
+  assert(node.kind == JsonexNodeKind.JObject)
   node.fields.hasKey(key)
 
 proc contains*(node: JsonNodeEx, val: JsonNodeEx): bool =
   ## Checks if `val` exists in array `node`.
-  assert(node.kind == JArray)
+  assert(node.kind == JsonexNodeKind.JArray)
   find(node.elems, val) >= 0
 
 proc `{}`*(node: JsonNodeEx, keys: varargs[string]): JsonNodeEx =
@@ -421,7 +440,7 @@ proc `{}`*(node: JsonNodeEx, keys: varargs[string]): JsonNodeEx =
 
   result = node
   for key in keys:
-    if isNil(result) or result.kind != JObject:
+    if isNil(result) or result.kind != JsonexNodeKind.JObject:
       return nil
     result = result.fields.getOrDefault(key)
 
@@ -431,20 +450,20 @@ proc `{}`*(node: JsonNodeEx, index: varargs[int]): JsonNodeEx =
   ## intermediate data structures is not an array.
   result = node
   for i in index:
-    if isNil(result) or result.kind != JArray or i >= node.len:
+    if isNil(result) or result.kind != JsonexNodeKind.JArray or i >= node.len:
       return nil
     result = result.elems[i]
 
 proc getOrDefault*(node: JsonNodeEx, key: string): JsonNodeEx =
   ## Gets a field from a `node`. If `node` is nil or not an object or
   ## value at `key` does not exist, returns nil
-  if not isNil(node) and node.kind == JObject:
+  if not isNil(node) and node.kind == JsonexNodeKind.JObject:
     result = node.fields.getOrDefault(key)
 
 proc getOrDefault*(node: JsonNodeEx, key: openArray[char]): JsonNodeEx =
   ## Gets a field from a `node`. If `node` is nil or not an object or
   ## value at `key` does not exist, returns nil
-  if not isNil(node) and node.kind == JObject:
+  if not isNil(node) and node.kind == JsonexNodeKind.JObject:
     result = node.fields.getOrDefault(key)
 
 proc `{}`*(node: JsonNodeEx, key: string): JsonNodeEx =
@@ -464,7 +483,7 @@ proc `{}=`*(node: JsonNodeEx, keys: varargs[string], value: JsonNodeEx) =
 
 proc delete*(obj: JsonNodeEx, key: string) =
   ## Deletes `obj[key]`.
-  assert(obj.kind == JObject)
+  assert(obj.kind == JsonexNodeKind.JObject)
   if not obj.fields.hasKey(key):
     raise newException(KeyError, "key not in object")
   obj.fields.del(key)
@@ -472,25 +491,27 @@ proc delete*(obj: JsonNodeEx, key: string) =
 proc copy*(p: JsonNodeEx): JsonNodeEx =
   ## Performs a deep copy of `p`.
   case p.kind
-  of JString:
+  of JsonexNodeKind.JString:
     result = newJexString(p.str)
     result.isUnquoted = p.isUnquoted
-  of JInt:
+  of JsonexNodeKind.JInt:
     result = newJexInt(p.num)
-  of JFloat:
+  of JsonexNodeKind.JFloat:
     result = newJexFloat(p.fnum)
-  of JBool:
+  of JsonexNodeKind.JBool:
     result = newJexBool(p.bval)
-  of JNull:
+  of JsonexNodeKind.JNull:
     result = newJexNull()
-  of JObject:
+  of JsonexNodeKind.JObject:
     result = newJexObject()
     for key, val in pairs(p.fields):
       result.fields[key] = copy(val)
-  of JArray:
+  of JsonexNodeKind.JArray:
     result = newJexArray()
     for i in items(p.elems):
       result.elems.add(copy(i))
+  of JsonexNodeKind.JLispVal:
+    result = JsonNodeEx(kind: JsonexNodeKind.JLispVal, lval: p.lval)
 
   result.extend = p.extend
   result.userData = p.userData
@@ -563,14 +584,14 @@ proc toUgly*(result: var string, node: JsonNodeEx) =
     return
   var comma = false
   case node.kind:
-  of JArray:
+  of JsonexNodeKind.JArray:
     result.add "["
     for child in node.elems:
       if comma: result.add ","
       else: comma = true
       result.toUgly child
     result.add "]"
-  of JObject:
+  of JsonexNodeKind.JObject:
     result.add "{"
     for key, value in pairs(node.fields):
       if comma: result.add ","
@@ -579,19 +600,21 @@ proc toUgly*(result: var string, node: JsonNodeEx) =
       result.add ":"
       result.toUgly value
     result.add "}"
-  of JString:
+  of JsonexNodeKind.JString:
     if node.isUnquoted:
       result.add node.str
     else:
       escapeJsonex(node.str, result)
-  of JInt:
+  of JsonexNodeKind.JInt:
     result.addInt(node.num)
-  of JFloat:
+  of JsonexNodeKind.JFloat:
     result.addFloat(node.fnum)
-  of JBool:
+  of JsonexNodeKind.JBool:
     result.add(if node.bval: "true" else: "false")
-  of JNull:
+  of JsonexNodeKind.JNull:
     result.add "null"
+  of JsonexNodeKind.JLispVal:
+    result.add($node.lval)
 
 proc toPretty(result: var string, node: JsonNodeEx, indent = 2, ml = true,
               lstArr = false, currIndent = 0, parentUserData = 0, printUserData: proc(node: JsonNodeEx): string {.gcsafe, raises: [].} = nil) =
@@ -599,7 +622,7 @@ proc toPretty(result: var string, node: JsonNodeEx, indent = 2, ml = true,
     result.add "nil"
     return
   case node.kind
-  of JObject:
+  of JsonexNodeKind.JObject:
     if lstArr: result.indent(currIndent) # Indentation
     if node.fields.len > 0:
       result.add("{")
@@ -631,20 +654,20 @@ proc toPretty(result: var string, node: JsonNodeEx, indent = 2, ml = true,
     else:
       result.add("{}")
 
-  of JString:
+  of JsonexNodeKind.JString:
     if lstArr: result.indent(currIndent)
     toUgly(result, node)
-  of JInt:
+  of JsonexNodeKind.JInt:
     if lstArr: result.indent(currIndent)
     result.addInt(node.num)
-  of JFloat:
+  of JsonexNodeKind.JFloat:
     if lstArr: result.indent(currIndent)
     result.addFloat(node.fnum)
-  of JBool:
+  of JsonexNodeKind.JBool:
     if lstArr: result.indent(currIndent)
     result.add(if node.bval: "true" else: "false")
 
-  of JArray:
+  of JsonexNodeKind.JArray:
     if lstArr: result.indent(currIndent)
     if len(node.elems) != 0:
       result.add("[")
@@ -663,9 +686,12 @@ proc toPretty(result: var string, node: JsonNodeEx, indent = 2, ml = true,
       result.add("]")
     else: result.add("[]")
 
-  of JNull:
+  of JsonexNodeKind.JNull:
     if lstArr: result.indent(currIndent)
     result.add("null")
+
+  of JsonexNodeKind.JLispVal:
+    result.add($node.lval)
 
 proc pretty*(node: JsonNodeEx, indent = 2, printUserData: proc(node: JsonNodeEx): string {.gcsafe, raises: [].} = nil): string =
   ## Returns a JSON Representation of `node`, with indentation and
@@ -698,33 +724,33 @@ proc `$`*(node: JsonNodeEx): string =
 
 iterator items*(node: JsonNodeEx): JsonNodeEx =
   ## Iterator for the items of `node`. `node` has to be a JArray.
-  assert node.kind == JArray, ": items() can not iterate a JsonNodeEx of kind " & $node.kind
+  assert node.kind == JsonexNodeKind.JArray, ": items() can not iterate a JsonNodeEx of kind " & $node.kind
   for i in items(node.elems):
     yield i
 
 iterator mitems*(node: var JsonNodeEx): var JsonNodeEx =
   ## Iterator for the items of `node`. `node` has to be a JArray. Items can be
   ## modified.
-  assert node.kind == JArray, ": mitems() can not iterate a JsonNodeEx of kind " & $node.kind
+  assert node.kind == JsonexNodeKind.JArray, ": mitems() can not iterate a JsonNodeEx of kind " & $node.kind
   for i in mitems(node.elems):
     yield i
 
 iterator pairs*(node: JsonNodeEx): tuple[key: string, val: JsonNodeEx] =
   ## Iterator for the child elements of `node`. `node` has to be a JObject.
-  assert node.kind == JObject, ": pairs() can not iterate a JsonNodeEx of kind " & $node.kind
+  assert node.kind == JsonexNodeKind.JObject, ": pairs() can not iterate a JsonNodeEx of kind " & $node.kind
   for key, val in pairs(node.fields):
     yield (key, val)
 
 iterator keys*(node: JsonNodeEx): string =
   ## Iterator for the keys in `node`. `node` has to be a JObject.
-  assert node.kind == JObject, ": keys() can not iterate a JsonNodeEx of kind " & $node.kind
+  assert node.kind == JsonexNodeKind.JObject, ": keys() can not iterate a JsonNodeEx of kind " & $node.kind
   for key in node.fields.keys:
     yield key
 
 iterator mpairs*(node: var JsonNodeEx): tuple[key: string, val: var JsonNodeEx] =
   ## Iterator for the child elements of `node`. `node` has to be a JObject.
   ## Values can be modified
-  assert node.kind == JObject, ": mpairs() can not iterate a JsonNodeEx of kind " & $node.kind
+  assert node.kind == JsonexNodeKind.JObject, ": mpairs() can not iterate a JsonNodeEx of kind " & $node.kind
   for key, val in mpairs(node.fields):
     yield (key, val)
 
@@ -738,9 +764,9 @@ proc parseJsonex*(p: var JsonexParser; rawIntegers, rawFloats: bool, depth = 0):
   of tkString:
     # we capture 'p.a' here, so we need to give it a fresh buffer afterwards:
     when defined(gcArc) or defined(gcOrc) or defined(gcAtomicArc):
-      result = JsonNodeEx(kind: JString, str: move p.a)
+      result = JsonNodeEx(kind: JsonexNodeKind.JString, str: move p.a)
     else:
-      result = JsonNodeEx(kind: JString)
+      result = JsonNodeEx(kind: JsonexNodeKind.JString)
       shallowCopy(result.str, p.a)
       p.a = ""
     discard getTok(p)
@@ -787,6 +813,12 @@ proc parseJsonex*(p: var JsonexParser; rawIntegers, rawFloats: bool, depth = 0):
       if p.tok != tkComma: break
       discard getTok(p)
     eat(p, tkCurlyRi)
+  of tkParenLe:
+    let (lval, len) = parseLispSingle(p.buf.toOpenArray(p.bufpos - 1, p.buf.high))
+    p.bufpos += len - 1
+    result = JsonNodeEx(kind: JsonexNodeKind.JLispVal, lval: lval)
+    discard getTok(p)
+
   of tkBracketLe:
     if depth > DepthLimit:
       raiseParseErr(p, "]")
@@ -845,7 +877,15 @@ proc parseJsonex*(buffer: string; rawIntegers = false, rawFloats = false): JsonN
   ## field but kept as raw numbers via `JString`.
   ## If `rawFloats` is true, floating point literals will not be converted to a `JFloat`
   ## field but kept as raw numbers via `JString`.
-  result = parseJsonex(newStringStream(buffer), "input", rawIntegers, rawFloats)
+  var p: JsonexParser
+  let len = buffer.len
+  p.open(newStringStream(buffer), "string", bufferSize = len)
+  try:
+    discard getTok(p) # read first token
+    result = p.parseJsonex(rawIntegers, rawFloats)
+    eat(p, tkEof) # check if there is no extra data
+  finally:
+    p.close()
 
 proc parseFile*(filename: string): JsonNodeEx =
   ## Parses `file` into a `JsonNodeEx`.
@@ -857,7 +897,7 @@ proc parseFile*(filename: string): JsonNodeEx =
 
 # -- Json deserialiser. --
 
-template verifyJsonKind(node: JsonNodeEx, kinds: set[JsonNodeKind],
+template verifyJsonKind(node: JsonNodeEx, kinds: set[JsonexNodeKind],
                         ast: string) =
   if node == nil:
     raise newException(KeyError, "key not found: " & ast)
@@ -900,17 +940,17 @@ proc initFromJson[T: object|tuple](dst: var T; jsonNode: JsonNodeEx; jsonPath: v
 # initFromJson definitions
 
 proc initFromJson(dst: var string; jsonNode: JsonNodeEx; jsonPath: var string) =
-  verifyJsonKind(jsonNode, {JString, JNull}, jsonPath)
+  verifyJsonKind(jsonNode, {JsonexNodeKind.JString, JsonexNodeKind.JNull}, jsonPath)
   # since strings don't have a nil state anymore, this mapping of
   # JNull to the default string is questionable. `none(string)` and
   # `some("")` have the same potentional json value `JNull`.
-  if jsonNode.kind == JNull:
+  if jsonNode.kind == JsonexNodeKind.JNull:
     dst = ""
   else:
     dst = jsonNode.str
 
 proc initFromJson(dst: var bool; jsonNode: JsonNodeEx; jsonPath: var string) =
-  verifyJsonKind(jsonNode, {JBool}, jsonPath)
+  verifyJsonKind(jsonNode, {JsonexNodeKind.JBool}, jsonPath)
   dst = jsonNode.bval
 
 proc initFromJson(dst: var JsonNodeEx; jsonNode: JsonNodeEx; jsonPath: var string) =
@@ -920,20 +960,20 @@ proc initFromJson(dst: var JsonNodeEx; jsonNode: JsonNodeEx; jsonPath: var strin
 
 proc initFromJson[T: SomeInteger](dst: var T; jsonNode: JsonNodeEx, jsonPath: var string) =
   when T is uint|uint64 or int.sizeof == 4:
-    verifyJsonKind(jsonNode, {JInt, JString}, jsonPath)
+    verifyJsonKind(jsonNode, {JsonexNodeKind.JInt, JsonexNodeKind.JString}, jsonPath)
     case jsonNode.kind
-    of JString:
+    of JsonexNodeKind.JString:
       let x = parseBiggestUInt(jsonNode.str)
       dst = cast[T](x)
     else:
       dst = T(jsonNode.num)
   else:
-    verifyJsonKind(jsonNode, {JInt}, jsonPath)
+    verifyJsonKind(jsonNode, {JsonexNodeKind.JInt}, jsonPath)
     dst = cast[T](jsonNode.num)
 
 proc initFromJson[T: SomeFloat](dst: var T; jsonNode: JsonNodeEx; jsonPath: var string) =
-  verifyJsonKind(jsonNode, {JInt, JFloat, JString}, jsonPath)
-  if jsonNode.kind == JString:
+  verifyJsonKind(jsonNode, {JsonexNodeKind.JInt, JsonexNodeKind.JFloat, JsonexNodeKind.JString}, jsonPath)
+  if jsonNode.kind == JsonexNodeKind.JString:
     case jsonNode.str
     of "nan":
       let b = NaN
@@ -948,17 +988,17 @@ proc initFromJson[T: SomeFloat](dst: var T; jsonNode: JsonNodeEx; jsonPath: var 
       dst = T(b)
     else: raise newException(JsonKindError, "expected 'nan|inf|-inf', got " & jsonNode.str)
   else:
-    if jsonNode.kind == JFloat:
+    if jsonNode.kind == JsonexNodeKind.JFloat:
       dst = T(jsonNode.fnum)
     else:
       dst = T(jsonNode.num)
 
 proc initFromJson[T: enum](dst: var T; jsonNode: JsonNodeEx; jsonPath: var string) =
-  verifyJsonKind(jsonNode, {JString}, jsonPath)
+  verifyJsonKind(jsonNode, {JsonexNodeKind.JString}, jsonPath)
   dst = parseEnum[T](jsonNode.getStr)
 
 proc initFromJson[T](dst: var seq[T]; jsonNode: JsonNodeEx; jsonPath: var string) =
-  verifyJsonKind(jsonNode, {JArray}, jsonPath)
+  verifyJsonKind(jsonNode, {JsonexNodeKind.JArray}, jsonPath)
   dst.setLen jsonNode.len
   let orignalJsonPathLen = jsonPath.len
   for i in 0 ..< jsonNode.len:
@@ -969,7 +1009,7 @@ proc initFromJson[T](dst: var seq[T]; jsonNode: JsonNodeEx; jsonPath: var string
     jsonPath.setLen orignalJsonPathLen
 
 proc initFromJson[S,T](dst: var array[S,T]; jsonNode: JsonNodeEx; jsonPath: var string) =
-  verifyJsonKind(jsonNode, {JArray}, jsonPath)
+  verifyJsonKind(jsonNode, {JsonexNodeKind.JArray}, jsonPath)
   let originalJsonPathLen = jsonPath.len
   for i in 0 ..< jsonNode.len:
     jsonPath.add '['
@@ -980,7 +1020,7 @@ proc initFromJson[S,T](dst: var array[S,T]; jsonNode: JsonNodeEx; jsonPath: var 
 
 proc initFromJson[T](dst: var Table[string,T]; jsonNode: JsonNodeEx; jsonPath: var string) =
   dst = initTable[string, T]()
-  verifyJsonKind(jsonNode, {JObject}, jsonPath)
+  verifyJsonKind(jsonNode, {JsonexNodeKind.JObject}, jsonPath)
   let originalJsonPathLen = jsonPath.len
   for key in keys(jsonNode.fields):
     jsonPath.add '.'
@@ -990,7 +1030,7 @@ proc initFromJson[T](dst: var Table[string,T]; jsonNode: JsonNodeEx; jsonPath: v
 
 proc initFromJson[T](dst: var OrderedTable[string,T]; jsonNode: JsonNodeEx; jsonPath: var string) =
   dst = initOrderedTable[string,T]()
-  verifyJsonKind(jsonNode, {JObject}, jsonPath)
+  verifyJsonKind(jsonNode, {JsonexNodeKind.JObject}, jsonPath)
   let originalJsonPathLen = jsonPath.len
   for key in keys(jsonNode.fields):
     jsonPath.add '.'
@@ -999,15 +1039,15 @@ proc initFromJson[T](dst: var OrderedTable[string,T]; jsonNode: JsonNodeEx; json
     jsonPath.setLen originalJsonPathLen
 
 proc initFromJson[T](dst: var ref T; jsonNode: JsonNodeEx; jsonPath: var string) =
-  verifyJsonKind(jsonNode, {JObject, JNull}, jsonPath)
-  if jsonNode.kind == JNull:
+  verifyJsonKind(jsonNode, {JsonexNodeKind.JsonexNodeKind, JsonexNodeKind.JNull}, jsonPath)
+  if jsonNode.kind == JsonexNodeKind.JNull:
     dst = nil
   else:
     dst = new(T)
     initFromJson(dst[], jsonNode, jsonPath)
 
 proc initFromJson[T](dst: var Option[T]; jsonNode: JsonNodeEx; jsonPath: var string) =
-  if jsonNode != nil and jsonNode.kind != JNull:
+  if jsonNode != nil and jsonNode.kind != JsonexNodeKind.JNull:
     when T is ref:
       dst = some(new(T))
     else:
@@ -1234,7 +1274,7 @@ macro accessField(obj: typed, name: static string): untyped =
 template fromJsonExFields(newObj, oldObj, json, discKeys, opt) =
   type T = typeof(newObj)
   # we could customize whether to allow JNull
-  checkJson json.kind == JObject, $json.kind
+  checkJson json.kind == JsonexNodeKind.JObject, $json.kind
   var num, numMatched = 0
   for key, val in fieldPairs(newObj):
     num.inc
@@ -1307,11 +1347,11 @@ proc fromJsonEx*[T](a: var T, b: JsonNodeEx, opt = Joptions()) {.raises: [ValueE
   elif T is bool: a = to(b,T)
   elif T is enum:
     case b.kind
-    of JInt: a = T(b.getBiggestInt())
-    of JString: a = parseEnum[T](b.getStr())
+    of JsonexNodeKind.JInt: a = T(b.getBiggestInt())
+    of JsonexNodeKind.JString: a = parseEnum[T](b.getStr())
     else: checkJson false, $($T, " ", b)
   elif T is char:
-    if b.kind == JString and b.str.len > 0:
+    if b.kind == JsonexNodeKind.JString and b.str.len > 0:
       a = b.str[0]
   elif T is uint|uint64: a = T(to(b, uint64))
   elif T is Ordinal: a = cast[T](to(b, int))
@@ -1328,12 +1368,12 @@ proc fromJsonEx*[T](a: var T, b: JsonNodeEx, opt = Joptions()) {.raises: [ValueE
   elif T is string|SomeNumber: a = to(b,T)
   elif T is cstring:
     case b.kind
-    of JNull: a = nil
-    of JString: a = b.str
+    of JsonexNodeKind.JNull: a = nil
+    of JsonexNodeKind.JString: a = b.str
     else: checkJson false, $($T, " ", b)
   elif T is JsonNodeEx: a = b
   elif T is ref | ptr:
-    if b.kind == JNull: a = nil
+    if b.kind == JsonexNodeKind.JNull: a = nil
     else:
       a = T()
       fromJsonEx(a[], b, opt)
@@ -1373,7 +1413,7 @@ proc fromJsonEx*[T](a: var T, b: JsonNodeEx, opt = Joptions()) {.raises: [ValueE
     when isNamedTuple(T):
       fromJsonExFields(a, nil, b, seq[string].default, opt)
     else:
-      checkJson b.kind == JArray, $(b.kind) # we could customize whether to allow JNull
+      checkJson b.kind == JsonexNodeKind.JArray, $(b.kind) # we could customize whether to allow JNull
       var i = 0
       for val in fields(a):
         fromJsonEx(val, b[i], opt)
@@ -1396,6 +1436,7 @@ proc toJsonEx*[T](a: T, opt = initToJsonOptions()): JsonNodeEx {.raises: [].} =
   ##    It is expected that this behavior becomes the new default in upcoming versions.
   when compiles(toJsonExHook(a, opt)): result = toJsonExHook(a, opt)
   elif compiles(toJsonExHook(a)): result = toJsonExHook(a)
+  elif T is LispVal: result = a.toJson.toJsonEx
   elif T is object | tuple:
     when T is object or isNamedTuple(T):
       result = newJexObject()
@@ -1413,7 +1454,7 @@ proc toJsonEx*[T](a: T, opt = initToJsonOptions()): JsonNodeEx {.raises: [].} =
       of joptJsonNodeAsCopy: result = copy(a)
       of joptJsonNodeAsObject: impl()
     else: impl()
-  elif T is array | seq | set:
+  elif T is array | seq | system.set:
     result = newJexArray()
     for ai in a: result.add toJsonEx(ai, opt)
   elif T is pointer: result = toJsonEx(cast[int](a), opt)
@@ -1450,7 +1491,7 @@ proc fromJsonExHook*[K: string|cstring, V](t: var (Table[K, V] | OrderedTable[K,
     assert foo.t == [("one", 1), ("two", 2)].toTable
     assert foo.ot == [("one", 1), ("three", 3)].toOrderedTable
 
-  assert jsonNode.kind == JObject,
+  assert jsonNode.kind == JsonexNodeKind.JObject,
           "The kind of the `jsonNode` must be `JObject`, but its actual " &
           "type is `" & $jsonNode.kind & "`."
   clear(t)
@@ -1492,7 +1533,7 @@ proc fromJsonExHook*[A](s: var SomeSet[A], jsonNode: JsonNodeEx, opt = Joptions(
     assert foo.hs == ["hash", "set"].toHashSet
     assert foo.os == ["ordered", "set"].toOrderedSet
 
-  assert jsonNode.kind == JArray,
+  assert jsonNode.kind == JsonexNodeKind.JArray,
           "The kind of the `jsonNode` must be `JArray`, but its actual " &
           "type is `" & $jsonNode.kind & "`."
   clear(s)
@@ -1526,7 +1567,7 @@ proc fromJsonExHook*[T](self: var Option[T], jsonNode: JsonNodeEx, opt = Joption
     fromJsonEx(opt, parseJsonex("null"))
     assert isNone(opt)
 
-  if jsonNode.kind != JNull:
+  if jsonNode.kind != JsonexNodeKind.JNull:
     self = some(jsonTo(jsonNode, T, opt))
   else:
     self = none[T]()
@@ -1625,28 +1666,38 @@ proc toJson*(node: JsonNodeEx): JsonNode =
     result = newJFloat(node.fnum)
   of JBool:
     result = newJBool(node.bval)
-  of JNull:
+  of JsonexNodeKind.JNull:
     result = newJNull()
+  of JLispVal:
+    return node.lval.toJson()
 
 proc toJsonEx*(node: JsonNode, opt = initToJsonOptions()): JsonNodeEx =
   if node == nil:
     return nil
   case node.kind
-  of JObject:
+  of JsonNodeKind.JObject:
     result = newJexObject()
     for (key, value) in node.fields.pairs:
       result[key] = value.toJsonEx(opt)
-  of JArray:
+  of JsonNodeKind.JArray:
     result = newJexArray()
     for value in node.elems:
       result.elems.add value.toJsonEx(opt)
-  of JString:
+  of JsonNodeKind.JString:
     result = newJexString(node.str)
-  of JInt:
+  of JsonNodeKind.JInt:
     result = newJexInt(node.num)
-  of JFloat:
+  of JsonNodeKind.JFloat:
     result = newJexFloat(node.fnum)
-  of JBool:
+  of JsonNodeKind.JBool:
     result = newJexBool(node.bval)
-  of JNull:
+  of JsonNodeKind.JNull:
     result = newJexNull()
+
+when isMainModule:
+  echo pretty(parseJsonex """
+{
+  "a": 123,
+  "b": (a b "c" (d e) {"f": ''} ''),
+}
+""")

@@ -4,6 +4,7 @@ import npeg/codegen
 import scripting_api
 import regex
 import misc/custom_logger
+import nimsumtree/buffer
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -41,6 +42,7 @@ type SnippetData* = object
   currentTabStop*: int = 0
   highestTabStop*: int = 0
   tabStops*: Table[int, Selections]
+  tabStopAnchors*: Table[int, seq[(Anchor, Anchor)]]
   text*: string
   selections: seq[Selection]
   indents: seq[int]

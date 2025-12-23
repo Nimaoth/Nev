@@ -113,15 +113,16 @@
         "<LEADER>fs": ["write-file"],
         "<LEADER>gP": ["show-plugins"],
 
+        "<LEADER>ax": ["stop-debug-session"],
         "<LEADER>ac": ["continue-execution"],
+        "<LEADER>ap": ["pause-execution"],
         "<LEADER>ar": ["step-over"],
         "<LEADER>at": ["step-in"],
         "<LEADER>an": ["step-out"],
         "<LEADER>ae": ["edit-breakpoints"],
         "<LEADER>am": ["toggle-breakpoints-enabled"],
-        "<LEADER>gb": ["show-debugger-view"],
-        "<LEADER>al": { "command": ["all", "run-last-configuration", "show-debugger-view"], "description": "Run last configuration" },
-        "<LEADER>av": { "command": ["all", "choose-run-configuration", "show-debugger-view"], "description": "Choose run configuration" },
+        "<LEADER>al": { "command": "run-last-configuration", "description": "Run last configuration" },
+        "<LEADER>av": { "command": ["choose-run-configuration"], "description": "Choose run configuration" },
         "<LEADER>ab": { "command": ["toggle-breakpoint"], "description": "Toggle breakpoint" },
 
         "<LEADER>g": { "description": "Global pickers" },
@@ -135,6 +136,15 @@
         "<LEADER>f": { "description": "File" },
 
           // addCommandBlockDesc "editor", "<LEADER>log", "Show log file": logs(slot = "#default", focus = false, scrollToBottom = true)
+
+        "<F9>": ["toggle-breakpoint"],
+        "<F10>": ["step-over"],
+        "<F11>": ["step-in"],
+        "<F8>": ["step-out"],
+        "<F5>": ["continue-execution"],
+        "F": ["evaluate-hover"],
+        "<A-e>": ["toggle-debugger-output", false],
+        "<A-a>": ["all", ["toggle-debugger-toolbar", false], ["toggle-debugger-threads", false], ["toggle-debugger-stacktrace", false], ["toggle-debugger-variables", false]],
     },
 
     "editor.text.completion": {
@@ -205,6 +215,7 @@
         "<CS-y>": ["enter-normalized"],
         "<C-a>": ["add-workspace-folder"],
         "<C-x>": ["remove-workspace-folder"],
+        "<CS-f>": ["search-interactive"],
         "<C-f>": ["create-file"],
         "<C-g>f": ["create-file"],
         "<C-g>d": ["create-directory"],
@@ -252,14 +263,20 @@
 
     "debugger.variables": {
         "<UP>": "prev-variable",
+        "<S-UP>": ["prev-variable", true], // skip children
         "<C-p>": "prev-variable",
         "<DOWN>": "next-variable",
+        "<S-DOWN>": ["next-variable", true], // skip children
         "<C-n>": "next-variable",
         "<RIGHT>": "expand-variable",
+        "<S-RIGHT>": "expand-variable-children",
         "<C-y>": "expand-variable",
         "<LEFT>": "collapse-variable",
+        "<S-LEFT>": "collapse-variable-children",
         "<HOME>": "select-first-variable",
         "<END>": "select-last-variable",
+        "<BACKSPACE>": "delete-last-variable-filter-char",
+        "<ESCAPE>": "clear-variable-filter",
     },
 
     "debugger.threads": {
@@ -324,6 +341,11 @@
         "<?-count>aW": ["(count* <#text_object.count>) (vim.WORD-inner) (inclusive)"],
         "ip": ["(vim.paragraph-inner) (inclusive)"],
         "ap": ["(vim.paragraph-outer) (inclusive)"],
+        "ia": ["(ts 'call.inner') (overlapping) (last) (grow -1) (inclusive)"],
+        "aa": ["(ts 'call.inner') (overlapping) (last) (inclusive)"],
+        "ic": ["(ts 'call.outer') (overlapping) (last) (inclusive)"],
+        "ie": ["(ts 'parameter.inner') (overlapping) (last) (inclusive)"],
+        "ae": ["(ts 'parameter.inner') (overlapping) (last) (inclusive)"],
 
         "i{": ["(surround \"{\" \"}\" true)"],
         "a{": ["(surround \"{\" \"}\" false)"],
@@ -460,7 +482,7 @@
 
     "vim": {
         "<ESCAPE>": ["vim.normal-mode"],
-        "<C-h>": ["vim.add-cursor-above"],
+        "<CS-f>": ["vim.add-cursor-above"],
         "<C-f>": ["vim.add-cursor-below"],
 
         // special
@@ -569,8 +591,8 @@
         "go": ["switch-source-header"],
         "ga": ["select-code-action"],
         "gR": ["rename"],
-        "K": ["show-hover-for-current"],
-        "H": ["show-diagnostics-for-current"],
+        "K": ["toggle-hover"],
+        "H": ["toggle-signature-help"],
 
         // scroll
         "z<ENTER>": ["vim.scroll-line-to-top-and-move-line-start"],
@@ -597,6 +619,8 @@
         "<C-t>": ["vim.indent"],
         "<C-d>": ["vim.unindent"],
         "<C-r>": ["set-mode", "vim.insert-register"],
+        "<C-k>": ["toggle-hover"],
+        "<C-h>": ["toggle-signature-help"],
     },
 
     "vim.visual": {
@@ -630,7 +654,7 @@
 
         // cursor movement
         "o": ["vim.invert-selections"],
-        "gp": ["select-parent-current-ts", false],
+        "C": ["select-parent-current-ts", false],
         "gl": ["vim.add-next-same-node-to-selection"],
         "gh": ["vim.move-selection-to-next-same-node"],
         "gs": ["vim.add-next-sibling-to-selection"],
@@ -699,6 +723,10 @@
         "<C-n>": ["select-next-completion"],
         "<C-y>": ["apply-selected-completion"],
         "<TAB>": ["apply-selected-completion"],
+    },
+
+    "vim.hover": {
+        "<ESCAPE>": ["hide-hover"],
     },
 
     // vscode

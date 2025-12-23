@@ -16,7 +16,7 @@ type
   MoveDatabase* = ref object of Service
     moves: Table[string, MoveImpl]
     env: Env
-    debugMoves: bool
+    debugMoves*: bool
 
 func serviceName*(_: typedesc[MoveDatabase]): string = "MoveDatabase"
 
@@ -28,6 +28,39 @@ method init*(self: MoveDatabase): Future[Result[void, ref CatchableError]] {.asy
 
 proc toggleDebugMoves*(self: MoveDatabase) =
   self.debugMoves = not self.debugMoves
+
+type Selector = enum OriginalStart, OriginalEnd, LastStart, LastEnd, CurrentStart, CurrentEnd
+proc parseSelector(val: LispVal, default: Selector): Selector =
+  if val.kind == Symbol:
+    case val.sym
+    of "orig-start": OriginalStart
+    of "orig-end": OriginalEnd
+    of "last-start": LastStart
+    of "last-end": LastEnd
+    of "curr-start": CurrentStart
+    of "curr-end": CurrentEnd
+    of ".": default
+    else:
+      log lvlError, &"Unknown cursor selector '{val.sym}'"
+      default
+  else:
+    log lvlError, &"Failed to parse cursor selector '{val}'. Expected Symbol, got {val.kind}"
+    default
+
+proc selectCursor(selector: Selector, i: int, default: Cursor, selections, lastSelections, originalSelections: openArray[Selection]): Cursor =
+  case selector
+  of OriginalStart:
+    if i in 0..<originalSelections.len: originalSelections[i].first else: default
+  of OriginalEnd:
+    if i in 0..<originalSelections.len: originalSelections[i].last else: default
+  of LastStart:
+    if i in 0..<lastSelections.len: lastSelections[i].first else: default
+  of LastEnd:
+    if i in 0..<lastSelections.len: lastSelections[i].last else: default
+  of CurrentStart:
+    if i in 0..<selections.len: selections[i].first else: default
+  of CurrentEnd:
+    if i in 0..<selections.len: selections[i].last else: default
 
 proc vimMotionWord*(text: Rope, cursor: Cursor, inclusive: bool): Selection =
   const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
@@ -285,7 +318,7 @@ proc moveCursorLine(text: Rope, displayMap: DisplayMap, cursor: Cursor, offset: 
     cursor.column = displayMap.toPoint(wrapPoint(wrapPoint.row.int, targetColumn)).column.int
   return text.clampCursor(cursor, includeEol)
 
-type MoveFunction* = proc(move: string, selections: openArray[Selection], count: int): seq[Selection] {.gcsafe, raises: [].}
+type MoveFunction* = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] {.gcsafe, raises: [].}
 
 proc getCount(env: Env): int =
   let val = env["count"]
@@ -301,7 +334,7 @@ proc getCount(env: Env): int =
 
   return 1
 
-proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], fallback: MoveFunction, args: openArray[LispVal], env: Env): seq[Selection] =
+proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], originalSelections: openArray[Selection], fallback: MoveFunction, args: openArray[LispVal], env: Env): seq[Selection] =
   if self.debugMoves:
     debugf"applyMoveImpl '{move}' {args}, {env.env}"
 
@@ -377,6 +410,21 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
 
   of "norm":
     return selections.mapIt(it.normalized)
+
+  of "combine":
+    if selections.len > 0:
+      var res = selections[0]
+      for s in selections:
+        res = res or s
+      return @[res]
+    else:
+      return @selections
+
+  of "overlapping":
+    let c = originalSelections.last.last
+    for s in selections:
+      if s.contains(c):
+        result.add s
 
   of "word-line":
     return selections.mapIt:
@@ -615,153 +663,136 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
 
   else:
     if fallback != nil:
-      return fallback(move, selections, count)
+      return fallback(move, selections, count, args, env)
     log lvlError, &"Unknown move '{move}'"
     return @selections
 
-proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, originalSelections: openArray[Selection], env: Env, fallback: MoveFunction): seq[Selection] =
-  var env = env
-  var baseEnv = self.env.createChild()
-  env.parent = baseEnv
-  try:
-    if self.debugMoves:
-      log lvlDebug, &"applyMoveLisp '{move}', {env.env}, {originalSelections}"
+proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: LispVal, originalSelections: openArray[Selection], baseEnv: Env, fallback: MoveFunction): seq[Selection] =
+  if self.debugMoves:
+    log lvlDebug, &"applyMove '{move}', {baseEnv.env}, {originalSelections}"
 
-    let originalSelections = @originalSelections
-    var lastSelections = originalSelections
-    var selections = originalSelections
+  var env = baseEnv.createChild()
+  env.parents.add(self.env)
 
-    var expr = move.parseLisp()
+  let originalSelections = @originalSelections
+  var lastSelections = originalSelections
+  var selections = originalSelections
 
-    type Selector = enum OriginalStart, OriginalEnd, LastStart, LastEnd, CurrentStart, CurrentEnd
-    proc parseSelector(val: LispVal, default: Selector): Selector =
-      if val.kind == Symbol:
-        case val.sym
-        of "orig-start": OriginalStart
-        of "orig-end": OriginalEnd
-        of "last-start": LastStart
-        of "last-end": LastEnd
-        of "curr-start": CurrentStart
-        of "curr-end": CurrentEnd
-        of ".": default
-        else:
-          log lvlError, &"Unknown cursor selector '{val.sym}'"
-          default
-      else:
-        log lvlError, &"Failed to parse cursor selector '{val}'. Expected Symbol, got {val.kind}"
-        default
+  var stack = newSeq[seq[Selection]]()
 
-    proc selectCursor(selector: Selector, i: int, default: Cursor): Cursor =
-      case selector
-      of OriginalStart:
-        if i in 0..<originalSelections.len: originalSelections[i].first else: default
-      of OriginalEnd:
-        if i in 0..<originalSelections.len: originalSelections[i].last else: default
-      of LastStart:
-        if i in 0..<lastSelections.len: lastSelections[i].first else: default
-      of LastEnd:
-        if i in 0..<lastSelections.len: lastSelections[i].last else: default
-      of CurrentStart:
-        if i in 0..<selections.len: selections[i].first else: default
-      of CurrentEnd:
-        if i in 0..<selections.len: selections[i].last else: default
+  env.onUndefinedSymbol = proc(_: Env, name: string): LispVal =
+    template impl(body: untyped): untyped =
+      newFunc(name, proc(args {.inject.}: seq[LispVal]): LispVal =
+        lastSelections = selections
+        body
+        if self.debugMoves:
+          log lvlDebug, "move '", name, "' ", $lastSelections, " -> ", selections
+      )
 
-    var stack = newSeq[seq[Selection]]()
-
-    baseEnv.onUndefinedSymbol = proc(_: Env, name: string): LispVal =
-      template impl(body: untyped): untyped =
-        newFunc(name, proc(args {.inject.}: seq[LispVal]): LispVal =
-          lastSelections = selections
-          body
-          if self.debugMoves:
-            log lvlDebug, "move '", name, "' ", $lastSelections, " -> ", selections
-        )
-
-      case name
-      of "num-lines":
-        newNumber(displayMap.buffer.visibleText.lines)
-      of "num-bytes":
-        newNumber(displayMap.buffer.visibleText.bytes)
-      of "same?":
-        newBool(selections == originalSelections)
-      of "original":
-        impl:
-          selections = originalSelections
-      of "push":
-        newFunc(name, proc(args {.inject.}: seq[LispVal]): LispVal =
-          stack.add selections
-        )
-      of "pop":
-        impl:
-          if stack.len > 0:
-            selections = stack.pop()
-      of "start", "first":
-        impl:
-          selections = selections.mapIt(it.first.toSelection)
-      of "end", "last":
-        impl:
-          selections = selections.mapIt(it.last.toSelection)
-      of "count*":
-        newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
-          if args.len == 0 or args[0].kind != Number:
-            return newNil()
-          var count = env.getCount()
-          assert count != 0
-          env["count"] = newNumber(count.float * args[0].num)
+    case name
+    of "num-lines":
+      newNumber(displayMap.buffer.visibleText.lines)
+    of "num-bytes":
+      newNumber(displayMap.buffer.visibleText.bytes)
+    of "same?":
+      newBool(selections == originalSelections)
+    of "original":
+      impl:
+        selections = originalSelections
+    of "push":
+      newFunc(name, proc(args {.inject.}: seq[LispVal]): LispVal =
+        stack.add selections
+      )
+    of "pop":
+      impl:
+        if stack.len > 0:
+          selections = stack.pop()
+    of "first":
+      impl:
+        if selections.len > 0:
+          selections = @[selections[0]]
+    of "last":
+      impl:
+        if selections.len > 0:
+          selections = @[selections[^1]]
+    of "start":
+      impl:
+        selections = selections.mapIt(it.first.toSelection)
+    of "end":
+      impl:
+        selections = selections.mapIt(it.last.toSelection)
+    of "count*":
+      newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
+        if args.len == 0 or args[0].kind != Number:
           return newNil()
-        )
-      of "merge":
-        newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
-          if selections.len > 0:
-            for i in 0..<min(originalSelections.len, selections.len):
-              if originalSelections[i].isBackwards:
-                if selections[i].isBackwards:
-                  let start = max(originalSelections[i].first, selections[i].first)
-                  let endd = min(originalSelections[i].last, selections[i].last)
-                  selections[i] = (start, endd)
-                else:
-                  let start = max(originalSelections[i].first, selections[i].last)
-                  let endd = min(originalSelections[i].last, selections[i].first)
-                  selections[i] = (start, endd)
+        var count = env.getCount()
+        assert count != 0
+        env["count"] = newNumber(count.float * args[0].num)
+        return newNil()
+      )
+    of "merge":
+      newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
+        if selections.len > 0:
+          for i in 0..<min(originalSelections.len, selections.len):
+            if originalSelections[i].isBackwards:
+              if selections[i].isBackwards:
+                let start = max(originalSelections[i].first, selections[i].first)
+                let endd = min(originalSelections[i].last, selections[i].last)
+                selections[i] = (start, endd)
               else:
-                if selections[i].isBackwards:
-                  let start = min(originalSelections[i].first, selections[i].last)
-                  let endd = max(originalSelections[i].last, selections[i].first)
-                  selections[i] = (start, endd)
-                else:
-                  let start = min(originalSelections[i].first, selections[i].first)
-                  let endd = max(originalSelections[i].last, selections[i].last)
-                  selections[i] = (start, endd)
-        )
-      of "join":
-        newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
-          let startSelector = if args.len > 0:
-            parseSelector(args[0], OriginalStart)
-          else:
-            OriginalStart
-          let endSelector = if args.len > 1:
-            parseSelector(args[1], CurrentEnd)
-          else:
-            CurrentEnd
+                let start = max(originalSelections[i].first, selections[i].last)
+                let endd = min(originalSelections[i].last, selections[i].first)
+                selections[i] = (start, endd)
+            else:
+              if selections[i].isBackwards:
+                let start = min(originalSelections[i].first, selections[i].last)
+                let endd = max(originalSelections[i].last, selections[i].first)
+                selections[i] = (start, endd)
+              else:
+                let start = min(originalSelections[i].first, selections[i].first)
+                let endd = max(originalSelections[i].last, selections[i].last)
+                selections[i] = (start, endd)
+      )
+    of "join":
+      newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
+        let startSelector = if args.len > 0:
+          parseSelector(args[0], OriginalStart)
+        else:
+          OriginalStart
+        let endSelector = if args.len > 1:
+          parseSelector(args[1], CurrentEnd)
+        else:
+          CurrentEnd
 
-          if selections.len > 0:
-            for i in 0..<selections.len:
-              let start = selectCursor(startSelector, i, selections[i].last)
-              let endd = selectCursor(endSelector, i, selections[i].last)
-              selections[i] = (start, endd)
-        )
-      else:
-        impl:
-          selections = self.applyMoveImpl(displayMap, name, selections, fallback, args, env)
+        if selections.len > 0:
+          for i in 0..<selections.len:
+            let start = selectCursor(startSelector, i, selections[i].last, selections, lastSelections, originalSelections)
+            let endd = selectCursor(endSelector, i, selections[i].last, selections, lastSelections, originalSelections)
+            selections[i] = (start, endd)
+      )
+    else:
+      impl:
+        selections = self.applyMoveImpl(displayMap, name, selections, originalSelections, fallback, args, env)
 
-    discard expr.eval(env)
+  try:
+    discard move.eval(env)
     return selections
   except CatchableError as e:
     log lvlError, &"Failed to apply move '{move}': {e.msg}"
     return @originalSelections
   finally:
     env.clear()
-    baseEnv.clear()
+
+proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, originalSelections: openArray[Selection], env: Env, fallback: MoveFunction): seq[Selection] =
+  try:
+    if self.debugMoves:
+      log lvlDebug, &"applyMoveLisp '{move}', {env.env}, {originalSelections}"
+
+    var expr = move.parseLisp()
+    self.applyMove(displayMap, expr, originalSelections, env, fallback)
+  except CatchableError as e:
+    log lvlError, &"Failed to apply move '{move}': {e.msg}"
+    return @originalSelections
 
 proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], fallback: MoveFunction = nil, env: Env = Env()): seq[Selection] =
   if move.startsWith("("):

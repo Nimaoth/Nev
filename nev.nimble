@@ -34,7 +34,7 @@ requires "chronos >= 4.0.3"
 requires "https://github.com/Araq/malebolgia#ab17bef"
 requires "https://github.com/Nimaoth/fsnotify >= 0.1.6"
 requires "https://github.com/Nimaoth/ws >= 0.5.0"
-requires "https://github.com/Nimaoth/windy >= 0.0.5"
+requires "https://github.com/Nimaoth/windy#ae1627e"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy#bfc8665"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.21"
@@ -178,7 +178,7 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
 proc buildPlugin(name: string) =
   withDir &"plugins/{name}":
     exec &"nimble setup"
-    exec &"nim c -d:release --disablevalidation --skipParentCfg --passL:\"-o {name}.m.wasm\" {getCommandLineParams()} {name}.nim"
+    exec &"nim c -d:release --skipParentCfg --passL:\"-o {name}.m.wasm\" {getCommandLineParams()} {name}.nim"
     # exec &"nim c -d:release --skipParentCfg -d:pluginWorld=plugin-thread-safe --passL:\"-o {name}_thread.m.wasm\" {getCommandLineParams()} {name}_thread.nim"
 
 task buildWasmModule, "":

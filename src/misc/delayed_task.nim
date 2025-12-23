@@ -106,3 +106,8 @@ template startDelayedAsync*(interval: int, repeat: bool = false, body: untyped):
   newDelayedTask(interval, repeat, true, proc() {.async: (raises: []).} =
     body
   )
+
+template startDelayedPausedAsync*(interval: int, repeat: bool = false, body: untyped): untyped =
+  newDelayedTask(interval, repeat, false, proc() {.async: (raises: []).} =
+    body
+  )

@@ -39,6 +39,7 @@ when defined(linux):
 type
   TerminalPlatform* = ref object of Platform
     buffer: TerminalBuffer
+    borderBuffer: BoxBuffer
     trueColorSupport*: bool
     mouseButtons: set[input.MouseButton]
     masks: seq[Rect]
@@ -296,6 +297,7 @@ method init*(self: TerminalPlatform, options: AppOptions) =
     self.builder.charWidth = 1
     self.builder.lineHeight = 1
     self.builder.lineGap = 0
+    self.builder.defaultBorderWidth = 1
 
     self.supportsThinCursor = false
     self.doubleClickTime = 0.35
@@ -315,6 +317,7 @@ method init*(self: TerminalPlatform, options: AppOptions) =
     let terminalSize = self.getTerminalSize()
     self.buffer.initTerminalBuffer(terminalSize.x, terminalSize.y)
     self.buffer.clear()
+    self.borderBuffer = newBoxBuffer(terminalSize.x, terminalSize.y)
     self.redrawEverything = true
 
     self.builder.textWidthImpl = proc(node: UINode): float32 {.gcsafe, raises: [].} =
@@ -510,12 +513,12 @@ method processEvents*(self: TerminalPlatform): int {.gcsafe.} =
       of MouseMove:
         if not self.noUI:
           let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
-          if not self.builder.handleMouseMoved(pos, {}):
+          if not self.builder.handleMouseMoved(pos, {}, event.move.mods):
             self.onMouseMove.invoke (pos, vec2(0, 0), event.move.mods, {})
       of MouseDrag:
         if not self.noUI:
           let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
-          if not self.builder.handleMouseMoved(pos, {event.drag.button}):
+          if not self.builder.handleMouseMoved(pos, {event.drag.button}, event.drag.mods):
             self.onMouseMove.invoke (pos, vec2(0, 0), event.drag.mods, {event.drag.button})
       of Scroll:
         if not self.noUI:
@@ -558,6 +561,10 @@ proc toStdColor(color: chroma.Color): stdcolors.Color =
 
 proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) {.gcsafe.}
 
+proc flushBorders(self: TerminalPlatform) =
+  self.buffer.write(self.borderBuffer, writeStyle = false)
+  self.borderBuffer.clear(0, 0, int.high, int.high)
+
 method render*(self: TerminalPlatform, rerender: bool) {.gcsafe.} =
   try:
     let terminalSize = self.getTerminalSize()
@@ -567,6 +574,7 @@ method render*(self: TerminalPlatform, rerender: bool) {.gcsafe.} =
         log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {terminalSize.x}x{terminalSize.y}, recreate buffer")
         self.buffer.initTerminalBuffer(terminalSize.x, terminalSize.y)
         self.buffer.clear()
+        self.borderBuffer.resize(terminalSize.x, terminalSize.y)
         self.redrawEverything = true
 
       if self.builder.root.lastSizeChange == self.builder.frameIndex:
@@ -574,6 +582,8 @@ method render*(self: TerminalPlatform, rerender: bool) {.gcsafe.} =
 
       self.cursor.visible = false
       self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
+      self.buffer.write(self.borderBuffer, writeStyle = false)
+      self.flushBorders()
 
       # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
       try:
@@ -619,6 +629,7 @@ proc fillRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
   self.setBackgroundColor(color)
   self.buffer.fillBackground(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
   self.buffer.setBackgroundColor(bgNone)
+  self.borderBuffer.clear(bounds.x.int + 1, bounds.y.int + 1, bounds.xw.int - 1 - 1, bounds.yh.int - 1 - 1)
 
 proc drawRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
   let mask = if self.masks.len > 0:
@@ -630,6 +641,34 @@ proc drawRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
 
   self.setForegroundColor(color)
   self.buffer.drawRect(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
+
+proc drawBorder(self: TerminalPlatform, bounds: Rect, color: chroma.Color, border: UIBorder, backgroundColor: chroma.Color) =
+  let mask = if self.masks.len > 0:
+    self.masks[self.masks.high]
+  else:
+    rect(vec2(0, 0), self.size)
+
+  var boundsMaskedV = bounds and rect(mask.x, float.low, mask.w, float.high)
+  var boundsMaskedH = bounds and rect(float.low, mask.y, float.high, mask.h)
+
+  self.setForegroundColor(color)
+  self.setBackgroundColor(backgroundColor)
+  if border.left > 0:
+    self.fillRect(rect(bounds.x, bounds.y, 1, bounds.h), backgroundColor)
+    self.buffer.drawVertLine(bounds.x.int, boundsMaskedH.y.int, boundsMaskedH.yh.int - 1)
+    self.borderBuffer.drawVertLine(bounds.x.int, boundsMaskedH.y.int, boundsMaskedH.yh.int - 1)
+  if border.right > 0:
+    self.fillRect(rect(bounds.xw - 1, bounds.y, 1, bounds.h), backgroundColor)
+    self.buffer.drawVertLine(bounds.xw.int - 1, boundsMaskedH.y.int, boundsMaskedH.yh.int - 1)
+    self.borderBuffer.drawVertLine(bounds.xw.int - 1, boundsMaskedH.y.int, boundsMaskedH.yh.int - 1)
+  if border.top > 0:
+    self.fillRect(rect(bounds.x, bounds.y, bounds.w, 1), backgroundColor)
+    self.buffer.drawHorizLine(boundsMaskedV.x.int, boundsMaskedV.xw.int - 1, bounds.y.int)
+    self.borderBuffer.drawHorizLine(boundsMaskedV.x.int, boundsMaskedV.xw.int - 1, bounds.y.int)
+  if border.bottom > 0:
+    self.fillRect(rect(bounds.x, bounds.yh - 1, bounds.w, 1), backgroundColor)
+    self.buffer.drawHorizLine(boundsMaskedV.x.int, boundsMaskedV.xw.int - 1, bounds.yh.int - 1)
+    self.borderBuffer.drawHorizLine(boundsMaskedV.x.int, boundsMaskedV.xw.int - 1, bounds.yh.int - 1)
 
 # proc drawRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
 #   let mask = if self.masks.len > 0:
@@ -811,8 +850,15 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
       platform.buffer.setBackgroundColor(bgNone)
       platform.writeText(bounds.xy, node.text, node.textColor, node.textColor, ' '.Rune, TextWrap in node.flags, round(bounds.w).RuneCount, TextItalic in node.flags, node.flags)
 
-    for _, c in node.children:
-      builder.drawNode(platform, c, nodePos, force)
+    if DrawChildrenReverse in node.flags:
+      for c in node.rchildren:
+        builder.drawNode(platform, c, nodePos, force)
+    else:
+      for _, c in node.children:
+        builder.drawNode(platform, c, nodePos, force)
+
+    if FlushBorders in node.flags:
+      platform.flushBorders()
 
     for list in node.renderCommandList:
       for command in list.commands:
@@ -826,4 +872,4 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
       handleCommand(builder, platform, node.renderCommands.addr, command, nodePos)
 
     if DrawBorderTerminal in node.flags:
-      platform.drawRect(bounds, node.borderColor)
+      platform.drawBorder(bounds, node.borderColor, node.border, node.backgroundColor)

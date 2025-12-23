@@ -45,6 +45,7 @@ type
     tkTrue,
     tkFalse,
     tkNull,
+    tkParenLe,
     tkCurlyLe,
     tkCurlyRi,
     tkBracketLe,
@@ -102,16 +103,16 @@ const
     "true",
     "false",
     "null",
-    "{", "}", "[", "]", ":", ","
+    "(", "{", "}", "[", "]", ":", ","
   ]
 
 proc open*(my: var JsonexParser, input: Stream, filename: string;
-           rawStringLiterals = false) =
+           rawStringLiterals = false, bufferSize: int = 8192) =
   ## initializes the parser with an input stream. `Filename` is only used
   ## for nice error messages. If `rawStringLiterals` is true, string literals
   ## are kept with their surrounding quotes and escape sequences in them are
   ## left untouched too.
-  lexbase.open(my, input)
+  lexbase.open(my, input, bufLen = bufferSize)
   my.filename = filename
   my.state = @[stateStart]
   my.kind = jsonError
@@ -368,6 +369,9 @@ proc getTok*(my: var JsonexParser): TokKind =
   of '[':
     inc(my.bufpos)
     result = tkBracketLe
+  of '(':
+    inc(my.bufpos)
+    result = tkParenLe
   of '{':
     inc(my.bufpos)
     result = tkCurlyLe

@@ -19,7 +19,6 @@ type
     window: Window
     ctx*: Context
     boxy: Boxy
-    currentModifiers: Modifiers
     currentMouseButtons: set[MouseButton]
 
     fontRegular: string
@@ -102,6 +101,7 @@ method init*(self: GuiPlatform, options: AppOptions) =
 
     self.builder = newNodeBuilder()
     self.builder.useInvalidation = true
+    self.builder.defaultBorderWidth = 5
 
     if options.monitor.getSome(index):
       when defined(windows):
@@ -177,8 +177,8 @@ method init*(self: GuiPlatform, options: AppOptions) =
 
     self.window.onFocusChange = proc() =
       inc self.eventCounter
-      self.currentModifiers = {}
       self.currentMouseButtons = {}
+      self.setMods({})
       self.lastEvent = (int64, Modifiers, Button).none
       self.onFocusChanged.invoke self.window.focused
       self.focused = self.window.focused
@@ -207,8 +207,8 @@ method init*(self: GuiPlatform, options: AppOptions) =
 
     self.window.onMouseMove = proc() =
       # inc self.eventCounter
-      if not self.builder.handleMouseMoved(self.window.mousePos.vec2, self.currentMouseButtons):
-        self.onMouseMove.invoke (self.window.mousePos.vec2, self.window.mouseDelta.vec2, {}, self.currentMouseButtons)
+      if not self.builder.handleMouseMoved(self.window.mousePos.vec2, self.currentMouseButtons, self.currentModifiers):
+        self.onMouseMove.invoke (self.window.mousePos.vec2, self.window.mouseDelta.vec2, self.currentModifiers, self.currentMouseButtons)
 
     proc toMouseButton(button: Button): MouseButton =
       inc self.eventCounter
@@ -236,10 +236,10 @@ method init*(self: GuiPlatform, options: AppOptions) =
         self.currentMouseButtons.incl button.toMouseButton
         if not self.builder.handleMousePressed(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
           self.onMousePress.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
-      of KeyLeftShift, KeyRightShift: self.currentModifiers = self.currentModifiers + {Shift}
-      of KeyLeftControl, KeyRightControl: self.currentModifiers = self.currentModifiers + {Control}
-      of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers + {Alt}
-      # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers + {Super}
+      of KeyLeftShift, KeyRightShift: self.setMods(self.currentModifiers + {Shift})
+      of KeyLeftControl, KeyRightControl: self.setMods(self.currentModifiers + {Control})
+      of KeyLeftAlt, KeyRightAlt: self.setMods(self.currentModifiers + {Alt})
+      # of KeyLeftSuper, KeyRightSuper: self.setMods(self.currentModifiers + {Super})
       else:
         # debugf"last event k: {button}, input: {inputToString(button.toInput, self.currentModifiers)}"
         self.lastEvent = (button.toInput, self.currentModifiers, button).some
@@ -258,10 +258,10 @@ method init*(self: GuiPlatform, options: AppOptions) =
         self.currentMouseButtons.excl button.toMouseButton
         if not self.builder.handleMouseReleased(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
           self.onMouseRelease.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
-      of KeyLeftShift, KeyRightShift: self.currentModifiers = self.currentModifiers - {Shift}
-      of KeyLeftControl, KeyRightControl: self.currentModifiers = self.currentModifiers - {Control}
-      of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers - {Alt}
-      # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers - {Super}
+      of KeyLeftShift, KeyRightShift: self.setMods(self.currentModifiers - {Shift})
+      of KeyLeftControl, KeyRightControl: self.setMods(self.currentModifiers - {Control})
+      of KeyLeftAlt, KeyRightAlt: self.setMods(self.currentModifiers - {Alt})
+      # of KeyLeftSuper, KeyRightSuper: self.setMods(self.currentModifiers - {Super})
       else:
         if not self.builder.handleKeyReleased(button.toInput, self.currentModifiers):
           self.onKeyRelease.invoke (button.toInput, self.currentModifiers)
@@ -527,6 +527,15 @@ proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1, off
   except GLerror, Exception:
     discard
 
+proc drawBorder*(boxy: Boxy, bounds: Rect, color: Color, border: UIBorder) =
+  try:
+    boxy.drawRect(rect(bounds.x, bounds.y, border.left, bounds.h), color)
+    boxy.drawRect(rect(bounds.x, bounds.y, bounds.w, border.top), color)
+    boxy.drawRect(rect(bounds.xw - border.right, bounds.y, border.right, bounds.h), color)
+    boxy.drawRect(rect(bounds.x, bounds.yh - border.bottom, bounds.w, border.bottom), color)
+  except GLerror, Exception:
+    discard
+
 proc randomColor(node: UINode, a: float32): Color =
   let h = node.id.hash
   result.r = (((h shr 0) and 0xff).float32 / 255.0).sqrt
@@ -636,6 +645,7 @@ method render*(self: GuiPlatform, rerender: bool) =
 
           if DrawBorder in node.flags:
             self.boxy.strokeRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), color(c.r, c.g, c.b, 0.5), 5, offset = 0.5)
+
 
       # End this frame, flushing the draw commands. Draw to framebuffer.
       self.boxy.endFrame()
@@ -876,7 +886,8 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
       builder.drawNode(platform, c, nodePos, force)
 
     if DrawBorder in node.flags:
-      platform.boxy.strokeRect(bounds, node.borderColor)
+      if node.border != UIBorder():
+        platform.boxy.drawBorder(bounds, node.borderColor, node.border)
 
     var maskBounds: seq[Rect]
     for list in node.renderCommandList:
@@ -891,3 +902,16 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
 
   except GLerror, Exception:
     discard
+
+when defined(windows):
+  import winim/lean
+
+method focusWindow*(self: GuiPlatform) {.gcsafe, raises: [].} =
+  when defined(windows):
+    if GetForegroundWindow() == self.window.platformHandle:
+      return
+    discard SetForegroundWindow(self.window.platformHandle)
+    discard SetFocus(self.window.platformHandle)
+    discard SetActiveWindow(self.window.platformHandle)
+    discard ShowWindow(self.window.platformHandle, SW_SHOW)
+    self.window.maximized = true

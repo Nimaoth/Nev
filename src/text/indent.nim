@@ -29,8 +29,9 @@ proc indentForNewLine*(
   style: IndentStyleKind,
   width: int,
   column: int,
+  indentOffset: int = 0,
 ): string =
-  var indentLevel = indentLevelForLine(line, width)
+  var indentLevel = max(indentLevelForLine(line, width) + indentOffset, 0)
 
   if line.len > 0 and indentAfter.getSome(indentAfter):
     for suffix in indentAfter:

@@ -94,6 +94,17 @@ method checkoutFile*(self: VersionControlSystemPerforce, path: string): Future[s
   log lvlInfo, fmt"edit file: '{command} {args}'"
   return runProcessAsync(command, args, workingDir=self.root).await.join(" ")
 
+method addFile*(self: VersionControlSystemPerforce, path: string): Future[string] {.async.} =
+  let command = "powershell"
+  let args = @[
+    "-NoProfile",
+    "-Command",
+    fmt"p4 set P4CLIENT={self.client}; p4 add {path}"
+  ]
+
+  log lvlInfo, fmt"add file: '{command} {args}'"
+  return runProcessAsync(command, args, workingDir=self.root).await.join(" ")
+
 method revertFile*(self: VersionControlSystemPerforce, path: string): Future[string] {.async.} =
   let command = "powershell"
   let args = @[

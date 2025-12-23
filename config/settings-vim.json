@@ -9,13 +9,14 @@
     "text.modes": ["vim", "vim.normal"],
     "text.default-mode": "vim.normal",
     "text.completion-mode": "vim.completion",
+    "text.hover-mode": "vim.hover",
 
     "lang.command-line.text.modes": ["vim", "vim.normal"],
     "lang.command-line.text.default-mode": "vim.insert",
     "lang.selector-popup-search-bar.text.modes": ["vim"],
     "lang.selector-popup-search-bar.text.default-mode": "vim.insert",
 
-    "input": {
+    "+input": {
         "editor.text.handle-inputs": true,
         "vim.insert.handle-inputs": true,
         "vim.replace.handle-inputs": true,

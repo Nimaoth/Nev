@@ -66,7 +66,6 @@ type EditorState = object
   astProjectWorkspaceId: string
   astProjectPath: Option[string]
 
-  debuggerState: Option[JsonNode]
   sessionData: JsonNode
 
 type
@@ -174,6 +173,7 @@ method log*(self: AppLogger, level: Level, args: varargs[string, `$`]) =
 
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers)
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
+proc handleModsChanged*(self: App, old: Modifiers, new: Modifiers)
 proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
 
@@ -394,27 +394,6 @@ proc loadSession*(self: App) {.async: (raises: []).} =
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
-proc parseCommand(json: JsonNodeEx): tuple[command: string, args: string] {.raises: [ValueError].} =
-  if json.kind == JString:
-    let commandStr = json.getStr
-    let spaceIndex = commandStr.find(" ")
-
-    if spaceIndex == -1:
-      return (commandStr, "")
-    else:
-      return (commandStr[0..<spaceIndex], commandStr[spaceIndex+1..^1])
-
-  elif json.kind == JArray:
-    if json.elems.len > 0:
-      let name = json[0].getStr
-      let args = json.elems[1..^1].mapIt($it).join(" ")
-      return (name, args)
-    else:
-      raise newException(ValueError, "Missing command name, got empty array")
-
-  else:
-    return ("", "")
-
 proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
   try:
     let oldScriptContext = self.plugins.currentPluginSystem
@@ -452,21 +431,26 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
       for (keys, command) in commands.fields.pairs:
         let loc = (filename: filename, line: command.loc.line.int, column: command.loc.column.int + 1)
         try:
-          if command.kind == JString or command.kind == JArray:
-            let (name, args) = command.parseCommand()
-            self.addCommandScript(context, "", keys, name, args, source = loc)
-
-          elif command.kind == JObject:
+          if command.kind == JObject:
             if command.hasKey("command"):
-              var (name, args) = command["command"].parseCommand()
-              let description = command.fields.getOrDefault("description", newJexString("")).getStr
-              self.addCommandScript(context, "", keys, name, args, description, source = loc)
+              let cmd = command["command"]
+              var (name, args, ok) = cmd.parseCommand()
+              if not ok:
+                log lvlError, &"Invalid command in keybinding settings '{filename}:{loc.line}:{loc.column}': {cmd}"
+              else:
+                let description = command.fields.getOrDefault("description", newJexString("")).getStr
+                self.addCommandScript(context, "", keys, name, args, description, source = loc)
             else:
               let description = command.fields.getOrDefault("description", newJexString("")).getStr
               self.events.addCommandDescription(context, keys, description)
 
           else:
-            log lvlError, &"Invalid command in keybinding settings '{filename}:{loc.line}{loc.column}': Expected string | array | object for '{context}.{keys}'"
+            let (name, args, ok) = command.parseCommand()
+            if not ok:
+              log lvlError, &"Invalid command in keybinding settings '{filename}:{loc.line}:{loc.column}': {command}"
+            else:
+              self.addCommandScript(context, "", keys, name, args, source = loc)
+
         except CatchableError:
           log(lvlError, &"Invalid command in '{filename}:{loc.line}{loc.column}': {getCurrentExceptionMsg()}")
 
@@ -858,6 +842,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   discard platform.onKeyPress.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyPress(event.input, event.modifiers)
   discard platform.onKeyRelease.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyRelease(event.input, event.modifiers)
+  discard platform.onModifiersChanged.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleModsChanged(event.old, event.new)
   discard platform.onRune.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleRune(event.input, event.modifiers)
   discard platform.onDropFile.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleDropFile(event.path, event.content)
   discard platform.onCloseRequested.subscribe proc() {.gcsafe, raises: [].} = self.closeRequested = true
@@ -940,6 +925,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   let showNextPossibleInputsDelay = self.uiSettings.whichKeyDelay.get()
   self.showNextPossibleInputsTask = startDelayedPaused(showNextPossibleInputsDelay, repeat=false):
     self.showNextPossibleInputs = self.nextPossibleInputs.len > 0
+    if self.uiSettings.whichKeyShowWhenMod.get() and self.platform.currentModifiers != {}:
+      self.showNextPossibleInputs = true
     self.platform.requestRender()
 
   if self.generalSettings.watchTheme.get():
@@ -1203,9 +1190,6 @@ proc saveAppState*(self: App) {.expose("editor").} =
 
   state.commandHistory = self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory
   state.sessionData = self.session.saveSession()
-
-  if getDebugger().getSome(debugger):
-    state.debuggerState = debugger.getStateJson().some
 
   # Save open workspace folders
   state.workspaceFolder = OpenWorkspace(
@@ -2254,8 +2238,11 @@ proc chooseLocation*(self: App) {.expose("editor").} =
 
   self.layout.pushPopup popup
 
-proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: int, maxLen: int): Future[ItemList] {.async: (raises: []).} =
-  let searchResults = workspace.searchWorkspace(query, maxResults).await
+proc searchWorkspaceItemList(workspace: Workspace, query: string, paths: seq[string], maxResults: int, maxLen: int): Future[ItemList] {.async: (raises: []).} =
+  let searchResults = if paths.len > 0:
+    workspace.searchWorkspace(paths, query, maxResults).await
+  else:
+    workspace.searchWorkspace(query, maxResults).await
   log lvlInfo, fmt"Found {searchResults.len} results"
 
   var list = newItemList(searchResults.len)
@@ -2279,6 +2266,7 @@ proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: in
 type
   WorkspaceSearchDataSource* = ref object of DataSource
     workspace: Workspace
+    paths: seq[string]
     query: string
     delayedTask: DelayedTask
     minQueryLen: int = 2
@@ -2290,14 +2278,16 @@ proc getWorkspaceSearchResults(self: WorkspaceSearchDataSource): Future[void] {.
     return
 
   let t = startTimer()
-  let list = self.workspace.searchWorkspaceItemList(self.query, self.maxResults, self.maxLen).await
+  let list = self.workspace.searchWorkspaceItemList(self.query, self.paths, self.maxResults, self.maxLen).await
   debugf"[searchWorkspace] {t.elapsed.ms}ms"
   self.onItemsChanged.invoke list
 
-proc newWorkspaceSearchDataSource(workspace: Workspace, maxResults: int): WorkspaceSearchDataSource =
+proc newWorkspaceSearchDataSource(workspace: Workspace, maxResults: int, path: string): WorkspaceSearchDataSource =
   new result
   result.workspace = workspace
   result.maxResults = maxResults
+  if path.len > 0:
+    result.paths = @[path]
 
 method close*(self: WorkspaceSearchDataSource) =
   self.delayedTask.deinit()
@@ -2314,14 +2304,14 @@ method setQuery*(self: WorkspaceSearchDataSource, query: string) =
   else:
     self.delayedTask.reschedule()
 
-proc searchGlobalInteractive*(self: App) {.expose("editor").} =
+proc searchGlobalInteractive*(self: App, path: string = "") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
   let workspace = self.workspace
 
   let maxResults = self.generalSettings.maxSearchResults.get()
-  let source = newWorkspaceSearchDataSource(workspace, maxResults)
+  let source = newWorkspaceSearchDataSource(workspace, maxResults, self.vfs.localize(path))
   var finder = newFinder(source, filterAndSort=true, skipFirstQuery=true)
 
   var popup = newSelectorPopup(self.services, "search".some, finder.some,
@@ -2354,7 +2344,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
     let maxResults = self.generalSettings.maxSearchResults.get()
     let maxLen = self.generalSettings.maxSearchResultDisplayLen.get()
-    return self.workspace.searchWorkspaceItemList(query, maxResults, maxLen).await
+    return self.workspace.searchWorkspaceItemList(query, @[], maxResults, maxLen).await
 
   let source = newAsyncCallbackDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
@@ -2689,6 +2679,12 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
         self.layout.popPopup(popup)
     return true
 
+  popup.addCustomCommand "search-interactive", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let dir = currentDirectory[]
+    self.searchGlobalInteractive(dir)
+    self.layout.popPopup(popup)
+    return true
+
   self.layout.pushPopup popup
 
 proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
@@ -2711,13 +2707,17 @@ proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
     self.config.runtime.setSettings(newJexObject())
   asyncSpawn self.reloadConfigAsync()
 
-proc reloadPlugin*(self: App) {.expose("editor").} =
-  log lvlInfo, &"Reload current plugin"
-  # todo: delete
-
 proc reloadTheme*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload theme"
   asyncSpawn self.setTheme(self.themes.theme.path, force = true)
+
+proc currentFilePath*(self: App): string {.expose("editor").} =
+  if self.layout.tryGetCurrentEditorView().getSome(view) and view.editor != nil and view.editor.getDocument() != nil:
+    return view.editor.getDocument().filename
+
+proc currentLocalFilePath*(self: App): string {.expose("editor").} =
+  if self.layout.tryGetCurrentEditorView().getSome(view) and view.editor != nil and view.editor.getDocument() != nil:
+    return view.editor.getDocument().localizedPath()
 
 proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
@@ -2843,6 +2843,7 @@ proc getNextPossibleInputs*(self: App, inProgressOnly: bool, filter: proc(handle
   let anyInProgress = handlers.anyInProgress
 
   for handler in handlers:
+    assert handler != nil
     if (anyInProgress or inProgressOnly) and not handler.inProgress:
       continue
 
@@ -2851,34 +2852,43 @@ proc getNextPossibleInputs*(self: App, inProgressOnly: bool, filter: proc(handle
 
     let nextPossibleInputs = handler.getNextPossibleInputs()
     for x in nextPossibleInputs:
+      if not inProgressOnly and x[1] != self.platform.currentModifiers:
+        continue
+
       let key = inputToString(x[0], x[1])
 
-      for i in 0..result.high:
-        if result[i].input == key:
-          result.removeSwap(i)
-          break
-
       for next in x[2]:
-        if x[1] == {Shift} and x[0] in 0..Rune.high.int and x[0].Rune.isAlpha:
+        if x[1] == {Shift} and x[0] in 0..Rune.high.int and x[0].Rune.isUpper:
           continue
 
+        var desc = ""
+        var continues = false
         let actions = handler.dfa.getActions(next)
         if actions.len > 1:
-          var desc = &"... ({handler.config.context})"
+          continues = true
+          desc = &"... ({handler.config.context})"
           handler.config.stateToDescription.withValue(next.current, val):
             desc = val[] & "..."
-          result.add (key, desc, true)
         elif actions.len > 0:
-          var desc = &"{actions[0][0]} {actions[0][1]}"
+          desc = &"{actions[0][0]} {actions[0][1]}"
           handler.config.stateToDescription.withValue(next.current, val):
             desc = val[]
-          result.add (key, desc, false)
+
+          for i in countdown(result.high, 0):
+            if result[i].input == key:
+              result.removeSwap(i)
+
+        if actions.len > 0:
+          result.add (key, desc, continues)
 
     result.sort proc(a, b: tuple[input: string, description: string, continues: bool]): int =
       cmp(a.input, b.input)
+    result = result.deduplicate(true)
 
 proc updateNextPossibleInputs*(self: App) =
-  let whichKeyInProgressOnly = not self.uiSettings.whichKeyNoProgress.get()
+  var whichKeyInProgressOnly = not self.uiSettings.whichKeyNoProgress.get()
+  if self.uiSettings.whichKeyShowWhenMod.get() and self.platform.currentModifiers != {}:
+    whichKeyInProgressOnly = false
   self.nextPossibleInputs = self.getNextPossibleInputs(whichKeyInProgressOnly)
 
   if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:
@@ -2953,6 +2963,9 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   except:
     discard
 
+  self.updateNextPossibleInputs()
+
+proc handleModsChanged*(self: App, old: Modifiers, new: Modifiers) =
   self.updateNextPossibleInputs()
 
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
@@ -3090,7 +3103,7 @@ proc all*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
   if args.kind == JArray:
     try:
       for command in args.elems:
-        let (command, args) = command.toJsonEx.parseCommand()
+        let (command, args, ok) = command.toJsonEx.parseCommand()
         if command.len > 0:
           discard self.commands.executeCommand(command & " " & args)
     except CatchableError:
@@ -3168,7 +3181,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
 
     if action.startsWith("."): # active action
       if self.getActiveEditor().getSome(editor):
-        debugf"[defaultHandleCommand] '{command}' handled by active editor"
+        # debugf"[defaultHandleCommand] '{command}' handled by active editor"
         return editor.handleAction(action[1..^1], arg, record=false).toStringResult()
 
       log lvlError, fmt"No active editor"
@@ -3176,7 +3189,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
 
     if action.startsWith("^"): # active popup action
       if self.layout.popups.len > 0:
-        debugf"[defaultHandleCommand] '{command}' handled by active popup"
+        # debugf"[defaultHandleCommand] '{command}' handled by active popup"
         return self.layout.popups[^1].handleAction(action[1..^1], arg).toStringResult()
 
       log lvlError, fmt"No popup"
@@ -3186,7 +3199,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
       for t in globalDispatchTables.mitems:
         t.functions.withValue(action, f):
           try:
-            debugf"[defaultHandleCommand] '{command}' handled by global dispatch"
+            # debugf"[defaultHandleCommand] '{command}' handled by global dispatch"
             let res = f[].dispatch(args)
             if res.isNil:
               continue
@@ -3198,7 +3211,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
     try:
       result = dispatch(action, args).toStringResult()
       if result.isSome:
-        debugf"[defaultHandleCommand] '{command}' handled by app dispatch"
+        # debugf"[defaultHandleCommand] '{command}' handled by app dispatch"
         return
     except CatchableError:
       log(lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}")

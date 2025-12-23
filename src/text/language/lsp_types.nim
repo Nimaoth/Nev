@@ -37,6 +37,8 @@ macro variant(name: untyped, types: varargs[untyped]): untyped =
 
       proc procName*(arg: name): Option[t] {.gcsafe, raises: [].} =
         try:
+          if arg.node.isNil:
+            return t.none
           when isSeqLit:
             if arg.node.kind != JArray:
               return t.none
@@ -621,6 +623,27 @@ type
     textDocument*: TextDocumentIdentifier
     position*: Position
 
+  SignatureHelpParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    position*: Position
+    context: Option[JsonNode]
+
+  ParameterInformation* = object
+    label*: JsonNode
+    documentation*: Option[JsonNode]
+
+  SignatureInformation* = object
+    label*: string
+    documentation*: Option[JsonNode]
+    parameters*: seq[ParameterInformation]
+    activeParameter*: Option[int]
+
+  SignatureHelpResponse* = object
+    signatures*: seq[SignatureInformation]
+    activeSignature*: Option[int]
+    activeParameter*: Option[int]
+
   DocumentHoverResponse* = object
     contents*: HoverContentVariant
     range*: Option[Range]
@@ -718,6 +741,7 @@ type
     edit*: Option[WorkspaceEdit]
     command*: Option[Command]
     data*: Option[JsonNode]
+    source*: string
 
   CodeActionParams* = object
     textDocument*: TextDocumentIdentifier

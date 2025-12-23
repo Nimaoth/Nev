@@ -56,7 +56,8 @@ type
     docs*: string
     noInit*: bool
 
-  RegexSetting* = distinct JsonNodeEx
+  RegexSetting* = object
+    impl: JsonNodeEx
 
   RuneSetSetting* = distinct HashSet[Rune]
 
@@ -86,7 +87,7 @@ proc toJsonExHook*[T](a: Setting[T]): JsonNodeEx {.raises: [].} =
   return v.toJsonEx(defaultToJsonOptions)
 
 proc fromJsonExHook*(t: var RegexSetting, jsonNode: JsonNodeEx) =
-  t = jsonNode.RegexSetting
+  t = RegexSetting(impl: jsonNode)
 
 proc camelCaseToHyphenCase(str: string): string =
   for c in str:
@@ -562,14 +563,14 @@ proc extendJson*(a: var JsonNodeEx, b: JsonNodeEx) =
     a = b
     return
 
-  if (a.kind, b.kind) == (JObject, JObject):
+  if (a.kind, b.kind) == (jsonex.JObject, jsonex.JObject):
     for (key, value) in b.fields.pairs:
       if a.hasKey(key):
         a.fields[key].extendJson(value)
       else:
         a[key] = value
 
-  elif (a.kind, b.kind) == (JArray, JArray):
+  elif (a.kind, b.kind) == (jsonex.JArray, jsonex.JArray):
     for value in b.elems:
       a.elems.add value
 
@@ -654,7 +655,7 @@ proc set*[T](self: ConfigStore, key: string, value: T) =
       if i == -1:
         i = key.len
 
-    if node.kind != JObject:
+    if node.kind != jsonex.JObject:
       log lvlError, &"Failed to change setting '{key}', '{key[0..<prevI]}' is not an object:\n{node}"
       return
 
@@ -681,7 +682,7 @@ proc getImpl(self: ConfigStore, key: string): JsonNodeEx =
   var res = self.settings
   var extend = res.extend
   for keyRaw in key.splitOpenArray('.'):
-    if isNil(res) or res.kind != JObject:
+    if isNil(res) or res.kind != jsonex.JObject:
       res = nil
       break
     res = res.fields.getOrDefault(keyRaw.p.toOpenArray(0, keyRaw.len - 1))
@@ -766,7 +767,7 @@ proc decodeRegex*(value: JsonNodeEx, default: string = ""): string =
     return default
 
 proc decodeRegex*(value: RegexSetting, default: string = ""): string =
-  return value.JsonNodeEx.decodeRegex(default)
+  return value.impl.decodeRegex(default)
 
 proc getRegexValue*(self: ConfigStore, path: string, default: string = ""): string =
   let value = self.get(path, JsonNodeEx, nil)
@@ -798,7 +799,7 @@ proc get*[T](self: Setting[Option[T]], default: T): T =
   return default
 
 proc getRegex*(self: Setting[RegexSetting], default: string = ""): string =
-  let value = self.get().JsonNodeEx
+  let value = self.get().impl
   if value == nil:
     return default
   return value.decodeRegex(default)
@@ -820,7 +821,7 @@ proc getAllConfigKeys*(node: JsonNodeEx, prefix: string, res: var seq[tuple[key:
     return
 
   case node.kind
-  of JObject:
+  of jsonex.JObject:
     if prefix.len > 0:
       res.add (prefix, node)
     for key, value in node.fields.pairs:
@@ -1014,6 +1015,9 @@ declareSettings UiSettings, "ui":
   ## After how many milliseconds the which key window opens.
   declare whichKeyDelay, int, 250
 
+  ## Show which key window when holding down modifiers.
+  declare whichKeyShowWhenMod, bool, false
+
   ## If true then the window showing next possible inputs will be displayed even when no keybinding is in progress (i.e. it will always be shown).
   declare whichKeyNoProgress, bool, false
 
@@ -1065,6 +1069,9 @@ declareSettings UiSettings, "ui":
 
   ## How long toasts are displayed for, in milliseconds.
   declare toastDuration, int, 8000
+
+  ## Animate toast positions
+  declare toastAnimation, bool, true
 
   # Defines the way views are layed out.
   # declare layout, JsonNodeEx, newJexObject()

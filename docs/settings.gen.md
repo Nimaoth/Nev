@@ -34,9 +34,11 @@ For examples and default values see [here](../config/settings.json)
 | `plugins.command-load-behaviour` | PluginCommandLoadBehaviour | "async-or-wait" | Defines if and how to run commands which trigger a plugin to load. "dont-run": Don't run the command after the plugin is loaded. You have to manually run the command again. "async-run": Asynchronously load the plugin and run the command afterwards. If the command returns something              then the return value will not be available if the command is e.g. called from a plugin. "wait-and-run": Synchronously load the plugin and run the command afterwards. Return values work fine, but the editor                 will freeze while loading the plugin. "async-or-wait": Use "async-run" behaviour for commands with no return value and "wait-and-run" for commands with return values. |
 | `plugins.watch-plugin-directories` | bool | true | Whether to watch the plugin directories for changes and load new plugins |
 | `selector.base-mode` | string | "popup.selector" |  |
+| `selector.min-score` | float | 0 |  |
 | `terminal.base-mode` | string | "terminal" | Input mode which is always active while a terminal view is active. |
 | `terminal.default-mode` | string | "" | Input mode to activate when creating a new terminal, if no mode is specified otherwise. |
 | `terminal.idle-threshold` | int | 500 | After how many milliseconds of no data received from a terminal it is considered idle, and can be reused for running more commands. |
+| `text.auto-insert-close` | bool | true | Automatically insert closing parenthesis, braces, brackets and quotes. |
 | `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes). |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
 | `text.code-actions.sign` | string | "⚑" | Character to use as sign for lines where code actions are available. Empty string or null means no sign will be shown for code actions. |
@@ -66,7 +68,9 @@ For examples and default values see [here](../config/settings.json)
 | `text.highlight-matches.max-file-size` | int | 104857600 | Don't highlight matching text in files above this size (in bytes). |
 | `text.highlight-matches.max-selection-length` | int | 1024 | Don't highlight matching text if the selection spans more bytes than this. |
 | `text.highlight-matches.max-selection-lines` | int | 5 | Don't highlight matching text if the selection spans more lines than this. |
+| `text.hover-command` | JsonNodeEx | null | Arguments to the command which is run when triple clicking on some text. |
 | `text.hover-delay` | int | 200 | How many milliseconds after hovering a word the lsp hover request is sent. |
+| `text.hover-mode` | string | "editor.text.hover" | Mode to activate while hover window is open. |
 | `text.inclusive-selection` | bool | false | Specifies whether a selection includes the character after the end cursor. If true then a selection like (0:0...0:4) with the text "Hello world" would select "Hello". If false then the selected text would be "Hell". If you use Vim motions then the Vim plugin manages this setting. |
 | `text.indent` | "tabs" \| "spaces" | "spaces" | Whether to used spaces or tabs for indentation. When indent detection is enabled then this only specfies the default for new files and files where the indentation type can't be detected automatically. |
 | `text.indent-after` | string[] \| null | null | When you insert a new line, if the current line ends with one of these strings then the new line will be indented. |
@@ -92,6 +96,11 @@ For examples and default values see [here](../config/settings.json)
 | `text.search-regexes.workspace-symbols` | regex \| null | null | Regex to use when using the workspace-symbols feature. |
 | `text.search-regexes.workspace-symbols-by-kind` | { [key: string]: regex } \| null | null | Regex to use when using the workspace-symbols feature. Keys are LSP symbol kinds, values are the corresponding regex. |
 | `text.search-workspace-regex-max-results` | int | 50000 | Maximum number of results to display for regex based workspace symbol search. |
+| `text.signature-help-delay` | int | 200 | How often (in milliseconds) to update signature help while typing. |
+| `text.signature-help-enabled` | bool | true | Whether signature help is enabled. |
+| `text.signature-help-move` | string | "(ts 'call.inner') (overlapping) (last)" | Which move to use to find the beginning of the argument list when showing signature help. |
+| `text.signature-help-trigger-chars` | (string \| string[])[] | ["("] | Which characters trigger signature help when inserted. |
+| `text.signature-help-trigger-on-edit-in-args` | bool | true | Trigger signature help when editing inside an argument list, as defined by 'signature-help-move' |
 | `text.signs.max-width` | int \| null | 2 | If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width. |
 | `text.signs.show` | "auto" \| "yes" \| "no" \| "number" | "number" | Defines how the sign column is displayed. - auto: Signs are next to line numbers, width is based on amount of signs in a line. - yes: Signs are next to line numbers and sign column is always visible. Width is defined in `max-width` - no: Don't show the sign column - number: Show signs instead of the line number, no extra sign column. |
 | `text.single-click-command` | string | "" | Command to run after single clicking on some text. |
@@ -127,10 +136,12 @@ For examples and default values see [here](../config/settings.json)
 | `ui.syntax-highlighting` | bool | true | Enable syntax highlighting. |
 | `ui.tab-header-width` | int | 30 | Width of tab layout headers in characters |
 | `ui.theme` | string | "app://themes/tokyo-night-color-theme.json" | VFS path of the theme. |
+| `ui.toast-animation` | bool | true | Animate toast positions |
 | `ui.toast-duration` | int | 8000 | How long toasts are displayed for, in milliseconds. |
 | `ui.vsync` | bool | true | Enable vertical sync to prevent screen tearing. |
 | `ui.which-key-delay` | int | 250 | After how many milliseconds the which key window opens. |
 | `ui.which-key-height` | int | 6 | How many rows tall the window showing next possible inputs should be. |
 | `ui.which-key-no-progress` | bool | false | If true then the window showing next possible inputs will be displayed even when no keybinding is in progress (i.e. it will always be shown). |
+| `ui.which-key-show-when-mod` | bool | false | Show which key window when holding down modifiers. |
 | `ui.whitespace-char` | string | "·" | Character to use when rendering whitespace. If this is the empty string or not set then spaces are not rendered. |
 | `ui.whitespace-color` | string | "comment" | Color of rendered whitespace. Can be a theme key or hex color (e.g #ff00ff). |
