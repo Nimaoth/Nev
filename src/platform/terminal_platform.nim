@@ -513,12 +513,12 @@ method processEvents*(self: TerminalPlatform): int {.gcsafe.} =
       of MouseMove:
         if not self.noUI:
           let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
-          if not self.builder.handleMouseMoved(pos, {}):
+          if not self.builder.handleMouseMoved(pos, {}, event.move.mods):
             self.onMouseMove.invoke (pos, vec2(0, 0), event.move.mods, {})
       of MouseDrag:
         if not self.noUI:
           let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
-          if not self.builder.handleMouseMoved(pos, {event.drag.button}):
+          if not self.builder.handleMouseMoved(pos, {event.drag.button}, event.drag.mods):
             self.onMouseMove.invoke (pos, vec2(0, 0), event.drag.mods, {event.drag.button})
       of Scroll:
         if not self.noUI:
