@@ -176,7 +176,7 @@ method createUI*(self: TerminalView, builder: UINodeBuilder): seq[OverlayFunctio
             let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
             self.handleDrag(btn, cellPos.x.int, cellPos.y.int, modifiers)
             return true
-          currentNode.handleHover = proc(node: UINode, pos: Vec2): bool =
+          currentNode.handleHover = proc(node: UINode, pos: Vec2, modifiers: set[Modifier]): bool =
             let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
             self.handleMove(cellPos.x.int, cellPos.y.int)
             return true

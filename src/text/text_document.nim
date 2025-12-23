@@ -8,6 +8,7 @@ import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, config_provider, service, vfs, vfs_service, language_server_list
 import syntax_map
 import pkg/[chroma, results]
+import vcs/vcs, layout
 
 import diff
 
@@ -229,6 +230,7 @@ type
     tsLanguage: TSLanguage
     currentTree: TSTree
     highlightQuery*: TSQuery
+    textObjectsQuery*: TSQuery
     errorQuery: TSQuery
 
     languageServerList*: LanguageServerList
@@ -269,6 +271,9 @@ proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer): boo
 proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool
 
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
+
+proc isReady*(self: TextDocument): bool =
+  return not (self.requiresLoad or self.isLoadingAsync)
 
 method getStatisticsString*(self: TextDocument): string =
   try:
@@ -513,6 +518,8 @@ proc `content=`*(self: TextDocument, value: sink string) =
 proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[S], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
 
   let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
+  if selections.len == 0:
+    return selections
 
   var sortedSelections = collect:
     for i, s in selections:
@@ -710,10 +717,32 @@ proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Select
     for capture in match.captures:
       result.add capture.node.getRange.toSelection
 
+proc isAtExpressionStartBasic*(self: TextDocument, location: Cursor): bool =
+  let r = self.runeAt(location)
+  if r <= char.high.Rune and r.char in {')', '}', ']', '>', '\n', ' ', ',', ';'}:
+    return false
+  return true
+
+proc isAtExpressionStart*(self: TextDocument, location: Cursor): bool =
+  if self.tsTree.isNil:
+    return self.isAtExpressionStartBasic(location)
+
+  var leaf = self.tsTree.root.descendantForRange(location.toSelection.tsRange)
+  if leaf.len == 0 and location >= leaf.getRange.toSelection.first and location <= leaf.getRange.toSelection.last:
+    return self.isAtExpressionStartBasic(location)
+
+  while not leaf.isNamed and not leaf.parent.isNull():
+    leaf = leaf.parent
+    if not leaf.isNamed and location >= leaf.getRange.toSelection.first and location <= leaf.getRange.toSelection.last:
+      return self.isAtExpressionStartBasic(location)
+
+  return location == leaf.getRange.toSelection.first
+
 proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   # logScope lvlInfo, &"loadTreesitterLanguage '{self.filename}'"
 
   self.highlightQuery = nil
+  self.textObjectsQuery = nil
   self.errorQuery = nil
   self.currentContentFailedToParse = false
   self.tsLanguage = nil
@@ -747,6 +776,14 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
       return
 
     self.highlightQuery = highlightQuery.get
+
+  let textObjectsQueryPath = &"app://languages/{treesitterLanguageName}/queries/textobjects.scm"
+  let textObjectsQuery = language.get.queryFile(self.vfs, "textobjects", textObjectsQueryPath).await
+  if textObjectsQuery.isSome:
+    if prevLanguageId != self.languageId:
+      return
+
+    self.textObjectsQuery = textObjectsQuery.get
 
   if not self.isInitialized:
     return
@@ -832,6 +869,7 @@ method deinit*(self: TextDocument) =
   if self.currentTree.isNotNil:
     self.currentTree.delete()
   self.highlightQuery = nil
+  self.textObjectsQuery = nil
   self.errorQuery = nil
 
   if self.languageServerList.isNotNil:
@@ -849,6 +887,26 @@ method deinit*(self: TextDocument) =
 
 method `$`*(self: TextDocument): string =
   return self.filename
+
+proc addFileVcsAsync*(self: TextDocument, prompt: bool = true) {.async.} =
+  let path = self.localizedPath
+  let vcsService = self.services.getService(VCSService).get
+  let vcs = vcsService.getVcsForFile(path).getOr:
+    return
+
+  if prompt:
+    let layoutService = self.services.getService(LayoutService).get
+    let text = await layoutService.prompt(@["Yes", "No"], "VCS: Add " & path)
+    if not self.isInitialized:
+      return
+    if text.isSome and text.get != "Yes":
+      return
+
+  let res = await vcs.addFile(path)
+  if not self.isInitialized:
+    return
+
+  log lvlInfo, &"Add result: {res}"
 
 proc saveAsync*(self: TextDocument) {.async.} =
   try:
@@ -871,6 +929,10 @@ proc saveAsync*(self: TextDocument) {.async.} =
     else:
       log lvlWarn, &"Don't trim whitespace"
 
+    var newFile = false
+    if self.vfs.getFileKind(self.filename).await.isNone:
+      newFile = true
+
     await self.vfs.write(self.filename, self.rope.slice())
 
     if not self.isInitialized:
@@ -882,6 +944,10 @@ proc saveAsync*(self: TextDocument) {.async.} =
 
     if self.settings.formatter.onSave.get():
       asyncSpawn self.format(runOnTempFile = false)
+
+    if newFile:
+      asyncSpawn self.addFileVcsAsync();
+
   except IOError as e:
     log lvlError, &"Failed to save file '{self.filename}': {e.msg}"
 
@@ -919,7 +985,9 @@ proc autoDetectIndentStyle(self: TextDocument) =
       containsTab = true
       break
     if c.currentRune == ' '.Rune:
-      minIndent = min(minIndent, self.rope.indentBytes(linePos.row.int))
+      let lineIndent = self.rope.indentBytes(linePos.row.int)
+      if lineIndent in {2, 4, 8}:
+        minIndent = min(minIndent, lineIndent)
       containsTab = false
       inc samples
       if samples == maxSamples:
@@ -1783,3 +1851,26 @@ proc cycleCase*(s: string): string =
   else:
     cas.succ
   return parts.joinCase(nextCase)
+
+proc getDeclarationsInRange*(self: TextDocument, visibleRange: Selection): seq[tuple[decl: Selection, name: Selection, value: string]] =
+  if self.requiresLoad or self.isLoadingAsync:
+    return
+
+  if self.textObjectsQuery != nil and not self.tsTree.isNil:
+    for captures in self.textObjectsQuery.query(self.tsTree, visibleRange):
+      var isDecl = false
+      var declRange: Selection
+      var nameRange: Selection
+
+      for (node, nodeCapture) in captures:
+        var sel = node.getRange().toSelection
+        if nodeCapture == "decl":
+          declRange = sel
+          isDecl = true
+        elif nodeCapture == "decl.name":
+          nameRange = sel
+        else:
+          continue
+
+      if isDecl:
+        result.add (declRange, nameRange, self.contentString(nameRange, false))

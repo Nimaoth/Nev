@@ -1,10 +1,84 @@
-import std/[json, strutils, strformat, macros, options, tables, sets, hashes]
+import std/[json, strutils, strformat, macros, options, tables, sets, hashes, genasts, os]
 import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection, async_process]
+import scripting/expose
+from std/logging import nil
 
 {.push gcsafe.}
 {.push raises: [].}
 
-logCategory "dap"
+
+var file {.threadvar.}: syncio.File
+var logFileName {.threadvar.}: string
+var fileLogger {.threadvar.}: logging.FileLogger
+
+let mainThreadId = getThreadId()
+template isMainThread(): untyped = getThreadId() == mainThreadId
+
+proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.used, gcsafe, raises: [].} =
+  var args = args
+  if includeCategory:
+    args.insert(0, newLit("[" & "dap-client" & "] "))
+
+  return genAst(level, args):
+    {.gcsafe.}:
+      if file == nil:
+        try:
+          logFileName = getAppDir() / "logs/dap.log"
+          createDir(getAppDir() / "logs")
+          file = open(logFileName, fmWrite)
+          fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
+        except IOError, OSError:
+          discard
+
+      {.push warning[BareExcept]:off.}
+      try:
+        if fileLogger != nil:
+          logging.log(fileLogger, level, args)
+        # setLastModificationTime(logFileName, getTime())
+      except Exception:
+        discard
+      {.pop.}
+
+macro log(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
+  return logImpl(level, args, true)
+
+macro logNoCategory(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
+  return logImpl(level, args, false)
+
+template measureBlock(description: string, body: untyped): untyped {.used.} =
+  # todo
+  # let timer = startTimer()
+  body
+  # block:
+  #   let descriptionString = description
+  #   logging.log(lvlInfo, "[" & "lsp" & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
+
+template logScope(level: logging.Level, text: string): untyped {.used.} =
+  # todo
+  let txt = text
+  # logging.log(level, "[" & "lsp" & "] " & txt)
+  # inc logger.indentLevel
+  # let timer = startTimer()
+  # defer:
+  #   block:
+  #     let elapsedMs = timer.elapsed.ms
+  #     let split = elapsedMs.splitDecimal
+  #     let elapsedMsInt = split.intpart.int
+  #     let elapsedUsInt = (split.floatpart * 1000).int
+  #     dec logger.indentLevel
+  #     logging.log(level, "[" & "lsp" & "] " & txt & " finished. (" & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
+
+macro debug(x: varargs[typed, `$`]): untyped {.used.} =
+  let level = genAst(): lvlDebug
+  let arg = genAst(x):
+    x.join ""
+  return logImpl(level, nnkArgList.newTree(arg), true)
+
+macro debugf(x: static string): untyped {.used.} =
+  let level = genAst(): lvlDebug
+  let arg = genAst(str = x):
+    fmt str
+  return logImpl(level, nnkArgList.newTree(arg), true)
 
 var logVerbose = false
 var logServerDebug = true
@@ -74,7 +148,7 @@ type
     name*: Option[string]
     path*: Option[string]
     sourceReference*: Option[int]
-    presentationHint*: Option[string]
+    presentationHint*: Option[JsonNode]
     origin*: Option[string]
     sources*: seq[Source]
     adapterData*: Option[JsonNode]
@@ -206,7 +280,7 @@ type
 
   Scope* = object
     name*: string
-    presentationHint*: Option[string]
+    presentationHint*: Option[JsonNode]
     variablesReference*: VariablesReference
     namedVariables*: Option[int]
     indexedVariables*: Option[int]
@@ -218,21 +292,34 @@ type
     endColumn*: Option[int]
 
   Scopes* = object
+    timestamp*: int = 0
     scopes*: seq[Scope]
 
   Variable* = object
     name*: string
     value*: string
     `type`*: Option[string]
-    presentationHint*: Option[string]
+    presentationHint*: Option[JsonNode]
     evaluateName*: Option[string]
     variablesReference*: VariablesReference
     namedVariables*: Option[int]
     indexedVariables*: Option[int]
     memoryReference*: Option[string]
+    valueChanged*: Option[bool]
 
   Variables* = object
+    timestamp*: int = 0
     variables*: seq[Variable]
+
+  EvaluateResponse* = object
+    result*: string
+    `type`*: Option[string]
+    variablesReference*: VariablesReference
+    namedVariables*: Option[int]
+    indexedVariables*: Option[int]
+    memoryReference*: Option[string]
+    valueLocationReference*: Option[int]
+    valueChanged*: Option[bool]
 
   OnInitializedData* = void
 
@@ -540,6 +627,11 @@ proc setBreakpoints*(client: DAPClient, source: Source, breakpoints: seq[SourceB
     args["source"] = source.toJson
     args["breakpoints"] = breakpoints.toJson
 
+    var lines = newSeqOfCap[int](breakpoints.len)
+    for b in breakpoints:
+      lines.add b.line
+    args["lines"] = lines.toJson
+
     let res = await client.sendRequest("setBreakpoints", args.some)
     if res.isError:
       log lvlError, &"Failed to set breakpoints: {res}"
@@ -555,6 +647,20 @@ proc configurationDone*(client: DAPClient) {.async.} =
   let res = await client.sendRequest("configurationDone", JsonNode.none)
   if res.isError:
     log lvlError, &"Failed to finish configuration: {res}"
+    return
+
+proc pauseExecution*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none) {.async.} =
+  log lvlInfo, &"pauseExecution (threadId={threadId}, singleThreaded={singleThreaded})"
+
+  var args = %*{
+    "threadId": threadId,
+  }
+  if singleThreaded.getSome(singleThreaded):
+    args["singleThreaded"] = singleThreaded.toJson
+
+  let res = await client.sendRequest("pause", args.some)
+  if res.isError:
+    log lvlError, &"Failed to pause execution: {res}"
     return
 
 proc continueExecution*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none) {.async.} =
@@ -658,7 +764,6 @@ proc getThreads*(client: DAPClient): Future[Response[Threads]] {.async.} =
   return res.to(Threads)
 
 proc scopes*(client: DAPClient, frameId: FrameId): Future[Response[Scopes]] {.async.} =
-  log lvlInfo, &"scopes"
   var args = %*{
     "frameId": frameId,
   }
@@ -669,7 +774,6 @@ proc scopes*(client: DAPClient, frameId: FrameId): Future[Response[Scopes]] {.as
   return res.to(Scopes)
 
 proc variables*(client: DAPClient, variablesReference: VariablesReference): Future[Response[Variables]] {.async.} =
-  log lvlInfo, &"variables"
   var args = %*{
     "variablesReference": variablesReference,
   }
@@ -679,13 +783,30 @@ proc variables*(client: DAPClient, variablesReference: VariablesReference): Futu
     return res.to(Variables)
   return res.to(Variables)
 
+proc evaluate*(client: DAPClient, expression: string, path: string, line: int, column: int, frameId: FrameId): Future[Response[EvaluateResponse]] {.async.} =
+  var args = %*{
+    "expression": expression,
+    "frameId": frameId,
+    "line": line + 1,
+    "column": column + 1,
+    "source": %*{
+      "path": path,
+    },
+    "context": "hover",
+  }
+  let res = await client.sendRequest("evaluate", args.some)
+  if res.isError:
+    log lvlError, &"Failed to evaluate: {res}"
+    return res.to(EvaluateResponse)
+  return res.to(EvaluateResponse)
+
 proc initialize*(client: DAPClient) {.async.} =
   log lvlInfo, "Initialize client"
   client.run()
 
   let args = some %*{
     "adapterID": "test-adapterID",
-    # "pathFormat": "uri", # todo
+    "pathFormat": "path", # todo (uri)
   }
 
   let res = await client.sendRequest("initialize", args)
@@ -799,16 +920,16 @@ proc runAsync*(client: DAPClient) {.async.} =
 proc run*(client: DAPClient) =
   asyncSpawn client.runAsync()
 
-# proc dapLogVerbose*(val: bool) {.expose("dap").} =
-#   debugf"dapLogVerbose {val}"
-#   logVerbose = val
+proc dapLogVerbose*(val: bool) {.expose("dap").} =
+  debugf"dapLogVerbose {val}"
+  logVerbose = val
 
-# proc dapToggleLogServerDebug*() {.expose("dap").} =
-#   logServerDebug = not logServerDebug
-#   debugf"dapToggleLogServerDebug {logServerDebug}"
+proc dapToggleLogServerDebug*() {.expose("dap").} =
+  logServerDebug = not logServerDebug
+  debugf"dapToggleLogServerDebug {logServerDebug}"
 
-# proc dapLogServerDebug*(val: bool) {.expose("dap").} =
-#   debugf"dapLogServerDebug {val}"
-#   logServerDebug = val
+proc dapLogServerDebug*(val: bool) {.expose("dap").} =
+  debugf"dapLogServerDebug {val}"
+  logServerDebug = val
 
 # addActiveDispatchTable "dap", genDispatchTable("dap"), global=true

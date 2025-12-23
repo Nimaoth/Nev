@@ -1,4 +1,4 @@
-import std/[strformat, tables, strutils, math, options, json]
+import std/[strformat, tables, strutils, math, options, json, sugar]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer]
 import text/text_editor
@@ -8,6 +8,7 @@ import ui/[widget_builders_base, widget_library]
 import app, document_editor, theme, config_provider, layout
 import text/language/[lsp_types]
 import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]
+import view
 
 import ui/node
 
@@ -40,6 +41,7 @@ type
     displayMap: DisplayMap
     offset: Vec2
     bounds: Rect
+    absoluteBounds: Rect
     lastDisplayPoint: DisplayPoint
     lastDisplayEndPoint: DisplayPoint
     lastPoint: Point
@@ -126,67 +128,114 @@ proc getCursorPos2(self: TextDocumentEditor, builder: UINodeBuilder, text: openA
 
   byteIndex
 
+proc getScreenPos(self: TextDocumentEditor, builder: UINodeBuilder, state: var LineDrawerState, cursor: Cursor): Option[Vec2] =
+  let dp = self.displayMap.toDisplayPoint(cursor.toPoint)
+  let (_, lastIndexDisplay) = state.chunkBounds.binarySearchRange(dp, Bias.Left, cmp)
+  if lastIndexDisplay in 0..<state.chunkBounds.len and dp >= state.chunkBounds[lastIndexDisplay].displayRange.a:
+    let offset = (dp - state.chunkBounds[lastIndexDisplay].displayRange.a).toPoint.column.float * builder.charWidth
+    let chunkBounds = state.chunkBounds[lastIndexDisplay].bounds
+    return vec2(state.absoluteBounds.x + chunkBounds.x + offset, state.absoluteBounds.y + chunkBounds.y).some
+  return Vec2.none
+
 proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
-  let totalLineHeight = app.platform.totalLineHeight
-  let charWidth = app.platform.charWidth
+  let backgroundColor = builder.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+  let borderColor = builder.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
+  let activeHoverColor = builder.theme.color("editor.foreground", color(1, 1, 1))
 
-  let backgroundColor = app.themes.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
-  let borderColor = app.themes.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
-  let docsColor = app.themes.theme.color("editor.foreground", color(1, 1, 1))
+  var bounds = rect(cursorBounds.xy, vec2())
+  var outerSizeFlags = &{SizeToContentX, SizeToContentY}
+  var innerSizeFlags = &{SizeToContentX, SizeToContentY}
 
-  let numLinesToShow = min(10, self.hoverText.countLines)
-  let (top, bottom) = (
-    cursorBounds.yh.float - floor(builder.charWidth * 0.5),
-    cursorBounds.yh.float + totalLineHeight * numLinesToShow.float - floor(builder.charWidth * 0.5))
-  let height = bottom - top
-
-  const docsWidth = 50.0
-  let totalWidth = charWidth * docsWidth
-  var clampedX = cursorBounds.x
-  if clampedX + totalWidth > builder.root.w:
-    clampedX = max(builder.root.w - totalWidth, 0)
-
-  let border = ceil(builder.charWidth * 0.5)
+  if self.hoverView != nil and self.hoverView.detached:
+    bounds = self.hoverView.absoluteBounds
+    outerSizeFlags = 0.UINodeFlags
+    innerSizeFlags = &{FillX, FillY}
 
   var hoverPanel: UINode = nil
-  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, MouseHover, SnapInitialBounds}, x = clampedX, y = top, h = height + border * 2, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = borderColor, userId = self.hoverId.newPrimaryId):
+  builder.panel(&{MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical, MouseHover} + outerSizeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = backgroundColor, borderColor = borderColor, border = border(1), tag = "hover", pivot = vec2()):
     hoverPanel = currentNode
 
-    var textNode: UINode = nil
-    builder.panel(&{SizeToContentX}, x = border, y = border, w = 0, h = height):
-      # todo: height
-      builder.panel(&{DrawText, SizeToContentX}, x = 0, y = self.hoverScrollOffset, w = 0, h = 1000, text = self.hoverText, textColor = docsColor):
-        textNode = currentNode
+    if self.hoverView != nil:
+      builder.panel(innerSizeFlags):
+        discard self.hoverView.createUI(builder)
+    else:
+      builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextMultiLine}, text = self.hoverText, textColor = activeHoverColor)
 
-    currentNode.w = currentNode.w + border
+  if self.hoverView == nil or not self.hoverView.detached:
+    var clampedX = cursorBounds.x
+    if clampedX + hoverPanel.bounds.w > builder.root.w:
+      clampedX = max(builder.root.w - hoverPanel.bounds.w, 0)
 
-    onScroll:
-      let scrollSpeed = self.config.get("text.hover-scroll-speed", 20.0)
-      # todo: clamp bottom
-      self.hoverScrollOffset = clamp(self.hoverScrollOffset + delta.y * scrollSpeed, -1000, 0)
-      self.markDirty()
+    hoverPanel.rawX = clampedX
+    hoverPanel.rawY = cursorBounds.y
+    hoverPanel.pivot = vec2(0, 1)
 
-    onBeginHover:
-      self.cancelDelayedHideHover()
+proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
+  let backgroundColor = builder.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+  let borderColor = builder.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
+  let textColor = builder.theme.color("editor.foreground", color(1, 1, 1))
+  let fadedTextColor1 = builder.theme.color("editor.foreground.fade1", textColor.darken(0.15))
+  let fadedTextColor2 = builder.theme.color("editor.foreground.fade2", fadedTextColor1.darken(0.15))
+  let highlightedTextColor = builder.theme.color("editor.foreground.highlight", textColor.lighten(0.15))
 
-    onEndHover:
-      self.hideHoverDelayed()
+  let activeParamColor = builder.theme.color("signatureHelp.activeParam", highlightedTextColor)
+  let activeSignatureColor = builder.theme.color("signatureHelp.activeSignature", textColor)
+  let inactiveParamColor = builder.theme.color("signatureHelp.inactiveParam", fadedTextColor1)
+  let inactiveSignatureColor = builder.theme.color("signatureHelp.inactiveSignature", fadedTextColor2)
 
-  hoverPanel.rawY = cursorBounds.y
-  hoverPanel.pivot = vec2(0, 1)
+  proc drawSignature(signatureColor: Color, activeParamColor: Color, sig: lsp_types.SignatureInformation) =
+    let activeParameter = sig.activeParameter.get(self.currentSignatureParam)
+    builder.panel(&{SizeToContentY, SizeToContentX, LayoutHorizontal}):
+      builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = "(", textColor = signatureColor)
+      for i, p in sig.parameters:
+        if i > 0:
+          builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = ", ", textColor = signatureColor)
+        var paramStr = ""
+        if p.label.kind == JString:
+          paramStr = p.label.getStr
+        else:
+          paramStr = $p.label
+        var paramColor = signatureColor
+        if i == activeParameter:
+          paramColor = activeParamColor
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = paramStr, textColor = paramColor)
+
+      builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = ")", textColor = signatureColor)
+
+  var signatureHelpPanel: UINode = nil
+  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical, MouseHover}, backgroundColor = backgroundColor, borderColor = borderColor, border = border(1), userId = self.signatureHelpId.newPrimaryId, tag = "signature"):
+    signatureHelpPanel = currentNode
+
+    for k, sig in self.signatures:
+      if k != self.currentSignature:
+        drawSignature(inactiveSignatureColor, inactiveParamColor, sig)
+
+    if self.currentSignature in 0..self.signatures.high:
+      drawSignature(activeSignatureColor, activeParamColor, self.signatures[self.currentSignature])
+
+    if self.signatures.len == 0:
+      builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = "No signatures", textColor = activeSignatureColor)
+
+  var clampedX = cursorBounds.x
+  if clampedX + signatureHelpPanel.bounds.w > builder.root.w:
+    clampedX = max(builder.root.w - signatureHelpPanel.bounds.w, 0)
+
+  signatureHelpPanel.rawX = clampedX
+  signatureHelpPanel.rawY = cursorBounds.y
+  signatureHelpPanel.pivot = vec2(0, 1)
 
 proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
   let transparentBackground = self.uiSettings.background.transparent.get()
-  var backgroundColor = app.themes.theme.color(@["editorSuggestWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
-  let borderColor = app.themes.theme.color(@["editorSuggestWidget.border", "panel.background"], color(30/255, 30/255, 30/255))
-  let selectedBackgroundColor = app.themes.theme.color(@["editorSuggestWidget.selectedBackground", "list.activeSelectionBackground"], color(200/255, 200/255, 200/255))
-  let docsColor = app.themes.theme.color(@["editorSuggestWidget.foreground", "editor.foreground"], color(1, 1, 1))
-  let nameColor = app.themes.theme.color(@["editorSuggestWidget.foreground", "editor.foreground"], color(1, 1, 1))
-  let nameSelectedColor = app.themes.theme.color(@["editorSuggestWidget.highlightForeground", "editor.foreground"], color(1, 1, 1))
-  let scopeColor = app.themes.theme.color(@["descriptionForeground", "editor.foreground"], color(175/255, 1, 175/255))
+  var backgroundColor = builder.theme.color(@["editorSuggestWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+  let borderColor = builder.theme.color(@["editorSuggestWidget.border", "panel.background"], color(30/255, 30/255, 30/255))
+  let selectedBackgroundColor = builder.theme.color(@["editorSuggestWidget.selectedBackground", "list.activeSelectionBackground"], color(200/255, 200/255, 200/255))
+  let docsColor = builder.theme.color(@["editorSuggestWidget.foreground", "editor.foreground"], color(1, 1, 1))
+  let nameColor = builder.theme.color(@["editorSuggestWidget.foreground", "editor.foreground"], color(1, 1, 1))
+  let nameSelectedColor = builder.theme.color(@["editorSuggestWidget.highlightForeground", "editor.foreground"], color(1, 1, 1))
+  let scopeColor = builder.theme.color(@["descriptionForeground", "editor.foreground"], color(175/255, 1, 175/255))
 
   if transparentBackground:
     backgroundColor.a = 0
@@ -206,7 +255,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   var rows: seq[UINode] = @[]
 
   var completionsPanel: UINode = nil
-  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent}, x = cursorBounds.x, y = top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
+  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent}, x = cursorBounds.x, y = top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId, tag = "completions"):
     completionsPanel = currentNode
     let reverse = top + completionPanelHeight > completionsPanel.parent.bounds.h
     self.completionsDrawnInReverse = reverse
@@ -255,7 +304,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
           maxDetailWidth = max(maxDetailWidth, currentNode.w)
 
     var listNode: UINode
-    builder.panel(&{UINodeFlag.MaskContent, DrawBorder, SizeToContentX}, borderColor = borderColor, h = completionPanelHeight):
+    builder.panel(&{UINodeFlag.MaskContent, DrawBorder, DrawBorderTerminal, SizeToContentX}, border = border(1), h = completionPanelHeight, backgroundColor = backgroundColor, borderColor = borderColor):
       listNode = currentNode
       let lineFlags = &{SizeToContentX, FillY}
       let firstIndex = max(self.completionsBaseIndex - (self.completionsScrollOffset / totalLineHeight).int, 0)
@@ -306,8 +355,8 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
           docText.add markup.value
 
       if docText.len > 0:
-        builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap, DrawBorder},
-          x = listNode.xw, w = docsWidth * charWidth, h = listNode.h,
+        builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap, DrawBorder, DrawBorderTerminal},
+          x = listNode.xw, w = docsWidth * charWidth, h = listNode.h, border = border(1),
           backgroundColor = backgroundColor, textColor = docsColor, text = docText, borderColor = borderColor)
 
   if completionsPanel.bounds.yh > completionsPanel.parent.bounds.h:
@@ -428,8 +477,8 @@ proc drawLineNumber(renderCommands: var RenderCommands, builder: UINodeBuilder, 
 
 proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode, renderCommands: var RenderCommands, state: var LineDrawerState) =
 
-  let cursorForegroundColor = app.themes.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
-  let cursorBackgroundColor = app.themes.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
+  let cursorForegroundColor = builder.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
+  let cursorBackgroundColor = builder.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
   let cursorTrailColor = cursorForegroundColor.darken(0.1)
   let cursorSpeed: float = self.uiSettings.cursorTrailSpeed.get()
   let cursorTrail: int = self.uiSettings.cursorTrailLength.get()
@@ -437,6 +486,7 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
 
   buildCommands(renderCommands):
     self.cursorHistories.setLen(self.selections.len)
+
     for i, s in self.selections:
       let p = s.last.toPoint
       var (_, lastIndex) = state.chunkBounds.binarySearchRange(p, Bias.Left, cmp)
@@ -532,7 +582,14 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
           state.cursorOnScreen = true
           self.currentCenterCursor = s.last
           self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
-          self.lastHoverLocationBounds = (state.chunkBounds[lastIndexDisplay].bounds + currentNode.boundsAbsolute.xy).some
+
+  let hoverScreenPos = self.getScreenPos(builder, state, self.hoverLocation)
+  if hoverScreenPos.isSome:
+    self.lastHoverLocationBounds = rect(hoverScreenPos.get.x, hoverScreenPos.get.y, builder.charWidth, builder.textHeight).some
+
+  let signatureHelpScreenPos = self.getScreenPos(builder, state, self.signatureHelpLocation)
+  if signatureHelpScreenPos.isSome:
+    self.lastSignatureHelpLocationBounds = rect(signatureHelpScreenPos.get.x, signatureHelpScreenPos.get.y, builder.charWidth, builder.textHeight).some
 
 proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode,
     selectionsNode: UINode, lineNumbersNode: UINode, backgroundColor: Color, textColor: Color, sizeToContentX: bool,
@@ -623,11 +680,11 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   # ↲ ↩ ⤦ ⤶ ⤸ ⮠
   let showContextLines = not renderDiff and self.settings.contextLines.get()
 
-  let selectionColor = app.themes.theme.color("selection.background", color(200/255, 200/255, 200/255))
-  let contextBackgroundColor = app.themes.theme.color(@["breadcrumbPicker.background"], backgroundColor.lighten(0.05))
-  let insertedTextBackgroundColor = app.themes.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
-  let deletedTextBackgroundColor = app.themes.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
-  var changedTextBackgroundColor = app.themes.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
+  let selectionColor = builder.theme.color("selection.background", color(200/255, 200/255, 200/255))
+  let contextBackgroundColor = builder.theme.color(@["breadcrumbPicker.background"], backgroundColor.lighten(0.05))
+  let insertedTextBackgroundColor = builder.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
+  let deletedTextBackgroundColor = builder.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
+  var changedTextBackgroundColor = builder.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
 
   let cursorLine = self.selection.last.line
   let cursorDisplayLine = self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int
@@ -707,6 +764,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   var state = LineDrawerState(
     builder: builder,
     displayMap: self.displayMap,
+    absoluteBounds: rect(currentNode.boundsAbsolute.x + mainOffset, currentNode.boundsAbsolute.y, width, parentHeight),
     bounds: rect(mainOffset, 0, width, parentHeight),
     offset: vec2(mainOffset + scrollOffset.x, scrollOffset.y - startLineOffsetFromScrollOffset + (iter.displayPoint.row.int - startLine).float * builder.textHeight).floor,
     lastDisplayPoint: iter.displayPoint,
@@ -728,17 +786,17 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     reverse: false,
   )
 
-  let errorColor = app.themes.theme.tokenColor("error", color(0.8, 0.2, 0.2))
-  let warningColor = app.themes.theme.tokenColor("warning", color(0.8, 0.8, 0.2))
-  let informationColor = app.themes.theme.tokenColor("information", color(0.8, 0.8, 0.8))
-  let hintColor = app.themes.theme.tokenColor("hint", color(0.7, 0.7, 0.7))
+  let errorColor = builder.theme.tokenColor("error", color(0.8, 0.2, 0.2))
+  let warningColor = builder.theme.tokenColor("warning", color(0.8, 0.8, 0.2))
+  let informationColor = builder.theme.tokenColor("information", color(0.8, 0.8, 0.8))
+  let hintColor = builder.theme.tokenColor("hint", color(0.7, 0.7, 0.7))
 
   let space = self.uiSettings.whitespaceChar.get()
   let spaceColorName = self.uiSettings.whitespaceColor.get()
   if space.len > 0:
     currentNode.renderCommands.space = space.runeAt(0)
 
-  currentNode.renderCommands.spacesColor = app.themes.theme.tokenColor(spaceColorName, textColor)
+  currentNode.renderCommands.spacesColor = builder.theme.tokenColor(spaceColorName, textColor)
 
   self.lastRenderedChunks.setLen(0)
 
@@ -839,7 +897,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
               var color = textColor
               if s.color != "":
-                color = app.themes.theme.tokenColor(s.color, textColor)
+                color = builder.theme.tokenColor(s.color, textColor)
               drawText(s.text, bounds, color * s.tint, 0.UINodeFlags)
               bounds.x += builder.charWidth * s.width.float
               i += s.width
@@ -868,12 +926,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           fillRect(bounds, color)
 
         let (underlineColor, underlineFlags) = if chunk.styledChunk.underline.getSome(underline):
-          let underlineColor = app.themes.theme.tokenColor(underline.color, textColor)
+          let underlineColor = builder.theme.tokenColor(underline.color, textColor)
           (underlineColor, &{TextUndercurl})
         else:
           (color(1, 1, 1), 0.UINodeFlags)
 
-        let textColor = if chunk.scope.len == 0: textColor else: app.themes.theme.tokenColor(chunk.scope, textColor)
+        let textColor = if chunk.scope.len == 0: textColor else: builder.theme.tokenColor(chunk.scope, textColor)
         var flags = underlineFlags
         if chunk.styledChunk.drawWhitespace:
           flags.incl UINodeFlag.TextDrawSpaces
@@ -995,7 +1053,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       var sn = s.selection.normalized
       if sn.last < visibleTextRange.first or sn.first > visibleTextRange.last:
         continue
-      let color = app.themes.theme.color(s.color, color(200/255, 200/255, 200/255)) * s.tint
+      let color = builder.theme.color(s.color, color(200/255, 200/255, 200/255)) * s.tint
       self.drawHighlight(builder, sn, color, selectionsNode.renderCommands, state, ropeCursor)
 
   for s in self.selections:
@@ -1012,7 +1070,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   selectionsNode.markDirty(builder)
   currentNode.markDirty(builder)
 
-  proc handleMouseEvent(self: TextDocumentEditor, btn: MouseButton, pos: Vec2, mods: set[Modifier], drag: bool) =
+  type MouseEventKind = enum Click, Drag, Hover
+  proc handleMouseEvent(self: TextDocumentEditor, btn: MouseButton, pos: Vec2, mods: set[Modifier], event: MouseEventKind) =
     if self.document.isNil:
       return
 
@@ -1023,7 +1082,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if index + 1 < state.chunkBounds.len and pos.y >= state.chunkBounds[index].bounds.yh and pos.y < state.chunkBounds[index + 1].bounds.yh:
       index += 1
 
-    if not drag:
+    if event == Click:
       self.lastPressedMouseButton = btn
 
     if btn notin {MouseButton.Left, DoubleClick, TripleClick}:
@@ -1047,7 +1106,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       let offset = self.getCursorPos2(builder, chunk.text.toOpenArray, pos - chunk.bounds.xy)
       newCursor = chunk.range.a.toCursor + (0, offset)
 
-    if drag:
+    case event
+    of Drag:
       let currentSelection = self.dragStartSelection
       let first = if (currentSelection.isBackwards and newCursor < currentSelection.first) or (not currentSelection.isBackwards and newCursor >= currentSelection.first):
         currentSelection.first
@@ -1056,7 +1116,11 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       self.selection = (first, newCursor)
       self.runDragCommand()
 
-    else:
+      self.updateTargetColumn(Last)
+      self.layout.tryActivateEditor(self)
+      self.markDirty()
+
+    of Click:
       self.selection = newCursor.toSelection
       self.dragStartSelection = self.selection
 
@@ -1070,16 +1134,33 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       elif btn == TripleClick:
         self.runTripleClickCommand()
 
-    self.updateTargetColumn(Last)
-    self.layout.tryActivateEditor(self)
-    self.markDirty()
+      self.updateTargetColumn(Last)
+      self.layout.tryActivateEditor(self)
+      self.markDirty()
+
+    of Hover:
+      self.mouseHoverLocation = newCursor
+      self.mouseHoverMods = mods
+      self.showHoverDelayed()
 
   let textNode = currentNode
-  builder.panel(&{UINodeFlag.FillX, FillY}):
+  builder.panel(&{UINodeFlag.FillX, FillY, MouseHover}, tag = "text-editor-hover"):
     onClickAny btn:
-      self.handleMouseEvent(btn, pos - vec2(textNode.x, 0), modifiers, drag = false)
+      self.handleMouseEvent(btn, pos - vec2(textNode.x, 0), modifiers, Click)
     onDrag MouseButton.Left:
-      self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, drag = true)
+      self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Drag)
+    onBeginHover:
+      if not self.isHovered:
+        self.markDirty()
+      self.isHovered = true
+      self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Hover)
+    onHover:
+      self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Hover)
+    onEndHover:
+      if self.isHovered:
+        self.markDirty()
+      self.isHovered = false
+      self.cancelHover()
 
   # Get center line
   if not state.cursorOnScreen:
@@ -1108,15 +1189,15 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
   let transparentBackground = self.uiSettings.background.transparent.get()
   let inactiveBrightnessChange = self.uiSettings.background.inactiveBrightnessChange.get()
 
-  let textColor = app.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-  var backgroundColor = if self.active: app.themes.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.themes.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
+  let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+  var backgroundColor = if self.active: builder.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
 
   if transparentBackground:
     backgroundColor.a = 0
   else:
     backgroundColor.a = 1
 
-  var headerColor = if self.active: app.themes.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: app.themes.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+  var headerColor = if self.active: builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
@@ -1134,7 +1215,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
 
   let renderDiff = self.diffDocument.isNotNil and self.diffDocument.isInitialized and self.diffChanges.isSome
 
-  builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.userId.newPrimaryId):
+  builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.userId.newPrimaryId, tag = "text-root"):
     onClickAny btn:
       self.layout.tryActivateEditor(self)
 
@@ -1174,17 +1255,17 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
         let lineNumberWidth = self.lineNumberWidth()
         builder.panel(sizeFlags + &{FillBackground, MaskContent}, backgroundColor = backgroundColor):
           var selectionsNode: UINode
-          builder.panel(&{UINodeFlag.FillX, FillY}, x = lineNumberWidth):
+          builder.panel(&{UINodeFlag.FillX, FillY}, x = lineNumberWidth, tag = "selections"):
             selectionsNode = currentNode
             selectionsNode.renderCommands.clear()
 
           var textNode: UINode
-          builder.panel(sizeFlags + &{MaskContent}, x = lineNumberWidth):
+          builder.panel(sizeFlags + &{MaskContent}, x = lineNumberWidth, tag = "text-lines"):
             textNode = currentNode
             textNode.renderCommands.clear()
 
           var lineNumbersNode: UINode
-          builder.panel(&{UINodeFlag.FillX, FillY}):
+          builder.panel(&{UINodeFlag.FillX, FillY}, tag = "line-numbers"):
             lineNumbersNode = currentNode
             lineNumbersNode.renderCommands.clear()
 
@@ -1206,10 +1287,29 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
 
           self.lastContentBounds = textNode.bounds
 
+  var res = newSeq[OverlayFunction]()
+  proc addDrawOverlayView(view: View): OverlayFunction =
+    return proc() =
+      let backgroundColor = builder.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+      let borderColor = builder.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
+      let bounds = view.absoluteBounds
+      builder.panel(&{MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical, MouseHover}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = backgroundColor, borderColor = borderColor, border = border(1), tag = "hover", pivot = vec2()):
+        builder.panel(&{FillX, FillY}):
+          discard view.createUI(builder)
+
+  for overlay in self.overlayViews:
+    res.add addDrawOverlayView(overlay)
+
   if self.showCompletions and self.active:
-    result.add proc() =
+    res.add proc() =
       self.createCompletions(builder, app, self.lastCursorLocationBounds.get(rect(100, 100, 10, 10)))
 
   if self.showHover:
-    result.add proc() =
+    res.add proc() =
       self.createHover(builder, app, self.lastHoverLocationBounds.get(rect(100, 100, 10, 10)))
+
+  if self.showSignatureHelp:
+    res.add proc() =
+      self.createSignatureHelp(builder, app, self.lastSignatureHelpLocationBounds.get(rect(100, 100, 10, 10)))
+
+  return res

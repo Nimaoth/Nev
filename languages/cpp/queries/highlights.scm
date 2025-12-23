@@ -103,6 +103,12 @@
 (system_lib_string) @string
 
 
+(identifier) @variable
+(field_identifier) @variable.member
+
+(field_expression
+    argument: (identifier) @variable.member)
+
 ; Functions
 
 (call_expression
@@ -161,19 +167,19 @@
 (preproc_def
   name: (identifier) @type)
 
+(qualified_identifier
+    scope: (namespace_identifier) @type)
+
 (field_declaration
   declarator: (function_declarator
     declarator: (field_identifier) @variable.function))
 
-(field_identifier) @variable
 (statement_identifier) @label
-(type_identifier) @support.type
-(primitive_type) @support.type
-(sized_type_specifier) @support.type
+(type_identifier) @type
+(primitive_type) @type
+(sized_type_specifier) @type
 
 ((identifier) @constant
  (#match? @constant "^[A-Z][A-Z\\d_]*$"))
-
-(identifier) @variable
 
 (comment) @comment

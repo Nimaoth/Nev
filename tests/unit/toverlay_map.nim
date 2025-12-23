@@ -199,3 +199,25 @@ test([(point(0, 0)...point(0, 0), "+")], "a", [(point(0, 0)...point(0, 0), "XYZ"
 test([(point(0, 0)...point(0, 0), "+")], "a", [(point(0, 0)...point(0, 0), "XYZ", 1, Bias.Right)])
 test([(point(0, 1)...point(0, 1), "+")], "a", [(point(0, 1)...point(0, 1), "XYZ", 1, Bias.Left)])
 test([(point(0, 1)...point(0, 1), "+")], "a", [(point(0, 1)...point(0, 1), "XYZ", 1, Bias.Right)])
+
+block:
+  # test inlay hint at end of line
+  let content = "abc\ndef"
+  var b = initBuffer(content = content)
+  assert $b.visibleText == content
+
+  var om = OverlayMap.new()
+  om.setBuffer(b.snapshot.clone())
+
+  log &"initial snapshot: {om.snapshot}"
+  log "---------- initial overlay map"
+  log om.snapshot.renderString()
+  log "----------"
+  om.addOverlay(point(0, 3)...point(0, 3), " = 123", 1, "", Bias.Left)
+  om.addOverlay(point(1, 3)...point(1, 3), " = 456", 1, "", Bias.Left)
+
+  log "======================================================="
+  log &"snapshot: {om.snapshot}"
+  log "---------- overlay map"
+  log om.snapshot.renderString()
+  log "----------"

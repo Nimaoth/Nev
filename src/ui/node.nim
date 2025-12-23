@@ -38,6 +38,12 @@ type
       subId*: int32
     else: discard
 
+  UIBorder* = object
+    left*: float
+    right*: float
+    top*: float
+    bottom*: float
+
   UINode* = ref UINodeObject
   UINodeObject* = object
     aDebugData*: UINodeDebugData
@@ -62,6 +68,7 @@ type
     mFlagsOld: UINodeFlags
     flags: UINodeFlags
 
+    tag*: string
     mText: string
     mTextRuneLen: int
     mTextNarrow: bool
@@ -70,6 +77,7 @@ type
     mBorderColor: Color
     mTextColor: Color
     mUnderlineColor: Color
+    mBorder: UIBorder
 
     pivot*: Vec2
     boundsRaw: Rect       # The target bounds, used for layouting.
@@ -86,9 +94,9 @@ type
     mHandlePressed: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].}
     mHandleReleased: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].}
     mHandleDrag: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool {.gcsafe, raises: [].}
-    mHandleBeginHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
+    mHandleBeginHover: proc(node: UINode, pos: Vec2, modifiers {.inject.}: set[Modifier]): bool {.gcsafe, raises: [].}
     mHandleEndHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
-    mHandleHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
+    mHandleHover: proc(node: UINode, pos: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].}
     mHandleScroll: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].}
     renderCommands*: RenderCommands
     renderCommandList*: seq[ref RenderCommands]
@@ -111,8 +119,11 @@ type
     lineHeight*: float32
     lineGap*: float32
 
+    defaultBorderWidth*: float = 0
+
     draggedNodes*: seq[UINode]
     hoveredNodes*: seq[UINode]
+    hoveredNode*: Option[UINode]
 
     animatingNodes*: seq[Id]
     frameTime*: float32 = 0.1
@@ -121,6 +132,7 @@ type
     mousePos: Vec2
     mouseDelta: Vec2
     mousePosClick: array[MouseButton, Vec2]
+    modifiers: set[Modifier]
 
     maxBounds: seq[Vec2]
 
@@ -167,6 +179,7 @@ func backgroundColor*(node: UINode): Color {.inline.} = node.mBackgroundColor
 func borderColor*(node: UINode): Color {.inline.} = node.mBorderColor
 func textColor*(node: UINode): Color {.inline.} = node.mTextColor
 func underlineColor*(node: UINode): Color {.inline.} = node.mUnderlineColor
+func border*(node: UINode): UIBorder {.inline.} = node.mBorder
 
 func flags*(node: UINode): UINodeFlags {.inline.} = node.flags
 
@@ -200,17 +213,17 @@ proc `underlineColor=`*(node: UINode, value: Color)  {.inline.} = (let changed =
 func handlePressed*   (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].})              {.inline.} = node.mHandlePressed
 func handleReleased*  (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].})              {.inline.} = node.mHandleReleased
 func handleDrag*      (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool {.gcsafe, raises: [].}) {.inline.} = node.mHandleDrag
-func handleBeginHover*(node: UINode): (proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].})                                                             {.inline.} = node.mHandleBeginHover
+func handleBeginHover*(node: UINode): (proc(node: UINode, pos: Vec2, modifiers {.inject.}: set[Modifier]): bool {.gcsafe, raises: [].})                        {.inline.} = node.mHandleBeginHover
 func handleEndHover*  (node: UINode): (proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].})                                                             {.inline.} = node.mHandleEndHover
-func handleHover*     (node: UINode): (proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].})                                                             {.inline.} = node.mHandleHover
+func handleHover*     (node: UINode): (proc(node: UINode, pos: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].})                                   {.inline.} = node.mHandleHover
 func handleScroll*    (node: UINode): (proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].})                      {.inline.} = node.mHandleScroll
 
 func `handlePressed=`*   (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].})              {.inline.} = node.mHandlePressed = value
 func `handleReleased=`*  (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].})              {.inline.} = node.mHandleReleased = value
 func `handleDrag=`*      (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool {.gcsafe, raises: [].}) {.inline.} = node.mHandleDrag = value
-func `handleBeginHover=`*(node: UINode, value: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].})                                                             {.inline.} = node.mHandleBeginHover = value
+func `handleBeginHover=`*(node: UINode, value: proc(node: UINode, pos: Vec2, modifiers {.inject.}: set[Modifier]): bool {.gcsafe, raises: [].})                        {.inline.} = node.mHandleBeginHover = value
 func `handleEndHover=`*  (node: UINode, value: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].})                                                             {.inline.} = node.mHandleEndHover = value
-func `handleHover=`*     (node: UINode, value: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].})                                                             {.inline.} = node.mHandleHover = value
+func `handleHover=`*     (node: UINode, value: proc(node: UINode, pos: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].})                                   {.inline.} = node.mHandleHover = value
 func `handleScroll=`*    (node: UINode, value: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].})                      {.inline.} = node.mHandleScroll = value
 
 func xy*(node: UINode): Vec2 {.inline.} = vec2(mix(node.boundsRaw.x, node.boundsRaw.x - node.boundsRaw.w, node.pivot.x), mix(node.boundsRaw.y, node.boundsRaw.y - node.boundsRaw.h, node.pivot.y))
@@ -260,7 +273,7 @@ proc textWidth*(builder: UINodeBuilder, text: string): float32 {.inline.} =
 proc textHeight*(builder: UINodeBuilder): float32 {.inline.} = roundPositive(builder.lineHeight + builder.lineGap)
 
 proc textBounds*(builder: UINodeBuilder, node: UINode): Vec2 {.inline.} =
-  if TextWrap in node.flags and builder.textBoundsImpl.isNotNil:
+  if (TextWrap in node.flags or TextMultiLine in node.flags) and builder.textBoundsImpl.isNotNil:
     builder.textBoundsImpl(node)
   else:
     vec2(builder.textWidth(node.mTextRuneLen), builder.textHeight)
@@ -322,76 +335,61 @@ proc handleMouseReleased*(builder: UINodeBuilder, button: MouseButton, modifiers
     if node.handleReleased()(node, button, modifiers, pos - node.boundsAbsolute.xy):
       return true
 
-proc handleMouseMoved*(builder: UINodeBuilder, pos: Vec2, buttons: set[MouseButton]): bool =
+proc handleMouseMoved*(builder: UINodeBuilder, pos: Vec2, buttons: set[MouseButton], modifiers: set[Modifier]): bool =
+  builder.modifiers = modifiers
   builder.mouseDelta = pos - builder.mousePos
   builder.mousePos = pos
 
-  var targetNode: seq[UINode] = builder.draggedNodes
+  var targetNodes: seq[UINode] = builder.draggedNodes
 
   if buttons.len > 0:
     for button in buttons:
-    # if builder.draggedNodes.getSome(node):
       for node in builder.draggedNodes:
-        if node.handleDrag()(node, button, {}, pos - node.boundsAbsolute.xy, builder.mouseDelta): # todo: modifiers
+        if node.handleDrag()(node, button, modifiers, pos - node.boundsAbsolute.xy, builder.mouseDelta):
           result = true
           break
-    # else:
+
     if builder.draggedNodes.len == 0:
       let nodes = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => node.handleDrag.isNotNil)
       for button in buttons:
         for node in nodes:
-          if node.handleDrag()(node, button, {}, pos - node.boundsAbsolute.xy, builder.mouseDelta): # todo: modifiers
+          if node.handleDrag()(node, button, modifiers, pos - node.boundsAbsolute.xy, builder.mouseDelta):
             result = true
             break
 
+  if targetNodes.len == 0:
+    targetNodes = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => MouseHover in node.flags)
 
-  if targetNode.len == 0:
-    targetNode = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => MouseHover in node.flags)
+  var newHoveredNode = UINode.none
+  for node in targetNodes:
+    newHoveredNode = node.some
+    break
 
-  var handled = false
-  for node in builder.hoveredNodes:
-    if node in targetNode:
-      if node.handleHover.isNotNil:
-        if not handled:
-          result = node.handleHover()(node, pos - node.boundsAbsolute.xy) or result
-          handled = handled or result
+  case (builder.hoveredNode, newHoveredNode)
+  of (Some(@a), Some(@b)):
+    if a == b:
+      if a.handleHover.isNotNil:
+        result = a.handleHover()(a, pos - a.boundsAbsolute.xy, modifiers) or result
     else:
-      if node.handleEndHover.isNotNil:
-        result = node.handleEndHover()(node, pos - node.boundsAbsolute.xy) or result
+      if a.handleEndHover.isNotNil:
+        result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
+      if b.handleBeginHover.isNotNil:
+        result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy, modifiers) or result
+      result = true
 
-  handled = false
-  for node in targetNode:
-    if node notin builder.hoveredNodes:
-      if node.handleBeginHover.isNotNil:
-        if not handled:
-          result = node.handleBeginHover()(node, pos - node.boundsAbsolute.xy) or result
-          handled = handled or result
+  of (None(), Some(@b)):
+    if b.handleBeginHover.isNotNil:
+      result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy, modifiers) or result
+    result = true
+  of (Some(@a), None()):
+    if a.handleEndHover.isNotNil:
+      result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
+    result = true
+  of (None(), None()):
+    discard
 
-
-  # case (builder.hoveredNodes, targetNode)
-  # of (Some(@a), Some(@b)):
-  #   if a == b:
-  #     if a.handleHover.isNotNil:
-  #       result = a.handleHover()(a, pos - a.boundsAbsolute.xy) or result
-  #   else:
-  #     if a.handleEndHover.isNotNil:
-  #       result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
-  #     if b.handleBeginHover.isNotNil:
-  #       result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy) or result
-  #     result = true
-
-  # of (None(), Some(@b)):
-  #   if b.handleBeginHover.isNotNil:
-  #     result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy) or result
-  #   result = true
-  # of (Some(@a), None()):
-  #   if a.handleEndHover.isNotNil:
-  #     result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
-  #   result = true
-  # of (None(), None()):
-  #   discard
-
-  builder.hoveredNodes = targetNode
+  builder.hoveredNodes = targetNodes
+  builder.hoveredNode = newHoveredNode
 
 proc setBackgroundColor*(node: UINode, r, g, b: float32, a: float32 = 1) =
   if r != node.mBackgroundColor.r or g != node.mBackgroundColor.g or b != node.mBackgroundColor.b or node.mBackgroundColor.a != a:
@@ -572,6 +570,8 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
   node.mUnderlineColor.b = 1
   node.mUnderlineColor.a = 1
 
+  node.mBorder = UIBorder()
+
   node.mBorderColor.r = 0.5
   node.mBorderColor.g = 0.5
   node.mBorderColor.b = 0.5
@@ -645,33 +645,37 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
   # node.logp "preLayout"
   let parent = node.parent
 
+  var border = parent.mBorder
+  node.boundsRaw.x = border.left
+  node.boundsRaw.y = border.top
+
   if LayoutHorizontal in parent.flags:
     if node.prev.isNotNil:
       node.boundsRaw.x = node.prev.xw
     else:
-      node.boundsRaw.x = 0
+      node.boundsRaw.x = border.left
   elif LayoutHorizontalReverse in parent.flags:
     if node.prev.isNotNil:
       node.boundsRaw.x = node.prev.x
     else:
-      node.boundsRaw.x = parent.w
+      node.boundsRaw.x = parent.w - border.right
 
   if LayoutVertical in parent.flags:
     if node.prev.isNotNil:
       node.boundsRaw.y = node.prev.yh.roundPositive
     else:
-      node.boundsRaw.y = 0
+      node.boundsRaw.y = border.top
   elif LayoutVerticalReverse in parent.flags:
     if node.prev.isNotNil:
       node.boundsRaw.y = node.prev.y.roundPositive
     else:
-      node.boundsRaw.y = parent.h
+      node.boundsRaw.y = parent.h - border.bottom
 
   if node.flags.all &{SizeToContentX, FillX}:
     if DrawText in node.flags:
-      node.boundsRaw.w = max(parent.w - node.x, builder.textWidth(node))
+      node.boundsRaw.w = max((parent.w - border.right) - node.x, builder.textWidth(node))
     else:
-      node.boundsRaw.w = (parent.w - node.x)
+      node.boundsRaw.w = ((parent.w - border.right) - node.x)
   elif SizeToContentX in node.flags:
     if DrawText in node.flags:
       node.boundsRaw.w = builder.textWidth(node)
@@ -679,19 +683,19 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
     if LayoutHorizontalReverse in parent.flags:
       node.boundsRaw.w = node.boundsRaw.x
     else:
-      node.boundsRaw.w = (parent.w - node.x)
+      node.boundsRaw.w = ((parent.w - border.right) - node.x)
 
   if node.flags.all &{SizeToContentY, FillY}:
     if DrawText in node.flags:
-      if TextWrap in node.flags:
-        node.boundsRaw.h = max(parent.h - node.y, builder.textBounds(node).y).roundPositive
+      if TextWrap in node.flags or TextMultiLine in node.flags:
+        node.boundsRaw.h = max((parent.h - border.bottom) - node.y, builder.textBounds(node).y).roundPositive
       else:
-        node.boundsRaw.h = max(parent.h - node.y, builder.textHeight).roundPositive
+        node.boundsRaw.h = max((parent.h - border.bottom) - node.y, builder.textHeight).roundPositive
     else:
-      node.boundsRaw.h = (parent.h - node.y).roundPositive
+      node.boundsRaw.h = ((parent.h - border.bottom) - node.y).roundPositive
   elif SizeToContentY in node.flags:
     if DrawText in node.flags:
-      if TextWrap in node.flags:
+      if TextWrap in node.flags or TextMultiLine in node.flags:
         node.boundsRaw.h = builder.textBounds(node).y.roundPositive
       else:
         node.boundsRaw.h = builder.textHeight.roundPositive
@@ -699,7 +703,7 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
     if LayoutVerticalReverse in parent.flags:
       node.boundsRaw.h = node.boundsRaw.y.roundPositive
     else:
-      node.boundsRaw.h = (parent.h - node.y).roundPositive
+      node.boundsRaw.h = ((parent.h - border.bottom) - node.y).roundPositive
 
   assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
@@ -707,15 +711,22 @@ proc relayout*(builder: UINodeBuilder, node: UINode) =
   builder.preLayout node
   builder.postLayout node
 
+proc relayoutChildren*(builder: UINodeBuilder, node: UINode) =
+  for _, c in node.children:
+    builder.relayout(c)
+
+proc border*(width: float): UIBorder = UIBorder(left: width, right: width, top: width, bottom: width)
+proc border*(left, right, top, bottom: float): UIBorder = UIBorder(left: left, right: right, top: top, bottom: bottom)
+
 proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
   if IgnoreBoundsForSizeToContent in child.flags:
     return
 
   if SizeToContentX in node.flags and child.xw > node.w:
-    node.boundsRaw.w = child.xw
+    node.boundsRaw.w = child.xw + node.mBorder.right
 
   if SizeToContentY in node.flags and child.yh > node.h:
-    node.boundsRaw.h = child.yh.roundPositive
+    node.boundsRaw.h = child.yh.roundPositive + node.mBorder.bottom
 
   assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
@@ -744,7 +755,7 @@ proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
       builder.textWidth(node)
     else: 0
 
-    node.boundsRaw.w = max(node.w, max(childrenWidth, strWidth))
+    node.boundsRaw.w = max(node.w, max(childrenWidth, strWidth) + node.mBorder.left + node.mBorder.right)
 
   if SizeToContentY in node.flags:
     let childrenHeight = if node.first.isNotNil:
@@ -772,7 +783,7 @@ proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
         builder.textHeight
     else: 0
 
-    node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight)).roundPositive
+    node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight) + node.mBorder.top + node.mBorder.bottom).roundPositive
 
   assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
@@ -780,16 +791,17 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
   # node.logp "postLayout"
   builder.updateSizeToContent node
 
+  var border = if node.parent != nil:
+    node.parent.mBorder
+  else:
+    UIBorder()
+
   if FillX in node.flags:
     assert node.parent.isNotNil
     if LayoutHorizontalReverse in node.parent.flags:
       node.boundsRaw.w = node.boundsRaw.x
     else:
-      node.boundsRaw.w = max(node.boundsRaw.w, (node.parent.w - node.x))
-
-  if node.flags.any &{SizeToContentX, SizeToContentY}:
-    for _, c in node.children:
-      builder.relayout(c)
+      node.boundsRaw.w = max(node.boundsRaw.w, ((node.parent.w - border.right) - node.x))
 
   if node.parent.isNotNil:
     builder.postLayoutChild(node.parent, node)
@@ -801,14 +813,14 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
     if LayoutHorizontalReverse in node.parent.flags:
       node.boundsRaw.w = node.boundsRaw.x
     else:
-      node.boundsRaw.w = max(node.boundsRaw.w, (node.parent.w - node.x))
+      node.boundsRaw.w = max(node.boundsRaw.w, ((node.parent.w - border.right) - node.x))
 
   if FillY in node.flags:
     assert node.parent.isNotNil
     if LayoutVerticalReverse in node.parent.flags:
       node.boundsRaw.h = node.boundsRaw.y.roundPositive
     else:
-      node.boundsRaw.h = (node.parent.h - node.y).roundPositive
+      node.boundsRaw.h = ((node.parent.h - border.bottom) - node.y).roundPositive
 
   assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
@@ -1011,7 +1023,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
   node.insert(newNode, last)
   return newNode
 
-proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], inPivot: Option[Vec2], userId: var UIUserId, inAdditionalFlags: Option[UINodeFlags]): UINode =
+proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], inPivot: Option[Vec2], userId: var UIUserId, inAdditionalFlags: Option[UINodeFlags], inBorder: Option[UIBorder]): UINode =
   assert builder.currentParent.isNotNil
 
   var node = builder.getNextOrNewNode(builder.currentParent, builder.currentChild, userId)
@@ -1048,6 +1060,8 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
   node.boundsRaw.y = 0
   node.boundsRaw.w = 0
   node.boundsRaw.h = 0
+
+  node.mBorder = inBorder.get(UIBorder())
 
   if node.parent.isNotNil and AutoPivotChildren in node.parent.flags:
     if LayoutHorizontalReverse in node.parent.flags:
@@ -1292,6 +1306,8 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
   var inTextColor = genAst(): Color.none
   var inUnderlineColor = genAst(): Color.none
   var inAdditionalFlags = genAst(): UINodeFlags.none
+  var inBorder = genAst(): UIBorder.none
+  var inTag = genAst(): string.none
 
   for i, arg in args:
     case arg
@@ -1310,6 +1326,10 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
         inTextColor = genAst(value): some(value)
       of "underlineColor":
         inUnderlineColor = genAst(value): some(value)
+      of "border":
+        inBorder = genAst(value): some(value)
+      of "tag":
+        inTag = genAst(value): some(value)
       of "x":
         inX = genAst(value): some(value).maybeFlatten.mapIt(it.float32)
       of "y":
@@ -1333,9 +1353,10 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
       # echo arg.treeRepr
       error("Only <name> = <value> is allowed here.", arg)
 
-  return genAst(builder, inFlags, inText, inX, inY, inW, inH, inPivot, body, inBackgroundColor, inBorderColor, inTextColor, inUnderlineColor, inUserId, inAdditionalFlags):
+  return genAst(builder, inFlags, inText, inX, inY, inW, inH, inPivot, body, inBackgroundColor, inBorderColor, inBorder, inTextColor, inUnderlineColor, inUserId, inAdditionalFlags, inTag):
     var userId = inUserId
-    var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH, inPivot, userId, inAdditionalFlags)
+    var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH, inPivot, userId, inAdditionalFlags, inBorder)
+    node.tag = inTag.get("")
 
     if inBackgroundColor.isSome: node.backgroundColor = inBackgroundColor.get
     if inBorderColor.isSome:     node.borderColor     = inBorderColor.get
@@ -1362,18 +1383,18 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
           return true
 
       template onDrag(button: MouseButton, onDragBody: untyped) {.used.} =
-        currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2, d: Vec2): bool {.gcsafe, raises: [].} =
+        currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2, delta {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           if btn == button:
             onDragBody
           return true
 
       template onDrag(onDragBody: untyped) {.used.} =
-        currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2, d: Vec2): bool {.gcsafe, raises: [].} =
+        currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2, delta {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onDragBody
           return true
 
       template onBeginHover(onBody: untyped) {.used.} =
-        currentNode.handleBeginHover = proc(node: UINode, pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
+        currentNode.handleBeginHover = proc(node: UINode, pos {.inject.}: Vec2, modifiers {.inject.}: set[Modifier]): bool {.gcsafe, raises: [].} =
           onBody
           return true
 
@@ -1383,7 +1404,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
           return true
 
       template onHover(onBody: untyped) {.used.} =
-        currentNode.handleHover = proc(node: UINode, pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
+        currentNode.handleHover = proc(node: UINode, pos {.inject.}: Vec2, modifiers {.inject.}: set[Modifier]): bool {.gcsafe, raises: [].} =
           onBody
           return true
 
@@ -1497,11 +1518,27 @@ proc retain*(builder: UINodeBuilder): bool =
 
   return true
 
+proc currentSizeFlags*(builder: UINodeBuilder): UINodeFlags =
+  let sizeToContentX = SizeToContentX in builder.currentParent.flags
+  let sizeToContentY = SizeToContentY in builder.currentParent.flags
+
+  result = 0.UINodeFlags
+  if sizeToContentX:
+    result.incl SizeToContentX
+  else:
+    result.incl FillX
+
+  if sizeToContentY:
+    result.incl SizeToContentY
+  else:
+    result.incl FillY
+
 proc dump*(node: UINode, recurse = false): string =
   if node.isNil:
     return "nil"
   # result.add fmt"Node({node.userId}, {node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}, {node.mLastClearInvalidation}, {node.mLastDrawInvalidation}, {node.id} '{node.text}', {node.flags}, ({node.bounds}), {node.boundsActual}, {node.boundsOld})"
-  result.add fmt"Node({node.id} '{node.text}', ({node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}), {node.flags}, {node.boundsAbsolute}, bounds: {node.bounds}, raw: {node.boundsRaw}, actual: {node.boundsActual}), pivot: {node.pivot}"
+  # result.add fmt"Node({node.id} '{node.text}', ({node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}), {node.flags}, {node.boundsAbsolute}, bounds: {node.bounds}, raw: {node.boundsRaw}, actual: {node.boundsActual}), pivot: {node.pivot}"
+  result.add fmt"Node({node.tag} '{node.text}', {node.flags}, {node.border}, {node.boundsAbsolute}, bounds: {node.bounds}, raw: {node.boundsRaw}, actual: {node.boundsActual})"
   if recurse and node.first.isNotNil:
     result.add ":"
     for _, c in node.children:

@@ -278,6 +278,7 @@ import language_server_regex
 import scripting/expose
 import config_provider
 import vcs/vcs_api
+import collab
 {.pop.}
 
 defineSetAllDefaultSettings()

@@ -1,4 +1,4 @@
-import std/[macros, genasts, strutils, strformat, os, tables]
+import std/[macros, genasts, strutils, strformat, os, tables, sequtils]
 import misc/[custom_logger, custom_async, util, binary_encoder]
 import document_editor, vfs, vfs_service, service
 import nimsumtree/[rope, sumtree, arc]
@@ -72,9 +72,15 @@ proc newPluginSystemWasm*(services: Services): PluginSystemWasm =
     self.currentNamedArgs = newMap()
     newFunc(name, proc(args: seq[LispVal]): LispVal =
       try:
+        if name.startsWith("!"):
+          let args = args.mapIt($it).join(" ")
+          let command = name[1..^1] & " " & args
+          if self.services.getService(CommandService).get.executeCommand(command).getSome(res):
+            return newString(res)
+          return newNil()
         if self.currentNamedArgs == nil:
           self.currentNamedArgs = newMap()
-        debugf"dynamic dispatch '{name}' with {args} and {self.currentNamedArgs}"
+        debugf"[lisp-command] execute plugin api {name} {args}"
         return self.dispatchDynamic(name, newList(args), self.currentNamedArgs)
       finally:
         self.currentNamedArgs = nil
@@ -93,7 +99,6 @@ proc newPluginSystemWasm*(services: Services): PluginSystemWasm =
 
   self.services.getService(CommandService).get.addPrefixCommandHandler "(", proc(command: string): Option[string] =
     try:
-      debugf"lisp handler: '{command}'"
       var expr = command.parseLisp()
       let res = expr.eval(self.env)
       if res != nil:

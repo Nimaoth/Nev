@@ -19,6 +19,7 @@ import finder/[previewer, finder]
 import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 import lisp
+import view
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
@@ -185,6 +186,9 @@ declareSettings TextEditorSettings, "text":
   ## Arguments to the command which is run when triple clicking on some text.
   declare tripleClickCommandArgs, JsonNode, %[newJString("line"), newJBool(true)]
 
+  ## Arguments to the command which is run when triple clicking on some text.
+  declare hoverCommand, JsonNodeEx, nil
+
   ## If not null then scroll to the changed region when a file is reloaded.
   declare scrollToChangeOnReload, Option[ScrollToChangeOnReload], nil
 
@@ -198,11 +202,32 @@ declareSettings TextEditorSettings, "text":
   ## Mode to activate while completion window is open.
   declare completionMode, string, "editor.text.completion"
 
+  ## Mode to activate while hover window is open.
+  declare hoverMode, string, "editor.text.hover"
+
   ## Command to execute when the mode of the text editor changes
   declare modeChangedHandlerCommand, string, ""
 
   ## Whether inlay hints are enabled.
   declare inlayHintsEnabled, bool, true
+
+  ## Whether signature help is enabled.
+  declare signatureHelpEnabled, bool, true
+
+  ## How often (in milliseconds) to update signature help while typing.
+  declare signatureHelpDelay, int, 200
+
+  ## Which move to use to find the beginning of the argument list when showing signature help.
+  declare signatureHelpMove, string, "(ts 'call.inner') (overlapping) (last)"
+
+  ## Which characters trigger signature help when inserted.
+  declare signatureHelpTriggerChars, RuneSetSetting, %%*["("]
+
+  ## Trigger signature help when editing inside an argument list, as defined by 'signature-help-move'
+  declare signatureHelpTriggerOnEditInArgs, bool, true
+
+  ## Automatically insert closing parenthesis, braces, brackets and quotes.
+  declare autoInsertClose, bool, true
 
 type
   CodeActionKind {.pure.} = enum Command, CodeAction
@@ -250,9 +275,15 @@ type TextDocumentEditor* = ref object of DocumentEditor
   cursorsId*: Id
   completionsId*: Id
   hoverId*: Id
+  signatureHelpId*: Id
   diagnosticsId*: Id
   lastCursorLocationBounds*: Option[Rect]
   lastHoverLocationBounds*: Option[Rect]
+  lastSignatureHelpLocationBounds*: Option[Rect]
+  hoverView*: View
+  isHovered*: bool
+
+  overlayViews*: seq[View]
 
   selectionsBeforeReload: Selections
   wasAtEndBeforeReload: bool = false
@@ -289,6 +320,10 @@ type TextDocumentEditor* = ref object of DocumentEditor
   blinkCursorTask: DelayedTask
   updateMatchingWordsTask: DelayedTask
 
+  # auto insert closing parens
+  lastAutoCloseText: string
+  lastAutoCloseLocations: seq[Anchor]
+
   # hover
   showHoverTask: DelayedTask    # for showing hover info after a delay
   hideHoverTask: DelayedTask    # for hiding hover info after a delay
@@ -297,6 +332,14 @@ type TextDocumentEditor* = ref object of DocumentEditor
   hoverText*: string            # the text to show in the hover info
   hoverLocation*: Cursor        # where to show the hover info
   hoverScrollOffset*: float     # the scroll offset inside the hover window
+
+  # signatureHelp
+  showSignatureHelpTask: DelayedTask    # for showing signatureHelp info after a delay
+  showSignatureHelp*: bool              # whether to show signatureHelp info in ui
+  signatureHelpLocation*: Cursor        # where to show the signatureHelp info
+  signatures*: seq[lsp_types.SignatureInformation]
+  currentSignature*: int
+  currentSignatureParam*: int
 
   # inline hints
   inlayHints: seq[tuple[anchor: Anchor, hint: InlayHint]]
@@ -310,6 +353,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   mEventHandlers: seq[EventHandler]
   eventHandlerOverrides: Table[string, proc(config: EventHandlerConfig): EventHandler {.gcsafe, raises: [].}]
   completionEventHandler: EventHandler
+  hoverEventHandler: EventHandler
   commandCount*: int
   commandCountRestore*: int
   recordCurrentCommandRegisters: seq[string] # List of registers the current command should be recorded into.
@@ -326,6 +370,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastTextAreaBounds*: Rect
   lastPressedMouseButton*: MouseButton
   dragStartSelection*: Selection
+  mouseHoverLocation*: Cursor
+  mouseHoverMods*: Modifiers
 
   completionMatchPositions*: Table[int, seq[int]] # Maps from completion index to char indices
                                                   # of matching chars
@@ -363,11 +409,18 @@ type TextDocumentEditor* = ref object of DocumentEditor
   onDiagnosticsHandle: Id
   onCompletionsUpdatedHandle: Id
   onFocusChangedHandle: Id
+  onModsChangedHandle: Id
+  onHoverViewMarkedDirtyHandle: Id
+  hoverViewCallbackHandles: Id
 
   customHeader*: string
 
   onSearchResultsUpdated*: Event[TextDocumentEditor]
   onModeChanged*: Event[tuple[removed: seq[string], added: seq[string]]]
+  onSelectionsChanged*: Event[tuple[editor: TextDocumentEditor]]
+
+  declarationRanges: seq[tuple[decl: Selection, name: Selection, value: string]]
+  onDeclarationRangesUpdated*: Event[void]
 
   uiSettings*: UiSettings
   debugSettings*: DebugSettings
@@ -466,6 +519,12 @@ proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapM
 proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap)
 proc updateMatchingWordHighlight(self: TextDocumentEditor)
 proc updateColorOverlays(self: TextDocumentEditor) {.async.}
+proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor)
+proc hideSignatureHelp*(self: TextDocumentEditor)
+proc showSignatureHelp*(self: TextDocumentEditor)
+proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selection], move: string, count: int = 0, includeEol: bool = true, wrap: bool = true, options: JsonNode = nil): seq[Selection]
+proc clearHoverView(self: TextDocumentEditor)
+proc clearOverlayViews(self: TextDocumentEditor)
 
 proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
   includeAfter: bool = true, wrap: bool = true): Selection
@@ -500,6 +559,15 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections, addToHisto
     log lvlWarn, "Trying to set empty selections, not allowed"
     return
 
+  var changedLine = false
+  if self.selectionsInternal.len != selections.len:
+    changedLine = true
+  else:
+    for i in 0..<selections.len:
+      if self.selectionsInternal[i].last.line != selections[i].last.line or
+          self.selectionsInternal[i].first.line != selections[i].first.line:
+        changedLine = true
+
   if not self.dontRecordSelectionHistory:
     let addToHistory = addToHistory.get(self.selectionHistory.len == 0 or
         abs(selections[^1].last.line - self.selectionsInternal[^1].last.line) > 1 or
@@ -521,10 +589,19 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections, addToHisto
   if self.completionEngine.isNotNil:
     self.completionEngine.setCurrentLocations(self.selectionsInternal)
 
+  self.clearOverlayViews()
+  self.clearHoverView()
   self.showHover = false
+  if self.showSignatureHelp:
+    if changedLine:
+      self.hideSignatureHelp()
+    else:
+      self.showSignatureHelpForDelayed(self.selection.last)
   self.hideCompletions()
   self.updateMatchingWordHighlight()
   # self.document.addNextCheckpoint("move")
+
+  self.onSelectionsChanged.invoke (self,)
 
   self.markDirty()
 
@@ -582,7 +659,10 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.selectionHistory.clear()
     self.customHighlights.clear()
     self.signs.clear()
+    self.clearOverlayViews()
+    self.clearHoverView()
     self.showHover = false
+    self.showSignatureHelp = false
     self.inlayHints.setLen 0
     self.scrollOffset = vec2(0, 0)
     self.currentSnippetData = SnippetData.none
@@ -658,6 +738,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
 
 method deinit*(self: TextDocumentEditor) =
   self.platform.onFocusChanged.unsubscribe self.onFocusChangedHandle
+  self.platform.onModifiersChanged.unsubscribe self.onModsChangedHandle
 
   self.configService.removeStore(self.config)
 
@@ -674,6 +755,7 @@ method deinit*(self: TextDocumentEditor) =
   if self.inlayHintsTask.isNotNil: self.inlayHintsTask.pause()
   if self.showHoverTask.isNotNil: self.showHoverTask.pause()
   if self.hideHoverTask.isNotNil: self.hideHoverTask.pause()
+  if self.showSignatureHelpTask.isNotNil: self.showSignatureHelpTask.pause()
 
   if self.completionEngine.isNotNil:
     self.completionEngine.onCompletionsUpdated.unsubscribe(self.onCompletionsUpdatedHandle)
@@ -731,6 +813,28 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
 
   if inject.contains("above-mode"):
     result.add inject["above-mode"]
+
+  if self.showHover and self.hoverView != nil:
+    result.add self.hoverView.getEventHandlers(inject)
+
+  elif self.overlayViews.len > 0:
+    result.add self.overlayViews[^1].getEventHandlers(inject)
+
+  if self.showHover:
+    let hoverMode = self.settings.hoverMode.get()
+    if self.hoverEventHandler == nil or self.hoverEventHandler.config.context != hoverMode:
+      let config = self.events.getEventHandlerConfig(hoverMode)
+      assignEventHandler(self.hoverEventHandler, config):
+        onAction:
+          if self.handleAction(action, arg, record=true).isSome:
+            Handled
+          else:
+            Ignored
+        onInput:
+          self.handleInput input, record=true
+
+    if self.hoverEventHandler != nil:
+      result.add self.hoverEventHandler
 
   if self.showCompletions:
     let completionMode = self.settings.completionMode.get()
@@ -1617,6 +1721,7 @@ proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
     self.cursorVisible = true
     if self.blinkCursorTask.isNotNil and self.active:
       self.blinkCursorTask.reschedule()
+  self.updateTargetColumn(Last)
   self.scrollToCursor(self.selection.last)
   self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
@@ -1629,6 +1734,7 @@ proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
     self.cursorVisible = true
     if self.blinkCursorTask.isNotNil and self.active:
       self.blinkCursorTask.reschedule()
+  self.updateTargetColumn(Last)
   self.scrollToCursor(self.selection.last)
   self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
@@ -1794,7 +1900,21 @@ proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool =
 
   return false
 
-proc autoShowCompletions*(self: TextDocumentEditor) =
+proc autoShowSignatureHelp*(self: TextDocumentEditor, insertedText: string) {.expose("editor.text").} =
+  if self.showSignatureHelp:
+    return
+
+  let triggerChars {.cursor.} = self.settings.signatureHelpTriggerChars.get()
+  if insertedText.len > 0 and insertedText[0] in triggerChars:
+    self.showSignatureHelp()
+
+  elif self.settings.signatureHelpTriggerOnEditInArgs.get():
+    let move = self.settings.signatureHelpMove.get()
+    let argListRanges = self.getSelectionsForMove(@[self.selection], move)
+    if argListRanges.len > 0:
+      self.showSignatureHelp()
+
+proc autoShowCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.disableCompletions:
     return
   if self.shouldShowCompletionsAt(self.selection.last):
@@ -1802,16 +1922,33 @@ proc autoShowCompletions*(self: TextDocumentEditor) =
   else:
     self.hideCompletions()
 
-proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true) {.expose("editor.text").} =
+proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true, autoClose: Option[bool] = bool.none) {.expose("editor.text").} =
   if self.document.singleLine and text == "\n":
     return
 
   let originalSelections = self.selections.normalized
   var selections = originalSelections
+  var resultSelectionsRelative = newSeq[Cursor]()
+  for i in 0..<selections.len:
+    resultSelectionsRelative.add TextSummary.init(text).lines.toCursor
 
   var texts = @[text]
 
+  var locations = initHashSet[Cursor]()
+  for anchor in self.lastAutoCloseLocations:
+    let cursor = anchor.summaryOpt(Point, self.document.buffer.snapshot)
+    if cursor.isSome:
+      locations.incl cursor.get.toCursor
+
+  var insertedExistingAutoClose = false
+  if text.len > 0 and text == self.lastAutoCloseText and self.lastAutoCloseLocations.len > 0:
+    for s in selections.mitems:
+      if s.isEmpty and s.last in locations and self.document.runeAt(s.last) == text.runeAt(0):
+        s.last.column += 1
+        insertedExistingAutoClose = true
+
   var allWhitespace = false
+  var insertedAutoIndent = false
   if text == "\n":
     allWhitespace = true
     for selection in selections:
@@ -1832,12 +1969,31 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
         s.last = s.first
 
     elif autoIndent:
+      insertedAutoIndent = true
       texts.setLen(selections.len)
+
       for i, selection in selections:
+        var indentClosing = false
+        if selection.first.column > 0:
+          let runeLeft = self.document.runeAt (selection.first.line, selection.first.column - 1)
+          let runeRight = self.document.runeAt selection.last
+
+          if runeLeft.getMatchingGroupChar() == runeRight:
+            indentClosing = true
+
         # todo: don't use getLine
         let line = $self.document.getLine(selection.last.line)
-        let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, self.document.settings.indent.get(), self.document.settings.tabWidth.get(), selection.last.column)
-        texts[i] = "\n" & indent
+        let indentStyle = self.document.settings.indent.get()
+        let indentWidth = self.document.settings.tabWidth.get()
+        let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, indentStyle, indentWidth, selection.last.column)
+        if indent.len > 0:
+          texts[i].add indent
+          resultSelectionsRelative[i].column += indent.len
+
+          if indentClosing:
+            var indentLevel = indentLevelForLine(line, indentWidth)
+            texts[i].add "\n"
+            texts[i].add getIndentString(indentStyle, indentWidth).repeat(indentLevel)
 
   elif autoIndent and (text == "}" or text == ")" or text == "]"):
     # Adjust indent of closing paren by searching for the matching opening paren
@@ -1880,7 +2036,53 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
       texts.add indent & text
       s.first.column = 0
 
-  selections = self.document.edit(selections, selections, texts).mapIt(it.last.toSelection)
+  var insertedAutoClose = false
+  if not insertedExistingAutoClose and autoClose.get(self.settings.autoInsertClose.get()):
+    case text
+    of "(", "{", "[", "\"", "'", "<":
+      let close = case text
+      of "(": ")"
+      of "{": "}"
+      of "[": "]"
+      of "\"": "\""
+      of "'": "'"
+      of "<": ">"
+      else:
+        "?"
+
+      var isAtExpressionStart = false
+      for s in selections:
+        if self.document.isAtExpressionStart(s.last):
+          isAtExpressionStart = true
+          break
+
+      var isAfterSpace = false
+      if text == "<":
+        for s in selections:
+          if s.last.column > 0 and self.document.runeAt((s.last.line, s.last.column - 1)) == ' '.Rune:
+            isAfterSpace = true
+            break
+
+      if not isAtExpressionStart and not isAfterSpace:
+        for t in texts.mitems:
+          t.add close
+        insertedAutoClose = true
+        self.lastAutoCloseText = close
+    else:
+      discard
+
+  var newSelections = self.document.edit(selections, selections, texts)
+  selections = newSelections.mapIt(it.last.toSelection)
+
+  for i in 0..newSelections.high:
+    if i < resultSelectionsRelative.len:
+      selections[i].last = (newSelections[i].first.toPoint + resultSelectionsRelative[i].toPoint).toCursor
+      selections[i].first = selections[i].last
+
+  if insertedAutoClose:
+    self.lastAutoCloseLocations.setLen(0)
+    for s in newSelections.items:
+      self.lastAutoCloseLocations.add self.document.buffer.snapshot.anchorAfter(point(s.last.line, s.last.column - 1))
 
   if allWhitespace:
     for i in 0..min(self.selections.high, originalSelections.high):
@@ -1892,6 +2094,7 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
   self.updateTargetColumn(Last)
 
   self.autoShowCompletions()
+  self.autoShowSignatureHelp(text)
 
 proc insertRawAsync(self: TextDocumentEditor) {.async.} =
   let text = await self.layout.promptString("Enter number")
@@ -2596,6 +2799,9 @@ proc checkoutFileAsync*(self: TextDocumentEditor, saveAfterwards: bool = false) 
 proc checkoutFile*(self: TextDocumentEditor, saveAfterwards: bool = false) {.expose("editor.text").} =
   asyncSpawn self.checkoutFileAsync(saveAfterwards)
 
+proc addFileVcs*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncSpawn self.document.addFileVcsAsync(prompt = false)
+
 # todo
 proc addNextFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true,
     wrap: bool = true) {.expose("editor.text").} =
@@ -2727,8 +2933,10 @@ proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, mo
   if selection.isBackwards:
     result = result.reverse
 
-proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openArray[Selection], count: int): seq[Selection] =
-  debugf"applyMoveFallback {move}"
+proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openArray[Selection], count: int, largs: openArray[LispVal], env: Env): seq[Selection] =
+  if self.moveDatabase.debugMoves:
+    debugf"applyMoveFallback {move}, {count}, {@largs}, {env.env}"
+
   let includeEol = true
 
   let cursorSelector = self.config.get(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
@@ -2768,78 +2976,110 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
       else:
         default
 
-  case move
-  of "word":
-    return selections.mapIt(self.findWordBoundary(it.last))
+  try:
+    case move
+    of "word":
+      return selections.mapIt(self.findWordBoundary(it.last))
 
-  of "page":
-    let linesToMove = int(self.screenLineCount() * count div 100)
-    return selections.mapIt(self.doMoveCursorLine(it.last, linesToMove, false, includeEol).toSelection(it, cursorSelector))
+    of "page":
+      let linesToMove = int(self.screenLineCount() * count div 100)
+      return selections.mapIt(self.doMoveCursorLine(it.last, linesToMove, false, includeEol).toSelection(it, cursorSelector))
 
-  of "prev-search-result":
-    let count = getArg(0, int, 0)
-    let wrap = getArg(1, bool, true)
-    result = selections.mapIt(self.getPrevFindResult(it.last, count, includeEol, wrap))
+    of "prev-search-result":
+      let count = getArg(0, int, 0)
+      let wrap = getArg(1, bool, true)
+      result = selections.mapIt(self.getPrevFindResult(it.last, count, includeEol, wrap))
 
-  of "next-search-result":
-    let count = getArg(0, int, 0)
-    let wrap = getArg(1, bool, true)
-    result = selections.mapIt(self.getNextFindResult(it.last, count, includeEol, wrap))
+    of "next-search-result":
+      let count = getArg(0, int, 0)
+      let wrap = getArg(1, bool, true)
+      result = selections.mapIt(self.getNextFindResult(it.last, count, includeEol, wrap))
 
-  of "prev-change":
-    result = selections.mapIt(self.getPrevChange(it.last))
+    of "prev-change":
+      result = selections.mapIt(self.getPrevChange(it.last))
 
-  of "next-change":
-    result = selections.mapIt(self.getNextChange(it.last))
+    of "next-change":
+      result = selections.mapIt(self.getNextChange(it.last))
 
-  of "prev-diagnostic":
-    let severity = getArg(0, int, 0)
-    let count = getArg(1, int, 0)
-    let wrap = getArg(2, bool, true)
-    result = selections.mapIt(self.getPrevDiagnostic(it.last, severity, count, includeEol, wrap))
+    of "prev-diagnostic":
+      let severity = getArg(0, int, 0)
+      let count = getArg(1, int, 0)
+      let wrap = getArg(2, bool, true)
+      result = selections.mapIt(self.getPrevDiagnostic(it.last, severity, count, includeEol, wrap))
 
-  of "next-diagnostic":
-    let severity = getArg(0, int, 0)
-    let count = getArg(1, int, 0)
-    let wrap = getArg(2, bool, true)
-    result = selections.mapIt(self.getNextDiagnostic(it.last, severity, count, includeEol, wrap))
+    of "next-diagnostic":
+      let severity = getArg(0, int, 0)
+      let count = getArg(1, int, 0)
+      let wrap = getArg(2, bool, true)
+      result = selections.mapIt(self.getNextDiagnostic(it.last, severity, count, includeEol, wrap))
 
-  of "next-tab-stop":
-    result = @selections
-    if self.currentSnippetData.isNone:
-      return
+    of "next-tab-stop":
+      result = @selections
+      if self.currentSnippetData.isNone:
+        return
 
-    var foundTabStop = false
-    while self.currentSnippetData.get.currentTabStop < self.currentSnippetData.get.highestTabStop:
-      self.currentSnippetData.get.currentTabStop.inc
-      self.currentSnippetData.get.tabStops.withValue(self.currentSnippetData.get.currentTabStop, val):
-        result = val[]
-        foundTabStop = true
-        break
+      var foundTabStop = false
+      while self.currentSnippetData.get.currentTabStop < self.currentSnippetData.get.highestTabStop:
+        self.currentSnippetData.get.currentTabStop.inc
+        self.currentSnippetData.get.tabStopAnchors.withValue(self.currentSnippetData.get.currentTabStop, val):
+          result = self.resolveAnchors(val[])
+          foundTabStop = true
+          break
 
-    if not foundTabStop:
-      self.currentSnippetData.get.currentTabStop = 0
-      result = self.currentSnippetData.get.tabStops[0]
+      if not foundTabStop:
+        self.currentSnippetData.get.currentTabStop = 0
+        result = self.resolveAnchors(self.currentSnippetData.get.tabStopAnchors[0])
 
-  of "prev-tab-stop":
-    result = @selections
-    if self.currentSnippetData.isNone:
-      return
+    of "prev-tab-stop":
+      result = @selections
+      if self.currentSnippetData.isNone:
+        return
 
-    if self.currentSnippetData.get.currentTabStop == 0:
-      self.currentSnippetData.get.currentTabStop = self.currentSnippetData.get.highestTabStop
-      self.currentSnippetData.get.tabStops.withValue(self.currentSnippetData.get.currentTabStop, val):
-        result = val[]
-      return
+      if self.currentSnippetData.get.currentTabStop == 0:
+        self.currentSnippetData.get.currentTabStop = self.currentSnippetData.get.highestTabStop
+        self.currentSnippetData.get.tabStopAnchors.withValue(self.currentSnippetData.get.currentTabStop, val):
+          result = self.resolveAnchors(val[])
+        return
 
-    while self.currentSnippetData.get.currentTabStop > 1:
-      self.currentSnippetData.get.currentTabStop.dec
-      self.currentSnippetData.get.tabStops.withValue(self.currentSnippetData.get.currentTabStop, val):
-        result = val[]
-        break
+      while self.currentSnippetData.get.currentTabStop > 1:
+        self.currentSnippetData.get.currentTabStop.dec
+        self.currentSnippetData.get.tabStopAnchors.withValue(self.currentSnippetData.get.currentTabStop, val):
+          result = self.resolveAnchors(val[])
+          break
 
-  else:
-    log lvlError, &"Unknown move '{move}'"
+    of "ts-text-object", "ts":
+      let capture = if largs.len > 0:
+        largs[0].toJson.jsonTo(string)
+      else:
+        ""
+      let captureMove = if largs.len > 1:
+        largs[1]
+      else:
+        parseLisp("(combine)")
+
+      if self.document.textObjectsQuery != nil and not self.document.tsTree.isNil:
+        for s in selections:
+          for captures in self.document.textObjectsQuery.query(self.document.tsTree, s):
+            var captureSelections = newSeqOfCap[Selection](captures.len)
+            if self.moveDatabase.debugMoves:
+              echo &"move 'ts' {move}: {captures.len} captures"
+            for (node, nodeCapture) in captures:
+              if capture == "" or capture == nodeCapture:
+                var sel = node.getRange().toSelection
+                captureSelections.add sel
+                if self.moveDatabase.debugMoves:
+                  echo &"    {sel}"
+
+            let captureSelectionsTransformed = self.moveDatabase.applyMove(self.displayMap, captureMove, captureSelections, env, self.moveFallbacks)
+
+            result.add captureSelectionsTransformed
+
+    else:
+      log lvlError, &"Unknown move '{move}'"
+      return @selections
+
+  except CatchableError as e:
+    log lvlError, &"Failed to apply move '{move}': {e.msg}"
     return @selections
 
 proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selection], move: string,
@@ -2850,6 +3090,10 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
   env["count"] = newNumber(count)
   env["include-eol"] = newBool(includeEol)
   env["wrap"] = newBool(wrap)
+  env["ts?"] = newBool(not self.document.tsTree.isNil)
+  env["ts.to?"] = newBool(self.document.textObjectsQuery != nil and not self.document.tsTree.isNil)
+  defer:
+    env.clear()
 
   proc readOptions(env: var Env, options: JsonNode) =
     if options.kind == JObject:
@@ -3481,6 +3725,45 @@ proc hasTabStops*(self: TextDocumentEditor): bool =
 proc clearTabStops*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.currentSnippetData = SnippetData.none
 
+proc applyAutoIndent(self: TextDocumentEditor, edits: var seq[Selection], texts: var seq[string]) =
+  while texts.len < edits.len:
+    texts.add texts[^1]
+
+  for i, selection in edits:
+    if texts[i].find('\n') == -1:
+      continue
+
+    var indentClosing = false
+    if selection.first.column > 0:
+      let runeLeft = self.document.runeAt (selection.first.line, selection.first.column - 1)
+      let runeRight = self.document.runeAt selection.last
+
+      if runeLeft.getMatchingGroupChar() == runeRight:
+        indentClosing = true
+
+    let line = $self.document.getLine(selection.last.line)
+    let indentStyle = self.document.settings.indent.get()
+    let indentWidth = self.document.settings.tabWidth.get()
+    let indentLevel = indentLevelForLine(line, indentWidth)
+    let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, indentStyle, indentWidth, selection.last.column)
+
+    let originalText = texts[i]
+    texts[i].setLen(0)
+    var k = 0
+    for line in originalText.splitLines(keepEol = true):
+      texts[i].add line
+
+      if line.endsWith("\n"):
+        # todo: don't use getLine
+        if indent.len > 0:
+          texts[i].add indent
+
+    if indentClosing:
+      texts[i].add "\n"
+      texts[i].add getIndentString(indentStyle, indentWidth).repeat(indentLevel)
+
+      inc k
+
 proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   let completion = completion
   log(lvlInfo, fmt"Applying completion {completion.item.label}")
@@ -3568,30 +3851,42 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   var editSelections: seq[Selection] = @[]
   var insertTexts: seq[string] = @[]
 
+  editSelections.add cursorEditSelections
+  insertTexts.add cursorInsertTexts
+
+  let numOriginalEdits = editSelections.len
+
+  # Create anchors for additional edits before applying the completion so we can later apply the additional
+  # edits at the correct location
+  var additionalEditSelections = newSeq[Selection]()
   for edit in completion.item.additionalTextEdits:
     let runeSelection = (
       (edit.`range`.start.line, edit.`range`.start.character.RuneIndex),
       (edit.`range`.`end`.line, edit.`range`.`end`.character.RuneIndex),
     )
     let selection = self.document.runeSelectionToSelection(runeSelection)
-    editSelections.add selection
-    insertTexts.add edit.newText
+    additionalEditSelections.add selection
+  var additionalEditAnchors = self.createAnchors(additionalEditSelections)
 
-    let changedSelection = selection.getChangedSelection(edit.newText)
-
-    if snippetData.isSome:
-      snippetData.get.offset(changedSelection)
-
-  let numAdditionalEdits = editSelections.len
-
-  editSelections.add cursorEditSelections
-  insertTexts.add cursorInsertTexts
+  # Apply auto indenting to non-snippet completions
+  if snippetData.isNone:
+    self.applyAutoIndent(editSelections, insertTexts)
 
   let newSelections = self.document.edit(editSelections, self.selections, insertTexts)
-  self.selections = newSelections[numAdditionalEdits..^1].mapIt(it.last.toSelection)
+  self.selections = newSelections.mapIt(it.last.toSelection)
 
-  self.currentSnippetData = snippetData
-  self.move("(next-tab-stop)")
+  if snippetData.isSome:
+    for key, tabstops in snippetData.get.tabStops:
+      snippetData.get.tabStopAnchors[key] = self.createAnchors(tabstops)
+
+  for i, edit in completion.item.additionalTextEdits:
+    editSelections = self.resolveAnchors(@[additionalEditAnchors[i]])
+    insertTexts = @[completion.item.additionalTextEdits[i].newText]
+    discard self.document.edit(editSelections, self.selections, insertTexts)
+
+  if snippetData.isSome:
+    self.currentSnippetData = snippetData
+    self.move("(next-tab-stop)")
 
   if completion.item.showCompletionsAgain.get(false):
     self.autoShowCompletions()
@@ -3626,6 +3921,24 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
     completion.origin = runeCursor.some
     self.registers.recordCommand(".apply-completion " & $completion.toJson)
 
+proc clearHoverView(self: TextDocumentEditor) =
+  if self.hoverView != nil:
+    self.hoverView.onMarkedDirty.unsubscribe(self.onHoverViewMarkedDirtyHandle)
+    self.hoverView.onDetached.unsubscribe(self.hoverViewCallbackHandles)
+    self.hoverView = nil
+
+proc clearOverlayViews(self: TextDocumentEditor) =
+  for overlay in self.overlayViews:
+    overlay.onMarkedDirty.unsubscribe(self.onHoverViewMarkedDirtyHandle)
+    overlay.onDetached.unsubscribe(self.hoverViewCallbackHandles)
+  self.overlayViews.setLen(0)
+
+proc detachHoverView(self: TextDocumentEditor) =
+  if self.hoverView != nil:
+    self.overlayViews.add(self.hoverView)
+    self.hoverView = nil
+    self.showHover = false
+
 proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {.async.} =
   if self.hideHoverTask.isNotNil:
     self.hideHoverTask.pause()
@@ -3640,11 +3953,110 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
       return
     if hoverInfo.getSome(hoverInfo):
       self.showHover = true
+      self.showSignatureHelp = false
       self.hoverScrollOffset = 0
       self.hoverText = hoverInfo
+      self.clearHoverView()
       self.hoverLocation = cursor
     else:
+      self.clearHoverView()
       self.showHover = false
+
+  self.markDirty()
+
+proc showHover*(self: TextDocumentEditor, message: string, location: Cursor) =
+  if self.document.isNil:
+    return
+  if self.hideHoverTask.isNotNil:
+    self.hideHoverTask.pause()
+
+  self.showHover = true
+  self.showSignatureHelp = false
+  self.hoverScrollOffset = 0
+  self.hoverText = message
+  self.clearHoverView()
+  self.hoverLocation = location
+
+  self.markDirty()
+
+proc showHover*(self: TextDocumentEditor, view: View, location: Cursor) =
+  if self.document.isNil:
+    return
+  if self.hideHoverTask.isNotNil:
+    self.hideHoverTask.pause()
+
+  self.clearHoverView()
+  self.showHover = true
+  self.showSignatureHelp = false
+  self.hoverScrollOffset = 0
+  self.hoverView = view
+  self.hoverLocation = location
+  self.onHoverViewMarkedDirtyHandle = view.onMarkedDirty.subscribe proc() = self.markDirty()
+  view.onDetached.subscribe self.hoverViewCallbackHandles, proc() = self.detachHoverView()
+
+  self.markDirty()
+
+proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpty: bool): Future[void] {.async.} =
+  if not self.settings.signatureHelpEnabled.get():
+    return
+
+  let languageServer = self.document.getLanguageServer()
+  if languageServer.isNone:
+    return
+
+  let signatureHelps = await languageServer.get.getSignatureHelp(self.document.filename, cursor)
+  if self.document.isNil:
+    return
+
+  if self.selection.last.line != cursor.line:
+    return
+
+  if signatureHelps.isSuccess:
+    var numSignatures = 0
+    for res in signatureHelps.result:
+      numSignatures += res.signatures.len
+
+    if numSignatures == 0:
+      # If we don't find signatures, check if we're still in the parameter list of the last successful signature help,
+      # and reuse that if so.
+      let move = self.settings.signatureHelpMove.get()
+      let argListRanges = self.getSelectionsForMove(@[cursor.toSelection], move)
+      if argListRanges.len > 0 and self.signatureHelpLocation == argListRanges[0].first:
+        # Argument list still starts at same place, so assume same argument list and show the previous.
+        return
+
+    self.showSignatureHelp = true
+    self.signatures.setLen(0)
+    var signatureIndex = 0
+    var parameterIndex = 0
+    for res in signatureHelps.result:
+      if res.activeSignature.isSome:
+        signatureIndex = res.activeSignature.get()
+
+      if res.activeParameter.isSome:
+        parameterIndex = res.activeParameter.get()
+
+      for sig in res.signatures:
+        self.signatures.add sig
+
+    self.currentSignature = signatureIndex
+    self.currentSignatureParam = parameterIndex
+
+    if self.signatures.len == 0 and hideIfEmpty:
+      self.showSignatureHelp = false
+
+    else:
+      self.clearHoverView()
+      self.showHover = false
+      self.signatureHelpLocation = cursor
+      let move = self.settings.signatureHelpMove.get()
+      let argListRanges = self.getSelectionsForMove(@[cursor.toSelection], move)
+      if argListRanges.len > 0:
+        self.signatureHelpLocation = argListRanges[0].first
+
+  else:
+    self.showSignatureHelp = false
+    log lvlError, $signatureHelps
 
   self.markDirty()
 
@@ -3656,16 +4068,55 @@ proc showHoverFor*(self: TextDocumentEditor, cursor: Cursor) =
 proc showHoverForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Shows lsp hover information for the current selection.
   ## Does nothing if no language server is available or the language server doesn't return any info.
+  asyncSpawn self.showHoverForAsync(self.mouseHoverLocation)
+
+proc showHover*(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Shows lsp hover information for the current selection.
+  ## Does nothing if no language server is available or the language server doesn't return any info.
   asyncSpawn self.showHoverForAsync(self.selection.last)
+
+proc toggleHover*(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Shows lsp hover information for the current selection.
+  ## Does nothing if no language server is available or the language server doesn't return any info.
+  if self.showHover:
+    self.clearHoverView()
+    self.showHover = false
+    self.markDirty()
+  else:
+    asyncSpawn self.showHoverForAsync(self.selection.last)
 
 proc hideHover*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Hides the hover information.
+  self.clearHoverView()
   self.showHover = false
+  self.markDirty()
+
+proc showSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Shows lsp signature information for the current selection.
+  ## Does nothing if no language server is available or the language server doesn't return any info.
+  asyncSpawn self.showSignatureHelpAsync(self.selection.last, hideIfEmpty = false)
+
+proc toggleSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Shows lsp signature information for the current selection.
+  ## Does nothing if no language server is available or the language server doesn't return any info.
+  if self.showSignatureHelp:
+    self.showSignatureHelp = false
+    self.markDirty()
+  else:
+    asyncSpawn self.showSignatureHelpAsync(self.selection.last, hideIfEmpty = false)
+
+proc hideSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Hides the hover information.
+  self.showSignatureHelp = false
   self.markDirty()
 
 proc cancelDelayedHideHover*(self: TextDocumentEditor) =
   if self.hideHoverTask.isNotNil:
     self.hideHoverTask.pause()
+
+proc cancelHover*(self: TextDocumentEditor) =
+  if self.showHoverTask.isNotNil:
+    self.showHoverTask.pause()
 
 proc hideHoverDelayed*(self: TextDocumentEditor) =
   ## Hides the hover information after a delay.
@@ -3680,9 +4131,26 @@ proc hideHoverDelayed*(self: TextDocumentEditor) =
     self.hideHoverTask.interval = hoverDelayMs
     self.hideHoverTask.reschedule()
 
-proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
-  ## Show hover information for the given cursor after a delay.
-  self.currentHoverLocation = cursor
+proc runHoverCommand*(self: TextDocumentEditor) =
+  try:
+    var command = "show-hover-for-current"
+    var configCommand = self.settings.hoverCommand.get()
+    if configCommand != nil:
+      let modsKey = $self.mouseHoverMods
+      if configCommand.kind == jsonex.JObject and configCommand.hasKey(modsKey):
+        configCommand = configCommand[modsKey]
+
+      let (name, args, ok) = configCommand.parseCommand()
+      if ok:
+        discard self.handleAction(name, args, record = false)
+        return
+
+    discard self.handleAction(command, "", record = false)
+  except CatchableError as e:
+    log lvlError, &"Failed to execute hover command: {e.msg}"
+
+proc showHoverDelayed*(self: TextDocumentEditor) =
+  ## Show hover information after a delay.
 
   if self.hideHoverTask.isNotNil:
     self.hideHoverTask.pause()
@@ -3690,10 +4158,22 @@ proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
   let hoverDelayMs = self.settings.hoverDelay.get()
   if self.showHoverTask.isNil:
     self.showHoverTask = startDelayed(hoverDelayMs, repeat=false):
-      self.showHoverFor(self.currentHoverLocation)
+      self.runHoverCommand()
   else:
     self.showHoverTask.interval = hoverDelayMs
     self.showHoverTask.reschedule()
+
+  self.markDirty()
+
+proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
+  ## Show signature information for the given cursor after a delay.
+  let delayMs = self.settings.signatureHelpDelay.get()
+  if self.showSignatureHelpTask.isNil:
+    self.showSignatureHelpTask = startDelayed(delayMs, repeat=false):
+      asyncSpawn self.showSignatureHelpAsync(self.selection.last, hideIfEmpty = true)
+  else:
+    self.showSignatureHelpTask.interval = delayMs
+    self.showSignatureHelpTask.schedule()
 
   self.markDirty()
 
@@ -3738,7 +4218,6 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
     if self.document.isNil:
       return
 
-    # todo: detect if canceled instead
     if inlayHints.isSuccess:
       template getBias(hint: untyped): Bias =
         if hint.paddingRight:
@@ -3818,7 +4297,7 @@ proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeA
         log lvlInfo, &"Run lsp command {command}"
         let res = await ls.executeCommand(command.command, command.arguments)
         if res.isError:
-          log lvlError, &"Failed to execute lsp command '{commandOrAction.command.command}, {commandOrAction.command.arguments}': {res.error}"
+          log lvlError, &"Failed to execute lsp command '{command.command}, {command.arguments}': {res.error}"
 
 proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection, versionId: BufferVersionId,
     diagnosticsVersion: int, addSign: bool): Future[void] {.async.} =
@@ -4288,6 +4767,13 @@ proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventRe
     discard
   return Handled
 
+proc handleModsChanged*(self: TextDocumentEditor, oldMods: Modifiers, newMods: Modifiers) =
+  if not self.isHovered:
+    return
+  self.mouseHoverMods = newMods
+  if self.showHover:
+    self.showHoverDelayed()
+
 proc handleFocusChanged*(self: TextDocumentEditor, focused: bool) =
   if focused:
     if self.active and self.blinkCursorTask.isNotNil:
@@ -4579,6 +5065,7 @@ proc createTextEditorInstance(): TextDocumentEditor =
   editor.cursorsId = newId()
   editor.completionsId = newId()
   editor.hoverId = newId()
+  editor.signatureHelpId = newId()
   editor.inlayHints = @[]
   editor.init()
   {.gcsafe.}:
@@ -4603,23 +5090,23 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.commands = self.services.getService(CommandService).get
   self.displayMap = DisplayMap.new()
   self.diffDisplayMap = DisplayMap.new()
-  discard self.displayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => s.handleWrapMapUpdated(args[0], args[1])
-  discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => s.handleWrapMapUpdated(args[0], args[1])
-  discard self.displayMap.onUpdated.subscribe (args: (DisplayMap,)) => s.handleDisplayMapUpdated(args[0])
-  discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => s.handleDisplayMapUpdated(args[0])
+  discard self.displayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
+  discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
+  discard self.displayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
+  discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
 
   self.config = self.configService.addStore("editor/" & $self.id, &"settings://editor/{self.id}")
   discard self.config.onConfigChanged.subscribe proc(key: string) =
     # Keep this simple and cheap, this is called often
-    s.configChanged = true
-    s.markDirty()
+    self.configChanged = true
+    self.markDirty()
 
   self.uiSettings = UiSettings.new(self.config)
   self.debugSettings = DebugSettings.new(self.config)
   self.settings = TextEditorSettings.new(self.config)
 
-  self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int): seq[Selection] =
-    s.applyMoveFallback(move, selections, count)
+  self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =
+    self.applyMoveFallback(move, selections, count, args, env)
 
   self.setDocument(document)
 
@@ -4627,7 +5114,9 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
 
   self.editors.registerEditor(self)
 
-  self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = s.handleFocusChanged(focused)
+  self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
+  self.onModsChangedHandle = self.platform.onModifiersChanged.subscribe proc(change: tuple[old: Modifiers, new: Modifiers]) =
+    self.handleModsChanged(change.old, change.new)
 
   self.setDefaultMode()
 

@@ -196,6 +196,11 @@ proc getEditorsForDocument*(self: DocumentEditorService, document: Document): se
     if editor.getDocument() == document:
       result.add editor
 
+proc getEditors*(self: DocumentEditorService, path: string): seq[DocumentEditor] =
+  for editor in self.allEditors:
+    if editor.getDocument() != nil and editor.getDocument().filename == path:
+      result.add editor
+
 proc getEditorForId*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] =
   self.editors.withValue(id, editor):
     return editor[].some

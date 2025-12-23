@@ -237,6 +237,7 @@ proc selectLine(editor: TextEditor) {.exposeActive(editorContext).} =
 proc normalMode(editor: TextEditor) {.exposeActive(editorContext).} =
   ## Exit to normal mode and clear things
   if $editor.mode == "vim.normal":
+    discard editor.command(ws"hide-signature-help", ws"")
     editor.setSelection editor.getSelection.last.toSelection
     editor.clearTabStops()
   editor.setMode("vim.normal")
@@ -640,6 +641,7 @@ proc deleteLeft*(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.addNextCheckpoint ws"insert"
   let selections = editor.multiMove(editor.getSelections, "(column -1) (join)")
   editor.setSelections editor.edit(selections, @@[ws""], inclusive=false)
+  discard editor.command(ws"auto-show-signature-help", ws("\"\""))
 
 proc deleteRight*(editor: TextEditor) {.exposeActive(editorContext).} =
   yankedLines = editor.vimState.selectLines

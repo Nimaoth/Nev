@@ -14,6 +14,10 @@
         "preset": "vim"
     },
 
+    "input.debugger.variables.handle-inputs": true,
+    "input.debugger.variables.handle-actions": true,
+    "input.debugger.variables.handle-keys": false,
+
     "+language-mappings": {
         "\\..(agda|lagda)$": "agda",
         "\\..(c|cc|h|inc)$": "c",
@@ -42,6 +46,7 @@
         "\\..rs$": "rust",
         "\\..scala$": "scala",
         "\\..(ts|tsx)$": "typescript",
+        "\\..as$": "angelscript",
         "\\..(nim|nims|nimble)$": "nim",
         "\\..zig$": "zig",
         "\\..odin$": "odin",
@@ -53,6 +58,7 @@
         "\\..lisp$": "lisp",
         "\\..talon$": "talon",
         "\\..lua$": "lua",
+        "\\..gleam$": "gleam",
         "\\..log$": "log",
         "\\..shell-command-results$": "shell-command-results",
         "\\..selector-popup-search-bar$": "selector-popup-search-bar",
@@ -86,6 +92,20 @@
         "clangd": {
             "languages": ["c", "cpp"],
             "command": ["clangd", "--offset-encoding=utf-8"],
+        },
+
+        "angel-lsp": {
+            "languages": ["angelscript"],
+            "command": ["node", "hazelight://language-server/out/server.js", "--stdio"],
+            "settings": {
+                "UnrealAngelscript": {
+                }
+            }
+        },
+
+        "gleam-lsp": {
+            "languages": ["gleam"],
+            "command": ["gleam", "lsp"],
         },
 
         "zls": {
@@ -187,6 +207,16 @@
     "lsp-merge.timeout": 10000,
 
     "+lang": {
+        "gleam": {
+            "+text": {
+                "treesitter.repository": "gleam-lang/tree-sitter-gleam",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    "="
+                ]
+            }
+        },
         "command-line": {
             "editor.save-in-session": false,
             "+text": {
@@ -353,6 +383,33 @@
                     "(",
                     "{",
                     "["
+                ],
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/"
+                ]
+            }
+        },
+        "angelscript": {
+            "+text": {
+                "treesitter.repository": "dehorsley/tree-sitter-angelscript",
+                "tab-width": 4,
+                "indent": "spaces",
+                "signature-help-move": "(ts 'call.inner') (combine) (grow -1) (last)",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "[",
+                    "&",
+                    "|",
+                    "+",
+                    "-",
+                    "*",
+                    "/",
+                    "%",
                 ],
                 "line-comment": "//",
                 "block-comment": [
@@ -859,81 +916,13 @@
 
     "ui.scroll-speed": 100,
 
-    "ui.layout.default": "vim",
-    "ui.layout.vertical-temp": {
-        "kind": "vertical",
-        "temporary": true,
-        "max-children": 2
-    },
-    "ui.layout.horizontal-temp": {
-        "kind": "horizontal",
-        "temporary": true,
-        "max-children": 2
-    },
-    "ui.layout.tab-center-alternating": {
-        "slots.default": ".center.*+?",
-        "slots.scratch-terminal": ".bottom.+",
-        "slots.build-run-terminal": ".left",
-        "slots.debugger": ".left",
-        "slots.new-tab": "+.center",
-        "kind": "tab",
-        "childTemplate": {
-            "kind": "center",
-            "center": {
-                "kind": "alternating",
-                "max-children": 2,
-            },
-            "bottom": {
-                "kind": "tab"
-            }
-        },
-    },
-    "ui.layout.splits-in-tabs": {
-        "slots.default": ".+",
-        "slots.scratch-terminal": ".+",
-        "slots.build-run-terminal": ".+",
-        "slots.debugger": ".+",
-        "slots.new-tab": "+",
-        "kind": "tab",
-        "childTemplate": {
-            "kind": "alternating",
-        },
-    },
-    "ui.layout.tabbed-splits": {
-        "slots.default": ".+",
-        "slots.scratch-terminal": "1.+",
-        "slots.build-run-terminal": "1.+",
-        "slots.debugger": "1.+",
-        "slots.new-tab": "*.+",
-        "kind": "alternating",
-        "childTemplate": {
-            "kind": "tab",
-        },
-    },
-    "ui.layout.nev-old": {
-        "slots.default": "*+?",
-        "slots.scratch-terminal": "*+<>?",
-        "slots.build-run-terminal": "*+<>?",
-        "slots.debugger": "*+<>?",
-        "slots.new-tab": "#default",
-        "kind": "alternating",
-        "max-children": 2,
-    },
-    "ui.layout.raw-splits": {
-        "slots.default": "**.*",
-        "slots.scratch-terminal": "**.*<>",
-        "slots.build-run-terminal": "**.*<>",
-        "slots.debugger": "**.*<>",
-        "slots.new-tab": "#default",
-        "kind": "horizontal",
-        "max-children": 1,
-    },
+    "ui.layout.default": "nev",
     "ui.layout.vim": {
         "slots.default": "**.*",
+        "slots.new-tab": "+",
         "slots.scratch-terminal": "**.*<>",
         "slots.build-run-terminal": "**.*<>",
         "slots.debugger": "**.*<>",
-        "slots.new-tab": "+",
         "kind": "tab",
     },
     "ui.layout.vscode": {
@@ -943,21 +932,42 @@
         "slots.debugger": "left.+",
         "slots.new-tab": "**.+",
         "kind": "center",
-        "center": {
+        "centerTemplate": {
             "kind": "alternating",
             "childTemplate": {
                 "kind": "tab"
             }
         },
-        "bottom": {
+        "bottomTemplate": {
             "kind": "tab",
         },
-        "left": {
+        "leftTemplate": {
             "kind": "tab",
         },
-        "right": {
+        "rightTemplate": {
             "kind": "tab",
         },
+    },
+    "ui.layout.nev": {
+        "slots.default": "*.center.**.*",
+        "slots.new-tab": "+.center.*",
+        "slots.scratch-terminal": "*.center.**.*<>",
+        "slots.build-run-terminal": "*.center.**.*<>",
+        "slots.debugger": "*.left.+",
+        "slots.debugger-threads": "*.right.+",
+        "slots.debugger-stacktrace": "*.right.+",
+        "slots.debugger-toolbar": "*.right.+",
+        "slots.debugger-variables": "*.left",
+        "slots.debugger-output": "*.bottom",
+        "kind": "tab",
+        "childTemplate": {
+            "kind": "center",
+            "rightTemplate": {
+                "kind": "vertical",
+                "split-ratios": [0.1, 0.25],
+                "temporary": false,
+            }
+        }
     },
 
     "extra-settings": ["app://config/settings-vim.json"],
@@ -976,5 +986,7 @@
             "allowAll": true,
         },
     },
+
+    "selector.min-score": -0.5,
 
 }

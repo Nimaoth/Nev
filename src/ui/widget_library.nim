@@ -1,7 +1,8 @@
 import std/[strformat, strutils, os]
 import misc/[custom_unicode, custom_logger]
-import document, ui/node
+import document, ui/node, view, theme, config_provider, widget_builders_base
 import chroma
+import service
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -11,6 +12,9 @@ import chroma
 logCategory "wigdet-library"
 
 type GridAlignment* {.pure.} = enum Left, Center, Right
+
+proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: openArray[int],
+    color: Color, highlightColor: Color, maxWidth: int = int.high): UINode
 
 proc alignGrid*(rows: seq[seq[UINode]], gap: float, columnAlignments: openArray[GridAlignment]) =
   # Align grid
@@ -47,9 +51,13 @@ proc alignGrid*(root: UINode, gap: float, columnAlignments: openArray[GridAlignm
   alignGrid(rows, gap, columnAlignments)
 
 proc renderCommandKeys*(builder: UINodeBuilder, nextPossibleInputs: openArray[tuple[input: string, description: string, continues: bool]], textColor: Color, continuesTextColor: Color, keysTextColor: Color, backgroundColor: Color, inputLines: int, bounds: Rect, padding: int = 1) =
+  let width = (builder.currentParent.bounds.w / builder.charWidth).int
   let height = (inputLines + padding * 2).float * builder.textHeight
   let padding = padding.float
-  builder.panel(&{FillX, FillBackground, MaskContent}, y = bounds.h - height, h = height, backgroundColor = backgroundColor):
+  let numColumns = (nextPossibleInputs.len / inputLines).ceil.int
+  let widthPerColumn = width div numColumns
+  let maxDescWidth = widthPerColumn - 4 - 4
+  builder.panel(&{FillX, FillBackground, MaskContent}, h = height, backgroundColor = backgroundColor):
     builder.panel(&{LayoutHorizontal}, x = builder.charWidth * padding, y = builder.textHeight * padding, w = currentNode.w - builder.charWidth * padding * 2, h = currentNode.h - builder.textHeight * padding * 2):
       var i = 0
       while i < nextPossibleInputs.len:
@@ -66,9 +74,9 @@ proc renderCommandKeys*(builder: UINodeBuilder, nextPossibleInputs: openArray[tu
               builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = input, textColor = keysTextColor)
               # builder.panel(&{}, w = builder.charWidth * 2)
               if continues:
-                builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = desc, textColor = continuesTextColor)
+                discard builder.highlightedText(desc, [], continuesTextColor, continuesTextColor, maxWidth = maxDescWidth)
               else:
-                builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = desc, textColor = textColor)
+                discard builder.highlightedText(desc, [], textColor, textColor, maxWidth = maxDescWidth)
 
             inc row
             inc i
@@ -96,7 +104,7 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
     var bar: UINode
     if inRenderHeader:
       builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
-          backgroundColor = inHeaderColor):
+          backgroundColor = inHeaderColor, tag = "header"):
 
         bar = currentNode
 
@@ -116,7 +124,7 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
             rightFunc()
 
     else:
-      builder.panel(&{FillX}):
+      builder.panel(&{FillX}, tag = "header"):
         bar = currentNode
 
     bar
@@ -146,7 +154,7 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
       if maxHeight.getSome(maxHeight) and builder.currentChild.bounds.y > maxHeight:
         break
 
-    if y < height: # fill remaining space with background color
+    if y < height and backgroundColor.a > 0: # fill remaining space with background color
       builder.panel(&{FillX, FillY, FillBackground}, y = y, backgroundColor = backgroundColor)
 
     y = scrollOffset
@@ -155,6 +163,9 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
     for i in countdown(min(previousBaseIndex - 1, maxLine), 0):
       handleLine(i, y, false)
 
+      if builder.currentChild.pivot == vec2():
+        builder.currentChild.rawY = builder.currentChild.boundsRaw.y - builder.currentChild.bounds.h
+
       y = builder.currentChild.y
       if not sizeToContentY and builder.currentChild.bounds.yh < 0:
         break
@@ -162,7 +173,7 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
       if maxHeight.isSome and builder.currentChild.bounds.yh < 0:
         break
 
-    if not sizeToContentY and y > 0: # fill remaining space with background color
+    if not sizeToContentY and y > 0 and backgroundColor.a > 0: # fill remaining space with background color
       builder.panel(&{FillX, FillBackground}, h = y, backgroundColor = backgroundColor)
 
 proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float,
@@ -180,6 +191,12 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
     flags.incl FillY
 
   discard builder.createLines(previousBaseIndex, scrollOffset, maxLine, float.none, flags,
+    backgroundColor, handleScroll, handleLine)
+
+proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, backgroundColor: Color,
+    handleScroll: proc(delta: float) {.gcsafe, raises: [].}, handleLine: proc(line: int, y: float, down: bool) {.gcsafe, raises: [].}) =
+  let sizeFlags = builder.currentSizeFlags
+  discard builder.createLines(previousBaseIndex, scrollOffset, maxLine, float.none, sizeFlags,
     backgroundColor, handleScroll, handleLine)
 
 proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, scrollOffset: var float,
@@ -301,3 +318,40 @@ proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: 
     else:
       builder.panel(textFlags, text = text, textColor = color):
         result = currentNode
+
+proc renderView*(self: View, builder: UINodeBuilder,
+    body: proc(): seq[OverlayFunction] {.gcsafe, raises: [].},
+    header: proc(): seq[OverlayFunction] {.gcsafe, raises: [].}): seq[OverlayFunction] =
+  let services = ({.gcsafe.}: gServices)
+  let dirty = self.dirty
+  self.resetDirty()
+
+  let config = services.getServiceChecked(ConfigService).runtime
+  let uiSettings = UISettings.new(config)
+
+  let transparentBackground = config.get("ui.background.transparent", false)
+  let inactiveBrightnessChange = uiSettings.background.inactiveBrightnessChange.get()
+  let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+  var backgroundColor = if self.active: builder.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
+
+  if transparentBackground:
+    backgroundColor.a = 0
+  else:
+    backgroundColor.a = 1
+
+  let headerColor = if self.active: builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+
+  let sizeFlags = builder.currentSizeFlags
+
+  builder.panel(&{OverlappingChildren, MouseHover} + sizeFlags, userId = self.id.newPrimaryId, tag = "view-hover"):
+    onHover:
+      discard
+
+    builder.panel(&{LayoutVertical} + sizeFlags):
+      # Header
+      builder.panel(&{FillX, SizeToContentY, FillBackground, MaskContent, LayoutHorizontal}, backgroundColor = headerColor):
+        result.add header()
+
+      # Body
+      builder.panel(sizeFlags + &{FillBackground, MaskContent}, backgroundColor = backgroundColor):
+        result.add body()

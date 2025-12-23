@@ -21,6 +21,7 @@ type
     onKeyPress*: Event[tuple[input: int64, modifiers: Modifiers]]
     onKeyRelease*: Event[tuple[input: int64, modifiers: Modifiers]]
     onRune*: Event[tuple[input: int64, modifiers: Modifiers]]
+    onModifiersChanged*: Event[tuple[old: Modifiers, new: Modifiers]]
     onMousePress*: Event[tuple[button: MouseButton, modifiers: Modifiers, pos: Vec2]]
     onMouseRelease*: Event[tuple[button: MouseButton, modifiers: Modifiers, pos: Vec2]]
     onMouseMove*: Event[tuple[pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]]]
@@ -34,6 +35,7 @@ type
     lastEventTime*: Timer
     vfs*: VFS
     backend*: Backend
+    currentModifiers*: Modifiers
 
 method requestRender*(self: Platform, redrawEverything = false) {.base, gcsafe, raises: [].} = discard
 method render*(self: Platform, rerender: bool) {.base, gcsafe, raises: [].} = discard
@@ -58,6 +60,7 @@ method layoutText*(self: Platform, text: string): seq[Rect] {.base, gcsafe, rais
 method setVsync*(self: Platform, enabled: bool) {.base, gcsafe, raises: [].} = discard
 method moveToMonitor*(self: Platform, index: int) {.base, gcsafe, raises: [].} = discard
 method createTexture*(self: Platform, image: Image): TextureId {.base, gcsafe, raises: [].} = discard
+method focusWindow*(self: Platform) {.base, gcsafe, raises: [].} = discard
 
 var texturesToUpload: seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.Color]]]
 var texturesToDelete: seq[TextureId]
@@ -98,3 +101,9 @@ proc totalBounds*(bounds: openArray[Rect]): Vec2 {.raises: [].} =
     let rect = bounds[i]
     result.x = max(result.x, rect.x + rect.w)
     result.y = max(result.y, rect.y + rect.h)
+
+proc setMods*(self: Platform, newMods: Modifiers) =
+  let oldMods = self.currentModifiers
+  self.currentModifiers = newMods
+  if oldMods != newMods:
+    self.onModifiersChanged.invoke (oldMods, newMods)

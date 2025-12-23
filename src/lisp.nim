@@ -11,7 +11,7 @@ type
     Nil, Number, Bool, Symbol, String, List, Array, Map, Func, Lambda, Macro
 
   Env* = ref object
-    parent*: Env
+    parents*: seq[Env]
     env*: Table[string, LispVal]
     onUndefinedSymbol*: proc(env: Env, name: string): LispVal {.gcsafe, raises: [].}
 
@@ -44,7 +44,7 @@ type
 
 proc `$`*(val: LispVal): string {.raises: [].} =
   if val == nil:
-    return "<nil>"
+    return "nil"
   case val.kind
   of Nil: $"nil"
   of Number:
@@ -54,7 +54,7 @@ proc `$`*(val: LispVal): string {.raises: [].} =
       $val.num
   of Bool: $val.bol
   of Symbol: val.sym
-  of String: val.str
+  of String: val.str.escapeJson()
   of List: "(" & val.elems.mapIt($it).join(" ") & ")"
   of Array: "[" & val.elems.mapIt($it).join(" ") & "]"
   of Map:
@@ -116,37 +116,47 @@ proc newMacro*(params: seq[string], body: LispVal, env: Env): LispVal =
   LispVal(kind: Macro, params: params, body: body, env: env)
 
 proc createChild*(env: Env): Env =
-  result = Env(parent: env)
+  result = Env(parents: @[env])
 
 proc clear*(env: Env) =
   env.env.clear()
 
-proc `[]`*(env: Env, key: string): LispVal =
+proc parent*(env: Env): Env =
+  if env.parents.len > 0:
+    return env.parents[0]
+  return nil
+
+proc lookup(env: Env, key: string, handleUndefined: bool): LispVal =
   env.env.withValue(key, value):
     return value[]
 
-  if env.parent != nil:
-    result = env.parent[key]
+  let allowParentHandleUndefined = handleUndefined and env.onUndefinedSymbol == nil
+  for parent in env.parents:
+    result = parent.lookup(key, allowParentHandleUndefined)
     if result != nil:
       return
 
-  if env.onUndefinedSymbol != nil:
+  if handleUndefined and env.onUndefinedSymbol != nil:
     result = env.onUndefinedSymbol(env, key)
     if result != nil:
       return
 
   return nil
 
+proc `[]`*(env: Env, key: string): LispVal =
+  return env.lookup(key, handleUndefined = true)
+
 proc `[]=`*(env: Env, key: string, val: LispVal) =
   env.env[key] = val
 
-proc set*(env: Env, key: string, val: LispVal): bool =
+proc setValue*(env: Env, key: string, val: LispVal): bool =
   env.env.withValue(key, value):
     value[] = val
     return true
 
-  if env.parent != nil:
-    return env.parent.set(key, val)
+  for parent in env.parents:
+    if parent.setValue(key, val):
+      return
 
   return false
 
@@ -258,6 +268,7 @@ type
     rawStringLiterals: bool
     tokenStart: int
     lastTokenEnd: int
+    lastBufpos*: int
 
   LispKindError* = object of ValueError ## raised by the `to` macro if the
                                         ## Lisp kind is incorrect.
@@ -561,6 +572,7 @@ proc parseNumber(my: var LispParser) =
 
 proc getTok(my: var LispParser): TokKind =
   my.lastTokenEnd = my.bufpos
+  my.lastBufpos = my.bufpos
   setLen(my.a, 0)
   skip(my) # skip whitespace, comments
   my.tokenStart = my.bufpos
@@ -742,6 +754,89 @@ proc parseLispSingle*(str: string): LispVal =
   finally:
     p.close()
 
+type
+  BufferStream* = ref BufferStreamObj
+    ## A stream that encapsulates a string.
+  BufferStreamObj* = object of StreamObj
+    ## A string stream object.
+    data*: ptr UncheckedArray[char] ## A string data.
+                                    ## This is updated when called `writeLine` etc.
+    len: int
+    pos: int
+
+proc bsAtEnd(s: Stream): bool =
+  var s = BufferStream(s)
+  return s.pos >= s.data.len
+
+proc bsSetPosition(s: Stream, pos: int) =
+  var s = BufferStream(s)
+  s.pos = clamp(pos, 0, s.data.len)
+
+proc bsGetPosition(s: Stream): int =
+  var s = BufferStream(s)
+  return s.pos
+
+proc bsReadDataStr(s: Stream, buffer: var string, slice: Slice[int]): int =
+  var s = BufferStream(s)
+  when nimvm:
+    discard
+  else:
+    when declared(prepareMutation):
+      prepareMutation(buffer) # buffer might potentially be a CoW literal with ARC
+  result = min(slice.b + 1 - slice.a, s.data.len - s.pos)
+  if result > 0:
+    copyMem(unsafeAddr buffer[slice.a], addr s.data[s.pos], result)
+    inc(s.pos, result)
+  else:
+    result = 0
+
+proc bsReadData(s: Stream, buffer: pointer, bufLen: int): int =
+  var s = BufferStream(s)
+  result = min(bufLen, s.data.len - s.pos)
+  if result > 0:
+    copyMem(buffer, addr(s.data[s.pos]), result)
+    inc(s.pos, result)
+  else:
+    result = 0
+
+proc bsPeekData(s: Stream, buffer: pointer, bufLen: int): int =
+  var s = BufferStream(s)
+  result = min(bufLen, s.data.len - s.pos)
+  if result > 0:
+    copyMem(buffer, addr(s.data[s.pos]), result)
+  else:
+    result = 0
+
+proc bsWriteData(s: Stream, buffer: pointer, bufLen: int) = discard
+
+proc bsClose(s: Stream) = discard
+
+proc newBufferStream*(s: openArray[char]): owned BufferStream =
+  new(result)
+  result.data = s.data
+  result.len = s.len
+  result.pos = 0
+  result.closeImpl = bsClose
+  result.atEndImpl = bsAtEnd
+  result.setPositionImpl = bsSetPosition
+  result.getPositionImpl = bsGetPosition
+  result.readDataStrImpl = bsReadDataStr
+  result.readDataImpl = bsReadData
+  result.peekDataImpl = bsPeekData
+  result.writeDataImpl = bsWriteData
+
+proc parseLispSingle*(str: openArray[char]): (LispVal, int) =
+  var p: LispParser
+  p.open(newBufferStream(str), "repl")
+  try:
+    discard getTok(p) # read first token
+    while p.tok != tkEof:
+      result[0] = p.parseLisp()
+      result[1] = p.lastBufpos
+      return
+  finally:
+    p.close()
+
 proc parseLisp*(str: string): LispVal =
   var p: LispParser
   p.open(newStringStream(str), "repl")
@@ -822,7 +917,7 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
   of Nil, Number, Bool, String, Func, Lambda, Macro:
     return expr
   of Symbol:
-    if expr.sym.startsWith("$"):
+    if expr.sym.startsWith("@"):
       return newSymbol(expr.sym[1..^1])
     result = env[expr.sym]
     if result == nil:
@@ -859,7 +954,7 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
           raise newException(LispError, "not a symbol: '" & $sym & "'")
 
         let value = eval(expr.elems[2], env)
-        if not env.set(sym.sym, value):
+        if not env.setValue(sym.sym, value):
           raise newException(LispError, "undefined symbol: '" & sym.sym & "'")
 
         return value
@@ -912,6 +1007,8 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
           return newNumber(container.fields.len.float)
         if container.kind in {List, Array}:
           return newNumber(container.elems.len.float)
+        if container.kind in {String}:
+          return newNumber(container.str.len.float)
         return newNumber(0)
       of ".=":
         if expr.elems.len < 4:
@@ -1084,13 +1181,40 @@ proc baseEnv*(): Env =
       args[0].elems.add args[i]
   )
 
-  # result["append"] = newFunc("append", proc(args: seq[LispVal]): LispVal =
-  #   if args[0].kind notin {List, Array}: raise newException(LispError, "append needs list or array")
-  #   for i in 1..args.high:
-  #     if args[i].kind notin {List, Array}:
-  #       raise newException(LispError, "append needs list or array")
-  #     args[0].elems.add args[i].elems
-  # )
+  result["string.replace"] = newFunc("string.replace", proc(args: seq[LispVal]): LispVal =
+    if args.len < 3 or args[0].kind != String or args[1].kind != String or args[2].kind != String: raise newException(LispError, "string.replace needs 3 strings")
+    return newString(args[0].str.replace(args[1].str, args[2].str))
+  )
+
+  result["dump"] = newFunc("dump", proc(args: seq[LispVal]): LispVal =
+    if args.len == 0: raise newException(LispError, "dump needs an argument")
+    echo args[0]
+    return args[0]
+  )
+
+  result["parseJson"] = newFunc("parseJson", proc(args: seq[LispVal]): LispVal =
+    if args.len == 0 or args[0].kind != LispValKind.String: raise newException(LispError, "parseJson needs string")
+    try:
+      return args[0].str.parseJson().jsonTo(LispVal)
+    except CatchableError as e:
+      raise newException(LispError, e.msg, e)
+  )
+
+  result["toJson"] = newFunc("toJson", proc(args: seq[LispVal]): LispVal =
+    if args.len == 0: raise newException(LispError, "toJson needs an argument")
+    try:
+      return newString($args[0].toJson)
+    except CatchableError as e:
+      raise newException(LispError, e.msg, e)
+  )
+
+  result["append"] = newFunc("append", proc(args: seq[LispVal]): LispVal =
+    if args[0].kind notin {List, Array}: raise newException(LispError, "append needs list or array")
+    for i in 1..args.high:
+      if args[i].kind notin {List, Array}:
+        raise newException(LispError, "append needs list or array")
+      args[0].elems.add args[i].elems
+  )
 
   # result["info"] = newFunc("info", proc(args: seq[LispVal]): LispVal =
   #   var str = ""
@@ -1110,23 +1234,23 @@ proc baseEnv*(): Env =
   #   debugf"lisp: {str}"
   # )
 
-  # result["build-str"] = newFunc("build-str", proc(args: seq[LispVal]): LispVal =
-  #   var str = ""
-  #   for i, arg in args:
-  #     str.add $arg
-  #   return newString(str)
-  # )
+  result["string.append"] = newFunc("string.append", proc(args: seq[LispVal]): LispVal =
+    var str = ""
+    for i, arg in args:
+      str.add $arg
+    return newString(str)
+  )
 
-  # result["join-str"] = newFunc("join-str", proc(args: seq[LispVal]): LispVal =
-  #   if args.len < 1: raise newException(LispError, "join-str needs a seperator")
-  #   if args[0].kind notin {String, Symbol}: raise newException(LispError, "join-str needs a seperator")
-  #   let sep = $args[0]
-  #   var str = ""
-  #   for i in 1..args.high:
-  #     if i > 1:
-  #       str.add sep
-  #     str.add $args[i]
-  #   return newString(str)
-  # )
+  result["string.join"] = newFunc("string.join", proc(args: seq[LispVal]): LispVal =
+    if args.len < 1: raise newException(LispError, "string.join needs a seperator")
+    if args[0].kind notin {String, Symbol}: raise newException(LispError, "string.join needs a seperator")
+    let sep = $args[0]
+    var str = ""
+    for i in 1..args.high:
+      if i > 1:
+        str.add sep
+      str.add $args[i]
+    return newString(str)
+  )
 
 globalEnv = baseEnv()
