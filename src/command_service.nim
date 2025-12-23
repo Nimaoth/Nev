@@ -355,3 +355,27 @@ proc openCommandLine*(self: CommandService, initialValue: string = "", prefix: s
     self.commandHandler = handler
 
 proc commandLineMode*(self: CommandService): bool = self.commandLineInputMode or self.commandLineResultMode
+
+proc parseCommand*(json: JsonNodeEx): tuple[command: string, args: string, ok: bool] {.raises: [ValueError].} =
+  if json.kind == JString:
+    let commandStr = json.getStr
+    let spaceIndex = commandStr.find(" ")
+
+    if spaceIndex == -1:
+      return (commandStr, "", true)
+    else:
+      return (commandStr[0..<spaceIndex], commandStr[spaceIndex+1..^1], true)
+
+  elif json.kind == JArray:
+    if json.elems.len > 0:
+      let name = json[0].getStr
+      let args = json.elems[1..^1].mapIt($it).join(" ")
+      return (name, args, true)
+    else:
+      raise newException(ValueError, "Missing command name, got empty array")
+
+  elif json.kind == JLispVal:
+    return ($json.lval, "", true)
+
+  else:
+    return ("", "", false)
