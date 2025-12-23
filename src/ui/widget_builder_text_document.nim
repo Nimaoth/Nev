@@ -1,4 +1,4 @@
-import std/[strformat, tables, strutils, math, options, json]
+import std/[strformat, tables, strutils, math, options, json, sugar]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer]
 import text/text_editor
@@ -8,6 +8,7 @@ import ui/[widget_builders_base, widget_library]
 import app, document_editor, theme, config_provider, layout
 import text/language/[lsp_types]
 import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]
+import view
 
 import ui/node
 
@@ -141,19 +142,33 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   let borderColor = builder.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
   let activeHoverColor = builder.theme.color("editor.foreground", color(1, 1, 1))
 
+  var bounds = rect(cursorBounds.xy, vec2())
+  var outerSizeFlags = &{SizeToContentX, SizeToContentY}
+  var innerSizeFlags = &{SizeToContentX, SizeToContentY}
+
+  if self.hoverView != nil and self.hoverView.detached:
+    bounds = self.hoverView.absoluteBounds
+    outerSizeFlags = 0.UINodeFlags
+    innerSizeFlags = &{FillX, FillY}
+
   var hoverPanel: UINode = nil
-  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical}, backgroundColor = backgroundColor, borderColor = borderColor, border = border(1), userId = self.hoverId.newPrimaryId, tag = "hover"):
+  builder.panel(&{MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical, MouseHover} + outerSizeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = backgroundColor, borderColor = borderColor, border = border(1), tag = "hover", pivot = vec2()):
     hoverPanel = currentNode
 
-    builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextMultiLine}, text = self.hoverText, textColor = activeHoverColor)
+    if self.hoverView != nil:
+      builder.panel(innerSizeFlags):
+        discard self.hoverView.createUI(builder)
+    else:
+      builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextMultiLine}, text = self.hoverText, textColor = activeHoverColor)
 
-  var clampedX = cursorBounds.x
-  if clampedX + hoverPanel.bounds.w > builder.root.w:
-    clampedX = max(builder.root.w - hoverPanel.bounds.w, 0)
+  if self.hoverView == nil or not self.hoverView.detached:
+    var clampedX = cursorBounds.x
+    if clampedX + hoverPanel.bounds.w > builder.root.w:
+      clampedX = max(builder.root.w - hoverPanel.bounds.w, 0)
 
-  hoverPanel.rawX = clampedX
-  hoverPanel.rawY = cursorBounds.y
-  hoverPanel.pivot = vec2(0, 1)
+    hoverPanel.rawX = clampedX
+    hoverPanel.rawY = cursorBounds.y
+    hoverPanel.pivot = vec2(0, 1)
 
 proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
   let backgroundColor = builder.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
@@ -188,7 +203,7 @@ proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: 
       builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = ")", textColor = signatureColor)
 
   var signatureHelpPanel: UINode = nil
-  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical}, backgroundColor = backgroundColor, borderColor = borderColor, border = border(1), userId = self.signatureHelpId.newPrimaryId, tag = "signature"):
+  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical, MouseHover}, backgroundColor = backgroundColor, borderColor = borderColor, border = border(1), userId = self.signatureHelpId.newPrimaryId, tag = "signature"):
     signatureHelpPanel = currentNode
 
     for k, sig in self.signatures:
@@ -567,8 +582,10 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
           state.cursorOnScreen = true
           self.currentCenterCursor = s.last
           self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
-          self.lastHoverLocationBounds = (state.chunkBounds[lastIndexDisplay].bounds + currentNode.boundsAbsolute.xy).some
-          self.lastSignatureHelpLocationBounds = (state.chunkBounds[lastIndexDisplay].bounds + currentNode.boundsAbsolute.xy).some
+
+  let hoverScreenPos = self.getScreenPos(builder, state, self.hoverLocation)
+  if hoverScreenPos.isSome:
+    self.lastHoverLocationBounds = rect(hoverScreenPos.get.x, hoverScreenPos.get.y, builder.charWidth, builder.textHeight).some
 
   let signatureHelpScreenPos = self.getScreenPos(builder, state, self.signatureHelpLocation)
   if signatureHelpScreenPos.isSome:
@@ -1053,7 +1070,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   selectionsNode.markDirty(builder)
   currentNode.markDirty(builder)
 
-  proc handleMouseEvent(self: TextDocumentEditor, btn: MouseButton, pos: Vec2, mods: set[Modifier], drag: bool) =
+  type MouseEventKind = enum Click, Drag, Hover
+  proc handleMouseEvent(self: TextDocumentEditor, btn: MouseButton, pos: Vec2, mods: set[Modifier], event: MouseEventKind) =
     if self.document.isNil:
       return
 
@@ -1064,7 +1082,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if index + 1 < state.chunkBounds.len and pos.y >= state.chunkBounds[index].bounds.yh and pos.y < state.chunkBounds[index + 1].bounds.yh:
       index += 1
 
-    if not drag:
+    if event == Click:
       self.lastPressedMouseButton = btn
 
     if btn notin {MouseButton.Left, DoubleClick, TripleClick}:
@@ -1088,7 +1106,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       let offset = self.getCursorPos2(builder, chunk.text.toOpenArray, pos - chunk.bounds.xy)
       newCursor = chunk.range.a.toCursor + (0, offset)
 
-    if drag:
+    case event
+    of Drag:
       let currentSelection = self.dragStartSelection
       let first = if (currentSelection.isBackwards and newCursor < currentSelection.first) or (not currentSelection.isBackwards and newCursor >= currentSelection.first):
         currentSelection.first
@@ -1097,7 +1116,11 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       self.selection = (first, newCursor)
       self.runDragCommand()
 
-    else:
+      self.updateTargetColumn(Last)
+      self.layout.tryActivateEditor(self)
+      self.markDirty()
+
+    of Click:
       self.selection = newCursor.toSelection
       self.dragStartSelection = self.selection
 
@@ -1111,16 +1134,33 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       elif btn == TripleClick:
         self.runTripleClickCommand()
 
-    self.updateTargetColumn(Last)
-    self.layout.tryActivateEditor(self)
-    self.markDirty()
+      self.updateTargetColumn(Last)
+      self.layout.tryActivateEditor(self)
+      self.markDirty()
+
+    of Hover:
+      self.mouseHoverLocation = newCursor
+      self.mouseHoverMods = mods
+      self.showHoverDelayed()
 
   let textNode = currentNode
-  builder.panel(&{UINodeFlag.FillX, FillY}):
+  builder.panel(&{UINodeFlag.FillX, FillY, MouseHover}, tag = "text-editor-hover"):
     onClickAny btn:
-      self.handleMouseEvent(btn, pos - vec2(textNode.x, 0), modifiers, drag = false)
+      self.handleMouseEvent(btn, pos - vec2(textNode.x, 0), modifiers, Click)
     onDrag MouseButton.Left:
-      self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, drag = true)
+      self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Drag)
+    onBeginHover:
+      if not self.isHovered:
+        self.markDirty()
+      self.isHovered = true
+      self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Hover)
+    onHover:
+      self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Hover)
+    onEndHover:
+      if self.isHovered:
+        self.markDirty()
+      self.isHovered = false
+      self.cancelHover()
 
   # Get center line
   if not state.cursorOnScreen:
@@ -1247,14 +1287,29 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
 
           self.lastContentBounds = textNode.bounds
 
+  var res = newSeq[OverlayFunction]()
+  proc addDrawOverlayView(view: View): OverlayFunction =
+    return proc() =
+      let backgroundColor = builder.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+      let borderColor = builder.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
+      let bounds = view.absoluteBounds
+      builder.panel(&{MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical, MouseHover}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = backgroundColor, borderColor = borderColor, border = border(1), tag = "hover", pivot = vec2()):
+        builder.panel(&{FillX, FillY}):
+          discard view.createUI(builder)
+
+  for overlay in self.overlayViews:
+    res.add addDrawOverlayView(overlay)
+
   if self.showCompletions and self.active:
-    result.add proc() =
+    res.add proc() =
       self.createCompletions(builder, app, self.lastCursorLocationBounds.get(rect(100, 100, 10, 10)))
 
   if self.showHover:
-    result.add proc() =
+    res.add proc() =
       self.createHover(builder, app, self.lastHoverLocationBounds.get(rect(100, 100, 10, 10)))
 
   if self.showSignatureHelp:
-    result.add proc() =
+    res.add proc() =
       self.createSignatureHelp(builder, app, self.lastSignatureHelpLocationBounds.get(rect(100, 100, 10, 10)))
+
+  return res
