@@ -214,6 +214,7 @@
         "<CS-y>": ["enter-normalized"],
         "<C-a>": ["add-workspace-folder"],
         "<C-x>": ["remove-workspace-folder"],
+        "<CS-f>": ["search-interactive"],
         "<C-f>": ["create-file"],
         "<C-g>f": ["create-file"],
         "<C-g>d": ["create-directory"],

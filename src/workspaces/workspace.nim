@@ -176,6 +176,20 @@ proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResu
   except CatchableError:
     return @[]
 
+proc searchWorkspace*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
+  var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
+  for path in paths:
+    futs.add self.searchWorkspaceFolder(query, path, maxResults, customArgs)
+
+  var res: seq[SearchResult]
+  for fut in futs:
+    res.add fut.await
+
+    if res.len >= maxResults:
+      break
+
+  return res
+
 proc searchWorkspace*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
   var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
   futs.add self.searchWorkspaceFolder(query, self.path, maxResults, customArgs)

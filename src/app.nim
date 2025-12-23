@@ -394,30 +394,6 @@ proc loadSession*(self: App) {.async: (raises: []).} =
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
-proc parseCommand(json: JsonNodeEx): tuple[command: string, args: string, ok: bool] {.raises: [ValueError].} =
-  if json.kind == JString:
-    let commandStr = json.getStr
-    let spaceIndex = commandStr.find(" ")
-
-    if spaceIndex == -1:
-      return (commandStr, "", true)
-    else:
-      return (commandStr[0..<spaceIndex], commandStr[spaceIndex+1..^1], true)
-
-  elif json.kind == JArray:
-    if json.elems.len > 0:
-      let name = json[0].getStr
-      let args = json.elems[1..^1].mapIt($it).join(" ")
-      return (name, args, true)
-    else:
-      raise newException(ValueError, "Missing command name, got empty array")
-
-  elif json.kind == JLispVal:
-    return ($json.lval, "", true)
-
-  else:
-    return ("", "", false)
-
 proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
   try:
     let oldScriptContext = self.plugins.currentPluginSystem
@@ -2262,8 +2238,11 @@ proc chooseLocation*(self: App) {.expose("editor").} =
 
   self.layout.pushPopup popup
 
-proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: int, maxLen: int): Future[ItemList] {.async: (raises: []).} =
-  let searchResults = workspace.searchWorkspace(query, maxResults).await
+proc searchWorkspaceItemList(workspace: Workspace, query: string, paths: seq[string], maxResults: int, maxLen: int): Future[ItemList] {.async: (raises: []).} =
+  let searchResults = if paths.len > 0:
+    workspace.searchWorkspace(paths, query, maxResults).await
+  else:
+    workspace.searchWorkspace(query, maxResults).await
   log lvlInfo, fmt"Found {searchResults.len} results"
 
   var list = newItemList(searchResults.len)
@@ -2287,6 +2266,7 @@ proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: in
 type
   WorkspaceSearchDataSource* = ref object of DataSource
     workspace: Workspace
+    paths: seq[string]
     query: string
     delayedTask: DelayedTask
     minQueryLen: int = 2
@@ -2298,14 +2278,16 @@ proc getWorkspaceSearchResults(self: WorkspaceSearchDataSource): Future[void] {.
     return
 
   let t = startTimer()
-  let list = self.workspace.searchWorkspaceItemList(self.query, self.maxResults, self.maxLen).await
+  let list = self.workspace.searchWorkspaceItemList(self.query, self.paths, self.maxResults, self.maxLen).await
   debugf"[searchWorkspace] {t.elapsed.ms}ms"
   self.onItemsChanged.invoke list
 
-proc newWorkspaceSearchDataSource(workspace: Workspace, maxResults: int): WorkspaceSearchDataSource =
+proc newWorkspaceSearchDataSource(workspace: Workspace, maxResults: int, path: string): WorkspaceSearchDataSource =
   new result
   result.workspace = workspace
   result.maxResults = maxResults
+  if path.len > 0:
+    result.paths = @[path]
 
 method close*(self: WorkspaceSearchDataSource) =
   self.delayedTask.deinit()
@@ -2322,14 +2304,14 @@ method setQuery*(self: WorkspaceSearchDataSource, query: string) =
   else:
     self.delayedTask.reschedule()
 
-proc searchGlobalInteractive*(self: App) {.expose("editor").} =
+proc searchGlobalInteractive*(self: App, path: string = "") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
   let workspace = self.workspace
 
   let maxResults = self.generalSettings.maxSearchResults.get()
-  let source = newWorkspaceSearchDataSource(workspace, maxResults)
+  let source = newWorkspaceSearchDataSource(workspace, maxResults, self.vfs.localize(path))
   var finder = newFinder(source, filterAndSort=true, skipFirstQuery=true)
 
   var popup = newSelectorPopup(self.services, "search".some, finder.some,
@@ -2362,7 +2344,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
     let maxResults = self.generalSettings.maxSearchResults.get()
     let maxLen = self.generalSettings.maxSearchResultDisplayLen.get()
-    return self.workspace.searchWorkspaceItemList(query, maxResults, maxLen).await
+    return self.workspace.searchWorkspaceItemList(query, @[], maxResults, maxLen).await
 
   let source = newAsyncCallbackDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
@@ -2697,6 +2679,12 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
         self.layout.popPopup(popup)
     return true
 
+  popup.addCustomCommand "search-interactive", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let dir = currentDirectory[]
+    self.searchGlobalInteractive(dir)
+    self.layout.popPopup(popup)
+    return true
+
   self.layout.pushPopup popup
 
 proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
@@ -2855,6 +2843,7 @@ proc getNextPossibleInputs*(self: App, inProgressOnly: bool, filter: proc(handle
   let anyInProgress = handlers.anyInProgress
 
   for handler in handlers:
+    assert handler != nil
     if (anyInProgress or inProgressOnly) and not handler.inProgress:
       continue
 
@@ -3192,7 +3181,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
 
     if action.startsWith("."): # active action
       if self.getActiveEditor().getSome(editor):
-        debugf"[defaultHandleCommand] '{command}' handled by active editor"
+        # debugf"[defaultHandleCommand] '{command}' handled by active editor"
         return editor.handleAction(action[1..^1], arg, record=false).toStringResult()
 
       log lvlError, fmt"No active editor"
@@ -3200,7 +3189,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
 
     if action.startsWith("^"): # active popup action
       if self.layout.popups.len > 0:
-        debugf"[defaultHandleCommand] '{command}' handled by active popup"
+        # debugf"[defaultHandleCommand] '{command}' handled by active popup"
         return self.layout.popups[^1].handleAction(action[1..^1], arg).toStringResult()
 
       log lvlError, fmt"No popup"
@@ -3210,7 +3199,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
       for t in globalDispatchTables.mitems:
         t.functions.withValue(action, f):
           try:
-            debugf"[defaultHandleCommand] '{command}' handled by global dispatch"
+            # debugf"[defaultHandleCommand] '{command}' handled by global dispatch"
             let res = f[].dispatch(args)
             if res.isNil:
               continue
@@ -3222,7 +3211,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
     try:
       result = dispatch(action, args).toStringResult()
       if result.isSome:
-        debugf"[defaultHandleCommand] '{command}' handled by app dispatch"
+        # debugf"[defaultHandleCommand] '{command}' handled by app dispatch"
         return
     except CatchableError:
       log(lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}")
