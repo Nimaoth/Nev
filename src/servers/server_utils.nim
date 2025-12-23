@@ -1,4 +1,4 @@
-import std/[os, asynchttpserver, options, strutils]
+import std/[os, options, strutils]
 import misc/[custom_async]
 
 proc `$`*(p: Port): string {.borrow.}
