@@ -161,6 +161,7 @@ proc desc*(self: OverlayMapSnapshot): string =
 proc `$`*(self: OverlayMapSnapshot): string =
   result.add self.desc
   result.add "\n"
+  # result.add "  i ID  src -> dst sb -> db  |   r -> rd  b -> bd  kind  bias\n"
   var c = self.map.initCursor(OverlayMapChunkSummary)
   var i = 0
   while not c.atEnd:
@@ -786,17 +787,21 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
     if self.styledChunk.isNone or self.localOffset > self.styledChunk.get.len:
       self.styledChunk = self.styledChunks.next()
       self.localOffset = 0
+      logIter &"  newStyledChunk {self.styledChunk}"
 
     if self.styledChunk.getSome(currentChunk):
       let currentPoint = currentChunk.point + Point(column: self.localOffset.uint32)
       if not self.overlayMapCursor.didSeek() or currentPoint > self.overlayMapCursor.endPos.src:
+        logIter &"   self.overlayMapCursor.seekForward({currentPoint})"
         discard self.overlayMapCursor.seekForward(currentPoint.OverlayMapChunkSrc, Bias.Left, ())
 
       if currentPoint == self.overlayMapCursor.endPos.src and self.overlayMapCursor.startPos.src != self.overlayMapCursor.endPos.src:
+        logIter &"  overlayMapCursor.next()"
         self.overlayMapCursor.next()
 
       logIter &"  OverlayChunkIterator.next1 {self.overlayPoint} -> {self.overlayMapCursor.toOverlayPoint(currentPoint)}"
       self.overlayPoint = self.overlayMapCursor.toOverlayPoint(currentPoint)
+      logIter &"  overlaypoint: {self.overlayPoint}"
 
     elif self.overlayMapCursor.atEnd:
       self.atEnd = true
@@ -810,6 +815,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
         return
 
   let mappedPoint = self.overlayMapCursor.toPoint(self.overlayPoint)
+  logIter &" mappedPoint: {mappedPoint}"
 
   if self.overlayMapCursor.item.getSome(item):
     logIter &" Overlay.next cursor: {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos},   {item[]}"
@@ -872,7 +878,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
         #   self.atEnd = true
 
         if self.overlayMapCursor.startPos.src == self.overlayMapCursor.endPos.src:
-          logIter &"  next"
+          logIter &"  empty overlay src range, next overlay"
           self.overlayMapCursor.next()
         else:
           logIter &"  seek {self.overlayMapCursor.startPos.src} != {self.overlayMapCursor.endPos.src}"
@@ -925,8 +931,29 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
   let map = (
     src: self.overlayMapCursor.startPos.src...self.overlayMapCursor.endPos.src,
     dst: self.overlayMapCursor.startPos.dst...self.overlayMapCursor.endPos.dst)
+  logIter &"  map: {map}"
 
-  if currentChunk.endPoint <= map.src.b:
+  if currentChunk.endPoint == map.src.b:
+    logIter &"  current chunk ends at current mapping end {currentChunk.endPoint} <= {map.src.b}, map: {map}"
+    self.overlayMapCursor.next()
+    if self.overlayMapCursor.item.getSome(item):
+      logIter &"  enter string state for {item[]}"
+      case item.kind
+      of OverlayMapChunkKind.String:
+        self.subIterKind = OverlayMapChunkKind.String
+        self.stringOffset = 0
+        self.stringRuneOffset = 0
+        self.stringLine = 0
+      else:
+        # todo: rope
+        discard
+
+    self.styledChunk = InputChunk.none
+    var newChunk = currentChunk.split(startOffset).suffix.split(currentChunk.len - startOffset).prefix
+    newChunk.chunk.point = mappedPoint
+    self.overlayChunk = OverlayChunk(styledChunk: newChunk, overlayPoint: self.overlayPoint).some
+
+  elif currentChunk.endPoint <= map.src.b:
     logIter &"  current chunk ends before current mapping {currentChunk.endPoint} <= {map.src.b}, map: {map}"
     self.localOffset = currentChunk.len + 1
     var newChunk = currentChunk.split(startOffset).suffix.split(currentChunk.len - startOffset).prefix
@@ -981,3 +1008,23 @@ proc renderString*(self: OverlayMapSnapshot): string =
       last += overlayPoint(1, 0)
     for c in chunk.toOpenArray:
       result.add c
+
+when isMainModule:
+  let content = "abc\ndef"
+  var b = initBuffer(content = content)
+  assert $b.visibleText == content
+
+  var om = OverlayMap.new()
+  om.setBuffer(b.snapshot.clone())
+
+  echo &"initial snapshot: {om.snapshot}"
+  echo "---------- initial overlay map"
+  echo om.snapshot.renderString()
+  echo "----------"
+  om.addOverlay(point(0, 3)...point(0, 3), " = 123", 1, "", Bias.Left)
+
+  echo "======================================================="
+  echo &"snapshot: {om.snapshot}"
+  echo "---------- overlay map"
+  echo om.snapshot.renderString()
+  echo "----------"
