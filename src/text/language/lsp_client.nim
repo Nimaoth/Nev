@@ -1,5 +1,5 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts]
-import misc/[custom_logger, websocket, util, myjsonutils, custom_async, response]
+import misc/[custom_logger, util, myjsonutils, custom_async, response]
 import scripting/expose
 from workspaces/workspace as ws import nil
 import lsp_types, dispatch_tables, vfs

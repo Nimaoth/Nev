@@ -1,4 +1,4 @@
 # todo: not necessary anymore
-import std/[asyncnet]
-export asyncnet
+# import std/[asyncnet]
+# export asyncnet
 
