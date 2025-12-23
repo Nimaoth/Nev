@@ -94,9 +94,9 @@ type
     mHandlePressed: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].}
     mHandleReleased: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].}
     mHandleDrag: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool {.gcsafe, raises: [].}
-    mHandleBeginHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
+    mHandleBeginHover: proc(node: UINode, pos: Vec2, modifiers {.inject.}: set[Modifier]): bool {.gcsafe, raises: [].}
     mHandleEndHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
-    mHandleHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
+    mHandleHover: proc(node: UINode, pos: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].}
     mHandleScroll: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].}
     renderCommands*: RenderCommands
     renderCommandList*: seq[ref RenderCommands]
@@ -123,6 +123,7 @@ type
 
     draggedNodes*: seq[UINode]
     hoveredNodes*: seq[UINode]
+    hoveredNode*: Option[UINode]
 
     animatingNodes*: seq[Id]
     frameTime*: float32 = 0.1
@@ -131,6 +132,7 @@ type
     mousePos: Vec2
     mouseDelta: Vec2
     mousePosClick: array[MouseButton, Vec2]
+    modifiers: set[Modifier]
 
     maxBounds: seq[Vec2]
 
@@ -211,17 +213,17 @@ proc `underlineColor=`*(node: UINode, value: Color)  {.inline.} = (let changed =
 func handlePressed*   (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].})              {.inline.} = node.mHandlePressed
 func handleReleased*  (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].})              {.inline.} = node.mHandleReleased
 func handleDrag*      (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool {.gcsafe, raises: [].}) {.inline.} = node.mHandleDrag
-func handleBeginHover*(node: UINode): (proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].})                                                             {.inline.} = node.mHandleBeginHover
+func handleBeginHover*(node: UINode): (proc(node: UINode, pos: Vec2, modifiers {.inject.}: set[Modifier]): bool {.gcsafe, raises: [].})                        {.inline.} = node.mHandleBeginHover
 func handleEndHover*  (node: UINode): (proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].})                                                             {.inline.} = node.mHandleEndHover
-func handleHover*     (node: UINode): (proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].})                                                             {.inline.} = node.mHandleHover
+func handleHover*     (node: UINode): (proc(node: UINode, pos: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].})                                   {.inline.} = node.mHandleHover
 func handleScroll*    (node: UINode): (proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].})                      {.inline.} = node.mHandleScroll
 
 func `handlePressed=`*   (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].})              {.inline.} = node.mHandlePressed = value
 func `handleReleased=`*  (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].})              {.inline.} = node.mHandleReleased = value
 func `handleDrag=`*      (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool {.gcsafe, raises: [].}) {.inline.} = node.mHandleDrag = value
-func `handleBeginHover=`*(node: UINode, value: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].})                                                             {.inline.} = node.mHandleBeginHover = value
+func `handleBeginHover=`*(node: UINode, value: proc(node: UINode, pos: Vec2, modifiers {.inject.}: set[Modifier]): bool {.gcsafe, raises: [].})                        {.inline.} = node.mHandleBeginHover = value
 func `handleEndHover=`*  (node: UINode, value: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].})                                                             {.inline.} = node.mHandleEndHover = value
-func `handleHover=`*     (node: UINode, value: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].})                                                             {.inline.} = node.mHandleHover = value
+func `handleHover=`*     (node: UINode, value: proc(node: UINode, pos: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].})                                   {.inline.} = node.mHandleHover = value
 func `handleScroll=`*    (node: UINode, value: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].})                      {.inline.} = node.mHandleScroll = value
 
 func xy*(node: UINode): Vec2 {.inline.} = vec2(mix(node.boundsRaw.x, node.boundsRaw.x - node.boundsRaw.w, node.pivot.x), mix(node.boundsRaw.y, node.boundsRaw.y - node.boundsRaw.h, node.pivot.y))
@@ -333,76 +335,61 @@ proc handleMouseReleased*(builder: UINodeBuilder, button: MouseButton, modifiers
     if node.handleReleased()(node, button, modifiers, pos - node.boundsAbsolute.xy):
       return true
 
-proc handleMouseMoved*(builder: UINodeBuilder, pos: Vec2, buttons: set[MouseButton]): bool =
+proc handleMouseMoved*(builder: UINodeBuilder, pos: Vec2, buttons: set[MouseButton], modifiers: set[Modifier]): bool =
+  builder.modifiers = modifiers
   builder.mouseDelta = pos - builder.mousePos
   builder.mousePos = pos
 
-  var targetNode: seq[UINode] = builder.draggedNodes
+  var targetNodes: seq[UINode] = builder.draggedNodes
 
   if buttons.len > 0:
     for button in buttons:
-    # if builder.draggedNodes.getSome(node):
       for node in builder.draggedNodes:
-        if node.handleDrag()(node, button, {}, pos - node.boundsAbsolute.xy, builder.mouseDelta): # todo: modifiers
+        if node.handleDrag()(node, button, modifiers, pos - node.boundsAbsolute.xy, builder.mouseDelta):
           result = true
           break
-    # else:
+
     if builder.draggedNodes.len == 0:
       let nodes = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => node.handleDrag.isNotNil)
       for button in buttons:
         for node in nodes:
-          if node.handleDrag()(node, button, {}, pos - node.boundsAbsolute.xy, builder.mouseDelta): # todo: modifiers
+          if node.handleDrag()(node, button, modifiers, pos - node.boundsAbsolute.xy, builder.mouseDelta):
             result = true
             break
 
+  if targetNodes.len == 0:
+    targetNodes = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => MouseHover in node.flags)
 
-  if targetNode.len == 0:
-    targetNode = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => MouseHover in node.flags)
+  var newHoveredNode = UINode.none
+  for node in targetNodes:
+    newHoveredNode = node.some
+    break
 
-  var handled = false
-  for node in builder.hoveredNodes:
-    if node in targetNode:
-      if node.handleHover.isNotNil:
-        if not handled:
-          result = node.handleHover()(node, pos - node.boundsAbsolute.xy) or result
-          handled = handled or result
+  case (builder.hoveredNode, newHoveredNode)
+  of (Some(@a), Some(@b)):
+    if a == b:
+      if a.handleHover.isNotNil:
+        result = a.handleHover()(a, pos - a.boundsAbsolute.xy, modifiers) or result
     else:
-      if node.handleEndHover.isNotNil:
-        result = node.handleEndHover()(node, pos - node.boundsAbsolute.xy) or result
+      if a.handleEndHover.isNotNil:
+        result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
+      if b.handleBeginHover.isNotNil:
+        result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy, modifiers) or result
+      result = true
 
-  handled = false
-  for node in targetNode:
-    if node notin builder.hoveredNodes:
-      if node.handleBeginHover.isNotNil:
-        if not handled:
-          result = node.handleBeginHover()(node, pos - node.boundsAbsolute.xy) or result
-          handled = handled or result
+  of (None(), Some(@b)):
+    if b.handleBeginHover.isNotNil:
+      result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy, modifiers) or result
+    result = true
+  of (Some(@a), None()):
+    if a.handleEndHover.isNotNil:
+      result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
+    result = true
+  of (None(), None()):
+    discard
 
-
-  # case (builder.hoveredNodes, targetNode)
-  # of (Some(@a), Some(@b)):
-  #   if a == b:
-  #     if a.handleHover.isNotNil:
-  #       result = a.handleHover()(a, pos - a.boundsAbsolute.xy) or result
-  #   else:
-  #     if a.handleEndHover.isNotNil:
-  #       result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
-  #     if b.handleBeginHover.isNotNil:
-  #       result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy) or result
-  #     result = true
-
-  # of (None(), Some(@b)):
-  #   if b.handleBeginHover.isNotNil:
-  #     result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy) or result
-  #   result = true
-  # of (Some(@a), None()):
-  #   if a.handleEndHover.isNotNil:
-  #     result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
-  #   result = true
-  # of (None(), None()):
-  #   discard
-
-  builder.hoveredNodes = targetNode
+  builder.hoveredNodes = targetNodes
+  builder.hoveredNode = newHoveredNode
 
 proc setBackgroundColor*(node: UINode, r, g, b: float32, a: float32 = 1) =
   if r != node.mBackgroundColor.r or g != node.mBackgroundColor.g or b != node.mBackgroundColor.b or node.mBackgroundColor.a != a:
@@ -1396,18 +1383,18 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
           return true
 
       template onDrag(button: MouseButton, onDragBody: untyped) {.used.} =
-        currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2, d: Vec2): bool {.gcsafe, raises: [].} =
+        currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2, delta {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           if btn == button:
             onDragBody
           return true
 
       template onDrag(onDragBody: untyped) {.used.} =
-        currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2, d: Vec2): bool {.gcsafe, raises: [].} =
+        currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2, delta {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onDragBody
           return true
 
       template onBeginHover(onBody: untyped) {.used.} =
-        currentNode.handleBeginHover = proc(node: UINode, pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
+        currentNode.handleBeginHover = proc(node: UINode, pos {.inject.}: Vec2, modifiers {.inject.}: set[Modifier]): bool {.gcsafe, raises: [].} =
           onBody
           return true
 
@@ -1417,7 +1404,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
           return true
 
       template onHover(onBody: untyped) {.used.} =
-        currentNode.handleHover = proc(node: UINode, pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
+        currentNode.handleHover = proc(node: UINode, pos {.inject.}: Vec2, modifiers {.inject.}: set[Modifier]): bool {.gcsafe, raises: [].} =
           onBody
           return true
 

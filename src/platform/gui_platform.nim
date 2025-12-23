@@ -207,8 +207,8 @@ method init*(self: GuiPlatform, options: AppOptions) =
 
     self.window.onMouseMove = proc() =
       # inc self.eventCounter
-      if not self.builder.handleMouseMoved(self.window.mousePos.vec2, self.currentMouseButtons):
-        self.onMouseMove.invoke (self.window.mousePos.vec2, self.window.mouseDelta.vec2, {}, self.currentMouseButtons)
+      if not self.builder.handleMouseMoved(self.window.mousePos.vec2, self.currentMouseButtons, self.currentModifiers):
+        self.onMouseMove.invoke (self.window.mousePos.vec2, self.window.mouseDelta.vec2, self.currentModifiers, self.currentMouseButtons)
 
     proc toMouseButton(button: Button): MouseButton =
       inc self.eventCounter
