@@ -68,7 +68,9 @@ For examples and default values see [here](../config/settings.json)
 | `text.highlight-matches.max-file-size` | int | 104857600 | Don't highlight matching text in files above this size (in bytes). |
 | `text.highlight-matches.max-selection-length` | int | 1024 | Don't highlight matching text if the selection spans more bytes than this. |
 | `text.highlight-matches.max-selection-lines` | int | 5 | Don't highlight matching text if the selection spans more lines than this. |
+| `text.hover-command` | JsonNodeEx | null | Arguments to the command which is run when triple clicking on some text. |
 | `text.hover-delay` | int | 200 | How many milliseconds after hovering a word the lsp hover request is sent. |
+| `text.hover-mode` | string | "editor.text.hover" | Mode to activate while hover window is open. |
 | `text.inclusive-selection` | bool | false | Specifies whether a selection includes the character after the end cursor. If true then a selection like (0:0...0:4) with the text "Hello world" would select "Hello". If false then the selected text would be "Hell". If you use Vim motions then the Vim plugin manages this setting. |
 | `text.indent` | "tabs" \| "spaces" | "spaces" | Whether to used spaces or tabs for indentation. When indent detection is enabled then this only specfies the default for new files and files where the indentation type can't be detected automatically. |
 | `text.indent-after` | string[] \| null | null | When you insert a new line, if the current line ends with one of these strings then the new line will be indented. |

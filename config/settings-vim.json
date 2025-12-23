@@ -9,6 +9,7 @@
     "text.modes": ["vim", "vim.normal"],
     "text.default-mode": "vim.normal",
     "text.completion-mode": "vim.completion",
+    "text.hover-mode": "vim.hover",
 
     "lang.command-line.text.modes": ["vim", "vim.normal"],
     "lang.command-line.text.default-mode": "vim.insert",

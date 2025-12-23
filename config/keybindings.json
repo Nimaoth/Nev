@@ -724,6 +724,10 @@
         "<TAB>": ["apply-selected-completion"],
     },
 
+    "vim.hover": {
+        "<ESCAPE>": ["hide-hover"],
+    },
+
     // vscode
     "vscode.base": {
         "<A-F4>": ["quit"],
