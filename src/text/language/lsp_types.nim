@@ -37,6 +37,8 @@ macro variant(name: untyped, types: varargs[untyped]): untyped =
 
       proc procName*(arg: name): Option[t] {.gcsafe, raises: [].} =
         try:
+          if arg.node.isNil:
+            return t.none
           when isSeqLit:
             if arg.node.kind != JArray:
               return t.none
