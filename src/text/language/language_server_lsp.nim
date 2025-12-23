@@ -500,25 +500,25 @@ method getHover*(self: LanguageServerLSP, filename: string, location: Cursor):
   # important: the order of these checks is important
   if parsedResponse.contents.asMarkedStringVariantSeq().getSome(markedStrings):
     for markedString in markedStrings:
-      if markedString.asString().getSome(str):
+      if markedString.asString().getSome(str) and str.len > 0:
         return str.some
-      if markedString.asMarkedStringObject().getSome(str):
+      if markedString.asMarkedStringObject().getSome(str) and str.value.len > 0:
         # todo: language
         return str.value.some
 
     return string.none
 
-  if parsedResponse.contents.asMarkupContent().getSome(markupContent):
+  if parsedResponse.contents.asMarkupContent().getSome(markupContent) and markupContent.value.len > 0:
     return markupContent.value.some
 
   if parsedResponse.contents.asMarkedStringVariant().getSome(markedString):
     debugf"marked string variant: {markedString}"
 
-    if markedString.asString().getSome(str):
+    if markedString.asString().getSome(str) and str.len > 0:
       debugf"string: {str}"
       return str.some
 
-    if markedString.asMarkedStringObject().getSome(str):
+    if markedString.asMarkedStringObject().getSome(str) and str.value.len > 0:
       debugf"string object lang: {str.language}, value: {str.value}"
       return str.value.some
 
