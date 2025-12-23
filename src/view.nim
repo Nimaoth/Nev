@@ -1,6 +1,7 @@
 import std/[options, tables, json]
 import misc/[event, id]
 import events, document_editor
+import bumpy
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -12,6 +13,9 @@ type
     active*: bool
     mDirty: bool
     onMarkedDirty*: Event[void]
+    onDetached*: Event[void]
+    detached*: bool # Whether the view is detached from any parent and can be moved around freely
+    absoluteBounds*: Rect # Absolute bounds when detached
 
 var viewIdCounter: int32 = 1
 
@@ -29,6 +33,12 @@ proc id2*(self: View): int32 =
 proc initView*(self: View) =
   self.mId = newId()
   discard self.id2()
+
+proc detach*(self: View, bounds: Rect) =
+  if not self.detached:
+    self.absoluteBounds = bounds
+    self.detached = true
+    self.onDetached.invoke()
 
 func dirty*(self: View): bool = self.mDirty
 

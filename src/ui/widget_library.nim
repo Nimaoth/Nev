@@ -343,7 +343,10 @@ proc renderView*(self: View, builder: UINodeBuilder,
 
   let sizeFlags = builder.currentSizeFlags
 
-  builder.panel(&{OverlappingChildren} + sizeFlags):
+  builder.panel(&{OverlappingChildren, MouseHover} + sizeFlags, userId = self.id.newPrimaryId, tag = "view-hover"):
+    onHover:
+      discard
+
     builder.panel(&{LayoutVertical} + sizeFlags):
       # Header
       builder.panel(&{FillX, SizeToContentY, FillBackground, MaskContent, LayoutHorizontal}, backgroundColor = headerColor):
