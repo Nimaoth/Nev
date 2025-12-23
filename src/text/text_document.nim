@@ -1851,3 +1851,26 @@ proc cycleCase*(s: string): string =
   else:
     cas.succ
   return parts.joinCase(nextCase)
+
+proc getDeclarationsInRange*(self: TextDocument, visibleRange: Selection): seq[tuple[decl: Selection, name: Selection, value: string]] =
+  if self.requiresLoad or self.isLoadingAsync:
+    return
+
+  if self.textObjectsQuery != nil and not self.tsTree.isNil:
+    for captures in self.textObjectsQuery.query(self.tsTree, visibleRange):
+      var isDecl = false
+      var declRange: Selection
+      var nameRange: Selection
+
+      for (node, nodeCapture) in captures:
+        var sel = node.getRange().toSelection
+        if nodeCapture == "decl":
+          declRange = sel
+          isDecl = true
+        elif nodeCapture == "decl.name":
+          nameRange = sel
+        else:
+          continue
+
+      if isDecl:
+        result.add (declRange, nameRange, self.contentString(nameRange, false))
