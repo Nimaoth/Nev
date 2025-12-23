@@ -98,22 +98,16 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
   var height = builder.currentParent.bounds.h
 
   if SizeToContentX in sizeFlags:
-    width = builder.charWidth * 60 + self.sizeOffset.x
+    width = builder.charWidth * 120 + self.sizeOffset.x
   if SizeToContentY in sizeFlags:
     height = builder.textHeight * 10 + self.sizeOffset.y
 
   let variablesCursor = self.variablesCursor
 
-  proc detach(self: VariablesView, node: UINode) =
-    self.detach(node.boundsAbsolute)
-    # if not self.detached:
-    #   self.absoluteBounds = node.boundsAbsolute
-    # self.detached = true
-
   builder.panel(&{MaskContent} + sizeFlags, x = 0, y = 0):
     let root = currentNode
     onScroll:
-      self.scrollOffset += delta.y * 10
+      self.scrollOffset += delta.y * builder.textHeight * 2
       self.markDirty()
     currentNode.handleDrag = proc(node: UINode, btn: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool =
       builder.draggedNodes.incl(node)
@@ -127,13 +121,13 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
           else:
             self.sizeOffset.x += delta.x
         elif oldPos.x < resizeWidth:
-          self.detach(node)
+          self.detach(node.boundsAbsolute)
           self.absoluteBounds.x += delta.x
           self.absoluteBounds.w -= delta.x
           self.sizeOffset.x = 0
 
         if oldPos.y > root.bounds.h - resizeWidth:
-          self.detach(node)
+          self.detach(node.boundsAbsolute)
           if self.detached:
             self.absoluteBounds.h += delta.y
             self.sizeOffset.y = 0
@@ -148,7 +142,7 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
             self.sizeOffset.y -= delta.y
 
         if oldPos.y <= root.bounds.h - resizeWidth and oldPos.y >= resizeWidth and oldPos.x <= root.bounds.w - resizeWidth and oldPos.x >= resizeWidth:
-          self.detach(node)
+          self.detach(node.boundsAbsolute)
           self.absoluteBounds.x += delta.x
           self.absoluteBounds.y += delta.y
           self.sizeOffset = vec2()

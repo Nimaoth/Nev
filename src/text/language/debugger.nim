@@ -1,4 +1,4 @@
-import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils]
+import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils, enumerate, osproc]
 import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex]
 import scripting/[expose]
 import dap_client, dispatch_tables, config_provider, service, selector_popup_builder, events, view, session, document_editor, layout, platform_service
@@ -111,7 +111,7 @@ type
 
   LanguageServerDebugger* = ref object of LanguageServer
     debugger: Debugger
-    evaluations: Table[tuple[file: string, range: Selection, expression: string], EvaluateResponse]
+    evaluations: Table[tuple[file: string, range: Selection, expression: string], Response[EvaluateResponse]]
 
 proc newLanguageServerDebugger(debugger: Debugger): LanguageServerDebugger =
   var server = new LanguageServerDebugger
@@ -1124,6 +1124,10 @@ proc stopDebugSession*(self: Debugger) {.expose("debugger").} =
     log lvlWarn, "No active debug session"
     return
 
+  if self.lastEditor.isSome:
+    self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
+    self.lastEditor.get.updateInlayHints()
+
   asyncSpawn self.client.get.disconnect(restart=false)
   self.client.get.deinit()
   self.client = DapClient.none
@@ -1175,31 +1179,60 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
 
   case connectionType
   of Tcp:
-    discard
-    # todo
+    if config.hasKey("path"):
+      let path = config.tryGet("path", string, newJexNull()):
+        log lvlError, &"No/invalid debugger executable path in {config.pretty}"
+        return Connection.none
+      let args = config.tryGet("args", seq[string], newJexArray()):
+        log lvlError, &"No/invalid debugger args in {config.pretty}"
+        return Connection.none
 
-    # if config.hasKey("path"):
-    #   let path = config.tryGet("path", string, newJexNull()):
-    #     log lvlError, &"No/invalid debugger executable path in {config.pretty}"
-    #     return Connection.none
+      # let port = getFreePort().int
+      let port = config.tryGet("port", int, 5678.newJexInt):
+        log lvlError, &"No/invalid debugger port in {config.pretty}"
+        return Connection.none
 
-    #   let port = getFreePort().int
-    #   log lvlInfo, &"Start process {path} with port {port}"
-    #   discard startProcess(path, args = @["-p", $port], options = {poUsePath, poDaemon})
+      log lvlInfo, &"Start process {path} {args}"
+      discard startProcess(path, args = args, options = {poUsePath, poDaemon})
 
-    #   # todo: need to wait for process to open port?
-    #   await sleepAsync(500.milliseconds)
+      # todo: need to wait for process to open port?
+      debugf"wait..."
+      await sleepAsync(1500.milliseconds)
 
-    #   return newAsyncSocketConnection("127.0.0.1", port.Port).await.Connection.some
+      try:
+        debugf"connect..."
+        let connection = newAsyncSocketConnection("127.0.0.1", port.Port).await
+        debugf"connected"
+        return connection.Connection.some
+      except CatchableError as e:
+        log lvlError, &"Failed to connect to debug adapter localhost:{port}"
+        return Connection.none
 
-    # else:
-    #   let host = config.tryGet("host", string, "127.0.0.1".newJexString):
-    #     log lvlError, &"No/invalid debugger host in {config.pretty}"
-    #     return Connection.none
-    #   let port = config.tryGet("port", int, 5678.newJexInt):
-    #     log lvlError, &"No/invalid debugger port in {config.pretty}"
-    #     return Connection.none
+    else:
+      let host = config.tryGet("host", string, "127.0.0.1".newJexString):
+        log lvlError, &"No/invalid debugger host in {config.pretty}"
+        return Connection.none
+      let port = config.tryGet("port", int, 5678.newJexInt):
+        log lvlError, &"No/invalid debugger port in {config.pretty}"
+        return Connection.none
+      try:
+        return newAsyncSocketConnection(host, port.Port).await.Connection.some
+      except CatchableError as e:
+        log lvlError, &"Failed to connect to debug adapter {host}:{port}"
+        return Connection.none
+
+    # let host = config.tryGet("host", string, "127.0.0.1".newJexString):
+    #   log lvlError, &"No/invalid debugger host in {config.pretty}"
+    #   return Connection.none
+    # let port = config.tryGet("port", int, 5678.newJexInt):
+    #   log lvlError, &"No/invalid debugger port in {config.pretty}"
+    #   return Connection.none
+    # try:
     #   return newAsyncSocketConnection(host, port.Port).await.Connection.some
+    # except CatchableError as e:
+    #   log lvlError, &"Failed to connect to debug adapter {host}:{port}"
+    #   return Connection.none
+
 
   of Stdio:
     let exePath = config.tryGet("path", string, newJexNull()):
@@ -1421,6 +1454,8 @@ proc handleContinued(self: Debugger, data: OnContinuedData) =
   self.debuggerState = DebuggerState.Running
   if self.lastEditor.isSome:
     self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
+    self.lastEditor.get.updateInlayHints()
+  self.languageServer.evaluations.clear()
   self.platform.requestRender()
 
 proc handleTerminated(self: Debugger, data: Option[OnTerminatedData]) =
@@ -2035,15 +2070,19 @@ proc findVariable(self: VariablesView, filter: string) {.async.} =
           self.nextVariable()
 
 method getInlayHints*(self: LanguageServerDebugger, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
-  # debugf"getInlayHints for '{filename}' {selection}"
+  result = newSeq[language_server_base.InlayHint]().success
+
+  if self.debugger.debuggerState != Paused:
+    return
+
   let frame = self.debugger.currentStackFrame()
   if frame.isNone:
-    return newSeq[language_server_base.InlayHint]().success
+    return
 
   if self.debugger.client.getSome(client):
     let doc = self.debugger.editors.getDocument(filename)
     if doc.isNone or not (doc.get of TextDocument):
-      return newSeq[language_server_base.InlayHint]().success
+      return
 
     let document = doc.get.TextDocument
     let timestamp = self.debugger.timestamp
@@ -2054,36 +2093,55 @@ method getInlayHints*(self: LanguageServerDebugger, filename: string, selection:
       for decl in decls:
         let key = (filename, decl.name, decl.value)
         # todo: use cached evaluations
-        # if key in self.evaluations:
-        #   self.evaluations[key].toFuture
-        # else:
-        # debugf"eval '{decl.value}' at {decl.name}"
-        client.evaluate(decl.value, document.localizedPath, decl.name.first.line, decl.name.first.column, frame.get.id)
+        if key in self.evaluations:
+          self.evaluations[key].toFuture
+        else:
+          client.evaluate(decl.value, document.localizedPath, decl.name.first.line, decl.name.first.column, frame.get.id)
 
     await futures.allFutures
     if timestamp != self.debugger.timestamp:
-      return newSeq[language_server_base.InlayHint]().success
+      return
 
     for i in 0..decls.high:
       let eval = futures[i].read
+      self.evaluations[(filename, decls[i].name, decls[i].value)] = eval
       if eval.isError:
         continue
 
-      self.evaluations[(filename, decls[i].name, decls[i].value)] = eval.result
       var nl = eval.result.result.find('\n')
       if nl == -1:
-        inlayHints.add language_server_base.InlayHint(
-          location: decls[i].decl.last,
-          label: eval.result.result,
-          paddingLeft: true,
-        )
+        let eq = eval.result.result.find("= ")
+        if eq != -1:
+          inlayHints.add language_server_base.InlayHint(
+            location: decls[i].decl.last,
+            label: eval.result.result[eq..^1].strip(),
+            paddingLeft: true,
+          )
+        else:
+          inlayHints.add language_server_base.InlayHint(
+            location: decls[i].decl.last,
+            label: eval.result.result,
+            paddingLeft: true,
+          )
       else:
+        var label = ""
+        for i, line in enumerate(eval.result.result.splitLines):
+          if i == 0:
+            var eq = line.find("= ")
+            if eq != -1:
+              label.add line[eq..^1].strip()
+              continue
+          if i > 0:
+            label.add " "
+          label.add line.strip()
+          if label.len > 60: # todo: make this configurable
+            label.add "..."
+            break
+
         inlayHints.add language_server_base.InlayHint(
           location: decls[i].decl.last,
-          label: eval.result.result[0..<nl],
+          label: label,
           paddingLeft: true,
         )
 
-    return inlayHints.success
-
-  return newSeq[language_server_base.InlayHint]().success
+    result = inlayHints.success

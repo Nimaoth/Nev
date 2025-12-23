@@ -4133,7 +4133,7 @@ proc hideHoverDelayed*(self: TextDocumentEditor) =
 
 proc runHoverCommand*(self: TextDocumentEditor) =
   try:
-    var command = ".show-hover-for-current"
+    var command = "show-hover-for-current"
     var configCommand = self.settings.hoverCommand.get()
     if configCommand != nil:
       let modsKey = $self.mouseHoverMods
@@ -4142,8 +4142,10 @@ proc runHoverCommand*(self: TextDocumentEditor) =
 
       let (name, args, ok) = configCommand.parseCommand()
       if ok:
-        command = name & " " & args
-    discard self.commands.executeCommand(command, record = false)
+        discard self.handleAction(name, args, record = false)
+        return
+
+    discard self.handleAction(command, "", record = false)
   except CatchableError as e:
     log lvlError, &"Failed to execute hover command: {e.msg}"
 
@@ -4216,7 +4218,6 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
     if self.document.isNil:
       return
 
-    # todo: detect if canceled instead
     if inlayHints.isSuccess:
       template getBias(hint: untyped): Bias =
         if hint.paddingRight:
