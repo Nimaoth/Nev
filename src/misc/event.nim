@@ -24,6 +24,26 @@ proc subscribe*[T](event: var Event[T], callback: proc(arg: T): void {.gcsafe, r
   result = newId()
   event.handlers.add (result, callback)
 
+proc subscribe*[T: void](event: var Event[T], id: Id, callback: proc(): void {.gcsafe, raises: [].}) =
+  assert callback != nil
+  event.handlers.add (id, callback)
+
+proc subscribe*[T: void](event: var Event[T], id: var Id, callback: proc(): void {.gcsafe, raises: [].}) =
+  assert callback != nil
+  if id == idNone():
+    id = newId()
+  event.handlers.add (id, callback)
+
+proc subscribe*[T](event: var Event[T], id: Id, callback: proc(arg: T): void {.gcsafe, raises: [].}) =
+  assert callback != nil
+  event.handlers.add (id, callback)
+
+proc subscribe*[T](event: var Event[T], id: var Id, callback: proc(arg: T): void {.gcsafe, raises: [].}) =
+  assert callback != nil
+  if id == idNone():
+    id = newId()
+  event.handlers.add (id, callback)
+
 proc unsubscribe*[T](event: var Event[T], id: var Id) =
   for i in countdown(event.handlers.high, 0):
     if event.handlers[i].id == id:
