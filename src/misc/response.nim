@@ -36,6 +36,13 @@ proc to*(a: Response[JsonNode], T: typedesc): Response[T] =
       return Response[T](id: a.id, kind: ResponseKind.Canceled)
     of ResponseKind.Success:
       try:
+        if a.result.kind == JNull:
+          return Response[T](
+            id: a.id,
+            kind: ResponseKind.Success,
+            result: T.default,
+          )
+
         when T is string:
           if a.result.kind == JString:
             return Response[T](id: a.id, kind: ResponseKind.Success, result: a.result.str)

@@ -311,6 +311,16 @@ type
     timestamp*: int = 0
     variables*: seq[Variable]
 
+  EvaluateResponse* = object
+    result*: string
+    `type`*: Option[string]
+    variablesReference*: VariablesReference
+    namedVariables*: Option[int]
+    indexedVariables*: Option[int]
+    memoryReference*: Option[string]
+    valueLocationReference*: Option[int]
+    valueChanged*: Option[bool]
+
   OnInitializedData* = void
 
   OnStoppedData* = object
@@ -754,7 +764,6 @@ proc getThreads*(client: DAPClient): Future[Response[Threads]] {.async.} =
   return res.to(Threads)
 
 proc scopes*(client: DAPClient, frameId: FrameId): Future[Response[Scopes]] {.async.} =
-  log lvlInfo, &"scopes"
   var args = %*{
     "frameId": frameId,
   }
@@ -765,7 +774,6 @@ proc scopes*(client: DAPClient, frameId: FrameId): Future[Response[Scopes]] {.as
   return res.to(Scopes)
 
 proc variables*(client: DAPClient, variablesReference: VariablesReference): Future[Response[Variables]] {.async.} =
-  log lvlInfo, &"variables"
   var args = %*{
     "variablesReference": variablesReference,
   }
@@ -774,6 +782,23 @@ proc variables*(client: DAPClient, variablesReference: VariablesReference): Futu
     log lvlError, &"Failed get variables: {res}"
     return res.to(Variables)
   return res.to(Variables)
+
+proc evaluate*(client: DAPClient, expression: string, path: string, line: int, column: int, frameId: FrameId): Future[Response[EvaluateResponse]] {.async.} =
+  var args = %*{
+    "expression": expression,
+    "frameId": frameId,
+    "line": line + 1,
+    "column": column + 1,
+    "source": %*{
+      "path": path,
+    },
+    "context": "hover",
+  }
+  let res = await client.sendRequest("evaluate", args.some)
+  if res.isError:
+    log lvlError, &"Failed to evaluate: {res}"
+    return res.to(EvaluateResponse)
+  return res.to(EvaluateResponse)
 
 proc initialize*(client: DAPClient) {.async.} =
   log lvlInfo, "Initialize client"
