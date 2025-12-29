@@ -173,16 +173,6 @@
         "sha1": "81becde73d830307dd6dc5a77967e9b1ebe8953a"
       }
     },
-    "c2nim": {
-      "version": "0.9.19",
-      "vcsRevision": "5753fa7658ed50432ea6c2df84f0a45e36bcb2ea",
-      "url": "https://github.com/nim-lang/c2nim",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "1954eb89cc353cf2a4e54804d38d5a1e72f3c98e"
-      }
-    },
     "results": {
       "version": "0.5.0",
       "vcsRevision": "57b2392ad69849e3e2d02b74a8a0feee2c3d9570",
@@ -320,32 +310,6 @@
         "sha1": "5259d27784981c9146c823157d06fbba0bcf6d99"
       }
     },
-    "nimgen": {
-      "version": "0.5.4",
-      "vcsRevision": "e6697aabbe36e42e4dd261cfd0b8a8be16f6f342",
-      "url": "https://github.com/Nimaoth/nimgen",
-      "downloadMethod": "git",
-      "dependencies": [
-        "c2nim",
-        "regex",
-        "unicodedb"
-      ],
-      "checksums": {
-        "sha1": "d563cc29937e4d2d66ebeb3eaacef95c6284fb4c"
-      }
-    },
-    "nimclipboard": {
-      "version": "0.1.2",
-      "vcsRevision": "666f37ce461d6914a7c1818bc31e1ec97593e7bb",
-      "url": "https://github.com/genotrance/nimclipboard",
-      "downloadMethod": "git",
-      "dependencies": [
-        "nimgen"
-      ],
-      "checksums": {
-        "sha1": "bf02a33b9ac528b92aec2088bb8b38d91eb23603"
-      }
-    },
     "nimsumtree": {
       "version": "0.5.6",
       "vcsRevision": "ee2d92bde86ce87b32bc46db18bfcf91ab84193d",
@@ -368,14 +332,12 @@
     },
     "nimwasmtime": {
       "version": "0.2.1",
-      "vcsRevision": "86b36c9ab5dc6fbbe6602af42cc857c898bc85b4",
+      "vcsRevision": "e71e4df1dd4164a4c78829cb657c06573b07bd16",
       "url": "https://github.com/Nimaoth/nimwasmtime",
       "downloadMethod": "git",
-      "dependencies": [
-        "nimgen"
-      ],
+      "dependencies": [],
       "checksums": {
-        "sha1": "99df4090ca3d7cb8f18f3d0944603044dffcfe65"
+        "sha1": "2c7fd049c8f2e6bb8f5ec01a6d55857c0ec38b5b"
       }
     },
     "npeg": {
@@ -412,14 +374,12 @@
     },
     "treesitter": {
       "version": "0.1.21",
-      "vcsRevision": "8625f8ac129aa7625ec20ee6fee15b9aca8d1085",
+      "vcsRevision": "cd29e9ba901909e55131a2deb793fd5493af2b72",
       "url": "https://github.com/Nimaoth/nimtreesitter-api",
       "downloadMethod": "git",
-      "dependencies": [
-        "nimgen"
-      ],
+      "dependencies": [],
       "checksums": {
-        "sha1": "42ed9e4edf5a8482765e201f4e8f6890d0307452"
+        "sha1": "bbd7bf3e90a390cca7212453b6c06aa4fed553a0"
       }
     },
     "urlly": {
