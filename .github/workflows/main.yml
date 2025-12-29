@@ -88,6 +88,7 @@ jobs:
       - run: echo "${GITHUB_WORKSPACE}/emsdk/node/22.16.0_64bit/bin" >> $GITHUB_PATH
       - run: echo "${GITHUB_WORKSPACE}/emsdk/upstream/emscripten" >> $GITHUB_PATH
 
+      - run: nimble install nimgen -y
       - name: nimble setup
         continue-on-error: true
         run: PATH=/github/home/.nimble/bin:$PATH nimble setup
@@ -157,6 +158,7 @@ jobs:
         name: Install emscripten
         run: ./emsdk/emsdk.ps1 install 4.0.10
 
+      - run: nimble install nimgen -y
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         name: nimble setup
         continue-on-error: true
@@ -235,6 +237,7 @@ jobs:
           path: ~/.nimble
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('nimble.lock') }}
 
+      - run: nimble install nimgen -y
       - name: nimble setup
         continue-on-error: true
         run: PATH=/github/home/.nimble/bin:$PATH nimble setup
