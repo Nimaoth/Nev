@@ -5,7 +5,6 @@ const enableGui* {.booldefine.}: bool = false
 const enableTerminal* {.booldefine.}: bool = false
 const enableTableIdCacheChecking* {.booldefine.}: bool = false
 const enableWindyClipboard* {.booldefine.}: bool = true
-const enableSystemClipboard* {.booldefine.}: bool = false
 const enableAst* {.booldefine.}: bool = false
 const enableOldPluginVersions* {.booldefine.}: bool = false
 const enableLibssh* {.booldefine.}: bool = false
