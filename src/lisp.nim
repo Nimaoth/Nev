@@ -44,9 +44,9 @@ type
 
 proc `$`*(val: LispVal): string {.raises: [].} =
   if val == nil:
-    return "nil"
+    return "null"
   case val.kind
-  of Nil: $"nil"
+  of Nil: $"null"
   of Number:
     if val.num.int.float == val.num:
       $val.num.int
@@ -56,7 +56,7 @@ proc `$`*(val: LispVal): string {.raises: [].} =
   of Symbol: val.sym
   of String: val.str.escapeJson()
   of List: "(" & val.elems.mapIt($it).join(" ") & ")"
-  of Array: "[" & val.elems.mapIt($it).join(" ") & "]"
+  of Array: "[" & val.elems.mapIt($it).join(", ") & "]"
   of Map:
     var res = "{"
     var i = 0
@@ -64,10 +64,10 @@ proc `$`*(val: LispVal): string {.raises: [].} =
       if i > 0:
         res.add ", "
       inc i
-      res.add key
+      res.add key.escapeJson()
       res.add ": "
       res.add $val
-    res.add "} "
+    res.add "}"
     res
   of Func: &"<native.{val.name}>"
   of Lambda: &"({val.params}) -> {val.body})"
@@ -296,7 +296,7 @@ const
     "float literal",
     "true",
     "false",
-    "nil",
+    "null",
     "(", ")", "{", "}", "[", "]", ":", ",", ",@", "`"
   ]
 
@@ -491,8 +491,8 @@ proc skip(my: var LispParser) =
   var pos = my.bufpos
   while true:
     case my.buf[pos]
-    of ';':
-      if true or my.buf[pos+1] == '/':
+    of ';', '/':
+      if my.buf[pos] == ';' or my.buf[pos+1] == '/':
         # skip line comment:
         inc(pos, 2)
         while true:
@@ -628,7 +628,7 @@ proc getTok(my: var LispParser): TokKind =
   else:
     result = parseSymbol(my)
     case my.a
-    of "nil": result = tkNull
+    of "nil", "null": result = tkNull
     of "true": result = tkTrue
     of "false": result = tkFalse
 

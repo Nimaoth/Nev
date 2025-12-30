@@ -1,7 +1,7 @@
 import std/[strutils, options, json, tables]
 import misc/[custom_async, custom_logger, util, myjsonutils, event, id]
 import scripting/[expose]
-import dispatch_tables, service, plugin_service
+import dispatch_tables, service, plugin_service, event_service
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -20,6 +20,7 @@ type
       save: proc(): JsonNode {.gcsafe, raises: [].},
       load: proc(data: JsonNode) {.gcsafe, raises: [].},
     ]]
+    events: EventService
 
 func serviceName*(_: typedesc[SessionService]): string = "SessionService"
 addBuiltinService(SessionService, PluginService)
@@ -28,6 +29,7 @@ method init*(self: SessionService): Future[Result[void, ref CatchableError]] {.a
   log lvlInfo, &"SessionService.init"
   self.sessionData = newJObject()
   self.plugins = self.services.getService(PluginService).get
+  self.events = self.services.getService(EventService).get
   return ok()
 
 proc restoreSession*(self: SessionService, sessionData: JsonNode) =
@@ -44,6 +46,7 @@ proc restoreSession*(self: SessionService, sessionData: JsonNode) =
 
   self.hasSession = true
   self.onSessionRestored.invoke(self)
+  self.events.emit("session/restored", "")
 
 proc addSaveHandler*(self: SessionService, key: string,
     save: proc(): JsonNode {.gcsafe, raises: [].},
@@ -52,6 +55,7 @@ proc addSaveHandler*(self: SessionService, key: string,
 
 proc saveSession*(self: SessionService): JsonNode =
   log lvlInfo, &"SessionService.saveSession"
+  self.events.emit("session/save", "")
   result = self.sessionData.shallowCopy()
   if result == nil:
     result = newJObject()

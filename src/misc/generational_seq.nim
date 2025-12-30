@@ -21,7 +21,7 @@ proc freeIndex[T; K](self: var GenerationalSeq[T, K]): uint32 =
   self.data.add (0.uint32, T.default)
   return self.data.high.uint32
 
-proc split[K](genIndex: K): tuple[generation, index: uint32] =
+proc split[K](genIndex: K): tuple[generation, index: uint32] {.inline.} =
   return ((genIndex.uint64 shr 32).uint32, genIndex.uint32)
 
 proc del*[T; K](self: var GenerationalSeq[T, K], key: K) =
@@ -52,6 +52,8 @@ proc add*[T; K](self: var GenerationalSeq[T, K], val: sink T): K =
 
 proc contains*[T; K](self: GenerationalSeq[T, K], key: K): bool =
   let (generation, index) = key.split()
+  if (generation and 0x1) == 0:
+    return false
   if index.int notin 0..self.data.high:
     return false
   let data = self.data[index].addr

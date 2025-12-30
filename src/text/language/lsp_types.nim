@@ -488,7 +488,7 @@ type
   CompletionItem* = object
     label*: string
     labelDetails*: Option[CompletionItemLabelDetails]
-    kind*: CompletionKind
+    kind*: CompletionKind = CompletionKind.Text
     tags*: seq[CompletionItemTag]
     detail*: Option[string]
     documentation*: Option[CompletionItemDocumentationVariant]
