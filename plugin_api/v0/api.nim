@@ -1,5 +1,5 @@
 import std/[strformat, json, jsonutils, strutils, sequtils, sugar, os, terminal, colors, unicode]
-import wit_guest, wit_types, wit_runtime, generational_seq, event, util
+import wit_guest, wit_types, wit_runtime, generational_seq, event, util, id
 export wit_types, wit_runtime
 import async
 export async
@@ -45,6 +45,7 @@ template ws*(s: WitString): WitString = s
 type CommandHandler = proc(data: uint32, args: WitString): WitString {.cdecl.}
 type ChannelUpdateHandler = proc(data: uint32, closed: bool): ChannelListenResponse {.cdecl, raises: [].}
 type MoveHandler = proc(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl, raises: [].}
+type EventListener = proc(event: WitString, payload: WitString) {.cdecl, raises: [].}
 
 proc initPlugin() =
   emscripten_stack_init()
@@ -66,14 +67,33 @@ proc handleChannelUpdate(fun: uint32, data: uint32, closed: bool): ChannelListen
   let fun = cast[ChannelUpdateHandler](fun)
   fun(data, closed)
 
+proc handleEvent(fun: uint32, data: uint32, event: WitString, payload: WitString) =
+  let fun = cast[EventListener](fun)
+  fun(event, payload)
+
+let eventId = $newId()
+proc listenEvent*(pattern: string, cb: EventListener) =
+  listenEvent(cast[uint32](cb), 0, eventId.ws, pattern.ws)
+
 var savePluginStateImpl: proc(): WitList[uint8]
 var loadPluginStateImpl: proc(state: WitList[uint8])
 
 proc setPluginSaveCallback*(cb: proc(): WitList[uint8]) =
   savePluginStateImpl = cb
 
+proc setPluginSaveCallback*(cb: proc(): string) =
+  savePluginStateImpl = proc(): WitList[uint8] =
+    let chars = collect:
+      for c in cb():
+        c.uint8
+    result = @@chars
+
 proc setPluginLoadCallback*(cb: proc(state: WitList[uint8])) =
   loadPluginStateImpl = cb
+
+proc setPluginLoadCallback*(cb: proc(state: string)) =
+  loadPluginStateImpl = proc(state: WitList[uint8]) =
+    cb(state.mapIt(it.char).join(""))
 
 proc savePluginState(): WitList[uint8] =
   if savePluginStateImpl != nil:
@@ -393,6 +413,8 @@ proc runInBackground*(executor: BackgroundExecutor, p: proc(task: BackgroundTask
 
 type LogLevel* = enum lvlInfo, lvlNotice, lvlDebug, lvlWarn, lvlError
 
+var logCategory* = "plugin"
+
 proc log*(level: LogLevel, str: string) =
   let color = case level
   of lvlDebug: rgb(100, 100, 200)
@@ -404,10 +426,7 @@ proc log*(level: LogLevel, str: string) =
   else: rgb(255, 255, 255)
   try:
     {.gcsafe.}:
-      stdout.write(ansiForegroundColorCode(color))
-      stdout.write("[vim] ")
-      stdout.write(str)
-      stdout.write("\r\n")
+      stdout.write(&"{ansiForegroundColorCode(color)}[{logCategory}] {str}\r\n")
   except IOError:
     discard
 

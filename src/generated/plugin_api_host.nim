@@ -116,6 +116,7 @@ type
     handleMove*: FuncT
     savePluginState*: FuncT
     loadPluginState*: FuncT
+    handleEvent*: FuncT
 proc mem(funcs: ExportedFuncs): WasmMemory =
   if funcs.mMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
     return initWasmMemory(funcs.mMemory.get.of_field.sharedmemory)
@@ -131,61 +132,67 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_9462351482 = instance.getExport(context, "init_plugin")
-  if f_9462351482.isSome:
-    assert f_9462351482.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_9462351482.get.of_field.func_field
+  let f_9495905919 = instance.getExport(context, "init_plugin")
+  if f_9495905919.isSome:
+    assert f_9495905919.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_9495905919.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_9462351498 = instance.getExport(context, "handle_command")
-  if f_9462351498.isSome:
-    assert f_9462351498.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_9462351498.get.of_field.func_field
+  let f_9495905935 = instance.getExport(context, "handle_command")
+  if f_9495905935.isSome:
+    assert f_9495905935.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_9495905935.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_9462351548 = instance.getExport(context, "handle_mode_changed")
-  if f_9462351548.isSome:
-    assert f_9462351548.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_9462351548.get.of_field.func_field
+  let f_9495905985 = instance.getExport(context, "handle_mode_changed")
+  if f_9495905985.isSome:
+    assert f_9495905985.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_9495905985.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_9462351549 = instance.getExport(context, "handle_view_render_callback")
-  if f_9462351549.isSome:
-    assert f_9462351549.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_9462351549.get.of_field.func_field
+  let f_9495905986 = instance.getExport(context, "handle_view_render_callback")
+  if f_9495905986.isSome:
+    assert f_9495905986.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_9495905986.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_9462351573 = instance.getExport(context, "handle_channel_update")
-  if f_9462351573.isSome:
-    assert f_9462351573.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_9462351573.get.of_field.func_field
+  let f_9495906010 = instance.getExport(context, "handle_channel_update")
+  if f_9495906010.isSome:
+    assert f_9495906010.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_9495906010.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_9462351574 = instance.getExport(context, "notify_task_complete")
-  if f_9462351574.isSome:
-    assert f_9462351574.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_9462351574.get.of_field.func_field
+  let f_9495906011 = instance.getExport(context, "notify_task_complete")
+  if f_9495906011.isSome:
+    assert f_9495906011.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_9495906011.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "notify_task_complete", "\'"
-  let f_9462351575 = instance.getExport(context, "handle_move")
-  if f_9462351575.isSome:
-    assert f_9462351575.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleMove = f_9462351575.get.of_field.func_field
+  let f_9495906012 = instance.getExport(context, "handle_move")
+  if f_9495906012.isSome:
+    assert f_9495906012.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleMove = f_9495906012.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_move", "\'"
-  let f_9462351587 = instance.getExport(context, "save_plugin_state")
-  if f_9462351587.isSome:
-    assert f_9462351587.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.savePluginState = f_9462351587.get.of_field.func_field
+  let f_9495906024 = instance.getExport(context, "save_plugin_state")
+  if f_9495906024.isSome:
+    assert f_9495906024.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.savePluginState = f_9495906024.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "save_plugin_state", "\'"
-  let f_9462351588 = instance.getExport(context, "load_plugin_state")
-  if f_9462351588.isSome:
-    assert f_9462351588.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.loadPluginState = f_9462351588.get.of_field.func_field
+  let f_9495906025 = instance.getExport(context, "load_plugin_state")
+  if f_9495906025.isSome:
+    assert f_9495906025.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.loadPluginState = f_9495906025.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "load_plugin_state", "\'"
+  let f_9495906026 = instance.getExport(context, "handle_event")
+  if f_9495906026.isSome:
+    assert f_9495906026.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleEvent = f_9495906026.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "handle_event", "\'"
 
 proc initPlugin*(funcs: ExportedFuncs): WasmtimeResult[void] =
   var args: array[max(1, 0), ValT]
@@ -497,6 +504,58 @@ proc loadPluginState*(funcs: ExportedFuncs; state: seq[uint8]): WasmtimeResult[
   if res.isErr:
     return res.toResult(void)
   
+proc handleEvent*(funcs: ExportedFuncs; fun: uint32; data: uint32;
+                  event: string; payload: string): WasmtimeResult[void] =
+  var args: array[max(1, 6), ValT]
+  var results: array[max(1, 0), ValT]
+  var trap: ptr WasmTrapT = nil
+  var memory = funcs.mem
+  let savePoint = stackSave(funcs.mStackSave.get.of_field.func_field,
+                            funcs.mContext)
+  defer:
+    discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
+                         funcs.mContext, savePoint.val)
+  var dataPtrWasm0: WasmPtr
+  var dataPtrWasm1: WasmPtr
+  args[0] = toWasmVal(fun)
+  args[1] = toWasmVal(data)
+  if event.len > 0:
+    dataPtrWasm0 = block:
+      let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
+                            funcs.mContext, (event.len * 1).int32, 4)
+      if temp.isErr:
+        return temp.toResult(void)
+      temp.val
+    args[2] = toWasmVal(cast[int32](dataPtrWasm0))
+    block:
+      for i0 in 0 ..< event.len:
+        memory[dataPtrWasm0 + i0] = cast[uint8](event[i0])
+  else:
+    args[2] = toWasmVal(0.int32)
+  args[3] = toWasmVal(cast[int32](event.len))
+  if payload.len > 0:
+    dataPtrWasm1 = block:
+      let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
+                            funcs.mContext, (payload.len * 1).int32, 4)
+      if temp.isErr:
+        return temp.toResult(void)
+      temp.val
+    args[4] = toWasmVal(cast[int32](dataPtrWasm1))
+    block:
+      for i0 in 0 ..< payload.len:
+        memory[dataPtrWasm1 + i0] = cast[uint8](payload[i0])
+  else:
+    args[4] = toWasmVal(0.int32)
+  args[5] = toWasmVal(cast[int32](payload.len))
+  let res = funcs.handleEvent.addr.call(funcs.mContext,
+                                        args.toOpenArray(0, 6 - 1),
+                                        results.toOpenArray(0, 0 - 1), trap.addr).toResult(
+      void)
+  if trap != nil:
+    return trap.toResult(void)
+  if res.isErr:
+    return res.toResult(void)
+  
 proc coreApiVersion*(instance: ptr InstanceData): int32
 proc coreGetTime*(instance: ptr InstanceData): float64
 proc coreGetPlatform*(instance: ptr InstanceData): Platform
@@ -751,6 +810,15 @@ proc registersStartRecordingCommands*(instance: ptr InstanceData;
 proc registersStopRecordingCommands*(instance: ptr InstanceData;
                                      register: sink string): void
 proc registersReplayCommands*(instance: ptr InstanceData; register: sink string): void
+proc eventsListenEvent*(instance: ptr InstanceData; fun: uint32; data: uint32;
+                        id: sink string; pattern: sink string): void
+proc eventsStopListenEvent*(instance: ptr InstanceData; id: sink string;
+                            pattern: sink string): void
+proc eventsEmitEvent*(instance: ptr InstanceData; event: sink string;
+                      payload: sink string): void
+proc sessionGetSessionData*(instance: ptr InstanceData; name: sink string): string
+proc sessionSetSessionData*(instance: ptr InstanceData; name: sink string;
+                            value: sink string): void
 proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:
@@ -4590,5 +4658,184 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           for i0 in 0 ..< register.len:
             register[i0] = p0[i0]
         registersReplayCommands(instance, register)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/events", "listen-event", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var fun: uint32
+        var data: uint32
+        var id: string
+        var pattern: string
+        fun = convert(parameters[0].i32, uint32)
+        data = convert(parameters[1].i32, uint32)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[2].i32].addr)
+          id = newString(parameters[3].i32)
+          for i0 in 0 ..< id.len:
+            id[i0] = p0[i0]
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[4].i32].addr)
+          pattern = newString(parameters[5].i32)
+          for i0 in 0 ..< pattern.len:
+            pattern[i0] = p0[i0]
+        eventsListenEvent(instance, fun, data, id, pattern)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/events", "stop-listen-event", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var id: string
+        var pattern: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          id = newString(parameters[1].i32)
+          for i0 in 0 ..< id.len:
+            id[i0] = p0[i0]
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[2].i32].addr)
+          pattern = newString(parameters[3].i32)
+          for i0 in 0 ..< pattern.len:
+            pattern[i0] = p0[i0]
+        eventsStopListenEvent(instance, id, pattern)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/events", "emit-event", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var event: string
+        var payload: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          event = newString(parameters[1].i32)
+          for i0 in 0 ..< event.len:
+            event[i0] = p0[i0]
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[2].i32].addr)
+          payload = newString(parameters[3].i32)
+          for i0 in 0 ..< payload.len:
+            payload[i0] = p0[i0]
+        eventsEmitEvent(instance, event, payload)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/session", "get-session-data", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var name: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          name = newString(parameters[1].i32)
+          for i0 in 0 ..< name.len:
+            name[i0] = p0[i0]
+        let res = sessionGetSessionData(instance, name)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              memory[dataPtrWasm0 + i0] = cast[uint8](res[i0])
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/session", "set-session-data", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var name: string
+        var value: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          name = newString(parameters[1].i32)
+          for i0 in 0 ..< name.len:
+            name[i0] = p0[i0]
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[2].i32].addr)
+          value = newString(parameters[3].i32)
+          for i0 in 0 ..< value.len:
+            value[i0] = p0[i0]
+        sessionSetSessionData(instance, name, value)
     if e.isErr:
       return e
