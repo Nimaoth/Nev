@@ -519,8 +519,8 @@
         "M": ["enter-choose-cursor-mode", "vim.handle-select-word"],
 
         // movement
-        "<C-r>": ["select-prev"],
-        "<C-m>": ["select-next"],
+        "<C-r>": ["vim.select-prev"],
+        "<C-m>": ["vim.select-next"],
         "<move>": ["vim.select-last <move>"],
         "<C-g>o": ["move", "(reverse)"],
         "<C-l>": ["move", "(next-tab-stop)"],

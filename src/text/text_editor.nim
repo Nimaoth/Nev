@@ -2249,25 +2249,20 @@ proc pasteAsync*(self: TextDocumentEditor, selections: seq[Selection], registerN
     case register.kind
     of RegisterKind.Text:
       let lines = register.text.splitLines()
-      self.document.edit(selections, selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
+      self.document.edit(selections, selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd)
     of RegisterKind.Rope:
       let lines = register.rope.splitLines()
-      self.document.edit(selections, selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
+      self.document.edit(selections, selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd)
   else:
     case register.kind
     of RegisterKind.Text:
-      self.document.edit(selections, selections, [register.text.move], notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
+      self.document.edit(selections, selections, [register.text.move], notify=true, record=true, inclusiveEnd=inclusiveEnd)
     of RegisterKind.Rope:
-      self.document.edit(selections, selections, [register.rope.move], notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
+      self.document.edit(selections, selections, [register.rope.move], notify=true, record=true, inclusiveEnd=inclusiveEnd)
 
-  # add list of selections for what was just pasted to history
-  if newSelections.len == selections.len:
-    var tempSelections = newSelections
-    for i in 0..tempSelections.high:
-      tempSelections[i].first = selections[i].first
-    self.selections = tempSelections
-
-  self.selections = newSelections
+  self.`selections=`(newSelections, addToHistory = true.some)
+  self.`selections=`(newSelections.mapIt(it.last.toSelection), addToHistory = true.some)
+  # self.selections = newSelections.mapIt(it.last.toSelection)
   self.scrollToCursor(Last)
   self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   self.markDirty()
@@ -3766,6 +3761,47 @@ proc applyAutoIndent(self: TextDocumentEditor, edits: var seq[Selection], texts:
 
       inc k
 
+proc joinSnippetBody(body: JsonNode): string {.raises: [ValueError].} =
+  if body.kind != JArray:
+    raise newException(ValueError, "Invalid snippet body, expected array, got " & $body.kind)
+  var text = ""
+  for i, line in body.elems:
+    if text.len > 0:
+      text.add "\n"
+    text.add line.getStr
+  return text
+
+proc createCompletionFromSnippet(self: TextDocumentEditor, snippet: JsonNode): Completion {.expose("editor.text").} =
+  try:
+    let prefix = if snippet.kind == JObject and snippet.hasKey("prefix"): snippet["prefix"].getStr else: "temp"
+    let text = if snippet.kind == JObject and snippet.hasKey("body"):
+      joinSnippetBody(snippet["body"])
+    elif snippet.kind == JArray:
+      joinSnippetBody(snippet)
+    elif snippet.kind == JString:
+      snippet.getStr
+    else:
+      raise newException(ValueError, "Invalid json type for snippet: " & $snippet.kind)
+
+    let edit = lsp_types.TextEdit(
+      `range`: lsp_types.Range(
+        start: lsp_types.Position(line: -1, character: -1),
+        `end`: lsp_types.Position(line: -1, character: -1),
+      ),
+      newText: text,
+    )
+    return Completion(
+      item: CompletionItem(
+        kind: lsp_types.CompletionKind.Snippet,
+        label: prefix,
+        detail: prefix.some,
+        insertTextFormat: InsertTextFormat.Snippet.some,
+        textEdit: lsp_types.init(lsp_types.CompletionItemTextEditVariant, edit).some,
+      ),
+    )
+  except CatchableError as e:
+    log lvlError, &"Failed to create completion from snippet: {e.msg}"
+
 proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   let completion = completion
   log(lvlInfo, fmt"Applying completion {completion.item.label}")
@@ -3897,8 +3933,8 @@ proc applyCompletion*(self: TextDocumentEditor, completion: JsonNode) {.expose("
   try:
     let completion = completion.jsonTo(Completion)
     self.applyCompletion(completion)
-  except:
-    log lvlError, &"[applyCompletion] Failed to parse completion {completion}"
+  except CatchableError as e:
+    log lvlError, &"[applyCompletion] Failed to parse completion {completion.pretty}: {e.msg}"
 
 proc isShowingCompletions*(self: TextDocumentEditor): bool =
   return self.showCompletions and self.completions.len > 0
