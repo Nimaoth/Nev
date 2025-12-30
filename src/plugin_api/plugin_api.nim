@@ -7,7 +7,7 @@ import text/[text_editor, text_document]
 import render_view, view
 import platform/platform, platform_service
 import config_provider, command_service, command_service_api, compilation_config
-import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database, popup
+import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database, popup, event_service, session
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 import lisp
 from scripting_api as sca import nil
@@ -50,6 +50,8 @@ type
     plugins*: PluginService
     settings*: ConfigStore
     vfsService*: VFSService
+    events*: EventService
+    sessions*: SessionService
     vfs*: VFS
     moves*: MoveDatabase
     timer*: Timer
@@ -69,6 +71,7 @@ type
     args: string
     destroyRequested: Atomic[bool]
     timer*: Timer
+    eventsId*: Id
 
 proc getMemoryFor(instance: ptr InstanceData, caller: ptr CallerT): Option[ExternT] =
   ExternT.none
@@ -163,6 +166,8 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host.plugins = services.getService(PluginService).get
   self.host.settings = services.getService(ConfigService).get.runtime
   self.host.vfsService = services.getService(VFSService).get
+  self.host.events = services.getService(EventService).get
+  self.host.sessions = services.getService(SessionService).get
   self.host.vfs = self.host.vfsService.vfs
   self.host.moves = services.getService(MoveDatabase).get
   self.host.timer = startTimer()
@@ -235,6 +240,7 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin, state
   instanceData.getMut.stdout = newInMemoryChannel()
   instanceData.getMut.stderr = newInMemoryChannel()
   instanceData.getMut.timer = startTimer()
+  instanceData.getMut.eventsId = newId()
   let ctx = instanceData.get.store.context
 
   let wasiConfig = newWasiConfig()
@@ -305,6 +311,8 @@ method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
   let instance = instance.WasmModuleInstanceImpl
   let instanceData = instance.instance
 
+  self.host.events.stopListen(instanceData.get.eventsId)
+
   for commandId in instanceData.get.commands:
     self.host.commands.unregisterCommand(commandId)
 
@@ -325,6 +333,7 @@ proc cloneInstance*(instance: ptr InstanceData): Arc[InstanceDataImpl] =
   instanceData.getMut.namespace = instance.namespace
   instanceData.getMut.host = instance.host
   instanceData.getMut.timer = startTimer()
+  instanceData.getMut.eventsId = newId()
   let ctx = instanceData.get.store.context
 
   let wasiConfig = newWasiConfig()
@@ -1043,14 +1052,31 @@ proc commandsExitCommandLine*(instance: ptr InstanceData) =
   instance.host.commands.exitCommandLine()
 
 proc settingsGetSettingRaw*(instance: ptr InstanceData, name: sink string): string =
+  if instance.host == nil:
+    return
   return $instance.host.settings.get(name, JsonNodeEx)
 
 proc settingsSetSettingRaw*(instance: ptr InstanceData, name: sink string, value: sink string) =
+  if instance.host == nil:
+    return
   try:
     # todo: permissions
     instance.host.settings.set(name, parseJsonex(value))
   except CatchableError as e:
     log lvlError, &"coreSetSettingRaw: Failed to set setting '{name}' to {value}: {e.msg}"
+
+proc sessionGetSessionData*(instance: ptr InstanceData; name: sink string): string =
+  if instance.host == nil:
+    return ""
+  return $instance.host.sessions.getSessionDataJson("plugins." & instance.namespace & "." & name, newJNull())
+
+proc sessionSetSessionData*(instance: ptr InstanceData; name: sink string; value: sink string): void =
+  if instance.host == nil:
+    return
+  try:
+    instance.host.sessions.setSessionDataJson("plugins." & instance.namespace & "." & name, value.parseJson())
+  except CatchableError as e:
+    log lvlError, &"Failed to set session data '{name}': {e.msg}"
 
 proc renderNewRenderView*(instance: ptr InstanceData): RenderViewResource =
   let view = newRenderView(instance.host.services)
@@ -1303,6 +1329,23 @@ proc processStdin*(instance: ptr InstanceData; self: var ProcessResource): Write
   if self.stdin.isNil:
     self.stdin = self.process.stdin
   return WriteChannelResource(channel: self.stdin)
+
+proc eventsListenEvent*(instance: ptr InstanceData; fun: uint32; data: uint32; id: sink string; pattern: sink string) =
+  if instance.host == nil:
+    return
+  proc cb(event, payload: string) {.gcsafe, raises: [].} =
+    discard instance.funcs.handleEvent(fun, data, event, payload)
+  instance.host.events.listen(instance.eventsId, pattern, cb)
+
+proc eventsStopListenEvent*(instance: ptr InstanceData; id: sink string; pattern: sink string) =
+  if instance.host == nil:
+    return
+  instance.host.events.stopListen(instance.eventsId, pattern)
+
+proc eventsEmitEvent*(instance: ptr InstanceData; event: sink string; payload: sink string) =
+  if instance.host == nil:
+    return
+  instance.host.events.emit(event, payload)
 
 type RenderView* = RenderViewResource
 type ReadChannel* = ReadChannelResource

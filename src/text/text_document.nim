@@ -8,7 +8,7 @@ import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, config_provider, service, vfs, vfs_service, language_server_list
 import syntax_map
 import pkg/[chroma, results]
-import vcs/vcs, layout
+import vcs/vcs, layout, event_service
 
 import diff
 
@@ -190,6 +190,7 @@ type
     services: Services
     workspace: Workspace
     editors: DocumentEditorService
+    eventBus: EventService
 
     nextLineIdCounter: int32 = 0
 
@@ -835,6 +836,7 @@ proc newTextDocument*(
   self.configService = services.getService(ConfigService).get
   self.vfs = services.getService(VFSService).get.vfs
   self.editors = services.getService(DocumentEditorService).get
+  self.eventBus = self.services.getService(EventService).get
   self.createLanguageServer = createLanguageServer
   self.buffer = initBuffer(content = "", remoteId = getNextBufferId())
   self.filename = self.vfs.normalize(filename)
@@ -941,6 +943,7 @@ proc saveAsync*(self: TextDocument) {.async.} =
     self.isBackedByFile = true
     self.lastSavedRevision = self.undoableRevision
     self.onSaved.invoke()
+    self.eventBus.emit(&"document/{self.id}/saved", $self.id)
 
     if self.settings.formatter.onSave.get():
       asyncSpawn self.format(runOnTempFile = false)

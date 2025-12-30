@@ -13,7 +13,7 @@ import document, document_editor, events, vmath, bumpy, input, custom_treesitter
 import completion, completion_provider_document, completion_provider_lsp,
   completion_provider_snippet, selector_popup_builder, dispatch_tables, register
 import config_provider, service, layout, platform_service, vfs, vfs_service, command_service, toast
-import diff, plugin_service, move_database
+import diff, plugin_service, move_database, event_service
 import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs
@@ -251,6 +251,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   registers: Registers
   workspace: Workspace
   moveDatabase: MoveDatabase
+  eventBus: EventService
   vfsService: VFSService
   vfs*: VFS
   commands*: CommandService
@@ -737,12 +738,13 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.handleDocumentChanged()
 
 method deinit*(self: TextDocumentEditor) =
+  self.unregister()
+  self.eventBus.emit(&"editor/{self.id}/destroy", $self.id)
+
   self.platform.onFocusChanged.unsubscribe self.onFocusChangedHandle
   self.platform.onModifiersChanged.unsubscribe self.onModsChangedHandle
 
   self.configService.removeStore(self.config)
-
-  self.unregister()
 
   if self.diffDocument.isNotNil:
     self.diffDocument.onRequestRerender.unsubscribe(self.onRequestRerenderDiffHandle)
@@ -5013,10 +5015,13 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
   if self.diffDocument.isNotNil:
     asyncSpawn self.updateDiffAsync(gotoFirstDiff=false)
 
+  self.eventBus.emit(&"editor/{self.id}/loaded", $self.id)
+
 proc handleTextDocumentSaved(self: TextDocumentEditor) =
   log lvlInfo, fmt"handleTextDocumentSaved '{self.document.filename}'"
   if self.diffDocument.isNotNil:
     asyncSpawn self.updateDiffAsync(gotoFirstDiff=false)
+  self.eventBus.emit(&"editor/{self.id}/saved", $self.id)
   self.markDirty()
 
 proc handleCompletionsUpdated(self: TextDocumentEditor) =
@@ -5086,6 +5091,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.registers = self.services.getService(Registers).get
   self.workspace = self.services.getService(Workspace).get
   self.moveDatabase = self.services.getService(MoveDatabase).get
+  self.eventBus = self.services.getService(EventService).get
   self.vfs = self.services.getService(VFSService).get.vfs
   self.commands = self.services.getService(CommandService).get
   self.displayMap = DisplayMap.new()

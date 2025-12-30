@@ -527,6 +527,23 @@ interface settings {
   set-setting-raw: func(name: string, value: string);
 }
 
+interface events {
+  /// todo
+  listen-event: func(fun: u32, data: u32, id: string, pattern: string);
+  /// todo
+  stop-listen-event: func(id: string, pattern: string);
+  /// todo
+  emit-event: func(event: string, payload: string);
+}
+
+interface session {
+  /// todo
+  get-session-data: func(name: string) -> string;
+
+  /// todo
+  set-session-data: func(name: string, value: string);
+}
+
 interface guest {
   use render.{view};
   use channel.{channel-listen-response};
@@ -540,6 +557,7 @@ interface guest {
   handle-move: func(fun: u32, data: u32, text: u32, selections: list<selection>, count: s32, eol: bool) -> list<selection>;
   save-plugin-state: func() -> list<u8>;
   load-plugin-state: func(state: list<u8>);
+  handle-event: func(fun: u32, data: u32, event: string, payload: string);
 }
 
 /// APIs which can safely be used on a background thread
@@ -567,6 +585,8 @@ world plugin {
   import channel;
   import process;
   import registers;
+  import events;
+  import session;
 
   export guest;
 }
