@@ -206,6 +206,22 @@
 
     "lsp-merge.timeout": 10000,
 
+    "text.search-regexes": {
+        "goto-definition": "\\b[[0]]\\b",
+        "goto-declaration": "\\b[[0]]\\b",
+        "goto-type-definition": "\\b[[0]]\\b",
+        "goto-implementation": "\\b[[0]]\\b",
+        "goto-references": "\\b[[0]]\\b",
+        "symbols": "\\b[[0]]\\b",
+        "workspace-symbols": "\\b[[0]]\\b",
+        "workspace-symbols-by-kind": {
+            "Class": "\\b[[0]]\\b",
+            "Function": "\\b[[0]]\\b",
+            "Method": "\\b[[0]]\\b",
+            "Enum": "\\b[[0]]\\b",
+        },
+    },
+
     "+lang": {
         "gleam": {
             "+text": {
