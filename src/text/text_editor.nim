@@ -4744,13 +4744,14 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
     if doRecord and action notin noRecordActions:
       self.registers.recordCommand("." & action & " " & arg)
 
-    var args = newJArray()
-    for a in newStringStream(arg).parseJsonFragments():
-      args.add a
+    if not action.startsWith("("): # Hacky, this should not be checked here. Lisp commands are handled through self.commands
+      var args = newJArray()
+      for a in newStringStream(arg).parseJsonFragments():
+        args.add a
 
-    result = self.handleActionInternal(action, args)
-    if result.isSome:
-      return
+      result = self.handleActionInternal(action, args)
+      if result.isSome:
+        return
 
     let res = self.commands.executeCommand(action & " " & arg, record = false)
     if res.isSome:
