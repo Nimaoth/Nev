@@ -54,6 +54,12 @@ clear
 *.map
 plugins/pong
 
+deps/winim
+tags
+stdtags
+deps/tags
+nim.cfg
+
 *.nev-session
 
 /nev*
