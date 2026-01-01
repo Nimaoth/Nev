@@ -75,31 +75,36 @@ proc gotoRegexLocation(self: LanguageServerRegex, doc: TextDocument, location: C
 method getDefinition*(self: LanguageServerRegex, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   if self.documents.getDocument(filename).getSome(doc) and doc of TextDocument:
     let t = doc.TextDocument.settings.searchRegexes.gotoDefinition.getRegex()
-    return await self.gotoRegexLocation(doc.TextDocument, location, t)
+    if t.isSome:
+      return await self.gotoRegexLocation(doc.TextDocument, location, t)
   return @[]
 
 method getDeclaration*(self: LanguageServerRegex, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   if self.documents.getDocument(filename).getSome(doc) and doc of TextDocument:
     let t = doc.TextDocument.settings.searchRegexes.gotoDeclaration.getRegex()
-    return await self.gotoRegexLocation(doc.TextDocument, location, t)
+    if t.isSome:
+      return await self.gotoRegexLocation(doc.TextDocument, location, t)
   return @[]
 
 method getImplementation*(self: LanguageServerRegex, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   if self.documents.getDocument(filename).getSome(doc) and doc of TextDocument:
     let t = doc.TextDocument.settings.searchRegexes.gotoImplementation.getRegex()
-    return await self.gotoRegexLocation(doc.TextDocument, location, t)
+    if t.isSome:
+      return await self.gotoRegexLocation(doc.TextDocument, location, t)
   return @[]
 
 method getTypeDefinition*(self: LanguageServerRegex, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   if self.documents.getDocument(filename).getSome(doc) and doc of TextDocument:
     let t = doc.TextDocument.settings.searchRegexes.gotoTypeDefinition.getRegex()
-    return await self.gotoRegexLocation(doc.TextDocument, location, t)
+    if t.isSome:
+      return await self.gotoRegexLocation(doc.TextDocument, location, t)
   return @[]
 
 method getReferences*(self: LanguageServerRegex, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   if self.documents.getDocument(filename).getSome(doc) and doc of TextDocument:
     let t = doc.TextDocument.settings.searchRegexes.gotoReferences.getRegex()
-    return await self.gotoRegexLocation(doc.TextDocument, location, t)
+    if t.isSome:
+      return await self.gotoRegexLocation(doc.TextDocument, location, t)
   return @[]
 
 method getSymbols*(self: LanguageServerRegex, filename: string): Future[seq[Symbol]] {.async.} =

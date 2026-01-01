@@ -275,6 +275,7 @@ import plugin_service
 import selector_popup, layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, toast, terminal_service
 import language_server_paths
 import language_server_regex
+import language_server_ctags
 import scripting/expose
 import config_provider
 import vcs/vcs_api

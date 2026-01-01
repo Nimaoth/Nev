@@ -3549,7 +3549,7 @@ type
 
 proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.async.} =
   let symbols = self.languageServer.getWorkspaceSymbols(self.filename, self.query).await
-  # let t = startTimer()
+  let t = startTimer()
   var items = newItemList(symbols.len)
   var index = 0
   for symbol in symbols:
@@ -3561,6 +3561,13 @@ proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.as
       data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
     )
     inc index
+
+    if t.elapsed.ms > 5:
+      try:
+        await sleepAsync(1.milliseconds)
+        t = startTimer()
+      except:
+        discard
 
   # debugf"[getWorkspaceSymbols] {t.elapsed.ms}ms"
 
