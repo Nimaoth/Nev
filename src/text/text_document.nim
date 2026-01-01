@@ -1877,3 +1877,14 @@ proc getDeclarationsInRange*(self: TextDocument, visibleRange: Selection): seq[t
 
       if isDecl:
         result.add (declRange, nameRange, self.contentString(nameRange, false))
+
+proc getImportedFiles*(self: TextDocument): seq[string] =
+  if self.requiresLoad or self.isLoadingAsync:
+    return
+
+  if self.textObjectsQuery != nil and not self.tsTree.isNil:
+    for captures in self.textObjectsQuery.query(self.tsTree, ((0, 0), self.lastCursor)):
+      for (node, nodeCapture) in captures:
+        var sel = node.getRange().toSelection
+        if nodeCapture == "import":
+          result.add self.contentString(sel, false)

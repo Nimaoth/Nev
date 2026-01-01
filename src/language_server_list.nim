@@ -66,7 +66,11 @@ template merge(self: LanguageServerList, T: untyped, subCall: untyped, name: unt
 
     await allFutures(futsTimeout)
 
-    var res = newSeq[T]()
+    var total: int = 0
+    for fut in futs:
+      if fut.completed:
+        total += fut.read().len
+    var res = newSeqOfCap[T](total)
     for fut in futs:
       if fut.completed:
         res.add fut.read()
