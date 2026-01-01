@@ -1,6 +1,6 @@
 import std/[options, tables, strutils, sugar, sequtils, sets, os]
 import nimsumtree/rope
-import misc/[custom_logger, custom_async, util, rope_utils, event, rope_regex, myjsonutils, jsonex, interned_string, timer, delayed_task, async_process, response]
+import misc/[custom_logger, custom_async, util, rope_utils, event, rope_regex, myjsonutils, jsonex, timer, delayed_task, async_process, response]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
 import document_editor, service, vfs_service, vfs, config_provider, event_service
