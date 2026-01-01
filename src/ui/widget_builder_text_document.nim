@@ -159,7 +159,8 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
       builder.panel(innerSizeFlags):
         discard self.hoverView.createUI(builder)
     else:
-      builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextMultiLine}, text = self.hoverText, textColor = activeHoverColor)
+      for line in self.hoverText.splitLines:
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = line, textColor = activeHoverColor)
 
   if self.hoverView == nil or not self.hoverView.detached:
     var clampedX = cursorBounds.x
