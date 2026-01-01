@@ -3549,7 +3549,7 @@ type
 
 proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.async.} =
   let symbols = self.languageServer.getWorkspaceSymbols(self.filename, self.query).await
-  let t = startTimer()
+  var t = startTimer()
   var items = newItemList(symbols.len)
   var index = 0
   for symbol in symbols:
@@ -4108,6 +4108,7 @@ proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpt
 proc showHoverFor*(self: TextDocumentEditor, cursor: Cursor) =
   ## Shows lsp hover information for the given cursor.
   ## Does nothing if no language server is available or the language server doesn't return any info.
+  self.mouseHoverLocation = self.selection.last
   asyncSpawn self.showHoverForAsync(cursor)
 
 proc showHoverForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -4118,6 +4119,7 @@ proc showHoverForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
 proc showHover*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Shows lsp hover information for the current selection.
   ## Does nothing if no language server is available or the language server doesn't return any info.
+  self.mouseHoverLocation = self.selection.last
   asyncSpawn self.showHoverForAsync(self.selection.last)
 
 proc toggleHover*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -4128,6 +4130,7 @@ proc toggleHover*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.showHover = false
     self.markDirty()
   else:
+    self.mouseHoverLocation = self.selection.last
     asyncSpawn self.showHoverForAsync(self.selection.last)
 
 proc hideHover*(self: TextDocumentEditor) {.expose("editor.text").} =
