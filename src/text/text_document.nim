@@ -233,6 +233,7 @@ type
     highlightQuery*: TSQuery
     textObjectsQuery*: TSQuery
     errorQuery: TSQuery
+    tsQueries*: Table[string, Option[TSQuery]]
 
     languageServerList*: LanguageServerList
 
@@ -742,6 +743,7 @@ proc isAtExpressionStart*(self: TextDocument, location: Cursor): bool =
 proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   # logScope lvlInfo, &"loadTreesitterLanguage '{self.filename}'"
 
+  self.tsQueries.clear()
   self.highlightQuery = nil
   self.textObjectsQuery = nil
   self.errorQuery = nil
@@ -808,6 +810,23 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
 
   self.notifyRequestRerender()
 
+proc tsQuery*(self: TextDocument, name: string): Future[Option[TSQuery]] {.async.} =
+  self.tsQueries.withValue(name, q):
+    return q[]
+
+  if self.tsLanguage.isNil:
+    return TSQuery.none
+
+  let prevLanguageId = self.languageId
+  let treesitterLanguageName = self.settings.treesitter.language.get().get(self.languageId)
+  let path = &"app://languages/{treesitterLanguageName}/queries/{name}.scm"
+  let query = self.tsLanguage.queryFile(self.vfs, name, path).await
+  if prevLanguageId != self.languageId:
+    return TSQuery.none
+
+  self.tsQueries[name] = query
+  return query
+
 proc reloadTreesitterLanguage*(self: TextDocument) =
   asyncSpawn self.loadTreesitterLanguage()
 
@@ -873,6 +892,7 @@ method deinit*(self: TextDocument) =
   self.highlightQuery = nil
   self.textObjectsQuery = nil
   self.errorQuery = nil
+  self.tsQueries.clear()
 
   if self.languageServerList.isNotNil:
     self.languageServerList.disconnect(self)
@@ -1878,13 +1898,23 @@ proc getDeclarationsInRange*(self: TextDocument, visibleRange: Selection): seq[t
       if isDecl:
         result.add (declRange, nameRange, self.contentString(nameRange, false))
 
-proc getImportedFiles*(self: TextDocument): seq[string] =
+proc getImportedFiles*(self: TextDocument): Future[Option[seq[string]]] {.async.} =
+  result = seq[string].none
   if self.requiresLoad or self.isLoadingAsync:
     return
 
-  if self.textObjectsQuery != nil and not self.tsTree.isNil:
-    for captures in self.textObjectsQuery.query(self.tsTree, ((0, 0), self.lastCursor)):
-      for (node, nodeCapture) in captures:
-        var sel = node.getRange().toSelection
-        if nodeCapture == "import":
-          result.add self.contentString(sel, false)
+  if self.tsTree.isNil:
+    return
+
+  let query = await self.tsQuery("imports")
+  if query.isNone or self.tsTree.isNil:
+    return
+
+  var res = newSeq[string]()
+  for captures in query.get.query(self.tsTree, ((0, 0), self.lastCursor)):
+    for (node, nodeCapture) in captures:
+      var sel = node.getRange().toSelection
+      if nodeCapture == "import":
+        res.add self.contentString(sel, false)
+
+  return res.some
