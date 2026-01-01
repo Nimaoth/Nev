@@ -46,10 +46,22 @@ export
   registers
 
 import
+  events
+
+export
+  events
+
+import
   text_document
 
 export
   text_document
+
+import
+  session
+
+export
+  session
 
 import
   render
@@ -203,3 +215,18 @@ proc loadPluginStateExported(a0: int32; a1: int32): void {.
   var state: WitList[uint8]
   state = wl(cast[ptr typeof(state[0])](a0), a1)
   loadPluginState(state)
+
+proc handleEvent(fun: uint32; data: uint32; event: WitString; payload: WitString): void
+proc handleEventExported(a0: uint32; a1: uint32; a2: int32; a3: int32;
+                         a4: int32; a5: int32): void {.
+    wasmexport("handle-event", "nev:plugins/guest").} =
+  var
+    fun: uint32
+    data: uint32
+    event: WitString
+    payload: WitString
+  fun = convert(a0, uint32)
+  data = convert(a1, uint32)
+  event = ws(cast[ptr char](a2), a3)
+  payload = ws(cast[ptr char](a4), a5)
+  handleEvent(fun, data, event, payload)
