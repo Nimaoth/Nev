@@ -14,36 +14,57 @@ type
     lastResponseLocation: Cursor
     languageServer: LanguageServer
     unfilteredCompletions: seq[CompletionItem]
+    unfilteredVersion: int
+    isFiltering: bool = false
 
 proc updateFilterText(self: CompletionProviderLsp) =
   let selection = self.document.getCompletionSelectionAt(self.location)
   self.currentFilterText = self.document.contentString(selection)
 
-proc refilterCompletions(self: CompletionProviderLsp) =
-  # debugf"[LSP.refilterCompletions] {self.location}: '{self.currentFilterText}'"
-  let timer = startTimer()
+proc refilterCompletions(self: CompletionProviderLsp) {.async.} =
+  if self.isFiltering:
+    return
+  self.isFiltering = true
+  defer:
+    self.isFiltering = false
+  while true:
+    # debugf"[LSP.refilterCompletions] {self.location}: '{self.currentFilterText}'"
+    let unfilteredVersion = self.unfilteredVersion
+    let timer = startTimer()
+    var t = startTimer()
 
-  self.filteredCompletions.setLen 0
-  for item in self.unfilteredCompletions:
-    let text = item.filterText.get(item.label)
-    let score = matchFuzzy(self.currentFilterText, text, defaultCompletionMatchingConfig).score.float
+    self.filteredCompletions.setLen 0
+    for item in self.unfilteredCompletions:
+      if t.elapsed.ms > 3:
+        try:
+          await sleepAsync(3.milliseconds)
+          if unfilteredVersion != self.unfilteredVersion:
+            break
+          t = startTimer()
+        except:
+          discard
 
-    if timer.elapsed.ms > 2:
-      break
+      let text = item.filterText.get(item.label)
+      let score = matchFuzzy(self.currentFilterText, text, defaultCompletionMatchingConfig).score.float
 
-    if score < 0:
+      if score < 0:
+        continue
+
+      self.filteredCompletions.add Completion(
+        item: item,
+        filterText: self.currentFilterText,
+        score: score,
+        source: "LSP",
+      )
+
+    if unfilteredVersion != self.unfilteredVersion:
       continue
 
-    self.filteredCompletions.add Completion(
-      item: item,
-      filterText: self.currentFilterText,
-      score: score,
-      source: "LSP",
-    )
-
-  if timer.elapsed.ms > 2:
-    log lvlInfo, &"[Comp-Lsp] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.unfilteredCompletions.len})"
-  self.onCompletionsUpdated.invoke (self)
+    if timer.elapsed.ms > 2:
+      log lvlInfo, &"[Comp-Lsp] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.unfilteredCompletions.len})"
+    self.onCompletionsUpdated.invoke (self)
+    if unfilteredVersion == self.unfilteredVersion:
+      break
 
 proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =
   let location = self.location
@@ -58,17 +79,19 @@ proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =
   if completions.isSuccess:
     # log lvlInfo, fmt"[getLspCompletionsAsync] at {location}: got {completions.result.items.len} completions"
     self.unfilteredCompletions = completions.result.items
-    self.refilterCompletions()
+    self.unfilteredVersion.inc()
+    asyncSpawn self.refilterCompletions()
   elif completions.isCanceled:
     discard
   else:
     log lvlWarn, fmt"Failed to get completions: {completions.error}"
     self.unfilteredCompletions = @[]
-    self.refilterCompletions()
+    self.unfilteredVersion.inc()
+    asyncSpawn self.refilterCompletions()
 
 method forceUpdateCompletions*(provider: CompletionProviderLsp) =
   provider.updateFilterText()
-  provider.refilterCompletions()
+  asyncSpawn provider.refilterCompletions()
   asyncSpawn provider.getLspCompletionsAsync()
 
 proc newCompletionProviderLsp*(document: TextDocument, languageServer: LanguageServer): CompletionProviderLsp =

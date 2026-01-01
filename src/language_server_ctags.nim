@@ -41,7 +41,7 @@ type
     commandHistory*: seq[string]
     workspace: Workspace
 
-    importMap: Table[string, string]    # Map from import name to file path
+    importMap: Table[string, HashSet[string]]    # Map from import name to file paths
     files: Table[string, CTagsSymbols]  # Code file path to parsed ctags
     ctags: Table[string, CTagsFile]    # CTags file path to parsed ctags
     fileToCTags: Table[string, string] # Code file path to ctags file path
@@ -162,7 +162,10 @@ proc loadCTags(self: LanguageServerCTags, path: string, content: string) {.async
           self.files[def.path] = CTagsSymbols(sourceFile: path)
           seenFiles.incl def.path
           let name = def.path.splitFile.name
-          self.importMap[name] = def.path
+          if name in self.importMap:
+            self.importMap[name].incl def.path
+          else:
+            self.importMap[name] = [def.path].toHashSet
 
         self.files.withValue(def.path, s):
           total.inc()
@@ -313,10 +316,57 @@ method getWorkspaceSymbols*(self: LanguageServerCTags, filename: string, query: 
     allSymbols.add file.symbols
   return allSymbols
 
+method getHover*(self: LanguageServerCTags, filename: string, location: Cursor): Future[Option[string]] {.async.} =
+  var res = ""
+  let editors = self.documents.getEditors(filename)
+  for editor in editors:
+    if editor of TextDocumentEditor and editor.getDocument() != nil:
+      let d = editor.getDocument().TextDocument
+      let s = d.getLanguageWordBoundary(location)
+      let funcText = d.contentString(s)
+
+      for file in self.files.values:
+        for def in file.definitions:
+          if funcText == def.name:
+            if res.len > 0:
+              res.add "\n"
+            res.add &"{def.kindRaw} {def.signature} - {def.path}"
+
+      break
+
+  if res.len > 0:
+    return res.some
+  else:
+    return string.none
+
+method getSignatureHelp*(self: LanguageServerCTags, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
+  var res = newSeq[lsp_types.SignatureInformation]()
+  let editors = self.documents.getEditors(filename)
+  for editor in editors:
+    if editor of TextDocumentEditor and editor.getDocument() != nil:
+      let e = editor.TextDocumentEditor
+      let d = editor.getDocument().TextDocument
+      let move = d.config.get("lsp.ctags.callee-move", "(ts 'call.func') (last) (inclusive)")
+      let s = e.getSelectionForMove(location, move)
+      let funcText = d.contentString(s)
+
+      for file in self.files.values:
+        for def in file.definitions:
+          if def.signature.len > 0 and (funcText == def.name or funcText.endsWith("." & def.name)):
+            res.add lsp_types.SignatureInformation(
+              label: def.signature,
+              parameters: @[lsp_types.ParameterInformation(label: newJString(def.signature))]
+            )
+
+      break
+
+  return @[lsp_types.SignatureHelpResponse(
+    signatures: res,
+  )].success
+
 method getCompletions*(self: LanguageServerCTags, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
   var t2 = startTimer()
   var t = startTimer()
-  var sl = 0
   var total: int = 0
   for file in self.files.values:
     total += file.symbols.len
@@ -324,49 +374,45 @@ method getCompletions*(self: LanguageServerCTags, filename: string, location: Cu
   template maybeSleep(): untyped =
     if t.elapsed.ms > 3:
       try:
-        inc sl
         await sleepAsync(5.milliseconds)
         t = startTimer()
       except:
         discard
 
   var completionText = ""
-  var importedFiles: seq[string]
+  var importedFiles = seq[string].none
   if self.documents.getDocument(filename).getSome(doc) and doc of TextDocument:
     let s = doc.TextDocument.getLanguageWordBoundary(location)
     completionText = doc.TextDocument.contentString(s)
-    importedFiles = doc.TextDocument.getImportedFiles()
-
-  var importNameToPath = initTable[string, string]()
-  for path in self.files.keys:
-    let name = path.splitFile.name
-    importNameToPath[name] = path
+    let tsImportedFiles = await doc.TextDocument.getImportedFiles()
+    if tsImportedFiles.isSome:
+      importedFiles = tsImportedFiles
+      try:
+        for autoImport in doc.TextDocument.config.get("lsp.ctags.auto-imports", newSeq[string]()):
+          importedFiles.get.add autoImport
+      except CatchableError:
+        discard
 
   var importedFilePaths = initHashSet[string]()
-  importedFilePaths.incl filename
-  for f in importedFiles:
-    importNameToPath.withValue(f, path):
-      importedFilePaths.incl path[]
+  if importedFiles.isSome:
+    importedFilePaths.incl filename
+    for f in importedFiles.get:
+      self.importMap.withValue(f, paths):
+        for path in paths[]:
+          importedFilePaths.incl path
+          maybeSleep()
 
   var res: seq[CompletionItem] = newSeqOfCap[lsp_types.CompletionItem](total)
   for (path, file) in self.files.pairs:
+    maybeSleep()
+
     res.add file.moduleCompletions
     if importedFilePaths.len > 0 and not importedFilePaths.contains(path):
       continue
 
-    if completionText.len > 0 or importedFiles.len > 0:
-      for i, c in file.completions:
-        maybeSleep()
+    res.add file.completions
 
-        # if completionText.len > 0 and not c.label.startsWith(completionText):
-        #   continue
-
-        res.add c
-    else:
-      maybeSleep()
-      res.add file.completions
-
-  debugf"slept {sl} times, {t2.elapsed.ms} ms, {res.len} completions"
+  # debugf"{t2.elapsed.ms} ms, {res.len} completions"
   return lsp_types.CompletionList(
     items: res,
   ).success
