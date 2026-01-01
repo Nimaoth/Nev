@@ -3184,7 +3184,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
         # debugf"[defaultHandleCommand] '{command}' handled by active editor"
         return editor.handleAction(action[1..^1], arg, record=false).toStringResult()
 
-      log lvlError, fmt"No active editor"
+      log lvlError, fmt"Failed to handle command '{action}': No active editor"
       return string.none
 
     if action.startsWith("^"): # active popup action
@@ -3192,7 +3192,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
         # debugf"[defaultHandleCommand] '{command}' handled by active popup"
         return self.layout.popups[^1].handleAction(action[1..^1], arg).toStringResult()
 
-      log lvlError, fmt"No popup"
+      log lvlError, fmt"Failed to handle command '{action}': No popup"
       return string.none
 
     {.gcsafe.}:
