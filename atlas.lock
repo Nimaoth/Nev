@@ -111,7 +111,7 @@
     "nimwasmtime.Nimaoth.github.com": {
       "dir": "$deps\\nimwasmtime.Nimaoth.github.com",
       "url": "https://github.com/Nimaoth/nimwasmtime",
-      "commit": "749c309efd492ab1d379d76ec2de261969f8f401",
+      "commit": "8e0fe14b52013f35a8ef3ef4231a6db698c7af3d",
       "version": ""
     },
     "nimsumtree.Nimaoth.github.com": {
@@ -325,7 +325,7 @@
       "requires \"https://github.com/Nimaoth/lrucache.nim#479d4cf\"",
       "requires \"https://github.com/Nimaoth/boxy#bfc8665\"",
       "requires \"https://github.com/Nimaoth/nimtreesitter-api#cd29e9b\"",
-      "requires \"https://github.com/Nimaoth/nimwasmtime#749c309\"",
+      "requires \"https://github.com/Nimaoth/nimwasmtime#8e0fe14\"",
       "requires \"https://github.com/Nimaoth/nimsumtree#ee2d92b\"",
       "requires \"https://github.com/Nimaoth/zippy >= 0.10.17\"",
       "requires \"libssh2 >= 0.1.9\"",
