@@ -3,8 +3,8 @@ import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables
 import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
-  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex]
+import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, generational_seq,
+  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex, render_command]
 import scripting/[expose]
 import platform/[platform]
 import language/[language_server_base]
@@ -20,6 +20,7 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 import lisp
 import view
+import scroll_box
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
@@ -240,6 +241,9 @@ type
     of CodeActionKind.CodeAction:
       action: lsp_types.CodeAction
 
+type CustomOverlayRenderer* = proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 {.gcsafe, raises: [].}
+type CustomRendererId* = distinct uint64
+
 type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
   editors*: DocumentEditorService
@@ -302,12 +306,10 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastSearchResultUpdate: tuple[buffer: BufferId, version: Global, searchQuery: string]
   isUpdatingMatchingWordHighlights: bool
 
-  styledTextOverrides: Table[int, seq[tuple[cursor: Cursor, text: string, scope: string]]]
-
   customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string, tint: Color]]]
   signs*: Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color, color: string, width: int]]]
 
-  defaultScrollBehaviour*: ScrollBehaviour = CenterOffscreen
+  defaultScrollBehaviour*: ScrollBehaviour = ScrollToMargin
   nextScrollBehaviour*: Option[ScrollBehaviour]
   defaultSnapBehaviour*: ScrollSnapBehaviour = MinDistanceOffscreen
   nextSnapBehaviour*: Option[ScrollSnapBehaviour]
@@ -363,6 +365,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   disableScrolling*: bool
   scrollOffset*: Vec2
   interpolatedScrollOffset*: Vec2
+  scrollBox*: ScrollBox
 
   currentCenterCursor*: Cursor # Cursor representing the center of the screen
   currentCenterCursorRelativeYPos*: float # 0: top of screen, 1: bottom of screen
@@ -387,7 +390,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   completionsDirty: bool
   completionEngine: CompletionEngine
   lastCompletionTrigger: (Global, Cursor)
-  lastItems*: seq[tuple[index: int, bounds: Rect]]
   showCompletions*: bool
   scrollToCompletion*: Option[int]
   completionsDrawnInReverse*: bool = false
@@ -429,6 +431,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   moveFallbacks: MoveFunction
 
+  customOverlayRenderers*: GenerationalSeq[CustomOverlayRenderer, CustomRendererId]
+
 type
   TextDocumentEditorService* = ref object of Service
   TextDocumentFactory* = ref object of DocumentFactory
@@ -466,7 +470,6 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Selection History: {self.selectionHistory.len}\n"
   result.add &"Search Query: {self.searchQuery}\n"
   result.add &"Search Results: {self.searchResults.len}\n"
-  result.add &"Styled Text Overrides: {self.styledTextOverrides.len}\n"
   result.add &"Custom Highlights: {self.customHighlights.len}\n"
   result.add &"Inlay Hints: {self.inlayHints.len}\n"
   result.add &"Overlay map: {st.stats(self.displayMap.overlay.snapshot.map)}\n"
@@ -480,7 +483,6 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Completion Matches: {self.completionMatches.len}\n"
 
   result.add &"Completions: {self.completions.len}\n"
-  result.add &"LastItems: {self.lastItems.len}"
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode]
 proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse
@@ -495,8 +497,8 @@ proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection
 proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection, color: string, tint: Color = color(1, 1, 1))
 proc clearCustomHighlights*(self: TextDocumentEditor, id: Id)
 proc updateSearchResults(self: TextDocumentEditor)
-proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
-proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5)
+proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, snap: bool = false)
+proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5, snap: bool = false)
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, margin: Option[float] = float.none, scrollBehaviour: Option[ScrollBehaviour] = ScrollBehaviour.none, relativePosition: float = 0.5)
 proc getFileName*(self: TextDocumentEditor): string
@@ -517,7 +519,7 @@ proc handleTextDocumentPreLoaded(self: TextDocumentEditor)
 proc handleTextDocumentSaved(self: TextDocumentEditor)
 proc handleCompletionsUpdated(self: TextDocumentEditor)
 proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapMapSnapshot)
-proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap)
+proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap, old: DisplayMapSnapshot)
 proc updateMatchingWordHighlight(self: TextDocumentEditor)
 proc updateColorOverlays(self: TextDocumentEditor) {.async.}
 proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor)
@@ -604,6 +606,10 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections, addToHisto
 
   self.onSelectionsChanged.invoke (self,)
 
+  self.scrollBox.scrollTo(self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int, center = false)
+
+  # echo self.displayMap.visualLineRange(self.displayMap.toWrapPoint(self.selection.last.toPoint), Bias.Right)
+  # echo self.displayMap.wrapMap.snapshot.lineLength(self.displayMap.toWrapPoint(self.selection.last.toPoint))
   self.markDirty()
 
 proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
@@ -1111,31 +1117,20 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   self.targetLineRelativeY = relativePosition
 
   let targetPoint = cursor.toPoint
-  let textHeight = self.platform.totalLineHeight
   let charWidth = self.platform.charWidth
   let displayPoint = self.displayMap.toDisplayPoint(targetPoint)
-  let targetDisplayLine = displayPoint.row.int
-  let targetLineY = targetDisplayLine.float32 * textHeight + self.interpolatedScrollOffset.y
   let targetColumnX = displayPoint.column.float32 * charWidth + self.interpolatedScrollOffset.x
-
-  let configMarginRelative = self.settings.cursorMarginRelative.get()
-  let configMargin = self.settings.cursorMargin.get()
-  let margin = if margin.getSome(margin):
-    clamp(margin, 0.0, self.lastContentBounds.h * 0.5 - textHeight * 0.5)
-  elif configMarginRelative:
-    clamp(configMargin, 0.0, 1.0) * 0.5 * self.lastContentBounds.h
-  else:
-    clamp(configMargin * textHeight, 0.0, self.lastContentBounds.h * 0.5 - textHeight * 0.5)
 
   # todo: make this configurable
   let marginX = charWidth * 5
 
-  let centerY = case scrollBehaviour.get(self.defaultScrollBehaviour):
-    of CenterAlways: true
-    of CenterOffscreen: targetLineY < 0 or targetLineY + textHeight > self.lastContentBounds.h
-    of CenterMargin: targetLineY < margin or targetLineY + textHeight > self.lastContentBounds.h - margin
-    of ScrollToMargin: false
-    of TopOfScreen: false
+  # debugf"scrollToCursor {cursor}, {margin}, {scrollBehaviour.get(self.defaultScrollBehaviour)}"
+  let (centerY, centerOffscreenY) = case scrollBehaviour.get(self.defaultScrollBehaviour):
+    of CenterAlways: (true, false)
+    of CenterOffscreen: (false, true)
+    of CenterMargin: (false, false)
+    of ScrollToMargin: (false, false)
+    of TopOfScreen: (false, false)
 
   let centerX = case scrollBehaviour.get(self.defaultScrollBehaviour):
     of CenterAlways: true
@@ -1144,22 +1139,7 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
     of ScrollToMargin: false
     of TopOfScreen: false
 
-  self.nextScrollBehaviour = if centerY:
-    CenterAlways.some
-  else:
-    scrollBehaviour
-
-  if centerY:
-    self.scrollOffset.y = self.lastContentBounds.h * relativePosition - textHeight * 0.5 - targetDisplayLine.float * textHeight
-  else:
-    case scrollBehaviour.get(self.defaultScrollBehaviour)
-    of TopOfScreen:
-      self.scrollOffset.y = margin - targetDisplayLine.float * textHeight
-    else:
-      if targetLineY < margin:
-        self.scrollOffset.y = margin - targetDisplayLine.float * textHeight
-      elif targetLineY + textHeight > self.lastContentBounds.h - margin:
-        self.scrollOffset.y = self.lastContentBounds.h - margin - textHeight - targetDisplayLine.float * textHeight
+  self.scrollBox.scrollTo(displayPoint.row.int, center = centerY, centerOffscreen = centerOffscreenY)
 
   if self.scrollOffset.x != 0 or not self.settings.wrapLines.get():
     if centerX:
@@ -1177,10 +1157,14 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   self.markDirty()
 
 proc scrollToTop*(self: TextDocumentEditor) =
-  self.scrollToCursor((0, 0), scrollBehaviour = TopOfScreen.some)
+  self.scrollBox.scrollXToY(0, 0)
 
-proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5) =
-  self.scrollToCursor(cursor, scrollBehaviour = CenterAlways.some, relativePosition = relativePosition)
+proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5, snap: bool = false) =
+  if snap:
+    self.scrollBox.scrollXToY(self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int, self.scrollBox.size.y * 0.5)
+  else:
+    self.scrollToCursor(cursor, scrollBehaviour = CenterAlways.some, relativePosition = relativePosition)
+  # self.scrollBox.scrollTo(self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int, center = true)
 
 proc isThickCursor*(self: TextDocumentEditor): bool =
   if not self.platform.supportsThinCursor:
@@ -1300,6 +1284,9 @@ proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode 
 proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) {.raises: [ValueError].} =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
+# proc logOverlayMap(self: TextDocumentEditor) {.expose: "editor.text".} =
+#   debug &"\n{self.displayMap.overlay.snapshot}"
+
 proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor.text".} =
   self.document.enableAutoReload(enabled)
 
@@ -1343,16 +1330,21 @@ proc screenLineCount*(self: TextDocumentEditor): int =
 
 proc visibleDisplayRange*(self: TextDocumentEditor, buffer: int = 0): Range[DisplayPoint] =
   assert self.numDisplayLines > 0
-  if self.platform.totalLineHeight == 0:
-    return displayPoint(0, 0)...displayPoint(0, 0)
-  let baseLine = int(-self.interpolatedScrollOffset.y / self.platform.totalLineHeight)
-  var displayRange: Range[DisplayPoint]
-  displayRange.a.row = clamp(baseLine - buffer, 0, self.numDisplayLines - 1).uint32
-  displayRange.b.row = clamp(baseLine + self.screenLineCount + buffer + 1, 0, self.numDisplayLines).uint32
-  if displayRange.b > self.endDisplayPoint:
-    displayRange.b = self.endDisplayPoint
+  if self.scrollBox.items.len > 0:
+    let firstDisplayLine = self.scrollBox.items[0].index
+    let lastDisplayLine = self.scrollBox.items[^1].index
+    return displayPoint(firstDisplayLine, 0)...displayPoint(lastDisplayLine + 1, 0).clamp(displayPoint(), self.displayMap.endDisplayPoint)
 
-  return displayRange
+  # if self.platform.totalLineHeight == 0:
+  return displayPoint(0, 0)...displayPoint(0, 0)
+  # let baseLine = int(-self.interpolatedScrollOffset.y / self.platform.totalLineHeight)
+  # var displayRange: Range[DisplayPoint]
+  # displayRange.a.row = clamp(baseLine - buffer, 0, self.numDisplayLines - 1).uint32
+  # displayRange.b.row = clamp(baseLine + self.screenLineCount + buffer + 1, 0, self.numDisplayLines).uint32
+  # if displayRange.b > self.endDisplayPoint:
+  #   displayRange.b = self.endDisplayPoint
+
+  # return displayRange
 
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
   let displayRange = self.visibleDisplayRange(buffer)
@@ -1493,6 +1485,7 @@ proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: in
   let wrapPointOld = self.displayMap.toWrapPoint(cursor.toPoint)
   let wrapPoint = wrapPoint(max(wrapPointOld.row.int + offset, 0), targetColumn).clamp(wrapPoint()...self.wrapEndPoint)
   let newCursor = self.displayMap.toPoint(wrapPoint, if offset < 0: Bias.Left else: Bias.Right).toCursor
+  # debugf"visline: {cursor.toPoint} -> {wrapPointOld} -> {wrapPoint} -> {newCursor}"
   if offset < 0 and newCursor.line > 0 and newCursor.line == cursor.line and self.displayMap.toWrapPoint(newCursor.toPoint).row == wrapPointOld.row:
     let newCursor2 = point(cursor.line - 1, self.document.rope.lineLen(cursor.line - 1))
     let displayPoint = self.displayMap.toDisplayPoint(newCursor2)
@@ -2274,6 +2267,7 @@ proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.tex
   if self.disableScrolling:
     return
   self.scrollOffset.y += amount
+  self.scrollBox.scrollWithMomentum(amount)
   self.markDirty()
 
 proc scrollTextHorizontal*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
@@ -2289,6 +2283,7 @@ proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").
     return
 
   self.scrollOffset.y += self.platform.totalLineHeight * amount.float
+  self.scrollBox.scrollWithMomentum(self.platform.totalLineHeight * amount.float)
 
   self.markDirty()
 
@@ -2451,7 +2446,7 @@ proc closeDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.displayMap.diffMap.clear()
   self.diffDisplayMap = DisplayMap.new()
   discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
-  discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
+  discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap, DisplayMapSnapshot)) => self.handleDisplayMapUpdated(args[0], args[1])
 
   self.cursorHistories.setLen(0)
   self.diffDocument.onRequestRerender.unsubscribe(self.onRequestRerenderDiffHandle)
@@ -2558,12 +2553,21 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
   self.cursorHistories.setLen(0)
   self.markDirty()
 
+proc addCustomRenderer*(self: TextDocumentEditor, impl: CustomOverlayRenderer): CustomRendererId =
+  return self.customOverlayRenderers.add(impl)
+
+proc removeCustomRenderer*(self: TextDocumentEditor, id: CustomRendererId) =
+  self.customOverlayRenderers.del(id)
+
+proc rerender*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.markDirty()
+
 proc clearOverlays*(self: TextDocumentEditor, id: int = -1) {.expose("editor.text").} =
   self.displayMap.overlay.clear(id)
   self.markDirty()
 
-proc addOverlay*(self: TextDocumentEditor, selection: Selection, text: string, id: int, scope: string, bias: Bias) {.expose("editor.text").} =
-  self.displayMap.overlay.addOverlay(selection.toRange, text, id, scope, bias)
+proc addOverlay*(self: TextDocumentEditor, selection: Selection, text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) {.expose("editor.text").} =
+  self.displayMap.overlay.addOverlay(selection.toRange, text, id, scope, bias, renderId, location)
   self.markDirty()
 
 proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
@@ -2873,26 +2877,25 @@ proc setDefaultSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSna
 
 proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour) =
   self.nextSnapBehaviour = snapBehaviour.some
-  if snapBehaviour == Always:
-    self.interpolatedScrollOffset = self.scrollOffset
+  # if snapBehaviour == Always:
+  #   self.interpolatedScrollOffset = self.scrollOffset
 
-proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float,
-    cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
+proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   let displayPoint = self.displayMap.toDisplayPoint(self.getCursor(cursor).toPoint)
-  self.scrollOffset.y = offset - displayPoint.row.float * self.platform.totalLineHeight
+  self.scrollBox.scrollXToY(displayPoint.row.int, offset)
   self.markDirty()
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, cursor: Cursor, offset: float) =
   let displayPoint = self.displayMap.toDisplayPoint(cursor.toPoint)
-  self.scrollOffset.y = offset * self.platform.totalLineHeight - displayPoint.row.float * self.platform.totalLineHeight
+  self.scrollBox.scrollXToY(displayPoint.row.int, offset * self.platform.totalLineHeight)
   self.markDirty()
 
 proc getContentBounds*(self: TextDocumentEditor): Vec2 =
   # todo
   return self.lastContentBounds.wh
 
-proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
-  self.centerCursor(self.getCursor(cursor))
+proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, snap: bool = false) {.expose("editor.text").} =
+  self.centerCursor(self.getCursor(cursor), snap = snap)
 
 proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Reload the treesitter parser and queries for the language of the current document.
@@ -4189,6 +4192,8 @@ proc runHoverCommand*(self: TextDocumentEditor) =
         configCommand = configCommand[modsKey]
 
       let (name, args, ok) = configCommand.parseCommand()
+      if name == "":
+        return
       if ok:
         discard self.handleAction(name, args, record = false)
         return
@@ -4989,7 +4994,7 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
           c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat / 255.0
         "#" & c.toHex
 
-      self.displayMap.overlay.addOverlay(r.a...r.a, "■", overlayIdColorHighlight, color)
+      self.displayMap.overlay.addOverlay(r.a...r.a, " ■ ", overlayIdColorHighlight, color, renderId = 1)
 
   except Exception as e:
     log lvlError, &"Failed to find colors: {e.msg}"
@@ -5076,14 +5081,36 @@ proc handleCompletionsUpdated(self: TextDocumentEditor) =
   self.markDirty()
 
 proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapMapSnapshot) =
-  if self.document.isNil or self.diffDocument.isNil:
+  if self.document.isNil:
     return
+
+  if wrapMap == self.displayMap.wrapMap:
+    let centerY = self.scrollBox.size.y * 0.5
+    var minCenterDistance = float.high
+    var minCenterIndex = -1
+    var minCenterBounds: Rect
+    for item in self.scrollBox.items:
+      let itemCenterY = item.bounds.y + item.bounds.h * 0.5
+      let dist = abs(itemCenterY - centerY)
+      if dist < minCenterDistance:
+        minCenterDistance = dist
+        minCenterIndex = item.index
+        minCenterBounds = item.bounds
+
+    if minCenterIndex >= 0:
+      let point = old.toInputPoint(wrapPoint(minCenterIndex, 0))
+      let newDisplayPoint = wrapMap.toWrapPoint(point)
+      self.scrollBox.scrollXToY(newDisplayPoint.row.int, minCenterBounds.y)
+
+  if self.diffDocument.isNil:
+    return
+
   if wrapMap == self.displayMap.wrapMap:
     self.diffDisplayMap.diffMap.update(self.diffChanges, self.displayMap.wrapMap.snapshot, reverse = false)
   elif wrapMap == self.diffDisplayMap.wrapMap:
     self.displayMap.diffMap.update(self.diffChanges, self.diffDisplayMap.wrapMap.snapshot, reverse = true)
 
-proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap) =
+proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap, old: DisplayMapSnapshot) =
   if self.document.isNil:
     return
 
@@ -5091,22 +5118,6 @@ proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap) =
     return
 
   if displayMap == self.displayMap:
-    if displayMap.endDisplayPoint.row != self.lastEndDisplayPoint.row:
-      self.lastEndDisplayPoint = displayMap.endDisplayPoint
-      # let oldScrollOffset = self.scrollOffset.y
-
-      # debugf"handleDisplayMapUpdated '{self.getFileName()}': target {self.targetPoint}, {displayMap.endDisplayPoint.row} -> {self.lastEndDisplayPoint.row}, {self.lastContentBounds}"
-      if self.targetPoint.getSome(point):
-        self.scrollToCursor(point.toCursor, self.targetLineMargin, self.nextScrollBehaviour, self.targetLineRelativeY)
-        self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
-      else:
-        self.scrollOffset = self.interpolatedScrollOffset
-
-      # let oldInterpolatedScrollOffset = self.interpolatedScrollOffset.y
-      let displayPoint = self.displayMap.toDisplayPoint(self.currentCenterCursor.toPoint)
-      self.interpolatedScrollOffset.y = self.lastContentBounds.h * self.currentCenterCursorRelativeYPos - self.platform.totalLineHeight * 0.5 - displayPoint.row.float * self.platform.totalLineHeight
-      # debugf"handleDisplayMapUpdated '{self.getFileName()}': {oldScrollOffset} -> {self.scrollOffset}, {oldInterpolatedScrollOffset} -> {self.interpolatedScrollOffset.y}, target {self.targetPoint}"
-
     self.markDirty()
   elif displayMap == self.diffDisplayMap:
     self.markDirty()
@@ -5145,8 +5156,8 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.diffDisplayMap = DisplayMap.new()
   discard self.displayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
   discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
-  discard self.displayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
-  discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
+  discard self.displayMap.onUpdated.subscribe (args: (DisplayMap, DisplayMapSnapshot)) => self.handleDisplayMapUpdated(args[0], args[1])
+  discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap, DisplayMapSnapshot)) => self.handleDisplayMapUpdated(args[0], args[1])
 
   self.config = self.configService.addStore("editor/" & $self.id, &"settings://editor/{self.id}")
   discard self.config.onConfigChanged.subscribe proc(key: string) =

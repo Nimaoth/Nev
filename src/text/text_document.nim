@@ -250,7 +250,7 @@ type
     settings*: TextSettings
     fileWatchHandle: VFSWatchHandle
 
-  DiagnosticsData = object
+  DiagnosticsData* = object
     languageServer*: LanguageServer
     currentDiagnostics*: seq[Diagnostic]
     currentDiagnosticsAnchors: seq[Range[Anchor]]

@@ -823,6 +823,89 @@ proc resolveAnchors*(editor: TextEditor; anchors: WitList[(Anchor, Anchor)]): Wi
   result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
               cast[ptr int32](retArea[4].addr)[])
 
+proc textEditorAddOverlayImported(a0: uint64; a1: int32; a2: int32; a3: int32;
+                                  a4: int32; a5: int32; a6: int32; a7: int64;
+                                  a8: int32; a9: int32; a10: int8; a11: int64;
+                                  a12: int8): void {.
+    wasmimport("add-overlay", "nev:plugins/text-editor").}
+proc addOverlay*(editor: TextEditor; selections: Selection; text: WitString;
+                 id: int64; scope: WitString; bias: Bias; renderId: int64;
+                 location: OverlayRenderLocation): void {.nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: int32
+    arg4: int32
+    arg5: int32
+    arg6: int32
+    arg7: int64
+    arg8: int32
+    arg9: int32
+    arg10: int8
+    arg11: int64
+    arg12: int8
+  arg0 = editor.id
+  arg1 = selections.first.line
+  arg2 = selections.first.column
+  arg3 = selections.last.line
+  arg4 = selections.last.column
+  if text.len > 0:
+    arg5 = cast[int32](text[0].addr)
+  else:
+    arg5 = 0.int32
+  arg6 = cast[int32](text.len)
+  arg7 = id
+  if scope.len > 0:
+    arg8 = cast[int32](scope[0].addr)
+  else:
+    arg8 = 0.int32
+  arg9 = cast[int32](scope.len)
+  arg10 = cast[int8](bias)
+  arg11 = renderId
+  arg12 = cast[int8](location)
+  textEditorAddOverlayImported(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7,
+                               arg8, arg9, arg10, arg11, arg12)
+
+proc textEditorClearOverlaysImported(a0: uint64; a1: int64): void {.
+    wasmimport("clear-overlays", "nev:plugins/text-editor").}
+proc clearOverlays*(editor: TextEditor; id: int64): void {.nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int64
+  arg0 = editor.id
+  arg1 = id
+  textEditorClearOverlaysImported(arg0, arg1)
+
+proc textEditorAddCustomRenderCallbackImported(a0: uint64; a1: uint32;
+    a2: uint32): int64 {.wasmimport("add-custom-render-callback",
+                                    "nev:plugins/text-editor").}
+proc addCustomRenderCallback*(editor: TextEditor; fun: uint32; data: uint32): int64 {.
+    nodestroy.} =
+  ## Sets the callback which wil be called before rendering. This can be used to set the render commands.
+  ## 'fun' is a pointer to a function with signature func(id: s32, data: u32). Data is an arbitrary number
+  ## which will be passed to the callback unchanged. It can be used as e.g. a pointer to some data.
+  var
+    arg0: uint64
+    arg1: uint32
+    arg2: uint32
+  arg0 = editor.id
+  arg1 = fun
+  arg2 = data
+  let res = textEditorAddCustomRenderCallbackImported(arg0, arg1, arg2)
+  result = convert(res, int64)
+
+proc textEditorRemoveCustomRenderCallbackImported(a0: uint64; a1: int64): void {.
+    wasmimport("remove-custom-render-callback", "nev:plugins/text-editor").}
+proc removeCustomRenderCallback*(editor: TextEditor; cb: int64): void {.
+    nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int64
+  arg0 = editor.id
+  arg1 = cb
+  textEditorRemoveCustomRenderCallbackImported(arg0, arg1)
+
 proc textEditorEditImported(a0: uint64; a1: int32; a2: int32; a3: int32;
                             a4: int32; a5: bool; a6: int32): void {.
     wasmimport("edit", "nev:plugins/text-editor").}

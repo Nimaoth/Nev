@@ -40,12 +40,36 @@ proc `==`*(a, b: WitString): bool =
 
 template ws*(s: WitString): WitString = s
 
+############################# logging ############################
+
+type LogLevel* = enum lvlInfo, lvlNotice, lvlDebug, lvlWarn, lvlError
+
+var logCategory* = "plugin"
+
+proc log*(level: LogLevel, str: string) =
+  let color = case level
+  of lvlDebug: rgb(100, 100, 200)
+  of lvlInfo: rgb(200, 200, 200)
+  of lvlNotice: rgb(200, 255, 255)
+  of lvlWarn: rgb(200, 200, 100)
+  of lvlError: rgb(255, 150, 150)
+  # of lvlFatal: rgb(255, 0, 0)
+  else: rgb(255, 255, 255)
+  try:
+    {.gcsafe.}:
+      stdout.write(&"{ansiForegroundColorCode(color)}[{logCategory}] {str}\r\n")
+  except IOError:
+    discard
+
+template debugf*(x: static string) =
+  log lvlDebug, fmt(x)
+
 ############################ exported functions ############################
 
 type CommandHandler = proc(data: uint32, args: WitString): WitString {.cdecl.}
 type ChannelUpdateHandler = proc(data: uint32, closed: bool): ChannelListenResponse {.cdecl, raises: [].}
 type MoveHandler = proc(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl, raises: [].}
-type EventListener = proc(event: WitString, payload: WitString) {.cdecl, raises: [].}
+type EventListener = proc(data: uint32, event: WitString, payload: WitString) {.cdecl, raises: [].}
 
 proc initPlugin() =
   emscripten_stack_init()
@@ -69,11 +93,19 @@ proc handleChannelUpdate(fun: uint32, data: uint32, closed: bool): ChannelListen
 
 proc handleEvent(fun: uint32, data: uint32, event: WitString, payload: WitString) =
   let fun = cast[EventListener](fun)
-  fun(event, payload)
+  fun(data, event, payload)
 
 let eventId = $newId()
 proc listenEvent*(pattern: string, cb: EventListener) =
   listenEvent(cast[uint32](cb), 0, eventId.ws, pattern.ws)
+
+proc handleTextOverlayRender(fun: uint32, data: uint32, id: int64, size: Vec2f, offset: int32): uint64 =
+  let fun = cast[proc(id: int64, size: Vec2f, localOffset: int): (pointer, int) {.cdecl, raises: [].}](fun)
+  let (p, len) = fun(id, size, offset.int)
+  return cast[uint64](p) or (len.uint64 shl 32)
+
+proc addCustomRender*(self: TextEditor, cb: proc(id: int64, size: Vec2f, localOffset: int): (pointer, int) {.cdecl, raises: [].}): int64 =
+  return self.addCustomRenderCallback(cast[uint32](cb), 0)
 
 var savePluginStateImpl: proc(): WitList[uint8]
 var loadPluginStateImpl: proc(state: WitList[uint8])
@@ -408,27 +440,3 @@ proc runInBackground*(executor: BackgroundExecutor, p: proc(task: BackgroundTask
 
   let args = &"{cast[int](p)}\n{readerPath}\n{writerPath}"
   spawnBackground(stackWitString(args), executor)
-
-############################# logging ############################
-
-type LogLevel* = enum lvlInfo, lvlNotice, lvlDebug, lvlWarn, lvlError
-
-var logCategory* = "plugin"
-
-proc log*(level: LogLevel, str: string) =
-  let color = case level
-  of lvlDebug: rgb(100, 100, 200)
-  of lvlInfo: rgb(200, 200, 200)
-  of lvlNotice: rgb(200, 255, 255)
-  of lvlWarn: rgb(200, 200, 100)
-  of lvlError: rgb(255, 150, 150)
-  # of lvlFatal: rgb(255, 0, 0)
-  else: rgb(255, 255, 255)
-  try:
-    {.gcsafe.}:
-      stdout.write(&"{ansiForegroundColorCode(color)}[{logCategory}] {str}\r\n")
-  except IOError:
-    discard
-
-template debugf*(x: static string) =
-  log lvlDebug, fmt(x)

@@ -2,6 +2,7 @@ import std/[options, strutils, strformat, enumerate]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import misc/[custom_async, custom_unicode, util, event, rope_utils]
 import syntax_map, overlay_map
+import chroma, theme
 
 var debugTabMap* = false
 
@@ -60,6 +61,7 @@ type
     maxExpansionColumn: int
     insideLeadingTab: bool
     atEnd*: bool
+    tabColor: Color
 
 func toTabPoint*(self: TabMapSnapshot, point: InputPoint): TabPoint
 proc toInputPointEx*(self: TabMapSnapshot, point: TabPoint, bias: Bias = Bias.Right): tuple[inputPoint: InputPoint, expandedChars: int, toNextStop: int]
@@ -86,7 +88,6 @@ func endTabPoint*(self: TabChunk): TabPoint = tabPoint(self.tabPoint.row, self.t
 func len*(self: TabChunk): int = self.inputChunk.len
 func `$`*(self: TabChunk): string = &"TC({self.tabPoint}...{self.endTabPoint}, {self.inputChunk})"
 template toOpenArray*(self: TabChunk): openArray[char] = self.inputChunk.toOpenArray
-template scope*(self: TabChunk): string = self.inputChunk.scope
 
 proc split*(self: TabChunk, index: int): tuple[prefix: TabChunk, suffix: TabChunk] =
   let (prefix, suffix) = self.inputChunk.split(index)
@@ -112,18 +113,21 @@ proc desc*(self: TabMapSnapshot): string =
 proc `$`*(self: TabMapSnapshot): string =
   result.add self.desc
 
-proc iter*(self {.byref.}: TabMapSnapshot): TabChunkIterator =
+proc iter*(self {.byref.}: TabMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none): TabChunkIterator =
   let r = tabPoint(0, 0)...self.endTabPoint # todo: pass as parameter
   var (_, _, toNextStop) = self.toInputPointEx(r.a)
   if r.a + tabPoint(0, toNextStop) > r.b:
     toNextStop = r.b.column.int - r.a.column.int
   result = TabChunkIterator(
-    inputChunks: self.input.iter(),
+    inputChunks: self.input.iter(highlighter),
     tabMap: self.clone(),
     maxExpansionColumn: self.maxExpansionColumn,
     insideLeadingTab: toNextStop > 0,
     tabTexts: "|" & " ".repeat(self.tabWidth - 1),
+    tabColor: color(1, 1, 1),
   )
+  if highlighter.isSome:
+    result.tabColor = highlighter.get.theme.tokenColor(["tab", "comment"], color(1, 1, 1))
 
 func expandTabs*(self: TabMapSnapshot, chunks: var InputChunkIterator, column: int): int =
   if self.buffer.visibleText.summary.tabs == 0:
@@ -225,6 +229,20 @@ proc toInputPointEx*(self: TabMapSnapshot, point: TabPoint, bias: Bias = Bias.Ri
 
 proc toInputPoint*(self: TabMap, point: TabPoint, bias: Bias = Bias.Right): InputPoint =
   self.snapshot.toInputPoint(point, bias)
+
+proc toTabBytes*(self: TabMapSnapshot, point: TabPoint, bias: Bias = Bias.Right): int =
+  let inputPoint = self.toInputPoint(point)
+  let columnDiff = point.column.int - inputPoint.column.int
+  let inputBytes = self.input.toOutputBytes(inputPoint, bias)
+  # echo &"toTabBytes {point} ({bias}) -> {inputPoint} -> {columnDiff} + {inputBytes} = {inputBytes + columnDiff}"
+  return inputBytes + columnDiff
+
+proc lineLength*(self: TabMapSnapshot, point: TabPoint): int =
+  let inputPoint = self.toInputPoint(point)
+  echo &"Tab.lineLength {point} -> {inputPoint}"
+  let subLen = self.input.lineLength(inputPoint)
+  echo &"Tab.lineLength -> {subLen}"
+  return subLen
 
 proc setInput*(self: TabMap, input: sink InputMapSnapshot) =
   # logMapUpdate &"TabMap.setInput {self.snapshot.desc} -> {input.desc}"
@@ -372,7 +390,7 @@ proc next*(self: var TabChunkIterator): Option[TabChunk] =
 
         prefix.chunk.data = cast[ptr UncheckedArray[char]](self.tabTexts[0].addr)
         prefix.chunk.len = len
-        prefix.styledChunk.scope = "comment"
+        prefix.styledChunk.color = self.tabColor
         prefix.styledChunk.drawWhitespace = false
         prefix.wasTab = true
 
@@ -393,6 +411,7 @@ proc next*(self: var TabChunkIterator): Option[TabChunk] =
 
 func toOutputPoint*(self: TabMapSnapshot, point: OverlayPoint, bias: Bias = Bias.Right): TabPoint {.inline.} = self.toTabPoint(point)
 func toOutputPoint*(self: TabMapSnapshot, point: Point, bias: Bias = Bias.Right): TabPoint {.inline.} = self.toTabPoint(point, bias)
+proc toOutputBytes*(self: TabMapSnapshot, point: TabPoint, bias: Bias = Bias.Right): int {.inline.} = self.toTabBytes(point, bias)
 func `outputPoint=`*(self: var TabChunk, point: TabPoint) = self.tabPoint = point
 template outputPoint*(self: TabChunk): TabPoint = self.tabPoint
 template endOutputPoint*(self: TabChunk): TabPoint = self.endTabPoint

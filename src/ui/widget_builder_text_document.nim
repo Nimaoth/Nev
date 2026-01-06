@@ -1,6 +1,6 @@
-import std/[strformat, tables, strutils, math, options, json, sugar]
+import std/[strformat, tables, strutils, math, options, json, sugar, sequtils, algorithm]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer]
+import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer, generational_seq, binary_encoder, render_command, arena, array_view]
 import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
@@ -9,6 +9,7 @@ import app, document_editor, theme, config_provider, layout
 import text/language/[lsp_types]
 import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]
 import view
+import scroll_box
 
 import ui/node
 
@@ -32,34 +33,76 @@ type
     displayRange: rope.Range[DisplayPoint]
     bounds: Rect
     text: RopeChunk
-    chunk: DisplayChunk
+    displayChunk: DisplayChunk
     charsRange: rope.Range[int]
+    renderCommandIndex: int = -1
+
+  LineBounds = object
+    textBounds: Rect
+    line: int
+    chunks: ArrayView[ChunkBounds]
+    lineNumberRenderCommandIndex: int = -1
+    dontCenter: bool
 
   LineDrawerResult = enum Continue, ContinueNextLine, Break
   LineDrawerState = object
+    # State required for rendering, readonly
+    platform: Platform
     builder: UINodeBuilder
     displayMap: DisplayMap
-    offset: Vec2
+    diffDisplayMap: DisplayMap
     bounds: Rect
     absoluteBounds: Rect
-    lastDisplayPoint: DisplayPoint
+    diffReverse: bool
+    fillLineNumberBackground: bool
+    lineNumberBackgroundColor: Color
+    insertedTextBackgroundColor: Color
+    deletedTextBackgroundColor: Color
+    changedTextBackgroundColor: Color
+    errorColor: Color
+    warningColor: Color
+    informationColor: Color
+    hintColor: Color
+
+    textColor: Color
+    backgroundColor: Color
+    signColumnWidth: int
+    signColumnPixelWidth: float
+    lineNumberWidth: float
+    lineNumberBounds: Vec2
+    signShow: SignColumnShowKind
+    cursorLine: int
+    cursorDisplayLine: int
+    diffChanges: ptr seq[LineMapping] = nil
+    customOverlayRenderers: ptr GenerationalSeq[CustomOverlayRenderer, CustomRendererId] = nil
+    signs: ptr Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color, color: string, width: int]]] = nil
+    diagnosticsPerLS: ptr seq[DiagnosticsData] = nil
+    lineNumbers: LineNumbers
+    createIter: proc(): DisplayChunkIterator {.gcsafe, raises: [].}
+    renderDiff: bool
+
+    # Temporary state which is updated while rendering
+    offset: Vec2
     lastDisplayEndPoint: DisplayPoint
     lastPoint: Point
+    currentlyDrawnLine: int = -1
+    lineBounds: Rect
+    customRendererChunksBelow: seq[OverlayChunk]
+    customRendererChunksAbove: seq[OverlayChunk]
+    chunkBoundsPerLine: ArrayView[LineBounds]
+
+    # Output state computed while rendering
     cursorOnScreen: bool
-    charBounds: seq[Rect]
-    chunkBounds: seq[ChunkBounds]
-    addedLineNumber: bool = false
-    backgroundColor: Option[Color]
-    lineNumberBackgroundColor: Color
-    fillLineNumberBackground: bool
-    reverse: bool
+    charBounds: ArrayView[Rect]
+    chunkBounds: ArrayView[ChunkBounds]
+    numDrawnChunks: int
 
 proc cmp(r: ChunkBounds, point: Point): int =
-  let range = if r.chunk.styledChunk.chunk.external:
+  let range = if r.displayChunk.styledChunk.chunk.external:
     # r.range.a...r.range.a
-    r.chunk.point...(r.chunk.point + point(0, r.chunk.styledChunk.chunk.lenOriginal))
+    r.displayChunk.point...(r.displayChunk.point + point(0, r.displayChunk.styledChunk.chunk.lenOriginal))
   else:
-    r.chunk.point...(r.chunk.point + point(0, r.chunk.styledChunk.chunk.lenOriginal))
+    r.displayChunk.point...(r.displayChunk.point + point(0, r.displayChunk.styledChunk.chunk.lenOriginal))
 
   if range.a.row > point.row:
     return 1
@@ -130,7 +173,7 @@ proc getCursorPos2(self: TextDocumentEditor, builder: UINodeBuilder, text: openA
 
 proc getScreenPos(self: TextDocumentEditor, builder: UINodeBuilder, state: var LineDrawerState, cursor: Cursor): Option[Vec2] =
   let dp = self.displayMap.toDisplayPoint(cursor.toPoint)
-  let (_, lastIndexDisplay) = state.chunkBounds.binarySearchRange(dp, Bias.Left, cmp)
+  let (_, lastIndexDisplay) = state.chunkBounds.toOpenArray().binarySearchRange(dp, Bias.Left, cmp)
   if lastIndexDisplay in 0..<state.chunkBounds.len and dp >= state.chunkBounds[lastIndexDisplay].displayRange.a:
     let offset = (dp - state.chunkBounds[lastIndexDisplay].displayRange.a).toPoint.column.float * builder.charWidth
     let chunkBounds = state.chunkBounds[lastIndexDisplay].bounds
@@ -207,9 +250,13 @@ proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: 
   builder.panel(&{SizeToContentX, SizeToContentY, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical, MouseHover}, backgroundColor = backgroundColor, borderColor = borderColor, border = border(1), userId = self.signatureHelpId.newPrimaryId, tag = "signature"):
     signatureHelpPanel = currentNode
 
+    var i = 0
     for k, sig in self.signatures:
       if k != self.currentSignature:
         drawSignature(inactiveSignatureColor, inactiveParamColor, sig)
+        inc i
+        if i > 5:
+          break
 
     if self.currentSignature in 0..self.signatures.high:
       drawSignature(activeSignatureColor, activeParamColor, self.signatures[self.currentSignature])
@@ -371,8 +418,8 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
 
   let r = sn.first.toPoint...sn.last.toPoint
 
-  let (_, firstIndexNormalized) = state.chunkBounds.binarySearchRange(r.a, Bias.Right, cmp)
-  let (_, lastIndexNormalized) = state.chunkBounds.binarySearchRange(r.b, Bias.Right, cmp)
+  let (_, firstIndexNormalized) = state.chunkBounds.toOpenArray().binarySearchRange(r.a, Bias.Right, cmp)
+  let (_, lastIndexNormalized) = state.chunkBounds.toOpenArray().binarySearchRange(r.b, Bias.Right, cmp)
   if state.chunkBounds.len > 0:
     let firstIndexClamped = if firstIndexNormalized != -1:
       firstIndexNormalized
@@ -407,46 +454,46 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
           cursor.cacheOffset()
 
         let lineEmpty = cursor.currentChar() == '\n'
-        let ropeChunk = bounds.chunk.styledChunk.chunk
+        let ropeChunk = bounds.displayChunk.styledChunk.chunk
         let rangeOriginal = ropeChunk.point...(ropeChunk.point + point(0, ropeChunk.lenOriginal))
 
-        let firstOffset = if bounds.chunk.styledChunk.chunk.external and r.a.column.int < rangeOriginal.a.column.int:
+        let firstOffset = if bounds.displayChunk.styledChunk.chunk.external and r.a.column.int < rangeOriginal.a.column.int:
           0
-        elif bounds.chunk.styledChunk.chunk.external and r.a.column.int >= rangeOriginal.b.column.int:
-          bounds.chunk.toOpenArray.runeLen.int
+        elif bounds.displayChunk.styledChunk.chunk.external and r.a.column.int >= rangeOriginal.b.column.int:
+          bounds.displayChunk.toOpenArray.runeLen.int
         elif lineEmpty:
           0
         elif r.a in rangeOriginal:
-          bounds.chunk.styledChunk.chunk.toOpenArrayOriginal.offsetToCount(r.a.column.int - rangeOriginal.a.column.int).int
+          bounds.displayChunk.styledChunk.chunk.toOpenArrayOriginal.offsetToCount(r.a.column.int - rangeOriginal.a.column.int).int
         elif r.a < rangeOriginal.a:
           0
         else:
-          bounds.chunk.toOpenArray.runeLen.int
+          bounds.displayChunk.toOpenArray.runeLen.int
 
-        let lastOffset = if bounds.chunk.styledChunk.chunk.external and r.b.column.int > rangeOriginal.b.column.int:
-          bounds.chunk.toOpenArray.runeLen.int
+        let lastOffset = if bounds.displayChunk.styledChunk.chunk.external and r.b.column.int > rangeOriginal.b.column.int:
+          bounds.displayChunk.toOpenArray.runeLen.int
         elif lineEmpty:
           1
         elif r.b in rangeOriginal:
-          bounds.chunk.styledChunk.chunk.toOpenArrayOriginal.offsetToCount(r.b.column.int - rangeOriginal.a.column.int).int
+          bounds.displayChunk.styledChunk.chunk.toOpenArrayOriginal.offsetToCount(r.b.column.int - rangeOriginal.a.column.int).int
         elif r.b < rangeOriginal.a:
           0
         else:
-          bounds.chunk.toOpenArray.runeLen.int
+          bounds.displayChunk.toOpenArray.runeLen.int
 
         if firstOffset == lastOffset:
           continue
 
         var selectionBounds = rect(
           (bounds.bounds.xy + vec2(firstOffset.float * builder.charWidth, 0)),
-          (vec2((lastOffset - firstOffset).float * builder.charWidth, builder.textHeight)))
+          (vec2((lastOffset - firstOffset).float * builder.charWidth, max(builder.textHeight, bounds.bounds.h))))
 
         let firstIndexClamped = firstOffset.clamp(0, bounds.charsRange.len - 1)
         let lastIndexClamped = lastOffset.clamp(0, bounds.charsRange.len)
         if firstIndexClamped != -1 and lastIndexClamped != -1:
           let firstBounds = state.charBounds[bounds.charsRange.a + firstIndexClamped] + bounds.bounds.xy
           let lastBounds = state.charBounds[bounds.charsRange.a + lastIndexClamped - 1] + bounds.bounds.xy
-          selectionBounds = rect(firstBounds.xy, vec2(lastBounds.xw - firstBounds.x, builder.textHeight))
+          selectionBounds = rect(firstBounds.xy, vec2(lastBounds.xw - firstBounds.x, max(builder.textHeight, bounds.bounds.h)))
 
         if renderCommands.commands.len > 0:
           let last = renderCommands.commands[^1].addr
@@ -476,7 +523,16 @@ proc drawLineNumber(renderCommands: var RenderCommands, builder: UINodeBuilder, 
         fillRect(rect(offset, lineNumberBounds), backgroundColor)
       drawText(lineNumberText, rect(offset.x + lineNumberX, offset.y, width, builder.textHeight), textColor, 0.UINodeFlags)
 
+proc toUINodeFlags(fontStyle: set[FontStyle]): UINodeFlags =
+  var result = 0.UINodeFlags
+  if Italic in fontStyle:
+    result.incl TextItalic
+  if Bold in fontStyle:
+    result.incl TextBold
+
 proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode, renderCommands: var RenderCommands, state: var LineDrawerState) =
+  if state.chunkBounds.len == 0:
+    return
 
   let cursorForegroundColor = builder.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
   let cursorBackgroundColor = builder.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
@@ -484,27 +540,47 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   let cursorSpeed: float = self.uiSettings.cursorTrailSpeed.get()
   let cursorTrail: int = self.uiSettings.cursorTrailLength.get()
   let isThickCursor = self.isThickCursor
+  let debugBounds = self.config.get("debug.log-chunk-bounds", false)
 
   buildCommands(renderCommands):
     self.cursorHistories.setLen(self.selections.len)
 
+    # debugf"==================="
     for i, s in self.selections:
       let p = s.last.toPoint
-      var (_, lastIndex) = state.chunkBounds.binarySearchRange(p, Bias.Left, cmp)
+      let (_, initialIndex) = state.chunkBounds.toOpenArray().binarySearchRange(p, Bias.Left, cmp)
 
-      while lastIndex in 0..<state.chunkBounds.high and p in state.chunkBounds[lastIndex + 1].range:
+      var lastIndex = initialIndex
+      if lastIndex > 0 and p in state.chunkBounds[lastIndex - 1].range and not state.chunkBounds[lastIndex - 1].displayChunk.styledChunk.chunk.external:
+        dec lastIndex
+
+      var currentExternal = state.chunkBounds[lastIndex].displayChunk.styledChunk.chunk.external
+      while lastIndex < state.chunkBounds.high:
+        if not currentExternal and p < state.chunkBounds[lastIndex].range.b:
+          break
+        let nextExternal = state.chunkBounds[lastIndex + 1].displayChunk.styledChunk.chunk.external
+        if not nextExternal and p < state.chunkBounds[lastIndex + 1].range.a:
+          break
+
+        currentExternal = nextExternal
         inc lastIndex
+      # debugf"{p} -> {initialIndex} -> {lastIndex}"
+      if not (p in state.chunkBounds[lastIndex].range):
+        # Scanning forwards didn't find another valid chunk, so use the first one. This can happen for
+        # inlays on empty lines, when the cursor is before the inlay
+        # debugf"xvlc"
+        lastIndex = initialIndex
 
       if lastIndex in 0..<state.chunkBounds.len and p in state.chunkBounds[lastIndex].range:
         let chunk = state.chunkBounds[lastIndex]
-        # if chunk.chunk.styledChunk.chunk.external:
-        #   continue
+        # if lastIndex + 2 < state.chunkBounds.len:
+        #   echo &"  {chunk}\n  {state.chunkBounds[lastIndex + 1]}\n  {state.chunkBounds[lastIndex + 2]}"
 
         let relativeOffset = p.column.int - chunk.range.a.column.int
         let runeOffset = if p.column.int == chunk.range.b.column.int:
-          chunk.chunk.styledChunk.chunk.toOpenArrayOriginal.runeLen.int
+          chunk.displayChunk.styledChunk.chunk.toOpenArrayOriginal.runeLen.int
         else:
-          chunk.chunk.styledChunk.chunk.toOpenArrayOriginal.offsetToCount(relativeOffset).int
+          chunk.displayChunk.styledChunk.chunk.toOpenArrayOriginal.offsetToCount(relativeOffset).int
         var cursorBounds = rect(chunk.bounds.xy + vec2(runeOffset.float * builder.charWidth, 0), vec2(builder.charWidth, builder.textHeight))
 
         if chunk.range.a != chunk.range.b:
@@ -549,6 +625,8 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
           else:
             cursorBounds.xy
 
+          cursorBounds.h = chunk.bounds.h
+
           for xy in self.cursorHistories[i]:
             let dist = (xy - last).length
             for i in 0..<dist.int:
@@ -565,7 +643,9 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
           if isThickCursor:
             let currentRune = self.document.runeAt(s.last)
             if currentRune != 0.Rune and currentRune.int >= ' '.int:
-              drawText($currentRune, charBounds, cursorBackgroundColor, 0.UINodeFlags)
+              let textFlags = chunk.displayChunk.styledChunk.fontStyle.toUINodeFlags
+              let fontScale = chunk.displayChunk.styledChunk.fontScale
+              drawText($currentRune, charBounds, cursorBackgroundColor, textFlags, fontScale)
 
         self.lastCursorLocationBounds = (cursorBounds + currentNode.boundsAbsolute.xy).some
 
@@ -578,7 +658,7 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
 
       if i == self.selections.high:
         let dp = self.displayMap.toDisplayPoint(s.last.toPoint)
-        let (_, lastIndexDisplay) = state.chunkBounds.binarySearchRange(dp, Bias.Left, cmp)
+        let (_, lastIndexDisplay) = state.chunkBounds.toOpenArray().binarySearchRange(dp, Bias.Left, cmp)
         if lastIndexDisplay in 0..<state.chunkBounds.len and dp >= state.chunkBounds[lastIndexDisplay].displayRange.a:
           state.cursorOnScreen = true
           self.currentCenterCursor = s.last
@@ -592,8 +672,434 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   if signatureHelpScreenPos.isSome:
     self.lastSignatureHelpLocationBounds = rect(signatureHelpScreenPos.get.x, signatureHelpScreenPos.get.y, builder.charWidth, builder.textHeight).some
 
+proc drawChunk(chunk: DisplayChunk, state: var LineDrawerState, commands: var RenderCommands): LineDrawerResult =
+  inc state.numDrawnChunks
+  var outLineBounds = state.chunkBoundsPerLine[^1].addr
+  if outLineBounds.chunks.len >= outLineBounds.chunks.cap:
+    return LineDrawerResult.Break
+
+  if chunk.displayPoint.column > state.lastDisplayEndPoint.column:
+    state.offset.x += (chunk.displayPoint.column - state.lastDisplayEndPoint.column).float * state.builder.charWidth
+
+  if state.offset.x >= state.bounds.xw:
+    return LineDrawerResult.ContinueNextLine
+
+  if not chunk.styledChunk.chunk.external:
+    state.lastPoint = chunk.point
+  state.lastDisplayEndPoint = chunk.displayEndPoint
+
+  if chunk.len > 0:
+    let (textColor, fontStyle, fontScale) = (chunk.styledChunk.color, chunk.styledChunk.fontStyle, chunk.styledChunk.fontScale)
+    let textFlags = fontStyle.toUINodeFlags
+
+    let font = state.platform.getFontInfo(state.platform.fontSize * fontScale, textFlags)
+    let arrangementIndex = commands.typeset(chunk.toOpenArray, font)
+    let layoutBounds = commands.layoutBounds(arrangementIndex)
+    let width = layoutBounds.x
+    let indices {.cursor.} = commands.arrangements[arrangementIndex]
+    var bounds = rect(state.offset, vec2(width, state.builder.lineHeight))
+    bounds.h = max(bounds.h, layoutBounds.y)
+    bounds.h += state.builder.lineGap
+    let charBoundsStart = state.charBounds.len
+    outLineBounds.chunks.add ChunkBounds(
+      range: chunk.point...chunk.endPoint,
+      displayRange: chunk.displayPoint...chunk.endDisplayPoint,
+      bounds: bounds,
+      text: chunk.styledChunk.chunk,
+      displayChunk: chunk,
+      charsRange: charBoundsStart...(charBoundsStart + indices.selectionRects.len),
+      renderCommandIndex: commands.commands.len,
+    )
+    if state.charBounds.len + commands.arrangement.selectionRects[indices.selectionRects].len <= state.charBounds.cap:
+      state.charBounds.add commands.arrangement.selectionRects[indices.selectionRects]
+
+    let (underlineColor, underlineFlags) = if chunk.styledChunk.underline.getSome(underline):
+      let underlineColor = state.builder.theme.tokenColor(underline.color, textColor)
+      (underlineColor, &{TextUndercurl})
+    else:
+      (color(1, 1, 1), 0.UINodeFlags)
+
+    var flags = underlineFlags + textFlags
+    if chunk.styledChunk.drawWhitespace:
+      flags.incl UINodeFlag.TextDrawSpaces
+    buildCommands(commands):
+      drawText(chunk.toOpenArray, arrangementIndex, bounds, textColor, flags, underlineColor, fontScale)
+    state.offset.x += width
+
+  else:
+    outLineBounds.chunks.add ChunkBounds(
+      range: chunk.point...chunk.endPoint,
+      displayRange: chunk.displayPoint...chunk.endDisplayPoint,
+      bounds: rect(state.offset, vec2(state.builder.charWidth, state.builder.textHeight)),
+      text: chunk.styledChunk.chunk,
+      displayChunk: chunk,
+      charsRange: state.charBounds.len...state.charBounds.len,
+      # renderCommandIndex: commands.commands.len,
+    )
+
+  let chunkBounds = outLineBounds.chunks[^1].bounds
+  state.lineBounds.w = max(state.lineBounds.w, chunkBounds.xw)
+  state.lineBounds.h = max(state.lineBounds.h, chunkBounds.yh)
+  outLineBounds.textBounds.w = max(outLineBounds.textBounds.w, chunkBounds.xw)
+  outLineBounds.textBounds.h = max(outLineBounds.textBounds.h, chunkBounds.yh)
+
+  let customRenderId = chunk.diffChunk.inputChunk.inputChunk.inputChunk.renderId
+  if customRenderId != 0 and state.customOverlayRenderers != nil:
+    let customRenderLocation = chunk.diffChunk.inputChunk.inputChunk.inputChunk.location
+    case customRenderLocation
+    of Inline:
+      let cb = state.customOverlayRenderers[].tryGet(customRenderId.CustomRendererId)
+      if cb.isSome:
+        commands.startTransform(chunkBounds.xy)
+        let fun = (cb.get)
+        let actualBounds = fun(customRenderId, vec2(chunkBounds.w, state.builder.textHeight), chunk.diffChunk.inputChunk.inputChunk.inputChunk.localOffset, commands)
+        commands.endTransform()
+        if actualBounds.y > state.builder.textHeight:
+          outLineBounds.dontCenter = true
+        state.lineBounds.h = max(state.lineBounds.h, actualBounds.y)
+        if actualBounds.x > chunkBounds.w:
+          state.offset.x += actualBounds.x - chunkBounds.w
+    of Below:
+      state.customRendererChunksBelow.add(chunk.diffChunk.inputChunk.inputChunk.inputChunk)
+    of Above:
+      state.customRendererChunksAbove.add(chunk.diffChunk.inputChunk.inputChunk.inputChunk)
+
+  return LineDrawerResult.Continue
+
+proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: var DisplayChunkIterator, index: int): Option[Vec2] =
+  if index < 0 or index > state.displayMap.endDisplayPoint.row.int:
+    return Vec2.none
+  if state.chunkBoundsPerLine.len >= state.chunkBoundsPerLine.cap:
+    return Vec2.none
+
+  let maxNumChunks = ceil(state.bounds.w / state.builder.charWidth).int + 5
+  state.chunkBoundsPerLine.add LineBounds(
+    line: index,
+    chunks: state.builder.arena.allocEmptyArray(maxNumChunks, ChunkBounds)
+  )
+
+  # When drawing lines upwards we have to reset the iterator because it can iterate backwards
+  if iter.displayPoint.row.int != index or not iter.didSeek:
+    iter = state.createIter()
+    iter.seekLine(index)
+    discard iter.next()
+    if iter.displayChunk.isSome:
+      state.lastDisplayEndPoint = iter.displayChunk.get.displayPoint
+
+  # Add a transform render command for which we later override the y offset to the correct y offset calculated by the
+  # scroll box. Every render command for a line can then just use (0, 0) as the origin.
+  commands.startTransform(vec2(0))
+  defer:
+    commands.endTransform()
+
+  if iter.displayChunk.isNone or iter.displayChunk.get.displayPoint.row.int != index:
+    return vec2(state.bounds.w, state.builder.textHeight).some
+
+  let chunk {.cursor.} = iter.displayChunk.get
+
+  # Check whether we are rendering the first display line of a given real line
+  let point = state.displayMap.toPoint(displayPoint(index, 0))
+  let firstDisplayLine = state.displayMap.toDisplayPoint(point(point.row.int, 0))
+  let firstDisplayLineInRealLine = firstDisplayLine.row.int == index
+
+  # Do some things (like line numbers) only on the first display line for a real line
+  var drawDiagnostics = false
+  if firstDisplayLineInRealLine:
+    drawDiagnostics = true
+
+    var doDrawLineNumber = true
+    state.chunkBoundsPerLine[^1].lineNumberRenderCommandIndex = commands.commands.len
+    commands.startTransform(vec2(0))
+
+    # Draw signs
+    if state.signs != nil:
+      state.signs[].withValue(chunk.point.row.int, value):
+        var bounds = rect(state.lineNumberWidth - state.signColumnPixelWidth, 0, state.signColumnPixelWidth, state.builder.textHeight)
+        if state.signShow == SignColumnShowKind.Number:
+          doDrawLineNumber = false
+          bounds = rect(vec2(state.builder.charWidth, 0), state.lineNumberBounds)
+
+          if state.fillLineNumberBackground:
+            commands.fillRect(rect(vec2(0), state.lineNumberBounds), state.lineNumberBackgroundColor)
+
+        var i = 0
+        for s in value[]:
+          if i + s.width > state.signColumnWidth:
+            break
+
+          var color = state.textColor
+          if s.color != "":
+            color = state.builder.theme.tokenColor(s.color, state.textColor)
+          commands.drawText(s.text, bounds, color * s.tint, 0.UINodeFlags)
+          bounds.x += state.builder.charWidth * s.width.float
+          i += s.width
+
+    # Draw line numbers
+    if doDrawLineNumber:
+      let lineNumber = chunk.point.row.int
+      commands.drawLineNumber(state.builder, lineNumber, state.bounds.xy, state.cursorLine, state.lineNumbers, state.lineNumberBounds - vec2(state.signColumnPixelWidth, 0), state.textColor, state.lineNumberBackgroundColor, state.fillLineNumberBackground)
+    commands.endTransform()
+
+  # Iterate through chunks and render them until we reach the end or get a chunk which is on the next display line.
+  state.offset = state.bounds.xy + vec2(state.lineNumberWidth, 0)
+  state.lastDisplayEndPoint = displayPoint(index, 0)
+  state.customRendererChunksBelow.setLen(0)
+  state.customRendererChunksAbove.setLen(0)
+  state.lineBounds = rect(0, 0, 0, 0)
+  while iter.displayChunk.isSome:
+    if iter.displayChunk.get.displayPoint.row.int > index:
+      break
+    # todo: this sometimes happens for a frame or two, probably because some data structures are in an invalid state
+    # which causes an infinte loop here.
+    # Just breaking and trying again will be fine for now, but the root cause should be fixed.
+    if state.numDrawnChunks > 10000:
+      log lvlWarn, "Rendering too much text, your font size is too small or there is a bug"
+      break
+    let res = drawChunk(iter.displayChunk.get, state, commands)
+    discard iter.next()
+    case res
+    of Continue: discard
+    of ContinueNextLine: break
+    of Break: break
+
+  var height = max(state.builder.textHeight, state.lineBounds.h)
+
+  # # Draw chunks with custom render location Below
+  for customRenderChunk in state.customRendererChunksBelow:
+    let customRenderId = customRenderChunk.renderId
+    let cb = state.customOverlayRenderers[].tryGet(customRenderId.CustomRendererId)
+    if cb.isSome:
+      let bounds = rect(state.bounds.x + state.lineNumberWidth, height, floor(state.bounds.w - state.lineNumberWidth), state.builder.textHeight)
+      commands.startTransform(bounds.xy)
+      let fun = (cb.get)
+      let actualBounds = fun(customRenderId, bounds.wh, customRenderChunk.localOffset, commands)
+      commands.endTransform()
+      height += actualBounds.y
+      state.chunkBoundsPerLine[^1].dontCenter = true
+
+  # # Draw diagnostics
+  if drawDiagnostics and state.diagnosticsPerLS != nil:
+    for diagnosticsData in state.diagnosticsPerLS[].mitems:
+      diagnosticsData.diagnosticsPerLine.withValue(state.lastPoint.row.int, val):
+        for i in val[].mitems:
+          let i = i
+          let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[i]
+          let nlIndex = diagnostic.message.find("\n")
+          var maxIndex = if nlIndex != -1: nlIndex else: diagnostic.message.len
+          maxIndex = min(maxIndex, max(((state.bounds.w - state.lineNumberWidth) / state.builder.charWidth).int - 3, 0))
+          var message = "     ■ " & diagnostic.message[0..<maxIndex]
+          if maxIndex < diagnostic.message.len:
+            message.add "..."
+          let width = message.runeLen.float * state.builder.charWidth # todo: measure text
+          let color = case diagnostic.severity.get(lsp_types.DiagnosticSeverity.Hint)
+          of lsp_types.DiagnosticSeverity.Error: state.errorColor
+          of lsp_types.DiagnosticSeverity.Warning: state.warningColor
+          of lsp_types.DiagnosticSeverity.Information: state.informationColor
+          of lsp_types.DiagnosticSeverity.Hint: state.hintColor
+          commands.drawText(message, rect(state.lineNumberWidth, height, width, state.builder.textHeight), color, 0.UINodeFlags)
+          height += state.builder.textHeight
+          state.chunkBoundsPerLine[^1].dontCenter = true
+
+  return vec2(state.bounds.w, height).some
+
+proc drawDiffBackgrounds(state: var LineDrawerState, backgroundCommands: var RenderCommands, scrollBox: var ScrollBox) =
+  # Draw backgrounds for added/removed/changed lines in the diff view
+  if state.renderDiff and state.diffChanges != nil:
+    for item in scrollBox.items:
+      let line = state.displayMap.toPoint(displayPoint(item.index, 0))
+      let diffRow = state.diffChanges[].mapLine(line.row.int, state.diffReverse)
+      if diffRow.getSome(d):
+        if d.changed:
+          backgroundCommands.fillRect(item.bounds + state.bounds.xy, state.changedTextBackgroundColor)
+      else:
+        let color = if state.diffReverse: state.insertedTextBackgroundColor else: state.deletedTextBackgroundColor
+        backgroundCommands.fillRect(item.bounds + state.bounds.xy, color)
+
+      let diffLine = state.diffDisplayMap.toPoint(displayPoint(item.index, 0))
+      let row = state.diffChanges[].mapLine(diffLine.row.int, not state.diffReverse)
+      if row.isNone:
+        backgroundCommands.fillRect(item.bounds + state.bounds.xy, state.backgroundColor.darken(0.03))
+
+proc fixupRenderCommandsAndChunkBounds(state: var LineDrawerState, i: int, commands: var RenderCommands, lineBounds: Rect) =
+  var line = state.chunkBoundsPerLine[i].addr
+  let center = not line.dontCenter
+  ## Offset chunk bounds and chunk render commands according to line bounds
+  for chunk in line.chunks.mitems:
+    chunk.bounds.y = lineBounds.y
+
+    # Fix chunk render command offset to draw it in the center of the line
+    if chunk.renderCommandIndex != -1 and chunk.renderCommandIndex in 0..commands.commands.high:
+      let offset = ceil((line.textBounds.h - chunk.bounds.h) * 0.5)
+      chunk.bounds.y += offset
+      let renderCommand = commands.commands[chunk.renderCommandIndex].addr
+      renderCommand.bounds.y += offset
+
+  # Fix line number render command offset to draw it in the center of the line
+  let lineNumberRenderCommandIndex = line.lineNumberRenderCommandIndex
+  if lineNumberRenderCommandIndex in 0..commands.commands.high:
+    let offset = ceil((line.textBounds.h - state.builder.textHeight) * 0.5)
+    commands.commands[lineNumberRenderCommandIndex].bounds.y += offset
+
+func quickSort*[T](a: var openArray[T],
+              cmp: proc (x, y: T): int {.closure.},
+              low: int,
+              high: int,
+              order = SortOrder.Ascending) {.effectsOf: cmp.} =
+  if low >= high:
+    return
+
+  let pivot = a[(low + high) div 2]
+  var i = low
+  var j = high
+
+  while i < j:
+    while cmp(a[i], pivot) * order < 0:
+      inc i
+    while cmp(a[j], pivot) * order > 0:
+      dec j
+    if i < j:
+      swap(a[i], a[j])
+    if i <= j:
+      inc i
+      dec j
+
+  if low < j:
+    quickSort(a, cmp, low, j, order)
+  if i < high:
+    quickSort(a, cmp, i, high, order)
+
+func quickSort*[T](a: var openArray[T],
+              cmp: proc (x, y: T): int {.closure.},
+              order = SortOrder.Ascending) {.effectsOf: cmp.} =
+  if a.len > 1:
+    quickSort(a, cmp, 0, a.high, order)
+
+proc drawLines(state: var LineDrawerState, commands: var RenderCommands, backgroundCommands: var RenderCommands, scrollBox: var ScrollBox) =
+  var iter = state.createIter()
+  commands.startScissor(state.bounds)
+  defer:
+    commands.endScissor()
+
+  scrollBox.beginRender(state.bounds.wh, 0.UINodeFlags, state.displayMap.endDisplayPoint.row.int)
+
+  let maxNumLines = ceil(state.bounds.h / state.builder.textHeight).int + 50
+  let maxNumCharsPerLine = ceil(state.bounds.w / state.builder.charWidth).int + 5
+
+  state.chunkBoundsPerLine = state.builder.arena.allocEmptyArray(maxNumLines, LineBounds)
+  state.charBounds = state.builder.arena.allocEmptyArray(maxNumLines * maxNumCharsPerLine, Rect)
+
+  # List of TransformStart render command indices where we need to fix the offset when we know it the offset after rendering all lines.
+  var fixups = state.builder.arena.allocEmptyArray(maxNumLines, tuple[line: int, renderCommandHead: int])
+
+  # Render lines
+  while true:
+    let renderedItem = scrollBox.renderItemT:
+      let renderCommandHead = commands.commands.len
+      let size = drawLine(state, commands, iter, scrollBox.currentIndex)
+      if size.isSome:
+        fixups.add (scrollBox.currentIndex, renderCommandHead)
+      size
+
+    if not renderedItem:
+      break
+
+  scrollBox.endRender()
+  scrollBox.clamp(state.displayMap.endDisplayPoint.row.int)
+
+  state.chunkBoundsPerLine.toOpenArray().quickSort(proc(a, b: auto): int = cmp(a.line, b.line))
+  fixups.toOpenArray().quickSort(proc(a, b: auto): int = cmp(a.line, b.line))
+
+  # Fixup chunk bounds and Transform render commands now that we know the line bounds
+  assert fixups.len == state.chunkBoundsPerLine.len
+  assert fixups.len == scrollBox.items.len
+  for i in 0..<fixups.len:
+    assert fixups[i].line == scrollBox.items[i].index
+    assert fixups[i].line == state.chunkBoundsPerLine[i].line
+    let fix = fixups[i]
+    let lineBounds = scrollBox.items[i].bounds
+
+    # Offset TransformStart render command according to scroll box item bounds
+    if fix.renderCommandHead in 0..commands.commands.high and
+        commands.commands[fix.renderCommandHead].kind == RenderCommandKind.TransformStart:
+      commands.commands[fix.renderCommandHead] = RenderCommand(
+        kind: RenderCommandKind.TransformStart,
+        bounds: rect((vec2(0, lineBounds.y)), vec2(0)),
+      )
+
+    fixupRenderCommandsAndChunkBounds(state, i, commands, lineBounds)
+
+  if state.chunkBoundsPerLine.len > 0:
+    var total = 0
+    for line in state.chunkBoundsPerLine.toOpenArray():
+      total += line.chunks.len
+    state.chunkBounds = state.builder.arena.allocEmptyArray(total, ChunkBounds)
+    for line in state.chunkBoundsPerLine.toOpenArray():
+      state.chunkBounds.add(line.chunks)
+
+  # Draw highlighted background for display line containing the last cursor
+  if scrollBox.itemBounds(state.cursorDisplayLine).getSome(b):
+    backgroundCommands.fillRect(b + state.bounds.xy, state.backgroundColor.lighten(0.05))
+
+  state.drawDiffBackgrounds(backgroundCommands, scrollBox)
+
+proc drawDiffLines(state: var LineDrawerState, commands: var RenderCommands, backgroundCommands: var RenderCommands, scrollBox: var ScrollBox) =
+  let maxNumLines = ceil(state.bounds.h / state.builder.textHeight).int + 15
+  let maxNumCharsPerLine = ceil(state.bounds.w / state.builder.charWidth).int + 5
+
+  state.chunkBoundsPerLine = state.builder.arena.allocEmptyArray(maxNumLines, LineBounds)
+  state.charBounds = state.builder.arena.allocEmptyArray(maxNumLines * maxNumCharsPerLine, Rect)
+
+  commands.startScissor(state.bounds)
+  var iter = state.createIter()
+  for i, item in scrollBox.items:
+    var head = commands.commands.len
+    let size = drawLine(state, commands, iter, item.index)
+    if size.isNone:
+      continue
+    if head in 0..commands.commands.high and commands.commands[head].kind == RenderCommandKind.TransformStart:
+      commands.commands[head] = RenderCommand(kind: RenderCommandKind.TransformStart, bounds: item.bounds)
+    fixupRenderCommandsAndChunkBounds(state, i, commands, item.bounds)
+
+    # Draw highlighted background for display line containing the last cursor
+    if scrollBox.itemBounds(state.cursorDisplayLine).getSome(b):
+      backgroundCommands.fillRect(b + state.bounds.xy, state.backgroundColor.lighten(0.05))
+
+  state.drawDiffBackgrounds(backgroundCommands, scrollBox)
+
+  commands.endScissor()
+
+proc drawContextLines(state: var LineDrawerState, commands: var RenderCommands, backgroundCommands: var RenderCommands, contextLines: openArray[int]) =
+
+  let contextBackgroundColor = state.builder.theme.color(@["breadcrumbPicker.background"], state.backgroundColor.lighten(0.05))
+
+  var state = state
+  let maxNumLines = contextLines.len
+  state.chunkBoundsPerLine = state.builder.arena.allocEmptyArray(maxNumLines, LineBounds)
+  let maxNumCharsPerLine = ceil(state.bounds.w / state.builder.charWidth).int + 5
+  state.charBounds = state.builder.arena.allocEmptyArray(maxNumLines * maxNumCharsPerLine, Rect)
+
+  var iter = state.createIter()
+  var y = 0.0
+  for i, line in contextLines:
+    let startDisplayPoint = state.displayMap.toDisplayPoint(point(line, 0))
+
+    var head = commands.commands.len
+    commands.fillRect(rect(0, 0, 0, 0), contextBackgroundColor)
+    let size = drawLine(state, commands, iter, startDisplayPoint.row.int)
+    if size.isNone:
+      continue
+
+    let lineBounds = rect(state.bounds.x, state.bounds.y + y, size.get.x, size.get.y)
+
+    commands.commands[head].bounds = lineBounds
+    let transformIndex = head + 1
+    if transformIndex in 0..commands.commands.high and commands.commands[transformIndex].kind == RenderCommandKind.TransformStart:
+      commands.commands[transformIndex] = RenderCommand(kind: RenderCommandKind.TransformStart, bounds: rect(0, y, 0, 0))
+    fixupRenderCommandsAndChunkBounds(state, i, commands, lineBounds)
+    y += size.get.y
+
 proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode,
-    selectionsNode: UINode, lineNumbersNode: UINode, backgroundColor: Color, textColor: Color, sizeToContentX: bool,
+    selectionsNode: UINode, backgroundColor: Color, textColor: Color, sizeToContentX: bool,
     sizeToContentY: bool) =
   var flags = 0.UINodeFlags
   if sizeToContentX:
@@ -630,47 +1136,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   self.scrollOffset.y = clamp(self.scrollOffset.y, (1.0 - self.numDisplayLines.float) * builder.textHeight, parentHeight - builder.textHeight)
   self.scrollOffset.x = clamp(self.scrollOffset.x, -float.high, 0)
 
-  if enableSmoothScrolling:
-    # echo &"{self.interpolatedScrollOffset}, {self.scrollOffset}, {snapBehaviour}"
-    if self.interpolatedScrollOffset == self.scrollOffset:
-      self.nextSnapBehaviour = ScrollSnapBehaviour.none
-    elif snapBehaviour == ScrollSnapBehaviour.Always:
-      self.interpolatedScrollOffset = self.scrollOffset
-      self.nextSnapBehaviour = ScrollSnapBehaviour.none
-    elif snapBehaviour in {ScrollSnapBehaviour.MinDistanceOffscreen, MinDistanceCenter}:
-      if abs(self.interpolatedScrollOffset.y - self.scrollOffset.y) > scrollSnapDistance:
-        if snapBehaviour == ScrollSnapBehaviour.MinDistanceCenter:
-          self.interpolatedScrollOffset.y = self.scrollOffset.y
-          self.nextSnapBehaviour = ScrollSnapBehaviour.none
-        elif self.interpolatedScrollOffset.y != self.scrollOffset.y:
-          self.interpolatedScrollOffset.y = self.scrollOffset.y + sign(self.interpolatedScrollOffset.y - self.scrollOffset.y) * scrollSnapDistance
-          self.markDirty()
-
-      if abs(self.interpolatedScrollOffset.x - self.scrollOffset.x) > scrollSnapDistanceX:
-        if snapBehaviour == ScrollSnapBehaviour.MinDistanceCenter:
-          self.interpolatedScrollOffset.x = self.scrollOffset.x
-          self.nextSnapBehaviour = ScrollSnapBehaviour.none
-        elif self.interpolatedScrollOffset.x != self.scrollOffset.x:
-          self.interpolatedScrollOffset.x = self.scrollOffset.x + sign(self.interpolatedScrollOffset.x - self.scrollOffset.x) * scrollSnapDistanceX
-          self.markDirty()
-
-    if self.interpolatedScrollOffset != self.scrollOffset:
-      let alpha = 1 - exp(-smoothScrollSpeed * app.platform.deltaTime)
-      if self.interpolatedScrollOffset.x != self.scrollOffset.x:
-        self.interpolatedScrollOffset.x = mix(self.interpolatedScrollOffset.x, self.scrollOffset.x, alpha)
-      if self.interpolatedScrollOffset.y != self.scrollOffset.y:
-        self.interpolatedScrollOffset.y = mix(self.interpolatedScrollOffset.y, self.scrollOffset.y, alpha)
-      if length(self.interpolatedScrollOffset - self.scrollOffset) < 1:
-        self.interpolatedScrollOffset = self.scrollOffset
-        self.nextSnapBehaviour = ScrollSnapBehaviour.none
-      self.markDirty()
-
-  else:
-    self.interpolatedScrollOffset = self.scrollOffset
-    self.nextSnapBehaviour = ScrollSnapBehaviour.none
-
-  # echo &"{self.interpolatedScrollOffset}"
-
   let inclusive = self.config.get("text.inclusive-selection", false)
   let drawChunks = self.debugSettings.drawTextChunks.get()
 
@@ -682,7 +1147,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let showContextLines = not renderDiff and self.settings.contextLines.get()
 
   let selectionColor = builder.theme.color("selection.background", color(200/255, 200/255, 200/255))
-  let contextBackgroundColor = builder.theme.color(@["breadcrumbPicker.background"], backgroundColor.lighten(0.05))
   let insertedTextBackgroundColor = builder.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
   let deletedTextBackgroundColor = builder.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
   var changedTextBackgroundColor = builder.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
@@ -693,53 +1157,26 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let lineNumbers = self.uiSettings.lineNumbers.get()
   let lineNumberBounds = self.lineNumberBounds()
 
-  let scrollOffset = self.interpolatedScrollOffset
-  var startLine = max((-scrollOffset.y / builder.textHeight).int - 1, 0)
-  let startLineOffsetFromScrollOffset = (-startLine).float * builder.textHeight
-  var slice = self.document.rope.slice()
-  let displayEndPoint = self.displayMap.toDisplayPoint(slice.summary.lines)
-
-  if startLine > displayEndPoint.row.int:
-    currentNode.renderCommands.clear()
-    selectionsNode.renderCommands.clear()
-    return
-
-  let contextLines = if showContextLines:
-    var contextLines: seq[int]
-    for i in 0..10:
-      let displayPoint = displayPoint(startLine + i + 2, 0)
-      if displayPoint.row.int >= self.numDisplayLines:
-        break
-      let s = self.displayMap.toPoint(displayPoint)
-      contextLines = self.getContextLines(s.toCursor)
-      if contextLines.len <= i:
-        break
-
-    contextLines
-  else:
-    @[]
-
   let highlight = self.uiSettings.syntaxHighlighting.get()
   let indentGuide = self.uiSettings.indentGuide.get()
 
-  var iter = self.displayMap.iter()
-  iter.styledChunks.diagnosticEndPoints = self.document.diagnosticEndPoints # todo: don't copy everything here
-  if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
-    iter.styledChunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
-  if indentGuide:
-    let cursorIndentLevel = self.document.rope.indentRunes(self.selection.last.line).int
-    iter.indentGuideColumn = cursorIndentLevel.some
-  iter.seekLine(startLine)
-  # echo &"startLine: {startLine}, scrollOffset: {scrollOffset}, uiae: {startLineOffsetFromScrollOffset}, point: {iter.point}, {iter.diffChunks.wrapChunks.overlayChunks.overlayPoint}, {iter.diffChunks.wrapChunks.wrapPoint}, {iter.diffChunks.diffPoint}, {iter.displayPoint}, "
+  proc createIter(): DisplayChunkIterator =
+    var highlighter = Highlighter.none
+    if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
+      highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree, theme: builder.theme).some
+    var res = self.displayMap.iter(highlighter)
+    res.styledChunks.diagnosticEndPoints = self.document.diagnosticEndPoints # todo: don't copy everything here
+    if indentGuide:
+      let cursorIndentLevel = self.document.rope.indentRunes(self.selection.last.line).int
+      res.indentGuideColumn = cursorIndentLevel.some
+    return res
 
-  var diffRopeSlice: RopeSlice[int]
-  var diffIter: DisplayChunkIterator
-  if renderDiff:
-    diffRopeSlice = self.diffDocument.rope.slice()
-    diffIter = self.diffDisplayMap.iter()
+  proc createDiffIter(): DisplayChunkIterator =
+    var highlighter = Highlighter.none
     if self.diffDocument.tsTree.isNotNil and self.diffDocument.highlightQuery.isNotNil and highlight:
-      diffIter.styledChunks.highlighter = Highlighter(query: self.diffDocument.highlightQuery, tree: self.diffDocument.tsTree).some
-    diffIter.seekLine(startLine)
+      highlighter = Highlighter(query: self.diffDocument.highlightQuery, tree: self.diffDocument.tsTree, theme: builder.theme).some
+    var res = self.diffDisplayMap.iter(highlighter)
+    return res
 
   let signShow = self.settings.signs.show.get()
   let lineNumberWidth = self.lineNumberWidth()
@@ -753,44 +1190,84 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     signColumnWidth.float * builder.charWidth
 
   let mainOffset = if renderDiff:
-    floor((parentWidth + lineNumberWidth) * 0.5)
+    floor(parentWidth * 0.5)
   else:
     0
 
   let width = if renderDiff:
-    floor((parentWidth + lineNumberWidth) * 0.5 - lineNumberWidth)
+    floor(parentWidth * 0.5)
   else:
     parentWidth
 
   var state = LineDrawerState(
     builder: builder,
+    platform: self.platform,
     displayMap: self.displayMap,
+    diffDisplayMap: self.diffDisplayMap,
+    createIter: createIter,
+    diffReverse: true,
+    renderDiff: renderDiff,
+    diffChanges: if self.diffChanges.isSome: self.diffChanges.get.addr else: nil,
+
+    customOverlayRenderers: self.customOverlayRenderers.addr,
+    signs: self.signs.addr,
+    diagnosticsPerLS: self.document.diagnosticsPerLS.addr,
+
     absoluteBounds: rect(currentNode.boundsAbsolute.x + mainOffset, currentNode.boundsAbsolute.y, width, parentHeight),
     bounds: rect(mainOffset, 0, width, parentHeight),
-    offset: vec2(mainOffset + scrollOffset.x, scrollOffset.y - startLineOffsetFromScrollOffset + (iter.displayPoint.row.int - startLine).float * builder.textHeight).floor,
-    lastDisplayPoint: iter.displayPoint,
-    lastDisplayEndPoint: iter.displayPoint,
-    lastPoint: iter.point,
-    cursorOnScreen: false,
-    reverse: true,
+    cursorLine: cursorLine,
+    cursorDisplayLine: cursorDisplayLine,
+
+    textColor: textColor,
+    errorColor: builder.theme.tokenColor("error", color(0.8, 0.2, 0.2)),
+    warningColor: builder.theme.tokenColor("warning", color(0.8, 0.8, 0.2)),
+    informationColor: builder.theme.tokenColor("information", color(0.8, 0.8, 0.8)),
+    hintColor: builder.theme.tokenColor("hint", color(0.7, 0.7, 0.7)),
+    backgroundColor: backgroundColor,
+    insertedTextBackgroundColor: insertedTextBackgroundColor,
+    deletedTextBackgroundColor: deletedTextBackgroundColor,
+    changedTextBackgroundColor: changedTextBackgroundColor,
+
+    signShow: signShow,
+    signColumnPixelWidth: signColumnPixelWidth,
+    signColumnWidth: signColumnWidth,
+    lineNumbers: lineNumbers,
+    lineNumberWidth: lineNumberWidth,
+    lineNumberBounds: lineNumberBounds,
   )
 
   var diffState = LineDrawerState(
     builder: builder,
+    platform: self.platform,
     displayMap: self.diffDisplayMap,
-    bounds: rect(0, 0, width, parentHeight),
-    offset: vec2(-scrollOffset.x, scrollOffset.y - startLineOffsetFromScrollOffset + (diffIter.displayPoint.row.int - startLine).float * builder.textHeight).floor,
-    lastDisplayPoint: diffIter.displayPoint,
-    lastDisplayEndPoint: diffIter.displayPoint,
-    lastPoint: diffIter.point,
-    cursorOnScreen: false,
-    reverse: false,
-  )
+    diffDisplayMap: self.displayMap,
+    createIter: createDiffIter,
+    diffReverse: false,
+    renderDiff: renderDiff,
+    diffChanges: if self.diffChanges.isSome: self.diffChanges.get.addr else: nil,
 
-  let errorColor = builder.theme.tokenColor("error", color(0.8, 0.2, 0.2))
-  let warningColor = builder.theme.tokenColor("warning", color(0.8, 0.8, 0.2))
-  let informationColor = builder.theme.tokenColor("information", color(0.8, 0.8, 0.8))
-  let hintColor = builder.theme.tokenColor("hint", color(0.7, 0.7, 0.7))
+    absoluteBounds: rect(currentNode.boundsAbsolute.x, currentNode.boundsAbsolute.y, width, parentHeight),
+    bounds: rect(0, 0, width, parentHeight),
+    cursorLine: if self.diffChanges.isSome: self.diffChanges.get.mapLine(cursorLine, true).get((-1, false)).line else: -1,
+    cursorDisplayLine: cursorDisplayLine,
+
+    textColor: textColor,
+    errorColor: builder.theme.tokenColor("error", color(0.8, 0.2, 0.2)),
+    warningColor: builder.theme.tokenColor("warning", color(0.8, 0.8, 0.2)),
+    informationColor: builder.theme.tokenColor("information", color(0.8, 0.8, 0.8)),
+    hintColor: builder.theme.tokenColor("hint", color(0.7, 0.7, 0.7)),
+
+    backgroundColor: backgroundColor,
+    insertedTextBackgroundColor: insertedTextBackgroundColor,
+    deletedTextBackgroundColor: deletedTextBackgroundColor,
+    changedTextBackgroundColor: changedTextBackgroundColor,
+
+    signColumnPixelWidth: signColumnPixelWidth,
+    signColumnWidth: signColumnWidth,
+    lineNumbers: lineNumbers,
+    lineNumberWidth: lineNumberWidth,
+    lineNumberBounds: lineNumberBounds,
+  )
 
   let space = self.uiSettings.whitespaceChar.get()
   let spaceColorName = self.uiSettings.whitespaceColor.get()
@@ -799,249 +1276,49 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
   currentNode.renderCommands.spacesColor = builder.theme.tokenColor(spaceColorName, textColor)
 
-  self.lastRenderedChunks.setLen(0)
+  self.scrollBox.smoothScroll = self.uiSettings.smoothScroll.get()
+  self.scrollBox.enableScrolling = not self.disableScrolling
+  if self.disableScrolling:
+    self.scrollBox.index = 0
+    self.scrollBox.offset = 0
+    self.scrollBox.margin = 0
+  else:
+    let height = builder.currentParent.bounds.h
+    let configMarginRelative = self.settings.cursorMarginRelative.get()
+    let configMargin = self.settings.cursorMargin.get()
+    let margin = if configMarginRelative:
+      clamp(configMargin, 0.0, 1.0) * 0.5 * height
+    else:
+      clamp(configMargin * builder.textHeight, 0.0, height * 0.5 - builder.textHeight * 0.5)
 
-  lineNumbersNode.renderCommands.clear()
+    self.scrollBox.margin = margin
+
   selectionsNode.renderCommands.clear()
   currentNode.renderCommands.clear()
-  buildCommands(currentNode.renderCommands):
+  drawLines(state, currentNode.renderCommands, selectionsNode.renderCommands, self.scrollBox)
+  if renderDiff:
+    drawDiffLines(diffState, currentNode.renderCommands, selectionsNode.renderCommands, self.scrollBox)
 
-    proc drawChunk(chunk: DisplayChunk, state: var LineDrawerState): LineDrawerResult =
-      let external = chunk.styledChunk.chunk.external
-      if state.reverse and not external:
-        self.lastRenderedChunks.add((chunk.point...chunk.endPoint, chunk.displayPoint...chunk.displayEndPoint))
-
-      if state.lastPoint.row != chunk.point.row and not external:
-        state.addedLineNumber = false
-
-      while state.lastDisplayPoint.row < chunk.displayPoint.row:
-        for diagnosticsData in self.document.diagnosticsPerLS.mitems:
-          diagnosticsData.diagnosticsPerLine.withValue(state.lastPoint.row.int, val):
-            for i in val[].mitems:
-              let i = i
-              let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[i]
-              let nlIndex = diagnostic.message.find("\n")
-              var maxIndex = if nlIndex != -1: nlIndex else: diagnostic.message.len
-              maxIndex = min(maxIndex, 100)
-              var message = "     ■ " & diagnostic.message[0..<maxIndex]
-              if maxIndex < diagnostic.message.len:
-                message.add "..."
-              let width = message.runeLen.float * builder.charWidth # todo: measure text
-              let color = case diagnostic.severity.get(lsp_types.DiagnosticSeverity.Hint)
-              of lsp_types.DiagnosticSeverity.Error: errorColor
-              of lsp_types.DiagnosticSeverity.Warning: warningColor
-              of lsp_types.DiagnosticSeverity.Information: informationColor
-              of lsp_types.DiagnosticSeverity.Hint: hintColor
-              drawText(message, rect(state.offset.x, state.offset.y, width, builder.textHeight), color, 0.UINodeFlags)
-              state.offset.x += width
-
-        if state.lastDisplayEndPoint.column == 0:
-          if state.displayMap.diffMap.snapshot.isEmptySpace(state.lastDisplayPoint.DiffPoint):
-            fillRect(rect(state.bounds.x, state.offset.y, state.bounds.w, builder.textHeight), backgroundColor.darken(0.03))
-
-        state.lastDisplayPoint.row += 1
-        state.lastDisplayPoint.column = 0
-        state.lastDisplayEndPoint.row += 1
-        state.lastDisplayEndPoint.column = 0
-        state.offset.y += state.builder.textHeight
-        state.offset.x = state.bounds.x + scrollOffset.x
-
-      if renderDiff and state.lastDisplayEndPoint.column == 0 and self.diffChanges.isSome:
-        let diffRow = self.diffChanges.get.mapLine(chunk.point.row.int, state.reverse)
-        if diffRow.getSome(d):
-          if d.changed:
-            fillRect(rect(state.bounds.x, state.offset.y, state.bounds.w, builder.textHeight), changedTextBackgroundColor)
-        else:
-          let color = if state.reverse: insertedTextBackgroundColor else: deletedTextBackgroundColor
-          fillRect(rect(state.bounds.x, state.offset.y, state.bounds.w, builder.textHeight), color)
-
-      if chunk.displayPoint.column > state.lastDisplayEndPoint.column:
-        state.offset.x += (chunk.displayPoint.column - state.lastDisplayEndPoint.column).float * state.builder.charWidth
-
-      if state.lastPoint.row != chunk.point.row and not external:
-        state.lastDisplayPoint.column = 0
-
-      if state.offset.y >= state.bounds.yh:
-        return LineDrawerResult.Break
-
-      if state.offset.x >= state.bounds.xw:
-        return LineDrawerResult.ContinueNextLine
-
-      if not external:
-        state.lastPoint = chunk.point
-      state.lastDisplayPoint = chunk.displayPoint
-      state.lastDisplayEndPoint = chunk.displayEndPoint
-
-      if not state.addedLineNumber:
-        state.addedLineNumber = true
-
-        if state.fillLineNumberBackground and signShow != SignColumnShowKind.Number and signShow != SignColumnShowKind.No:
-          buildCommands(lineNumbersNode.renderCommands):
-            let bounds = rect(floor(state.bounds.x + lineNumberWidth - signColumnPixelWidth), state.offset.y, signColumnPixelWidth, builder.textHeight)
-            fillRect(bounds, state.lineNumberBackgroundColor)
-
-        var drawLineNumber = true
-        self.signs.withValue(chunk.point.row.int, value):
-          buildCommands(lineNumbersNode.renderCommands):
-            var bounds = rect(state.bounds.x + lineNumberWidth - signColumnPixelWidth, state.offset.y, signColumnPixelWidth, builder.textHeight)
-            if signShow == SignColumnShowKind.Number:
-              drawLineNumber = false
-              bounds = rect(vec2(state.bounds.x + builder.charWidth, state.offset.y), lineNumberBounds)
-
-              if state.fillLineNumberBackground:
-                fillRect(rect(vec2(state.bounds.x, state.offset.y), lineNumberBounds), state.lineNumberBackgroundColor)
-
-            var i = 0
-            for s in value[]:
-              if i + s.width > signColumnWidth:
-                break
-
-              var color = textColor
-              if s.color != "":
-                color = builder.theme.tokenColor(s.color, textColor)
-              drawText(s.text, bounds, color * s.tint, 0.UINodeFlags)
-              bounds.x += builder.charWidth * s.width.float
-              i += s.width
-
-        if drawLineNumber:
-          lineNumbersNode.renderCommands.drawLineNumber(state.builder, chunk.point.row.int, vec2(state.bounds.x, state.offset.y), cursorLine, lineNumbers, lineNumberBounds - vec2(signColumnPixelWidth, 0), textColor, state.lineNumberBackgroundColor, state.fillLineNumberBackground)
-
-      if chunk.len > 0:
-        let font = self.platform.getFontInfo(self.platform.fontSize, 0.UINodeFlags)
-        let arrangementIndex = currentNode.renderCommands.typeset(chunk.toOpenArray, font)
-        let width = currentNode.renderCommands.layoutBounds(arrangementIndex).x
-        let indices {.cursor.} = currentNode.renderCommands.arrangements[arrangementIndex]
-        let bounds = rect(state.offset, vec2(width, state.builder.textHeight))
-        let charBoundsStart = state.charBounds.len
-        state.chunkBounds.add ChunkBounds(
-          range: chunk.point...chunk.endPoint,
-          displayRange: chunk.displayPoint...chunk.endDisplayPoint,
-          bounds: bounds,
-          text: chunk.styledChunk.chunk,
-          chunk: chunk,
-          charsRange: charBoundsStart...(charBoundsStart + indices.selectionRects.len),
-        )
-        state.charBounds.add currentNode.renderCommands.arrangement.selectionRects[indices.selectionRects]
-
-        if state.backgroundColor.getSome(color):
-          fillRect(bounds, color)
-
-        let (underlineColor, underlineFlags) = if chunk.styledChunk.underline.getSome(underline):
-          let underlineColor = builder.theme.tokenColor(underline.color, textColor)
-          (underlineColor, &{TextUndercurl})
-        else:
-          (color(1, 1, 1), 0.UINodeFlags)
-
-        let textColor = if chunk.scope.len == 0: textColor else: builder.theme.tokenColor(chunk.scope, textColor)
-        var flags = underlineFlags
-        if chunk.styledChunk.drawWhitespace:
-          flags.incl UINodeFlag.TextDrawSpaces
-        drawText(chunk.toOpenArray, arrangementIndex, bounds, textColor, flags, underlineColor)
-        state.offset.x += width
-
-        if drawChunks:
-          drawRect(bounds, color(1, 0, 0))
-
-      else:
-        state.chunkBounds.add ChunkBounds(
-          range: chunk.point...chunk.endPoint,
-          displayRange: chunk.displayPoint...chunk.endDisplayPoint,
-          bounds: rect(state.offset, vec2(state.builder.charWidth, state.builder.textHeight)),
-          text: chunk.styledChunk.chunk,
-          chunk: chunk,
-          charsRange: state.charBounds.len...state.charBounds.len,
-        )
-
-        if drawChunks:
-          drawRect(rect(state.offset, vec2(state.builder.charWidth, state.builder.textHeight)), color(1, 0, 0))
-
-      return LineDrawerResult.Continue
-
-    var addedCursorLineBackground = false
-    while iter.next().getSome(chunk):
-      if not addedCursorLineBackground and chunk.displayPoint.row.int == cursorDisplayLine:
-        let yOffset = (chunk.displayPoint.row.int - state.lastDisplayPoint.row.int).float * builder.textHeight
-        selectionsNode.renderCommands.commands.add(RenderCommand(
-          kind: RenderCommandKind.FilledRect,
-          bounds: rect(state.bounds.x, state.offset.y + yOffset, state.bounds.w, builder.textHeight),
-          color: backgroundColor.lighten(0.05)))
-        addedCursorLineBackground = true
-
-      # todo: this sometimes happens for a frame or two, probably because some data structures are in an invalid state
-      # which causes an infinte loop here.
-      # Just breaking and trying again will be fine for now, but the root cause should be fixed.
-      if state.chunkBounds.len > 10000:
-        log lvlWarn, "Rendering too much text, your font size is too small or there is a bug"
+  elif showContextLines and self.scrollBox.items.len > 0:
+    let startLine = self.scrollBox.items[0].index
+    var contextLines: seq[int]
+    for i in 0..10:
+      let displayPoint = displayPoint(startLine + i + 2, 0)
+      if displayPoint.row.int >= self.numDisplayLines:
         break
+      let s = self.displayMap.toPoint(displayPoint)
+      contextLines = self.getContextLines(s.toCursor)
+      if contextLines.len <= i:
+        break
+    contextLines.reverse()
 
-      case drawChunk(chunk, state)
-      of Continue: discard
-      of ContinueNextLine: iter.seekLine(chunk.displayPoint.row.int + 1)
-      of Break: break
+    drawContextLines(state, currentNode.renderCommands, selectionsNode.renderCommands, contextLines)
 
-    if showContextLines and contextLines.len > 0:
-      let startDisplayPoint = self.displayMap.toDisplayPoint(point(contextLines.last, 0))
-      var contextLinesIter = self.displayMap.iter()
-      if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
-        contextLinesIter.styledChunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
-      if indentGuide:
-        let cursorIndentLevel = self.document.rope.indentRunes(self.selection.last.line).int
-        contextLinesIter.indentGuideColumn = cursorIndentLevel.some
-      var contextLinesState = LineDrawerState(
-        builder: builder,
-        displayMap: self.displayMap,
-        bounds: rect(mainOffset, 0, width, parentHeight),
-        offset: vec2(mainOffset, 0),
-        lastDisplayPoint: startDisplayPoint,
-        lastDisplayEndPoint: startDisplayPoint,
-        lastPoint: point(contextLines.last, 0),
-        cursorOnScreen: false,
-        reverse: true,
-        lineNumberBackgroundColor: backgroundColor.lighten(0.05),
-        fillLineNumberBackground: true,
-      )
-      contextLinesIter.seekLine(startDisplayPoint.row.int)
-
-      fillRect(rect(contextLinesState.bounds.x, contextLinesState.bounds.y, contextLinesState.bounds.w, builder.textHeight), backgroundColor.lighten(0.05))
-
-      var i = contextLines.high
-      while contextLinesIter.next().getSome(chunk):
-        if chunk.displayPoint.row > contextLinesState.lastDisplayPoint.row:
-          dec i
-          if i < 0:
-            break
-          let nextPoint = point(contextLines[i], 0)
-          let nextDisplayPoint = self.displayMap.toDisplayPoint(nextPoint)
-          contextLinesIter.seekLine(nextDisplayPoint.row.int)
-          fillRect(rect(contextLinesState.bounds.x, (contextLines.high - i).float * builder.textHeight, contextLinesState.bounds.w, builder.textHeight), contextBackgroundColor)
-          contextLinesState.offset.x = mainOffset
-          contextLinesState.offset.y += builder.textHeight
-          contextLinesState.lastDisplayPoint = nextDisplayPoint
-          contextLinesState.lastDisplayEndPoint = nextDisplayPoint
-          contextLinesState.lastPoint = nextPoint
-          contextLinesState.addedLineNumber = false
-          continue
-
-        if contextLinesState.chunkBounds.len > 10000:
-          log lvlError, "Rendering too much text, your font size is too small or there is a bug"
-          break
-
-        case drawChunk(chunk, contextLinesState)
-        of Continue: discard
-        of ContinueNextLine: discard
-        of Break: break
-
-    if renderDiff:
-      startScissor(diffState.bounds)
-      while diffIter.next().getSome(chunk):
-        if diffState.chunkBounds.len > 10000:
-          log lvlError, "Rendering too much text, your font size is too small or there is a bug"
-          break
-        case drawChunk(chunk, diffState)
-        of Continue: discard
-        of ContinueNextLine: diffIter.seekLine(chunk.displayPoint.row.int + 1)
-        of Break: break
-      endScissor()
+  # Store rendered chunk ranges for e.g. choose-cursor command
+  self.lastRenderedChunks.setLen(0)
+  for chunk in state.chunkBounds:
+    if not chunk.displayChunk.styledChunk.chunk.external:
+      self.lastRenderedChunks.add (chunk.range, chunk.displayRange)
 
   self.drawCursors(builder, app, currentNode, currentNode.renderCommands, state)
 
@@ -1076,7 +1353,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if self.document.isNil:
       return
 
-    var (_, index) = state.chunkBounds.binarySearchRange(pos, Bias.Left, cmp)
+    var (_, index) = state.chunkBounds.toOpenArray().binarySearchRange(pos, Bias.Left, cmp)
     if index notin 0..state.chunkBounds.high:
       return
 
@@ -1167,7 +1444,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   if not state.cursorOnScreen:
     # todo: move this to a function
     let centerPos = currentNode.bounds.wh * 0.5 + vec2(0, builder.textHeight * -0.5)
-    var (_, index) = state.chunkBounds.binarySearchRange(centerPos, Bias.Left, cmp)
+    var (_, index) = state.chunkBounds.toOpenArray().binarySearchRange(centerPos, Bias.Left, cmp)
     if index notin 0..state.chunkBounds.high:
       return
 
@@ -1183,8 +1460,16 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
   let app = ({.gcsafe.}: gEditor)
   self.preRender(builder.currentParent.bounds)
 
+  let arenaCheckpoint = builder.arena.checkpoint()
+  defer:
+    builder.arena.restoreCheckpoint(arenaCheckpoint)
+
   let dirty = self.dirty
   self.resetDirty()
+
+  let smoothScrollSpeed: float = self.uiSettings.smoothScrollSpeed.get()
+  self.scrollBox.scrollSpeed = smoothScrollSpeed
+  self.scrollBox.updateScroll(self.platform.deltaTime)
 
   let logNewRenderer = self.debugSettings.logTextRenderTime.get()
   let transparentBackground = self.uiSettings.background.transparent.get()
@@ -1256,19 +1541,14 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
         let lineNumberWidth = self.lineNumberWidth()
         builder.panel(sizeFlags + &{FillBackground, MaskContent}, backgroundColor = backgroundColor):
           var selectionsNode: UINode
-          builder.panel(&{UINodeFlag.FillX, FillY}, x = lineNumberWidth, tag = "selections"):
+          builder.panel(&{UINodeFlag.FillX, FillY}, tag = "selections"):
             selectionsNode = currentNode
             selectionsNode.renderCommands.clear()
 
           var textNode: UINode
-          builder.panel(sizeFlags + &{MaskContent}, x = lineNumberWidth, tag = "text-lines"):
+          builder.panel(sizeFlags + &{MaskContent}, tag = "text-lines"):
             textNode = currentNode
             textNode.renderCommands.clear()
-
-          var lineNumbersNode: UINode
-          builder.panel(&{UINodeFlag.FillX, FillY}, tag = "line-numbers"):
-            lineNumbersNode = currentNode
-            lineNumbersNode.renderCommands.clear()
 
           onScroll:
             if Control in modifiers:
@@ -1279,7 +1559,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
           var t = startTimer()
 
           if self.document != nil and self.document.isInitialized:
-            self.createTextLines(builder, app, textNode, selectionsNode, lineNumbersNode,
+            self.createTextLines(builder, app, textNode, selectionsNode,
               backgroundColor, textColor, sizeToContentX, sizeToContentY)
 
           let e = t.elapsed.ms
@@ -1312,5 +1592,10 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
   if self.showSignatureHelp:
     res.add proc() =
       self.createSignatureHelp(builder, app, self.lastSignatureHelpLocationBounds.get(rect(100, 100, 10, 10)))
+
+  if self.scrollBox.scrollMomentum.abs > 0.0001:
+    self.markDirty()
+  else:
+    self.scrollBox.scrollMomentum = 0
 
   return res

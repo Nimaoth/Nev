@@ -1,7 +1,15 @@
-import std/[macros, genasts]
+import std/[macros, genasts, strformat]
 type
   BinaryEncoder* = object
-    buffer*: seq[byte]
+    buffer: seq[byte]
+    head*: int
+
+proc reset*(self: var BinaryEncoder) =
+  self.buffer.setLen(0)
+  self.head = 0
+
+proc resetHead*(self: var BinaryEncoder) =
+  self.head = self.buffer.len
 
 template toOpenArray*(self: BinaryEncoder): openArray[uint8] =
   self.buffer.toOpenArray(0, self.buffer.high)
@@ -12,18 +20,21 @@ macro getByte(v: typed, i: static[int]): untyped =
     ((v shr shift) and 0xff).byte
   # echo result.repr
 
-macro writeImpl(self: var BinaryEncoder, index: untyped, bytes: static[int], v: untyped): untyped =
+macro writeImpl(self: var BinaryEncoder, numBytes: static[int], v: untyped): untyped =
   result = nnkStmtList.newTree()
-  for i in 0..<bytes:
+  for i in 0..<numBytes:
     let b = genAst(self, v, i):
       self.buffer[startIndex + i] = getByte(v, i)
     result.add(b)
   # echo result.repr
 
 proc write*[T: SomeUnsignedInt](self: var BinaryEncoder, v: T) =
-  let startIndex = self.buffer.len
-  self.buffer.setLen(startIndex + sizeof(T))
-  writeImpl(self, startIndex, sizeof(T), v)
+  const size = sizeof(T)
+  let startIndex = self.head
+  if self.buffer.len < startIndex + size:
+    self.buffer.setLen(startIndex + size)
+  writeImpl(self, size, v)
+  self.head += size
 
 proc write*(self: var BinaryEncoder, v: float32) =
   # todo: make this work in js
@@ -65,14 +76,23 @@ proc writeLEB128*(self: var BinaryEncoder, T: typedesc[SomeSignedInt], v: T) =
 
 proc writeString*(self: var BinaryEncoder, v: string) =
   self.writeLEB128(uint32, v.len.uint32)
-  self.buffer.add v.toOpenArrayByte(0, v.high)
+  let size = v.len
+  let startIndex = self.head
+  if self.buffer.len < startIndex + size:
+    self.buffer.setLen(startIndex + size)
+  if size > 0:
+    copyMem(self.buffer[startIndex].addr, v[0].addr, size)
+  self.head += size
 
 proc write*[T](self: var BinaryEncoder, arr: openArray[T]) =
   self.writeLEB128(uint32, arr.len.uint32)
-  if arr.len > 0:
-    let startIndex = self.buffer.len
-    self.buffer.setLen(startIndex + arr.len * sizeof(T))
-    copyMem(self.buffer[startIndex].addr, arr.data, arr.len * sizeof(T))
+  let size = arr.len * sizeof(T)
+  let startIndex = self.head
+  if self.buffer.len < startIndex + size:
+    self.buffer.setLen(startIndex + size)
+  if size > 0:
+    copyMem(self.buffer[startIndex].addr, arr.data, size)
+  self.head += size
 
 type
   BinaryDecoder* = object
@@ -88,7 +108,7 @@ proc init*(_: typedesc[BinaryDecoder], arr: openArray[byte]): BinaryDecoder =
 
 proc assertSize(self: var BinaryDecoder, size: int) =
   if self.pos + size > self.len:
-    raise newException(ValueError, "Failed to decode data, out of bounds")
+    raise newException(ValueError, &"Failed to decode data, out of bounds (requested {size}, got {self.len - self.pos})")
 
 proc read*(self: var BinaryDecoder, T: typedesc[SomeUnsignedInt]): T =
   self.assertSize(sizeof(T))

@@ -34,6 +34,8 @@ type
     value*: uint32
   Bias* = enum
     Left = "left", Right = "right"
+  OverlayRenderLocation* = enum
+    Inline = "inline", Below = "below", Above = "above"
   Anchor* = object
     timestamp*: Lamport
     offset*: uint32
@@ -249,3 +251,22 @@ proc byteAt*(self: Rope; a: Cursor): uint8 {.nodestroy.} =
   arg2 = a.column
   let res = typesByteAtImported(arg0, arg1, arg2)
   result = convert(res, uint8)
+
+proc typesFindAllImported(a0: int32; a1: int32; a2: int32; a3: int32): void {.
+    wasmimport("[method]rope.find-all", "nev:plugins/types").}
+proc findAll*(self: Rope; regex: WitString): WitList[Selection] {.nodestroy.} =
+  ## Find all occurences of the given regex
+  var
+    retArea: array[12, uint8]
+    arg0: int32
+    arg1: int32
+    arg2: int32
+  arg0 = cast[int32](self.handle - 1)
+  if regex.len > 0:
+    arg1 = cast[int32](regex[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](regex.len)
+  typesFindAllImported(arg0, arg1, arg2, cast[int32](retArea[0].addr))
+  result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])

@@ -39,6 +39,12 @@ interface types {
     right,
   }
 
+  enum overlay-render-location {
+    inline,
+    below,
+    above,
+  }
+
   record anchor {
     timestamp: lamport,
     offset: u32,
@@ -78,6 +84,8 @@ interface types {
     // slice-lines: func(a: s64, b: s64) -> rope;
     rune-at: func(a: cursor) -> char;
     byte-at: func(a: cursor) -> u8;
+    /// Find all occurences of the given regex
+    find-all: func(regex: string) -> list<selection>;
   }
 
   /// Non-owning handle to an editor.
@@ -223,7 +231,7 @@ interface editor {
 }
 
 interface text-editor {
-  use types.{editor, document, text-editor, text-document, cursor, selection, rope, active-editor-flags, anchor};
+  use types.{editor, document, text-editor, text-document, cursor, selection, rope, active-editor-flags, anchor, bias, overlay-render-location};
   use commands.{command-error};
 
   enum scroll-behaviour {
@@ -351,6 +359,16 @@ interface text-editor {
   /// todo
   resolve-anchors: func(editor: text-editor, anchors: list<tuple<anchor, anchor>>) -> list<selection>;
 
+  add-overlay: func(editor: text-editor, selections: selection, text: string, id: s64, scope: string, bias: bias, render-id: s64, location: overlay-render-location);
+  clear-overlays: func(editor: text-editor, id: s64);
+
+  /// Sets the callback which will be called when rendering text overlays with a renderId.
+  /// Returns the renderId which can be used in add-overlay.
+  /// 'fun' is a pointer to a function with signature func(id: s32, data: u32). Data is an arbitrary number
+  /// which will be passed to the callback unchanged. It can be used as e.g. a pointer to some data.
+  add-custom-render-callback: func(editor: text-editor, fun: u32, data: u32) -> s64;
+  remove-custom-render-callback: func(editor: text-editor, cb: s64);
+
   /// todo
   edit: func(editor: text-editor, selections: list<selection>, contents: list<string>, inclusive: bool) -> list<selection>;
 
@@ -465,6 +483,13 @@ interface render {
     /// Remove a mode from the input modes. This controls which keybindings are available while the view is active.
     remove-mode: func(mode: string);
   }
+
+  enum texture-format {
+    rgba32
+  }
+
+  create-texture: func(width: s32, height: s32, data: u32, format: texture-format) -> u64;
+  delete-texture: func(id: u64);
 }
 
 /// Thread safe
@@ -547,7 +572,7 @@ interface session {
 interface guest {
   use render.{view};
   use channel.{channel-listen-response};
-  use types.{rope, selection};
+  use types.{rope, selection, vec2f};
   init-plugin: func();
   handle-command: func(fun: u32, data: u32, arguments: string) -> string;
   handle-mode-changed: func(fun: u32, old: string, new: string);
@@ -558,6 +583,11 @@ interface guest {
   save-plugin-state: func() -> list<u8>;
   load-plugin-state: func(state: list<u8>);
   handle-event: func(fun: u32, data: u32, event: string, payload: string);
+
+  /// Return a pointer to a buffer of encoded render commands and the length of the buffer.
+  /// The pointer is the lower 32 bits of the return value, the length the upper 32 bits.
+  /// The first two values of the buffer must be two 32 bit floats which represent the width/height of overlay.
+  handle-text-overlay-render: func(fun: u32, data: u32, id: s64, size: vec2f, offset: s32) -> u64;
 }
 
 /// APIs which can safely be used on a background thread

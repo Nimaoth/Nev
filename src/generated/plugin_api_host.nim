@@ -34,6 +34,8 @@ type
     value*: uint32
   Bias* = enum
     Left = "left", Right = "right"
+  OverlayRenderLocation* = enum
+    Inline = "inline", Below = "below", Above = "above"
   Anchor* = object
     timestamp*: Lamport
     offset*: uint32
@@ -64,6 +66,8 @@ type
   View* = object
     id*: int32
   ## Shared handle to a custom render view
+  TextureFormat* = enum
+    Rgba32 = "rgba32"
   Platform* = enum
     Gui = "gui", Tui = "tui"
   BackgroundExecutor* = enum
@@ -117,6 +121,7 @@ type
     savePluginState*: FuncT
     loadPluginState*: FuncT
     handleEvent*: FuncT
+    handleTextOverlayRender*: FuncT
 proc mem(funcs: ExportedFuncs): WasmMemory =
   if funcs.mMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
     return initWasmMemory(funcs.mMemory.get.of_field.sharedmemory)
@@ -124,7 +129,7 @@ proc mem(funcs: ExportedFuncs): WasmMemory =
     return initWasmMemory(funcs.mContext, funcs.mMemory.get.of_field.memory.addr)
 
 proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
-                     context: ptr ContextT) =
+                     context: ptr ContextT): seq[string] =
   funcs.mContext = context
   funcs.mMemory = instance.getExport(context, "memory")
   funcs.mRealloc = instance.getExport(context, "cabi_realloc")
@@ -138,71 +143,89 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
       assert f.get.kind == WASMTIME_EXTERN_FUNC
       funcs.initPlugin = f.get.of_field.func_field
     else:
-      echo "Failed to find exported function \'", "init_plugin", "\'"
+      result.add "Failed to find exported function \'" & $"init_plugin" & "\'"
   block:
     let f = instance.getExport(context, "handle_command")
     if f.isSome:
       assert f.get.kind == WASMTIME_EXTERN_FUNC
       funcs.handleCommand = f.get.of_field.func_field
     else:
-      echo "Failed to find exported function \'", "handle_command", "\'"
+      result.add "Failed to find exported function \'" & $"handle_command" &
+          "\'"
   block:
     let f = instance.getExport(context, "handle_mode_changed")
     if f.isSome:
       assert f.get.kind == WASMTIME_EXTERN_FUNC
       funcs.handleModeChanged = f.get.of_field.func_field
     else:
-      echo "Failed to find exported function \'", "handle_mode_changed", "\'"
+      result.add "Failed to find exported function \'" & $"handle_mode_changed" &
+          "\'"
   block:
     let f = instance.getExport(context, "handle_view_render_callback")
     if f.isSome:
       assert f.get.kind == WASMTIME_EXTERN_FUNC
       funcs.handleViewRenderCallback = f.get.of_field.func_field
     else:
-      echo "Failed to find exported function \'", "handle_view_render_callback",
-           "\'"
+      result.add "Failed to find exported function \'" &
+          $"handle_view_render_callback" &
+          "\'"
   block:
     let f = instance.getExport(context, "handle_channel_update")
     if f.isSome:
       assert f.get.kind == WASMTIME_EXTERN_FUNC
       funcs.handleChannelUpdate = f.get.of_field.func_field
     else:
-      echo "Failed to find exported function \'", "handle_channel_update", "\'"
+      result.add "Failed to find exported function \'" &
+          $"handle_channel_update" &
+          "\'"
   block:
     let f = instance.getExport(context, "notify_task_complete")
     if f.isSome:
       assert f.get.kind == WASMTIME_EXTERN_FUNC
       funcs.notifyTaskComplete = f.get.of_field.func_field
     else:
-      echo "Failed to find exported function \'", "notify_task_complete", "\'"
+      result.add "Failed to find exported function \'" &
+          $"notify_task_complete" &
+          "\'"
   block:
     let f = instance.getExport(context, "handle_move")
     if f.isSome:
       assert f.get.kind == WASMTIME_EXTERN_FUNC
       funcs.handleMove = f.get.of_field.func_field
     else:
-      echo "Failed to find exported function \'", "handle_move", "\'"
+      result.add "Failed to find exported function \'" & $"handle_move" & "\'"
   block:
     let f = instance.getExport(context, "save_plugin_state")
     if f.isSome:
       assert f.get.kind == WASMTIME_EXTERN_FUNC
       funcs.savePluginState = f.get.of_field.func_field
     else:
-      echo "Failed to find exported function \'", "save_plugin_state", "\'"
+      result.add "Failed to find exported function \'" & $"save_plugin_state" &
+          "\'"
   block:
     let f = instance.getExport(context, "load_plugin_state")
     if f.isSome:
       assert f.get.kind == WASMTIME_EXTERN_FUNC
       funcs.loadPluginState = f.get.of_field.func_field
     else:
-      echo "Failed to find exported function \'", "load_plugin_state", "\'"
+      result.add "Failed to find exported function \'" & $"load_plugin_state" &
+          "\'"
   block:
     let f = instance.getExport(context, "handle_event")
     if f.isSome:
       assert f.get.kind == WASMTIME_EXTERN_FUNC
       funcs.handleEvent = f.get.of_field.func_field
     else:
-      echo "Failed to find exported function \'", "handle_event", "\'"
+      result.add "Failed to find exported function \'" & $"handle_event" & "\'"
+  block:
+    let f = instance.getExport(context, "handle_text_overlay_render")
+    if f.isSome:
+      assert f.get.kind == WASMTIME_EXTERN_FUNC
+      funcs.handleTextOverlayRender = f.get.of_field.func_field
+    else:
+      result.add "Failed to find exported function \'" &
+          $"handle_text_overlay_render" &
+          "\'"
 
 proc initPlugin*(funcs: ExportedFuncs): WasmtimeResult[void] =
   var args: array[max(1, 0), ValT]
@@ -566,6 +589,35 @@ proc handleEvent*(funcs: ExportedFuncs; fun: uint32; data: uint32;
   if res.isErr:
     return res.toResult(void)
   
+proc handleTextOverlayRender*(funcs: ExportedFuncs; fun: uint32; data: uint32;
+                              id: int64; size: Vec2f; offset: int32): WasmtimeResult[
+    uint64] =
+  var args: array[max(1, 6), ValT]
+  var results: array[max(1, 1), ValT]
+  var trap: ptr WasmTrapT = nil
+  var memory = funcs.mem
+  let savePoint = stackSave(funcs.mStackSave.get.of_field.func_field,
+                            funcs.mContext)
+  defer:
+    discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
+                         funcs.mContext, savePoint.val)
+  args[0] = toWasmVal(fun)
+  args[1] = toWasmVal(data)
+  args[2] = toWasmVal(id)
+  args[3] = toWasmVal(size.x)
+  args[4] = toWasmVal(size.y)
+  args[5] = toWasmVal(offset)
+  let res = funcs.handleTextOverlayRender.addr.call(funcs.mContext,
+      args.toOpenArray(0, 6 - 1), results.toOpenArray(0, 1 - 1), trap.addr).toResult(
+      uint64)
+  if trap != nil:
+    return trap.toResult(uint64)
+  if res.isErr:
+    return res.toResult(uint64)
+  var retVal: uint64
+  retVal = convert(results[0].to(uint64), uint64)
+  return wasmtime.ok(retVal)
+
 proc coreApiVersion*(instance: ptr InstanceData): int32
 proc coreGetTime*(instance: ptr InstanceData): float64
 proc coreGetPlatform*(instance: ptr InstanceData): Platform
@@ -603,6 +655,8 @@ proc typesLineLength*(instance: ptr InstanceData; self: var RopeResource;
                       line: int64): int64
 proc typesRuneAt*(instance: ptr InstanceData; self: var RopeResource; a: Cursor): Rune
 proc typesByteAt*(instance: ptr InstanceData; self: var RopeResource; a: Cursor): uint8
+proc typesFindAll*(instance: ptr InstanceData; self: var RopeResource;
+                   regex: sink string): seq[Selection]
 proc editorActiveEditor*(instance: ptr InstanceData; options: ActiveEditorFlags): Option[
     Editor]
 proc editorGetDocument*(instance: ptr InstanceData; editor: Editor): Option[
@@ -705,6 +759,17 @@ proc textEditorCreateAnchors*(instance: ptr InstanceData; editor: TextEditor;
 proc textEditorResolveAnchors*(instance: ptr InstanceData; editor: TextEditor;
                                anchors: sink seq[(Anchor, Anchor)]): seq[
     Selection]
+proc textEditorAddOverlay*(instance: ptr InstanceData; editor: TextEditor;
+                           selections: Selection; text: sink string; id: int64;
+                           scope: sink string; bias: Bias; renderId: int64;
+                           location: OverlayRenderLocation): void
+proc textEditorClearOverlays*(instance: ptr InstanceData; editor: TextEditor;
+                              id: int64): void
+proc textEditorAddCustomRenderCallback*(instance: ptr InstanceData;
+                                        editor: TextEditor; fun: uint32;
+                                        data: uint32): int64
+proc textEditorRemoveCustomRenderCallback*(instance: ptr InstanceData;
+    editor: TextEditor; cb: int64): void
 proc textEditorEdit*(instance: ptr InstanceData; editor: TextEditor;
                      selections: sink seq[Selection];
                      contents: sink seq[string]; inclusive: bool): seq[Selection]
@@ -758,6 +823,9 @@ proc renderAddMode*(instance: ptr InstanceData; self: var RenderViewResource;
                     mode: sink string): void
 proc renderRemoveMode*(instance: ptr InstanceData; self: var RenderViewResource;
                        mode: sink string): void
+proc renderCreateTexture*(instance: ptr InstanceData; width: int32;
+                          height: int32; data: uint32; format: TextureFormat): uint64
+proc renderDeleteTexture*(instance: ptr InstanceData; id: uint64): void
 proc vfsReadSync*(instance: ptr InstanceData; path: sink string;
                   readFlags: ReadFlags): Result[string, VfsError]
 proc vfsReadRopeSync*(instance: ptr InstanceData; path: sink string;
@@ -1440,6 +1508,57 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         a.column = convert(parameters[2].i32, int32)
         let res = typesByteAt(instance, self[], a)
         parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/types", "[method]rope.find-all",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var self: ptr RopeResource
+        var regex: string
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            RopeResource)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          regex = newString(parameters[2].i32)
+          for i0 in 0 ..< regex.len:
+            regex[i0] = p0[i0]
+        let res = typesFindAll(instance, self[], regex)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 16).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 0].addr)[] = res[
+                  i0].first.line
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 4].addr)[] = res[
+                  i0].first.column
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 8].addr)[] = res[
+                  i0].last.line
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 12].addr)[] = res[
+                  i0].last.column
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
     if e.isErr:
       return e
   block:
@@ -2909,6 +3028,101 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
           WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I64, WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I64, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "add-overlay", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var editor: TextEditor
+        var selections: Selection
+        var text: string
+        var id: int64
+        var scope: string
+        var bias: Bias
+        var renderId: int64
+        var location: OverlayRenderLocation
+        editor.id = convert(parameters[0].i64, uint64)
+        selections.first.line = convert(parameters[1].i32, int32)
+        selections.first.column = convert(parameters[2].i32, int32)
+        selections.last.line = convert(parameters[3].i32, int32)
+        selections.last.column = convert(parameters[4].i32, int32)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[5].i32].addr)
+          text = newString(parameters[6].i32)
+          for i0 in 0 ..< text.len:
+            text[i0] = p0[i0]
+        id = convert(parameters[7].i64, int64)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[8].i32].addr)
+          scope = newString(parameters[9].i32)
+          for i0 in 0 ..< scope.len:
+            scope[i0] = p0[i0]
+        bias = cast[Bias](parameters[10].i32)
+        renderId = convert(parameters[11].i64, int64)
+        location = cast[OverlayRenderLocation](parameters[12].i32)
+        textEditorAddOverlay(instance, editor, selections, text, id, scope,
+                             bias, renderId, location)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I64], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "clear-overlays", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        var id: int64
+        editor.id = convert(parameters[0].i64, uint64)
+        id = convert(parameters[1].i64, int64)
+        textEditorClearOverlays(instance, editor, id)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32], [WasmValkind.I64])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "add-custom-render-callback", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        var fun: uint32
+        var data: uint32
+        editor.id = convert(parameters[0].i64, uint64)
+        fun = convert(parameters[1].i32, uint32)
+        data = convert(parameters[2].i32, uint32)
+        let res = textEditorAddCustomRenderCallback(instance, editor, fun, data)
+        parameters[0].i64 = cast[int64](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I64], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "remove-custom-render-callback", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        var cb: int64
+        editor.id = convert(parameters[0].i64, uint64)
+        cb = convert(parameters[1].i64, int64)
+        textEditorRemoveCustomRenderCallback(instance, editor, cb)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
           WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/text-editor", "edit", ty):
         var instance = cast[ptr InstanceData](store.getData())
@@ -3623,6 +3837,35 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           for i0 in 0 ..< mode.len:
             mode[i0] = p0[i0]
         renderRemoveMode(instance, self[], mode)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [WasmValkind.I64])
+      linker.defineFuncUnchecked("nev:plugins/render", "create-texture", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var width: int32
+        var height: int32
+        var data: uint32
+        var format: TextureFormat
+        width = convert(parameters[0].i32, int32)
+        height = convert(parameters[1].i32, int32)
+        data = convert(parameters[2].i32, uint32)
+        format = cast[TextureFormat](parameters[3].i32)
+        let res = renderCreateTexture(instance, width, height, data, format)
+        parameters[0].i64 = cast[int64](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
+      linker.defineFuncUnchecked("nev:plugins/render", "delete-texture", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var id: uint64
+        id = convert(parameters[0].i64, uint64)
+        renderDeleteTexture(instance, id)
     if e.isErr:
       return e
   block:

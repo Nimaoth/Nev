@@ -19,6 +19,8 @@ type
   ## Shared handle to a custom render view
   RenderView* = object
     handle*: int32
+  TextureFormat* = enum
+    Rgba32 = "rgba32"
 proc renderRenderViewDrop(a: int32): void {.
     wasmimport("[resource-drop]render-view", "nev:plugins/render").}
 proc `=copy`*(a: var RenderView; b: RenderView) {.error.}
@@ -310,3 +312,26 @@ proc removeMode*(self: RenderView; mode: WitString): void {.nodestroy.} =
     arg1 = 0.int32
   arg2 = cast[int32](mode.len)
   renderRemoveModeImported(arg0, arg1, arg2)
+
+proc renderCreateTextureImported(a0: int32; a1: int32; a2: uint32; a3: int8): uint64 {.
+    wasmimport("create-texture", "nev:plugins/render").}
+proc createTexture*(width: int32; height: int32; data: uint32;
+                    format: TextureFormat): uint64 {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: uint32
+    arg3: int8
+  arg0 = width
+  arg1 = height
+  arg2 = data
+  arg3 = cast[int8](format)
+  let res = renderCreateTextureImported(arg0, arg1, arg2, arg3)
+  result = convert(res, uint64)
+
+proc renderDeleteTextureImported(a0: uint64): void {.
+    wasmimport("delete-texture", "nev:plugins/render").}
+proc deleteTexture*(id: uint64): void {.nodestroy.} =
+  var arg0: uint64
+  arg0 = id
+  renderDeleteTextureImported(arg0)

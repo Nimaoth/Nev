@@ -4,6 +4,7 @@ import misc/[custom_async, custom_unicode, util, event, rope_utils]
 import syntax_map, overlay_map, tab_map, wrap_map, diff_map
 from scripting_api import Selection
 import nimsumtree/sumtree except mapIt
+import chroma, theme
 
 var debugDisplayMap* = false
 
@@ -41,7 +42,6 @@ func endDisplayPoint*(self: DisplayChunk): DisplayPoint {.inline.} = displayPoin
 func len*(self: DisplayChunk): int {.inline.} = self.diffChunk.len
 func `$`*(self: DisplayChunk): string {.inline.} = $self.diffChunk
 template toOpenArray*(self: DisplayChunk): openArray[char] = self.diffChunk.toOpenArray
-template scope*(self: DisplayChunk): string = self.diffChunk.scope
 
 proc split*(self: DisplayChunk, index: int): tuple[prefix: DisplayChunk, suffix: DisplayChunk] =
   let (prefix, suffix) = self.diffChunk.split(index)
@@ -63,7 +63,8 @@ type
     tabMap*: TabMap
     wrapMap*: WrapMap
     diffMap*: DiffMap
-    onUpdated*: Event[tuple[map: DisplayMap]]
+    old: DisplayMapSnapshot
+    onUpdated*: Event[tuple[map: DisplayMap, old: DisplayMapSnapshot]]
 
   DisplayChunkIterator* = object
     diffChunks*: DiffChunkIterator
@@ -74,6 +75,8 @@ type
     indentGuideColumn*: Option[int]
     insideIndent: bool = true
     bar: string = "|"
+    didSeek*: bool = false
+    indentGuideColor: Color
 
 func clone*(self: DisplayMapSnapshot): DisplayMapSnapshot =
   DisplayMapSnapshot(
@@ -101,10 +104,13 @@ proc new*(_: typedesc[DisplayMap]): DisplayMap =
   discard result.wrapMap.onUpdated.subscribe (a: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(a[0], a[1])
   discard result.diffMap.onUpdated.subscribe (a: (DiffMap, DiffMapSnapshot)) => self.handleDiffMapUpdated(a[0], a[1])
 
-proc iter*(displayMap: var DisplayMap): DisplayChunkIterator =
+proc iter*(displayMap: var DisplayMap, highlighter: Option[Highlighter] = Highlighter.none): DisplayChunkIterator =
   result = DisplayChunkIterator(
-    diffChunks: displayMap.diffMap.snapshot.iter(),
+    diffChunks: displayMap.diffMap.snapshot.iter(highlighter),
+    indentGuideColor: color(1, 1, 1),
   )
+  if highlighter.isSome:
+    result.indentGuideColor = highlighter.get.theme.tokenColor(["indentGuide", "comment"], color(1, 1, 1))
 
 func remoteId*(self: DisplayMap): BufferId = self.wrapMap.snapshot.buffer.remoteId
 func buffer*(self: DisplayMap): lent BufferSnapshot = self.wrapMap.snapshot.buffer
@@ -152,6 +158,15 @@ proc toPoint*(self: DisplayMap, point: WrapPoint, bias: Bias = Bias.Right): Poin
 func endDisplayPoint*(self: DisplayMapSnapshot): DisplayPoint {.inline.} = self.diffMap.endDiffPoint.DisplayPoint
 func endDisplayPoint*(self: DisplayMap): DisplayPoint {.inline.} = self.diffMap.endDiffPoint.DisplayPoint
 
+func snapshot*(self: DisplayMap): DisplayMapSnapshot =
+  DisplayMapSnapshot(
+    buffer: self.overlay.snapshot.buffer.clone(),
+    overlay: self.overlay.snapshot.clone(),
+    tabMap: self.tabMap.snapshot.clone(),
+    wrapMap: self.wrapMap.snapshot.clone(),
+    diffMap: self.diffMap.snapshot.clone(),
+  )
+
 proc handleOverlayMapUpdated(self: DisplayMap, overlay: OverlayMap, old: OverlayMapSnapshot, patch: Patch[OverlayPoint]) =
   assert overlay == self.overlay
   if self.overlay.snapshot.buffer.remoteId != old.buffer.remoteId:
@@ -165,7 +180,8 @@ proc handleOverlayMapUpdated(self: DisplayMap, overlay: OverlayMap, old: Overlay
   self.tabMap.update(self.overlay.snapshot.clone(), force = true)
   self.wrapMap.update(self.tabMap.snapshot.clone(), force = true)
   self.diffMap.update(self.wrapMap.snapshot.clone(), force = true)
-  self.onUpdated.invoke (self,)
+  self.onUpdated.invoke (self, self.old)
+  self.old = self.snapshot
 
 proc handleTabMapUpdated(self: DisplayMap, tabMap: TabMap, old: TabMapSnapshot, patch: Patch[TabPoint]) =
   assert tabMap == self.tabMap
@@ -179,13 +195,14 @@ proc handleTabMapUpdated(self: DisplayMap, tabMap: TabMap, old: TabMapSnapshot, 
     self.diffMap.setInput(self.wrapMap.snapshot.clone())
     self.wrapMap.update(self.tabMap.snapshot.clone(), force = true)
     self.diffMap.update(self.wrapMap.snapshot.clone(), force = true)
-    self.onUpdated.invoke (self,)
+    self.onUpdated.invoke (self, self.old)
   else:
     let wrapPatch = self.wrapMap.edit(tabMap.snapshot.clone(), patch)
     self.diffMap.edit(self.wrapMap.snapshot.clone(), wrapPatch)
     self.wrapMap.update(self.tabMap.snapshot.clone(), force = true)
     self.diffMap.update(self.wrapMap.snapshot.clone(), force = true)
-    self.onUpdated.invoke (self,)
+    self.onUpdated.invoke (self, self.old)
+  self.old = self.snapshot
 
 proc handleWrapMapUpdated(self: DisplayMap, wrapMap: WrapMap, old: WrapMapSnapshot) =
   assert wrapMap == self.wrapMap
@@ -195,13 +212,15 @@ proc handleWrapMapUpdated(self: DisplayMap, wrapMap: WrapMap, old: WrapMapSnapsh
 
   logMapUpdate &"DisplayMap.handleWrapMapUpdated {wrapMap.snapshot.desc}"
   self.diffMap.update(self.wrapMap.snapshot.clone())
-  self.onUpdated.invoke (self,)
+  self.onUpdated.invoke (self, self.old)
+  self.old = self.snapshot
 
 proc handleDiffMapUpdated(self: DisplayMap, diffMap: DiffMap, old: DiffMapSnapshot) =
   assert diffMap == self.diffMap
 
   logMapUpdate &"DisplayMap.handleDiffMapUpdated {self.diffMap.snapshot}"
-  self.onUpdated.invoke (self,)
+  self.onUpdated.invoke (self, self.old)
+  self.old = self.snapshot
 
 proc setBuffer*(self: DisplayMap, buffer: sink BufferSnapshot) =
   logMapUpdate &"DisplayMap.setBuffer {self.remoteId}@{self.wrapMap.snapshot.buffer.version} -> {buffer.remoteId}@{buffer.version}"
@@ -244,6 +263,7 @@ proc seek*(self: var DisplayChunkIterator, displayPoint: DisplayPoint) =
   self.diffChunks.seek(displayPoint.DiffPoint)
   self.displayChunk = DisplayChunk.none
   self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
+  self.didSeek = true
 
 proc seek*(self: var DisplayChunkIterator, point: Point) =
   self.diffChunks.seek(point)
@@ -251,6 +271,7 @@ proc seek*(self: var DisplayChunkIterator, point: Point) =
   self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
   self.bufferedChunk = DisplayChunk.none
   self.insideIndent = true
+  self.didSeek = true
 
 proc seekLine*(self: var DisplayChunkIterator, line: int) =
   self.diffChunks.seekLine(line)
@@ -258,6 +279,7 @@ proc seekLine*(self: var DisplayChunkIterator, line: int) =
   self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
   self.bufferedChunk = DisplayChunk.none
   self.insideIndent = true
+  self.didSeek = true
 
 proc next*(self: var DisplayChunkIterator): Option[DisplayChunk] =
   if self.atEnd:
@@ -302,7 +324,7 @@ proc next*(self: var DisplayChunkIterator): Option[DisplayChunk] =
         self.bufferedChunk = suffix.some
       self.displayChunk.get.styledChunk.chunk.len = 1
       self.displayChunk.get.styledChunk.chunk.data = cast[ptr UncheckedArray[char]](self.bar[0].addr)
-      self.displayChunk.get.styledChunk.scope = "comment"
+      self.displayChunk.get.styledChunk.color = self.indentGuideColor
       return self.displayChunk
     else:
       let (prefix, suffix) = chunk.split(indentGuideColumn - chunk.point.column.int)

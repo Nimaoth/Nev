@@ -117,9 +117,9 @@ func clone*(self: DiffMapSnapshot): DiffMapSnapshot =
 proc new*(_: typedesc[DiffMap]): DiffMap =
   result = DiffMap(snapshot: DiffMapSnapshot(map: SumTree[DiffMapChunk].new([DiffMapChunk()])))
 
-proc iter*(diffMap: var DiffMapSnapshot): DiffChunkIterator =
+proc iter*(diffMap: var DiffMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none): DiffChunkIterator =
   result = DiffChunkIterator(
-    inputChunks: diffMap.input.iter(),
+    inputChunks: diffMap.input.iter(highlighter),
     diffMap: diffMap.clone(),
     diffMapCursor: diffMap.map.initCursor(DiffMapChunkSummary),
   )
@@ -176,6 +176,9 @@ proc toDiffPoint*(self: DiffMap, point: InputPoint, bias: Bias = Bias.Right): Di
   self.snapshot.toDiffPoint(point, bias)
 
 proc toInputPoint*(self: DiffMapChunkCursor, point: DiffPoint): InputPoint =
+  if not (point.row in self.startPos.dst...self.endPos.dst):
+    return inputPoint(self.startPos.src)
+
   assert point.row in self.startPos.dst...self.endPos.dst
   if self.startPos.src == self.endPos.src:
     return inputPoint(self.startPos.src)
