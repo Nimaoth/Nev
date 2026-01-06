@@ -1,0 +1,24 @@
+{
+	"name": "Markdown",
+	"version": "0.0.1",
+	"authors": ["Nimaoth"],
+	"repository": "https://github.com/Nimaoth/Nev/plugins/markdown",
+	"wasm": "markdown.m.wasm",
+	// "wasm": "markdown.wat",
+	"autoLoad": false,
+	// "load": [
+	// 	{
+	// 		"event": "command"
+	// 	}
+	// ],
+	"commands": {
+		"md-images": {},
+	},
+	"permissions": {
+		"filesystem": {
+			"disallowAll": false,
+			"allow": ["local://"],
+		},
+		"time": true,
+	}
+}

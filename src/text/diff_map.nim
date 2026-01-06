@@ -373,8 +373,6 @@ proc seek*(self: var DiffChunkIterator, diffPoint: DiffPoint) =
     let inputPoint = self.diffMap.toInputPoint(diffPoint)
     self.inputChunks.seek(inputPoint)
     self.diffPoint = self.diffMap.toDiffPoint(inputPoint)
-  else:
-    self.atEnd = true
 
   self.diffChunk = DiffChunk.none
 

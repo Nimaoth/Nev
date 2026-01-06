@@ -220,6 +220,12 @@ proc toInputPoint*(self: WrapMapSnapshot, point: WrapPoint, bias: Bias = Bias.Le
 proc toInputPoint*(self: WrapMap, point: WrapPoint, bias: Bias = Bias.Right): InputPoint =
   self.snapshot.toInputPoint(point, bias)
 
+proc lineLen*(self: WrapMapSnapshot, line: int): int =
+  return self.toWrapPoint(self.input.lineRange(line).b).column.int
+
+proc lineRange*(self: WrapMapSnapshot, line: int): Range[WrapPoint] =
+  return wrapPoint(line, 0)...wrapPoint(line, self.lineLen(line))
+
 proc toWrapBytes*(self: WrapMapSnapshot, point: WrapPoint, bias: Bias = Bias.Right): int =
   let inputPoint = self.toInputPoint(point)
   let columnDiff = point.column.int - inputPoint.column.int

@@ -107,6 +107,9 @@ func endTabPoint*(self: TabMap): TabPoint = self.snapshot.endTabPoint
 proc lineLen*(self: TabMapSnapshot, line: int): int =
   return self.toTabPoint(inputPoint(line, self.input.lineLen(line))).column.int
 
+proc lineRange*(self: TabMapSnapshot, line: int): Range[TabPoint] =
+  return tabPoint(line, 0)...tabPoint(line, self.lineLen(line))
+
 proc desc*(self: TabMapSnapshot): string =
   &"TabMapSnapshot(@{self.version}, {self.tabWidth}, {self.input.desc})"
 
@@ -236,13 +239,6 @@ proc toTabBytes*(self: TabMapSnapshot, point: TabPoint, bias: Bias = Bias.Right)
   let inputBytes = self.input.toOutputBytes(inputPoint, bias)
   # echo &"toTabBytes {point} ({bias}) -> {inputPoint} -> {columnDiff} + {inputBytes} = {inputBytes + columnDiff}"
   return inputBytes + columnDiff
-
-proc lineLength*(self: TabMapSnapshot, point: TabPoint): int =
-  let inputPoint = self.toInputPoint(point)
-  echo &"Tab.lineLength {point} -> {inputPoint}"
-  let subLen = self.input.lineLength(inputPoint)
-  echo &"Tab.lineLength -> {subLen}"
-  return subLen
 
 proc setInput*(self: TabMap, input: sink InputMapSnapshot) =
   # logMapUpdate &"TabMap.setInput {self.snapshot.desc} -> {input.desc}"

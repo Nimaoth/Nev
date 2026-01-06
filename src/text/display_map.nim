@@ -135,6 +135,12 @@ proc toDisplayPoint*(self: DisplayMap, point: Point, bias: Bias = Bias.Right): D
   let wrapPoint = self.wrapMap.snapshot.toWrapPoint(point, bias)
   return self.diffMap.snapshot.toDiffPoint(wrapPoint, bias).DisplayPoint
 
+proc toDisplayPoint*(self: DisplayMapSnapshot, point: WrapPoint, bias: Bias = Bias.Right): DisplayPoint =
+  return self.diffMap.toDiffPoint(point, bias).DisplayPoint
+
+proc toDisplayPoint*(self: DisplayMap, point: WrapPoint, bias: Bias = Bias.Right): DisplayPoint =
+  return self.diffMap.snapshot.toDiffPoint(point, bias).DisplayPoint
+
 proc toWrapPoint*(self: DisplayMap, point: Point, bias: Bias = Bias.Right): WrapPoint =
   self.wrapMap.snapshot.toWrapPoint(point, bias)
 
@@ -160,6 +166,18 @@ proc toWrapBytes*(self: DisplayMap, point: WrapPoint, bias: Bias = Bias.Right): 
 
 func endDisplayPoint*(self: DisplayMapSnapshot): DisplayPoint {.inline.} = self.diffMap.endDiffPoint.DisplayPoint
 func endDisplayPoint*(self: DisplayMap): DisplayPoint {.inline.} = self.diffMap.endDiffPoint.DisplayPoint
+
+proc lineLen*(self: DisplayMap, line: int): int =
+  return self.toDisplayPoint(self.wrapMap.snapshot.lineRange(line).b).column.int
+
+proc lineRange*(self: DisplayMap, line: int): Range[DisplayPoint] =
+  return displayPoint(line, 0)...displayPoint(line, self.lineLen(line))
+
+proc lineLen*(self: DisplayMapSnapshot, line: int): int =
+  return self.toDisplayPoint(self.wrapMap.lineRange(line).b).column.int
+
+proc lineRange*(self: DisplayMapSnapshot, line: int): Range[DisplayPoint] =
+  return displayPoint(line, 0)...displayPoint(line, self.lineLen(line))
 
 func snapshot*(self: DisplayMap): DisplayMapSnapshot =
   DisplayMapSnapshot(
