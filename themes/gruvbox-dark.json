@@ -119,6 +119,7 @@
             "name": "conditional",
             "scope": "conditional",
             "settings": {
+                "fontStyle": "italic",
                 "foreground": "#fb4934"
             }
         },
@@ -252,6 +253,7 @@
             "name": "include",
             "scope": "include",
             "settings": {
+                "fontStyle": "bold,italic",
                 "foreground": "#fb4934"
             }
         },
@@ -259,6 +261,7 @@
             "name": "keyword",
             "scope": "keyword",
             "settings": {
+                "fontStyle": "bold",
                 "foreground": "#fb4934"
             }
         },
@@ -294,6 +297,7 @@
             "name": "keyword.function",
             "scope": "keyword.function",
             "settings": {
+                "fontStyle": "bold,italic",
                 "foreground": "#fb4934"
             }
         },
@@ -448,7 +452,7 @@
             "name": "string",
             "scope": "string",
             "settings": {
-                "foreground": "#b8bb26"
+                "foreground": "#b8bb26",
             }
         },
         {
@@ -625,6 +629,74 @@
             "settings": {
                 "foreground": "#928374"
             }
-        }
+        },
+        {
+            "name": "header1",
+            "scope": "header1",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#fb4934",
+                "fontScale": 2.5,
+            }
+        },
+        {
+            "name": "header2",
+            "scope": "header2",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#fe8019",
+                "fontScale": 2,
+            }
+        },
+        {
+            "name": "header3",
+            "scope": "header3",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#fabd2f",
+                "fontScale": 1.8,
+            }
+        },
+        {
+            "name": "header4",
+            "scope": "header4",
+            "settings": {
+                "fontStyle": "bold,italic",
+                "foreground": "#b8bb26",
+                "fontScale": 1.6,
+            }
+        },
+        {
+            "name": "header5",
+            "scope": "header5",
+            "settings": {
+                "fontStyle": "bold,italic",
+                "foreground": "#83a598",
+                "fontScale": 1.4,
+            }
+        },
+        {
+            "name": "header6",
+            "scope": "header6",
+            "settings": {
+                "fontStyle": "bold,italic",
+                "foreground": "#d3869b",
+                "fontScale": 1.2,
+            }
+        },
+        {
+            "name": "tab",
+            "scope": "tab",
+            "settings": {
+                "foreground": "#86d39b",
+            }
+        },
+        {
+            "name": "indentGuide",
+            "scope": "indentGuide",
+            "settings": {
+                "foreground": "#d3869b",
+            }
+        },
     ]
 }

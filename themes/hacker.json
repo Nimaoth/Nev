@@ -127,13 +127,13 @@
         //         "foreground": "#5a638c"
         //     }
         // },
-        // {
-        //     "name": "conditional",
-        //     "scope": "conditional",
-        //     "settings": {
-        //         "foreground": "#FF939A"
-        //     }
-        // },
+        {
+            "name": "conditional",
+            "scope": "conditional",
+            "settings": {
+                "foreground": "#00AA00"
+            }
+        },
         // {
         //     "name": "constant",
         //     "scope": "constant",
@@ -271,72 +271,82 @@
             "name": "keyword",
             "scope": "keyword",
             "settings": {
+                "fontStyle": "bold",
                 "foreground": "#00AA00"
             }
         },
-        // {
-        //     "name": "keyword.conditional",
-        //     "scope": "keyword.conditional",
-        //     "settings": {
-        //         "foreground": "#8F939A"
-        //     }
-        // },
-        // {
-        //     "name": "keyword.debug",
-        //     "scope": "keyword.debug",
-        //     "settings": {
-        //         "foreground": "#8F939A"
-        //     }
-        // },
-        // {
-        //     "name": "keyword.directive",
-        //     "scope": "keyword.directive",
-        //     "settings": {
-        //         "foreground": "#8F939A"
-        //     }
-        // },
-        // {
-        //     "name": "keyword.exception",
-        //     "scope": "keyword.exception",
-        //     "settings": {
-        //         "foreground": "#8F939A"
-        //     }
-        // },
-        // {
-        //     "name": "keyword.function",
-        //     "scope": "keyword.function",
-        //     "settings": {
-        //         "foreground": "#8F939A"
-        //     }
-        // },
-        // {
-        //     "name": "keyword.import",
-        //     "scope": "keyword.import",
-        //     "settings": {
-        //         "foreground": "#8F939A"
-        //     }
-        // },
-        // {
-        //     "name": "keyword.operator",
-        //     "scope": "keyword.operator",
-        //     "settings": {
-        //         "foreground": "#89ddff"
-        //     }
-        // },
-        // {
-        //     "name": "keyword.repeat",
-        //     "scope": "keyword.repeat",
-        //     "settings": {
-        //         "foreground": "#8F939A"
-        //     }
-        // },
-        // {
-        //     "name": "keyword.return",
-        //     "scope": "keyword.return",
-        //     "settings": {
-        //         "foreground": "#FF939A"
-        //     }
-        // },
+        {
+            "name": "keyword.conditional",
+            "scope": "keyword.conditional",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00AA00"
+            }
+        },
+        {
+            "name": "keyword.debug",
+            "scope": "keyword.debug",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00AA00"
+            }
+        },
+        {
+            "name": "keyword.directive",
+            "scope": "keyword.directive",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00AA00"
+            }
+        },
+        {
+            "name": "keyword.exception",
+            "scope": "keyword.exception",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00AA00"
+            }
+        },
+        {
+            "name": "keyword.function",
+            "scope": "keyword.function",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00AA00"
+            }
+        },
+        {
+            "name": "keyword.import",
+            "scope": "keyword.import",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00AA00"
+            }
+        },
+        {
+            "name": "keyword.operator",
+            "scope": "keyword.operator",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00AA00"
+            }
+        },
+        {
+            "name": "keyword.repeat",
+            "scope": "keyword.repeat",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00AA00"
+            }
+        },
+        {
+            "name": "keyword.return",
+            "scope": "keyword.return",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00AA00"
+            }
+        },
         // {
         //     "name": "label",
         //     "scope": "label",
@@ -383,6 +393,7 @@
             "name": "number",
             "scope": "number",
             "settings": {
+                "fontStyle": "bold,italic",
                 "foreground": "#00AA00"
             }
         },
@@ -393,13 +404,14 @@
         //         "foreground": "#A06057"
         //     }
         // },
-        // {
-        //     "name": "operator",
-        //     "scope": "operator",
-        //     "settings": {
-        //         "foreground": "#89ddff"
-        //     }
-        // },
+        {
+            "name": "operator",
+            "scope": "operator",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00AA00"
+            }
+        },
         // {
         //     "name": "parameter",
         //     "scope": "parameter",
@@ -442,13 +454,22 @@
                 "foreground": "#00AA00"
             }
         },
-        // {
-        //     "name": "repeat",
-        //     "scope": "repeat",
-        //     "settings": {
-        //         "foreground": "#8F939A"
-        //     }
-        // },
+        {
+            "name": "repeat",
+            "scope": "repeat",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00AA00"
+            }
+        },
+        {
+            "name": "function.call",
+            "scope": "function.call",
+            "settings": {
+                "fontStyle": "italic",
+                "foreground": "#00CC00"
+            }
+        },
         // {
         //     "name": "storageclass",
         //     "scope": "storageclass",
@@ -533,13 +554,14 @@
         //         "foreground": "#db4b4b"
         //     }
         // },
-        // {
-        //     "name": "type",
-        //     "scope": "type",
-        //     "settings": {
-        //         "foreground": "#65838E"
-        //     }
-        // },
+        {
+            "name": "type",
+            "scope": "type",
+            "settings": {
+                "fontStyle": "italic",
+                "foreground": "#00FF00"
+            }
+        },
         // {
         //     "name": "type.builtin",
         //     "scope": "type.builtin",
