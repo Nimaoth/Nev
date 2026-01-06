@@ -23,3 +23,15 @@ proc content*(document: TextDocument): Rope {.nodestroy.} =
   arg0 = document.id
   let res = textDocumentContentImported(arg0)
   result.handle = res + 1
+
+proc textDocumentPathImported(a0: uint64; a1: int32): void {.
+    wasmimport("path", "nev:plugins/text-document").}
+proc path*(document: TextDocument): WitString {.nodestroy.} =
+  ## VFS file path
+  var
+    retArea: array[8, uint8]
+    arg0: uint64
+  arg0 = document.id
+  textDocumentPathImported(arg0, cast[int32](retArea[0].addr))
+  result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])

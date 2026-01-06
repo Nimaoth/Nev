@@ -75,6 +75,12 @@ proc subscribe*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {
     log lvlError, &"Failed to register file watcher for '{path}': {e.msg}"
     return idNone()
 
+method clone*(self: VFSLocal): VFS =
+  result = VFSLocal(prefix: self.prefix)
+  for m in self.mounts:
+    result.mounts.add (m.prefix, m.vfs.clone())
+    result.mounts[^1].vfs.parent = result.some
+
 method normalizeImpl*(self: VFSLocal, path: string): string =
   return path.normalizePath.normalizeNativePath
 

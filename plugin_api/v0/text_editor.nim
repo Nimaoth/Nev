@@ -81,6 +81,14 @@ proc asTextDocument*(document: Document): Option[TextDocument] {.nodestroy.} =
     temp.id = convert(cast[ptr uint64](retArea[8].addr)[], uint64)
     result = temp.some
 
+proc textEditorAllTextEditorsImported(a0: int32): void {.
+    wasmimport("all-text-editors", "nev:plugins/text-editor").}
+proc allTextEditors*(): WitList[TextEditor] {.nodestroy.} =
+  var retArea: array[8, uint8]
+  textEditorAllTextEditorsImported(cast[int32](retArea[0].addr))
+  result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
 proc textEditorCommandImported(a0: uint64; a1: int32; a2: int32; a3: int32;
                                a4: int32; a5: int32): void {.
     wasmimport("command", "nev:plugins/text-editor").}
@@ -882,7 +890,8 @@ proc textEditorAddCustomRenderCallbackImported(a0: uint64; a1: uint32;
                                     "nev:plugins/text-editor").}
 proc addCustomRenderCallback*(editor: TextEditor; fun: uint32; data: uint32): int64 {.
     nodestroy.} =
-  ## Sets the callback which wil be called before rendering. This can be used to set the render commands.
+  ## Sets the callback which will be called when rendering text overlays with a renderId.
+  ## Returns the renderId which can be used in add-overlay.
   ## 'fun' is a pointer to a function with signature func(id: s32, data: u32). Data is an arbitrary number
   ## which will be passed to the callback unchanged. It can be used as e.g. a pointer to some data.
   var
