@@ -1,7 +1,7 @@
 import std/[strutils, sequtils, sugar, strformat, tables, json]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as sca import nil
-import misc/[util, custom_logger, custom_unicode, rope_utils, custom_async, myjsonutils]
+import misc/[util, custom_logger, custom_unicode, rope_utils, custom_async, myjsonutils, timer]
 import service
 import text/[wrap_map, display_map]
 import nimsumtree/[rope]
@@ -276,34 +276,39 @@ proc getSurrounding*(rope: Rope, selection: Selection, c0: char, c1: char, insid
     else:
       return
 
-proc moveCursorVisualLine(displayMap: DisplayMap, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false, targetColumn: int): Cursor =
+proc visualLineRange*(displayMap: DisplayMap, cursor: Cursor, bias: Bias, includeEol: bool = false): Selection =
   let rope {.cursor.} = displayMap.buffer.visibleText
-  let wrapPointOld = displayMap.toWrapPoint(cursor.toPoint)
-  let endWrapPoint = displayMap.wrapMap.endWrapPoint
-  let wrapPoint = wrapPoint(max(wrapPointOld.row.int + offset, 0), targetColumn).clamp(wrapPoint()...endWrapPoint)
-  let newCursor = displayMap.toPoint(wrapPoint, if offset < 0: Bias.Left else: Bias.Right).toCursor
-  if offset < 0 and newCursor.line > 0 and newCursor.line == cursor.line and displayMap.toWrapPoint(newCursor.toPoint).row == wrapPointOld.row:
-    let newCursor2 = point(cursor.line - 1, rope.lineLen(cursor.line - 1))
-    let displayPoint = displayMap.toDisplayPoint(newCursor2)
-    let displayPoint2 = displayPoint(displayPoint.row, targetColumn.uint32)
-    let point = displayMap.toPoint(displayPoint2)
+  let lineLen = rope.lineLen(cursor.line)
+  let wrapPoint = displayMap.toWrapPoint(point(cursor.line, cursor.column), bias)
+  let displayLineStart = wrapPoint(wrapPoint.row)
+  let displayLineEnd = wrapPoint(wrapPoint.row + 1)
+  var res: Selection = (
+    displayMap.toPoint(displayLineStart, Right).toCursor,
+    displayMap.toPoint(displayLineEnd, Left).toCursor,
+  )
+  if res[1].column == 0:
+    res[1].line -= 1
+    res[1].column = rope.lineLen(res[1].line)
 
-    # echo &"moveCursorVisualLine {cursor}, {offset} -> {newCursor2} -> {displayPoint} -> {displayPoint2} -> {point}"
-    return point.toCursor
-  elif offset > 0:
-    # go to wrap point and back to point one more time because if we land inside of e.g an overlay then the position will
-    # be clamped which can screw up the target column we set before, so we need to calculate the target column again.
-    let wrapPoint2 = wrapPoint(displayMap.toWrapPoint(newCursor.toPoint).row, targetColumn).clamp(wrapPoint()...endWrapPoint)
-    let newCursor2 = displayMap.toPoint(wrapPoint2, if offset < 0: Bias.Left else: Bias.Right).toCursor
+  if not includeEol:
+    if res.last.column == lineLen:
+      res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
+    elif res.last.column < rope.lineLen(cursor.line): # This is the case if we're not in the last visual sub line
+      res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
 
-    # echo &"moveCursorVisualLine {cursor}, {offset} -> {newCursor}, wp: {wrapPointOld} -> {wrapPoint} -> {displayMap.toWrapPoint(newCursor.toPoint)}, {wrapPoint2} -> {newCursor2}"
-    if newCursor2.line >= rope.lines:
-      return cursor
-    return rope.clampCursor(newCursor2, includeAfter)
+  res
 
-  if newCursor.line >= rope.lines:
-    return cursor
-  return rope.clampCursor(newCursor, includeAfter)
+proc visualLineRange*(displayMap: DisplayMap, point: WrapPoint, bias: Bias, includeEol: bool = false): Range[WrapPoint] =
+  let displayLineStart = wrapPoint(point.row)
+  let displayLineEnd = wrapPoint(point.row + 1)
+  let startBytes = displayMap.toWrapBytes(displayLineStart)
+  let endBytes = displayMap.toWrapBytes(displayLineEnd)
+  displayLineStart...wrapPoint(displayLineStart.row.int, endBytes - startBytes - 1)
+
+proc getInlayRangeAt(displayMap: DisplayMap, point: Point): Range[WrapPoint] =
+  let left = displayMap.toWrapPoint(point, Bias.Left)
+  let right = displayMap.toWrapPoint(point, Bias.Right)
+  return left...right
 
 proc moveCursorLine(text: Rope, displayMap: DisplayMap, cursor: Cursor, offset: int, targetColumn: int, wrap: bool, includeEol: bool): Cursor =
   var cursor = cursor
@@ -317,6 +322,89 @@ proc moveCursorLine(text: Rope, displayMap: DisplayMap, cursor: Cursor, offset: 
     let wrapPoint = displayMap.toWrapPoint(Point.init(line, 0))
     cursor.column = displayMap.toPoint(wrapPoint(wrapPoint.row.int, targetColumn)).column.int
   return text.clampCursor(cursor, includeEol)
+
+proc moveCursorVisualLine(displayMap: DisplayMap, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false, targetColumn: int): Cursor =
+  let rope {.cursor.} = displayMap.buffer.visibleText
+  let bias = if offset < 0: Bias.Left else: Bias.Right
+  let wrapPointOld = displayMap.toWrapPoint(cursor.toPoint, Bias.Right)
+  let endWrapPoint = displayMap.wrapMap.endWrapPoint
+  var wrapPoint = wrapPoint(max(wrapPointOld.row.int + offset, 0), targetColumn).clamp(wrapPoint()...endWrapPoint)
+
+  let newWrapPointLine = displayMap.visualLineRange(wrapPoint, bias, includeEol = includeAfter)
+  let newWrapPointClamped = wrapPoint(wrapPoint.row.int, wrapPoint.column.int.clamp(0, newWrapPointLine.b.column.int))
+  wrapPoint = newWrapPointClamped
+
+  let newPointLeft = displayMap.toWrapPoint(displayMap.toPoint(wrapPoint, Bias.Left), Bias.Left)
+  let newPointRight = displayMap.toWrapPoint(displayMap.toPoint(wrapPoint, Bias.Right), Bias.Right)
+  let newCursor = displayMap.toPoint(wrapPoint, if offset < 0: Bias.Left else: Bias.Right).toCursor
+  let r2 = displayMap.visualLineRange(newPointLeft, bias, includeEol = includeAfter)
+  let r2Len = r2.b.column.int - r2.a.column.int
+
+  if newPointLeft == newPointRight:
+    # We didn't land inside overlayed text, so the new position is fine
+    # debugf"not inside overlay, take cursor {newCursor}"
+    return rope.clampCursor(newCursor, includeAfter)
+
+  # We landed inside overlayed text. Decide wether to go to the left/right side of the overlay
+  # Overlayed text in this case also means e.g. indents from the wrap map
+  if offset < 0: # Moving up
+    if newPointRight.row == wrapPoint.row:
+      if newCursor.column < rope.lineLen(newCursor.line):
+        return rope.clampCursor(newCursor, includeAfter)
+    elif newPointLeft.column.int <= targetColumn:
+      var clippedPoint = displayMap.toPoint(newPointLeft, Bias.Left)
+      if clippedPoint.column > 0:
+        clippedPoint = rope.clipPoint(point(clippedPoint.row, clippedPoint.column - 1), Bias.Left)
+        return rope.clampCursor(clippedPoint.toCursor, includeAfter)
+
+      # Inside inlay which starts at beginning of line, move to previous actual line
+      # todo: if the previous line is wrapped or has inlays this might be incorrect
+      return moveCursorLine(rope, displayMap, cursor, offset, targetColumn, wrap, includeAfter)
+
+    # go to wrap point and back to point one more time because if we land inside of e.g an overlay then the position will
+    # be clamped which can screw up the target column we set before, so we need to calculate the target column again.
+    let wrapPoint2 = wrapPoint(newPointLeft.row, targetColumn.clamp(0, r2Len)).clamp(wrapPoint()...endWrapPoint)
+    let newCursor2 = displayMap.toPoint(wrapPoint2, Bias.Right).toCursor
+
+    if newCursor2.line >= rope.lines:
+      return cursor
+    return rope.clampCursor(newCursor2, includeAfter)
+
+  elif offset > 0: # Moving down
+    if newPointLeft.row == wrapPoint.row:
+      # if newPointRight.row == wrapPoint.row: # todo
+      #   return rope.clampCursor(newCursor, includeAfter)
+      var clippedPoint = displayMap.toPoint(newPointLeft, Bias.Left)
+      if clippedPoint.column > 0:
+        # New point landed inside of inlayed text, move it one to the left
+        clippedPoint = rope.clipPoint(point(clippedPoint.row, clippedPoint.column - 1), Bias.Left)
+      return rope.clampCursor(clippedPoint.toCursor, includeAfter)
+    elif newPointRight.column.int >= targetColumn:
+      var clippedPoint = displayMap.toPoint(newPointRight, Bias.Right)
+      if clippedPoint.row.int == cursor.line and clippedPoint.column.int == rope.lineLen(clippedPoint.row.int):
+        return moveCursorLine(rope, displayMap, cursor, offset, targetColumn, wrap, includeAfter)
+      return rope.clampCursor(clippedPoint.toCursor, includeAfter)
+
+    # go to wrap point and back to point one more time because if we land inside of e.g an overlay then the position will
+    # be clamped which can screw up the target column we set before, so we need to calculate the target column again.
+    let wrapPoint2 = wrapPoint(newPointRight.row, targetColumn.clamp(0, r2Len)).clamp(wrapPoint()...endWrapPoint)
+    var clippedPoint = displayMap.toPoint(wrapPoint2, Bias.Left)
+    let newPointInlayRange = displayMap.getInlayRangeAt(clippedPoint)
+    if newPointInlayRange.a != newPointInlayRange.b and clippedPoint.column > 0:
+      # New point landed inside of inlayed text, move it one to the left
+      clippedPoint = rope.clipPoint(point(clippedPoint.row, clippedPoint.column - 1), Bias.Left)
+
+    if clippedPoint.row.int == cursor.line and clippedPoint.column.int == rope.lineLen(clippedPoint.row.int):
+      return moveCursorLine(rope, displayMap, cursor, offset, targetColumn, wrap, includeAfter)
+
+    let newCursor2 = clippedPoint.toCursor
+    if newCursor2.line >= rope.lines:
+      return cursor
+    return rope.clampCursor(newCursor2, includeAfter)
+
+  if newCursor.line >= rope.lines:
+    return cursor
+  return rope.clampCursor(newCursor, includeAfter)
 
 type MoveFunction* = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] {.gcsafe, raises: [].}
 

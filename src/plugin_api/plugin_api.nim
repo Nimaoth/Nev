@@ -1,10 +1,11 @@
-import std/[macros, strutils, os, strformat, sequtils, json, sets, tables, atomics]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils, regex, rope_regex]
+import std/[macros, strutils, os, strformat, sequtils, json, sets, tables, atomics, locks]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils, regex, rope_regex, generational_seq]
 import nimsumtree/[rope, sumtree, arc, clock, buffer]
 import service
 import layout
 import text/[text_editor, text_document, overlay_map]
-import render_view, view
+import view
+import render_view as rv
 import platform/platform, platform_service
 import config_provider, command_service, command_service_api, compilation_config
 import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database, popup, event_service, session
@@ -19,21 +20,23 @@ logCategory "plugin-api-v0"
 
 const apiVersion: int32 = 0
 
-type RopeResource = object
+type Resource = object of RootObj
+
+type RopeResource = object of Resource
   rope: RopeSlice[Point]
 
-type RenderViewResource = object
+type RenderViewResource = object of Resource
   setRender: bool = false
-  view: render_view.RenderView
+  view: rv.RenderView
 
-type ReadChannelResource = object
+type ReadChannelResource = object of Resource
   channel: Arc[BaseChannel]
   listenId: ListenId
 
-type WriteChannelResource = object
+type WriteChannelResource = object of Resource
   channel: Arc[BaseChannel]
 
-type ProcessResource = object
+type ProcessResource = object of Resource
   process: AsyncProcess
   stdin: Arc[BaseChannel]
   stdout: Arc[BaseChannel]
@@ -66,6 +69,7 @@ type
     instance: InstanceT
     store: ptr StoreT
     host: HostContext
+    vfs: VFS
     permissions: PluginPermissions
     commands: seq[CommandId]
     namespace: string
@@ -73,6 +77,44 @@ type
     destroyRequested: Atomic[bool]
     timer*: Timer
     eventsId*: Id
+
+  ResourceRegistry* = object
+    lock*: Lock
+    resources*: Table[string, ptr Resource]
+
+var gResourceRegistry = ResourceRegistry()
+gResourceRegistry.lock.initLock()
+
+proc openGlobalResource*(path: string, T: typedesc): Option[T] {.gcsafe.} =
+  var resource: ptr Resource = nil
+  var registry = ({.gcsafe.}: gResourceRegistry.addr)
+  withLock(registry.lock):
+    if registry.resources.take(path, resource):
+      if not (resource[] of T):
+        registry.resources[path] = resource
+        return T.none
+    else:
+      return T.none
+
+  assert resource != nil
+  let typedResource = cast[ptr T](resource)
+  var res: T
+  swap(res, typedResource[])
+  freeShared(typedResource)
+  return res.some
+
+proc mountGlobalResource*[T: Resource](path: string, resource: sink T, unique: bool): string {.gcsafe.} =
+  var path = path
+  if unique:
+    path.add "-" & $newId()
+  var resourcePtr = createShared(T)
+  resourcePtr[] = resource.ensureMove
+
+  let registry = ({.gcsafe.}: gResourceRegistry.addr)
+  withLock(registry.lock):
+    registry.resources[path] = resourcePtr
+
+  return path
 
 proc getMemoryFor(instance: ptr InstanceData, caller: ptr CallerT): Option[ExternT] =
   ExternT.none
@@ -281,7 +323,10 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin, state
     log lvlError, "Failed to create module instance: " & err.msg
     return
 
-  collectExports(instanceData.getMut.funcs, instanceData.get.instance, ctx)
+  let errors = collectExports(instanceData.getMut.funcs, instanceData.get.instance, ctx)
+  if errors.len > 0:
+    for e in errors:
+      log lvlWarn, e
 
   let instance = WasmModuleInstanceImpl(instance: instanceData)
   self.instances.add(instance)
@@ -367,7 +412,11 @@ proc cloneInstance*(instance: ptr InstanceData): Arc[InstanceDataImpl] =
     log lvlError, "Failed to create module instance: " & err.msg
     return
 
-  collectExports(instanceData.getMut.funcs, instanceData.get.instance, ctx)
+  let errors = collectExports(instanceData.getMut.funcs, instanceData.get.instance, ctx)
+  # if errors.len > 0:
+  #   for e in errors:
+  #     log lvlWarn, e
+
   return instanceData
 
 proc runInstanceThread(instance: sink Arc[InstanceDataImpl]) =
@@ -474,6 +523,13 @@ proc textEditorGetDocument*(instance: ptr InstanceData; editor: TextEditor): Opt
     if document != nil and document of text_document.TextDocument:
       return TextDocument(id: document.id.uint64).some
   return TextDocument.none
+
+proc textEditorAllTextEditors*(instance: ptr InstanceData): seq[TextEditor] =
+  if instance.host == nil:
+    return
+  for editor in instance.host.editors.allEditors:
+    if editor of TextDocumentEditor:
+      result.add TextEditor(id: editor.TextDocumentEditor.id.uint64)
 
 proc textEditorAsTextEditor*(instance: ptr InstanceData; editor: Editor): Option[TextEditor] =
   if instance.host == nil:
@@ -707,6 +763,13 @@ proc textDocumentContent*(instance: ptr InstanceData; document: TextDocument): R
     return RopeResource(rope: textDocument.rope.clone().slice().suffix(Point()))
   return RopeResource(rope: createRope("").slice().suffix(Point()))
 
+proc textDocumentPath*(instance: ptr InstanceData; document: TextDocument): string =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getDocument(document.id.DocumentId).getSome(document):
+    return document.filename
+  return ""
+
 proc textEditorGetSettingRaw*(instance: ptr InstanceData, editor: TextEditor, name: sink string): string =
   if instance.host == nil:
     return
@@ -859,6 +922,12 @@ proc typesNewRope*(instance: ptr InstanceData, content: sink string): RopeResour
 proc typesClone*(instance: ptr InstanceData, self: var RopeResource): RopeResource =
   return RopeResource(rope: self.rope.clone())
 
+proc typesRopeMount*(instance: ptr InstanceData; rope: sink RopeResource; path: sink string; unique: bool): string =
+  return mountGlobalResource(path, rope.ensureMove, unique)
+
+proc typesRopeOpen*(instance: ptr InstanceData; path: sink string): Option[RopeResource] =
+  return openGlobalResource(path, RopeResource)
+
 proc typesText*(instance: ptr InstanceData, self: var RopeResource): string =
   return $self.rope
 
@@ -926,7 +995,18 @@ proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): boo
 
 proc vfsReadSync*(instance: ptr InstanceData, path: sink string, readFlags: ReadFlags): Result[string, VfsError] =
   if instance.host == nil:
+    if instance.vfs != nil:
+      try:
+        let normalizedPath = instance.vfs.normalize(path)
+        if not instance.permissions.filesystemRead.isAllowed(normalizedPath, instance.vfs):
+          result.err(VfsError.NotAllowed)
+          return
+        return results.ok(instance.vfs.read(normalizedPath, readFlags.toInternal).waitFor())
+      except IOError as e:
+        log lvlWarn, &"Failed to read file for plugin: {e.msg}"
+        result.err(VfsError.NotFound)
     return
+
   try:
     let normalizedPath = instance.host.vfs.normalize(path)
     if not instance.permissions.filesystemRead.isAllowed(normalizedPath, instance.host.vfs):
@@ -1016,6 +1096,7 @@ proc threadFunc(s: ThreadState) {.thread, nimcall.} =
 
 proc coreSpawnBackground*(instance: ptr InstanceData, args: sink string, executor: BackgroundExecutor) =
   let newInstance = cloneInstance(instance)
+  newInstance.getMutUnsafe.vfs = newInstance.getMutUnsafe.host.vfs.clone()
   newInstance.getMutUnsafe.host = nil
   newInstance.getMutUnsafe.args = args.ensureMove
 
@@ -1162,8 +1243,8 @@ proc renderRenderViewFromUserId*(instance: ptr InstanceData; id: sink string): O
   return RenderViewResource.none
 
 proc renderRenderViewFromView*(instance: ptr InstanceData; v: View): Option[RenderViewResource] =
-  if instance.host.layout.getView(v.id).getSome(view) and view of render_view.RenderView:
-    return RenderViewResource(view: render_view.RenderView(view)).some
+  if instance.host.layout.getView(v.id).getSome(view) and view of rv.RenderView:
+    return RenderViewResource(view: rv.RenderView(view)).some
   return RenderViewResource.none
 
 proc renderView*(instance: ptr InstanceData; self: var RenderViewResource): View =
@@ -1245,7 +1326,7 @@ proc renderMarkDirty*(instance: ptr InstanceData; self: var RenderViewResource):
 
 proc renderSetRenderCallback*(instance: ptr InstanceData; self: var RenderViewResource; fun: uint32; data: uint32): void =
   self.setRender = true
-  self.view.onRender = proc(view: render_view.RenderView) =
+  self.view.onRender = proc(view: rv.RenderView) =
     instance.funcs.handleViewRenderCallback(view.id2, fun, data).okOr(err):
       log lvlError, "Failed to call handleViewRenderCallback: " & err.msg
 

@@ -1,5 +1,4 @@
-
-import std/[json, sequtils, strutils, strformat, lexbase, unicode, streams, tables, math]
+import std/[json, sequtils, strutils, strformat, lexbase, unicode, streams, tables, math, os]
 import misc/[util, myjsonutils, custom_logger]
 
 {.push gcsafe.}
@@ -1223,10 +1222,27 @@ proc baseEnv*(): Env =
   #   debugf"lisp: {str}"
   # )
 
+  result["path.split"] = newFunc("path.split", proc(args: seq[LispVal]): LispVal =
+    if args.len > 0 and args[0].kind == String:
+      let (path, name, ext) = args[0].str.splitFile
+      return newList(@[newString(path), newString(name), newString(ext)])
+    return newList()
+  )
+
+  result["path.split-dir"] = newFunc("path.split", proc(args: seq[LispVal]): LispVal =
+    if args.len > 0 and args[0].kind == String:
+      let (path, name) = args[0].str.splitPath
+      return newList(@[newString(path), newString(name)])
+    return newList()
+  )
+
   result["string.append"] = newFunc("string.append", proc(args: seq[LispVal]): LispVal =
     var str = ""
     for i, arg in args:
-      str.add $arg
+      if arg.kind == String:
+        str.add arg.str
+      else:
+        str.add $arg
     return newString(str)
   )
 
@@ -1238,7 +1254,10 @@ proc baseEnv*(): Env =
     for i in 1..args.high:
       if i > 1:
         str.add sep
-      str.add $args[i]
+      if args[i].kind == String:
+        str.add args[i].str
+      else:
+        str.add $args[i]
     return newString(str)
   )
 

@@ -214,11 +214,11 @@ proc getAbsolutePath*(self: Workspace, path: string): string =
 proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string] =
   try:
     if absolutePath.startsWith(self.path):
-      return absolutePath.relativePath(self.path, '/').normalizePathUnix.some
+      return absolutePath.relativePath(self.path, '/').some
 
     for path in self.additionalPaths:
       if absolutePath.startsWith(path):
-        return absolutePath.relativePath(path, '/').normalizePathUnix.some
+        return absolutePath.relativePath(path, '/').some
 
     return string.none
   except:
@@ -227,11 +227,11 @@ proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string]
 proc getRelativePathAndWorkspaceSync*(self: Workspace, absolutePath: string): Option[tuple[root, path: string]] =
   try:
     if absolutePath.startsWith(self.path):
-      return ("ws0://", absolutePath.relativePath(self.path, '/').normalizePathUnix).some
+      return ("ws0://", absolutePath.relativePath(self.path, '/')).some
 
     for i, path in self.additionalPaths:
       if absolutePath.startsWith(path):
-        return (&"ws{i + 1}://", absolutePath.relativePath(path, '/').normalizePathUnix).some
+        return (&"ws{i + 1}://", absolutePath.relativePath(path, '/')).some
   except:
     discard
 

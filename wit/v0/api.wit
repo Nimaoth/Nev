@@ -86,6 +86,9 @@ interface types {
     byte-at: func(a: cursor) -> u8;
     /// Find all occurences of the given regex
     find-all: func(regex: string) -> list<selection>;
+
+    open: static func(path: string) -> option<rope>;
+    mount: static func(rope: rope, path: string, unique: bool) -> string;
   }
 
   /// Non-owning handle to an editor.
@@ -258,6 +261,8 @@ interface text-editor {
   /// Try to cast the given document handle to a text document handle.
   as-text-document: func(document: document) -> option<text-document>;
 
+  all-text-editors: func() -> list<text-editor>;
+
   /// Run the given command on the given text editor. This requires 'command' permissions.
   command: func(editor: text-editor, name: string, arguments: string) -> result<string, command-error>;
 
@@ -406,6 +411,9 @@ interface text-document {
   /// represents the content at the point in time this is called instead. Keeping ropes
   /// around should not have significant memory overhead because ropes share data under the hood.
   content: func(document: text-document) -> rope;
+
+  /// VFS file path
+  path: func(document: text-document) -> string;
 }
 
 interface layout {

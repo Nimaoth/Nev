@@ -270,3 +270,43 @@ proc findAll*(self: Rope; regex: WitString): WitList[Selection] {.nodestroy.} =
   typesFindAllImported(arg0, arg1, arg2, cast[int32](retArea[0].addr))
   result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
               cast[ptr int32](retArea[4].addr)[])
+
+proc typesRopeOpenImported(a0: int32; a1: int32; a2: int32): void {.
+    wasmimport("[static]rope.open", "nev:plugins/types").}
+proc ropeOpen*(path: WitString): Option[Rope] {.nodestroy.} =
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+    arg1: int32
+  if path.len > 0:
+    arg0 = cast[int32](path[0].addr)
+  else:
+    arg0 = 0.int32
+  arg1 = cast[int32](path.len)
+  typesRopeOpenImported(arg0, arg1, cast[int32](retArea[0].addr))
+  if cast[ptr int32](retArea[0].addr)[] != 0:
+    var temp: Rope
+    temp.handle = cast[ptr int32](retArea[4].addr)[] + 1
+    result = temp.some
+
+proc typesRopeMountImported(a0: int32; a1: int32; a2: int32; a3: bool; a4: int32): void {.
+    wasmimport("[static]rope.mount", "nev:plugins/types").}
+proc ropeMount*(rope: sink Rope; path: WitString; unique: bool): WitString {.
+    nodestroy.} =
+  var
+    retArea: array[16, uint8]
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: bool
+  arg0 = cast[int32](rope.handle - 1)
+  if path.len > 0:
+    arg1 = cast[int32](path[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](path.len)
+  arg3 = unique
+  typesRopeMountImported(arg0, arg1, arg2, arg3,
+                         cast[int32](retArea[0].addr))
+  result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])

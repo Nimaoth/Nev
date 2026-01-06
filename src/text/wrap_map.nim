@@ -220,6 +220,20 @@ proc toInputPoint*(self: WrapMapSnapshot, point: WrapPoint, bias: Bias = Bias.Le
 proc toInputPoint*(self: WrapMap, point: WrapPoint, bias: Bias = Bias.Right): InputPoint =
   self.snapshot.toInputPoint(point, bias)
 
+proc toWrapBytes*(self: WrapMapSnapshot, point: WrapPoint, bias: Bias = Bias.Right): int =
+  let inputPoint = self.toInputPoint(point)
+  let columnDiff = point.column.int - inputPoint.column.int
+  let lineDiff = point.row.int - inputPoint.row.int
+  if columnDiff != 0 and point.column.int < self.wrappedIndent:
+    # The wrap point is on a wrapped line
+    let wrappedIndentBytes = (lineDiff - 1) * self.wrappedIndent
+    let inputBytes = self.input.toOutputBytes(inputPoint, bias)
+    return inputBytes + lineDiff + wrappedIndentBytes + point.column.int
+  else:
+    let wrappedIndentBytes = lineDiff * self.wrappedIndent
+    let inputBytes = self.input.toOutputBytes(inputPoint, bias)
+    return inputBytes + lineDiff + wrappedIndentBytes
+
 proc validate*(self: WrapMapSnapshot) =
   var c = self.map.initCursor(WrapMapChunkSummary)
   var endPos = inputPoint()

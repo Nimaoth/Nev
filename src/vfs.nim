@@ -28,8 +28,8 @@ type
   ReadFlag* = enum Binary
 
   VFS* = ref object of RootObj
-    mounts: seq[tuple[prefix: string, vfs: VFS]]  ## Seq because I assume the amount of entries will be very small.
-    parent: Option[VFS]
+    mounts*: seq[tuple[prefix: string, vfs: VFS]]  ## Seq because I assume the amount of entries will be very small.
+    parent*: Option[VFS]
     prefix*: string
 
   VFSNull* = ref object of VFS
@@ -155,6 +155,24 @@ proc `//`*(a: string, b: string): string =
     result.add(b)
 
 proc newInMemoryVFS*(): VFSInMemory = VFSInMemory(files: initTable[string, VFSInMemoryItem]())
+
+method clone*(self: VFS): VFS {.base.} =
+  result = VFS(prefix: self.prefix)
+  for m in self.mounts:
+    result.mounts.add (m.prefix, m.vfs.clone())
+    result.mounts[^1].vfs.parent = result.some
+
+method clone*(self: VFSNull): VFS =
+  result = VFSNull(prefix: self.prefix)
+  for m in self.mounts:
+    result.mounts.add (m.prefix, m.vfs.clone())
+    result.mounts[^1].vfs.parent = result.some
+
+method clone*(self: VFSLink): VFS =
+  result = VFSLink(prefix: self.prefix, target: self.target, targetPrefix: self.targetPrefix)
+  for m in self.mounts:
+    result.mounts.add (m.prefix, m.vfs.clone())
+    result.mounts[^1].vfs.parent = result.some
 
 method name*(self: VFS): string {.base.} = &"VFS({self.prefix})"
 

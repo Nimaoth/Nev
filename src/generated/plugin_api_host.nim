@@ -657,6 +657,10 @@ proc typesRuneAt*(instance: ptr InstanceData; self: var RopeResource; a: Cursor)
 proc typesByteAt*(instance: ptr InstanceData; self: var RopeResource; a: Cursor): uint8
 proc typesFindAll*(instance: ptr InstanceData; self: var RopeResource;
                    regex: sink string): seq[Selection]
+proc typesRopeOpen*(instance: ptr InstanceData; path: sink string): Option[
+    RopeResource]
+proc typesRopeMount*(instance: ptr InstanceData; rope: sink RopeResource;
+                     path: sink string; unique: bool): string
 proc editorActiveEditor*(instance: ptr InstanceData; options: ActiveEditorFlags): Option[
     Editor]
 proc editorGetDocument*(instance: ptr InstanceData; editor: Editor): Option[
@@ -669,6 +673,7 @@ proc textEditorAsTextEditor*(instance: ptr InstanceData; editor: Editor): Option
     TextEditor]
 proc textEditorAsTextDocument*(instance: ptr InstanceData; document: Document): Option[
     TextDocument]
+proc textEditorAllTextEditors*(instance: ptr InstanceData): seq[TextEditor]
 proc textEditorCommand*(instance: ptr InstanceData; editor: TextEditor;
                         name: sink string; arguments: sink string): Result[
     string, CommandError]
@@ -777,6 +782,7 @@ proc textEditorDefineMove*(instance: ptr InstanceData; move: sink string;
                            fun: uint32; data: uint32): void
 proc textEditorContent*(instance: ptr InstanceData; editor: TextEditor): RopeResource
 proc textDocumentContent*(instance: ptr InstanceData; document: TextDocument): RopeResource
+proc textDocumentPath*(instance: ptr InstanceData; document: TextDocument): string
 proc layoutShow*(instance: ptr InstanceData; v: View; slot: sink string;
                  focus: bool; addToHistory: bool): void
 proc layoutClose*(instance: ptr InstanceData; v: View; keepHidden: bool;
@@ -1564,6 +1570,86 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/types", "[static]rope.open", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var path: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          path = newString(parameters[1].i32)
+          for i0 in 0 ..< path.len:
+            path[i0] = p0[i0]
+        let res = typesRopeOpen(instance, path)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isSome.int32
+        if res.isSome:
+          cast[ptr int32](memory[retArea + 4].addr)[] = ?instance.resources.resourceNew(
+              store, res.get)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/types", "[static]rope.mount", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var rope: RopeResource
+        var path: string
+        var unique: bool
+        block:
+          let resPtr = ?instance.resources.resourceHostData(
+              parameters[0].i32, RopeResource)
+          copyMem(rope.addr, resPtr, sizeof(typeof(rope)))
+          ?instance.resources.resourceDrop(parameters[0].i32,
+              callDestroy = false)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          path = newString(parameters[2].i32)
+          for i0 in 0 ..< path.len:
+            path[i0] = p0[i0]
+        unique = parameters[3].i32.bool
+        let res = typesRopeMount(instance, rope, path, unique)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              memory[dataPtrWasm0 + i0] = cast[uint8](res[i0])
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
           [WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/editor", "active-editor", ty):
         var instance = cast[ptr InstanceData](store.getData())
@@ -1723,6 +1809,40 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "all-text-editors",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        let res = textEditorAllTextEditors(instance)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 8).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              cast[ptr uint64](memory[dataPtrWasm0 + i0 * 8 + 0].addr)[] = res[
+                  i0].id
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
     if e.isErr:
       return e
   block:
@@ -3243,6 +3363,41 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         document.id = convert(parameters[0].i64, uint64)
         let res = textDocumentContent(instance, document)
         parameters[0].i32 = ?instance.resources.resourceNew(store, res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-document", "path", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var document: TextDocument
+        document.id = convert(parameters[0].i64, uint64)
+        let res = textDocumentPath(instance, document)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              memory[dataPtrWasm0 + i0] = cast[uint8](res[i0])
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
     if e.isErr:
       return e
   block:

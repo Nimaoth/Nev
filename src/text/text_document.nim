@@ -1117,6 +1117,7 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
   self.lastSavedRevision = self.undoableRevision
   self.isLoadingAsync = false
   self.onLoaded.invoke (self, changedRegions)
+  self.eventBus.emit(&"document/{self.id}/loaded", $self.id)
 
 proc setReadOnly*(self: TextDocument, readOnly: bool) =
   ## Sets the interal readOnly flag, but doesn't not changed permission of the underlying file
@@ -1179,6 +1180,7 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
   self.autoDetectIndentStyle()
   let changedRegions = @[((0, 0), (self.rope.endPoint.toCursor))]
   self.onLoaded.invoke (self, changedRegions)
+  self.eventBus.emit(&"document/{self.id}/loaded", $self.id)
 
 method load*(self: TextDocument, filename: string = "") =
   let filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename

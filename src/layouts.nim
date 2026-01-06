@@ -479,26 +479,36 @@ method topLeaf*(self: View): View {.base.} = self
 method bottomLeaf*(self: View): View {.base.} = self
 
 method leftLeaf*(self: TabLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     return self.children[self.activeIndex].leftLeaf()
 
 method leftLeaf*(self: VerticalLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     return self.children[self.activeIndex].leftLeaf()
 
 method leftLeaf*(self: HorizontalLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     if self.maximize:
       return self.children[self.activeIndex].leftLeaf()
     return self.children[0].leftLeaf()
 
 method leftLeaf*(self: AlternatingLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     if self.maximize:
       return self.children[self.activeIndex].leftLeaf()
     return self.children[0].leftLeaf()
 
 method leftLeaf*(self: CenterLayout): View =
+  if self == nil:
+    return nil
   if self.left != nil: return self.left.leftLeaf()
   if self.center != nil: return self.center.leftLeaf()
   if self.top != nil: return self.top.leftLeaf()
@@ -507,20 +517,28 @@ method leftLeaf*(self: CenterLayout): View =
   return nil
 
 method rightLeaf*(self: TabLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     return self.children[self.activeIndex].rightLeaf()
 
 method rightLeaf*(self: VerticalLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     return self.children[self.activeIndex].rightLeaf()
 
 method rightLeaf*(self: HorizontalLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     if self.maximize:
       return self.children[self.activeIndex].rightLeaf()
     return self.children.last.rightLeaf()
 
 method rightLeaf*(self: AlternatingLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     if self.maximize:
       return self.children[self.activeIndex].rightLeaf()
@@ -529,6 +547,8 @@ method rightLeaf*(self: AlternatingLayout): View =
     return self.children.last.rightLeaf()
 
 method rightLeaf*(self: CenterLayout): View =
+  if self == nil:
+    return nil
   if self.right != nil: return self.right.rightLeaf()
   if self.center != nil: return self.center.rightLeaf()
   if self.bottom != nil: return self.bottom.rightLeaf()
@@ -537,20 +557,28 @@ method rightLeaf*(self: CenterLayout): View =
   return nil
 
 method topLeaf*(self: TabLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     return self.children[self.activeIndex].topLeaf()
 
 method topLeaf*(self: VerticalLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     if self.maximize:
       return self.children[self.activeIndex].topLeaf()
     return self.children[0].topLeaf()
 
 method topLeaf*(self: HorizontalLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     return self.children[self.activeIndex].topLeaf()
 
 method topLeaf*(self: AlternatingLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     if self.maximize:
       return self.children[self.activeIndex].topLeaf()
@@ -559,6 +587,8 @@ method topLeaf*(self: AlternatingLayout): View =
     return self.children[0].topLeaf()
 
 method topLeaf*(self: CenterLayout): View =
+  if self == nil:
+    return nil
   if self.top != nil: return self.top.topLeaf()
   if self.center != nil: return self.center.topLeaf()
   if self.left != nil: return self.left.topLeaf()
@@ -567,20 +597,28 @@ method topLeaf*(self: CenterLayout): View =
   return nil
 
 method bottomLeaf*(self: TabLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     return self.children[self.activeIndex].bottomLeaf()
 
 method bottomLeaf*(self: VerticalLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     if self.maximize:
       return self.children[self.activeIndex].bottomLeaf()
     return self.children.last.bottomLeaf()
 
 method bottomLeaf*(self: HorizontalLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     return self.children[self.activeIndex].bottomLeaf()
 
 method bottomLeaf*(self: AlternatingLayout): View =
+  if self == nil:
+    return nil
   if self.children.len > 0:
     if self.maximize:
       return self.children[self.activeIndex].bottomLeaf()
@@ -589,6 +627,8 @@ method bottomLeaf*(self: AlternatingLayout): View =
     return self.children.last.bottomLeaf()
 
 method bottomLeaf*(self: CenterLayout): View =
+  if self == nil:
+    return nil
   if self.bottom != nil: return self.bottom.bottomLeaf()
   if self.center != nil: return self.center.bottomLeaf()
   if self.right != nil: return self.right.bottomLeaf()

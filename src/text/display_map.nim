@@ -155,6 +155,9 @@ proc toPoint*(self: DisplayMap, point: WrapPoint, bias: Bias = Bias.Right): Poin
   let overlayPoint = self.tabMap.toOverlayPoint(tabPoint, bias)
   result = self.overlay.toPoint(overlayPoint, bias)
 
+proc toWrapBytes*(self: DisplayMap, point: WrapPoint, bias: Bias = Bias.Right): int =
+  self.wrapMap.snapshot.toWrapBytes(point, bias)
+
 func endDisplayPoint*(self: DisplayMapSnapshot): DisplayPoint {.inline.} = self.diffMap.endDiffPoint.DisplayPoint
 func endDisplayPoint*(self: DisplayMap): DisplayPoint {.inline.} = self.diffMap.endDiffPoint.DisplayPoint
 
@@ -193,7 +196,6 @@ proc handleTabMapUpdated(self: DisplayMap, tabMap: TabMap, old: TabMapSnapshot, 
   if self.tabMap.snapshot.tabWidth != old.tabWidth:
     self.wrapMap.setInput(self.tabMap.snapshot.clone())
     self.diffMap.setInput(self.wrapMap.snapshot.clone())
-    self.wrapMap.update(self.tabMap.snapshot.clone(), force = true)
     self.diffMap.update(self.wrapMap.snapshot.clone(), force = true)
     self.onUpdated.invoke (self, self.old)
   else:
