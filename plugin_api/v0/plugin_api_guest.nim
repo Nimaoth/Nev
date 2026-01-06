@@ -230,3 +230,22 @@ proc handleEventExported(a0: uint32; a1: uint32; a2: int32; a3: int32;
   event = ws(cast[ptr char](a2), a3)
   payload = ws(cast[ptr char](a4), a5)
   handleEvent(fun, data, event, payload)
+
+proc handleTextOverlayRender(fun: uint32; data: uint32; id: int64; size: Vec2f;
+                             offset: int32): uint64
+proc handleTextOverlayRenderExported(a0: uint32; a1: uint32; a2: int64;
+                                     a3: float32; a4: float32; a5: int32): uint64 {.
+    wasmexport("handle-text-overlay-render", "nev:plugins/guest").} =
+  var
+    fun: uint32
+    data: uint32
+    id: int64
+    size: Vec2f
+    offset: int32
+  fun = convert(a0, uint32)
+  data = convert(a1, uint32)
+  id = convert(a2, int64)
+  size.x = convert(a3, float32)
+  size.y = convert(a4, float32)
+  offset = convert(a5, int32)
+  cast[uint64](handleTextOverlayRender(fun, data, id, size, offset))

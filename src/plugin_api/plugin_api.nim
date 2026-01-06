@@ -1,15 +1,16 @@
 import std/[macros, strutils, os, strformat, sequtils, json, sets, tables, atomics]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils, regex, rope_regex]
 import nimsumtree/[rope, sumtree, arc, clock, buffer]
 import service
 import layout
-import text/[text_editor, text_document]
+import text/[text_editor, text_document, overlay_map]
 import render_view, view
 import platform/platform, platform_service
 import config_provider, command_service, command_service_api, compilation_config
 import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database, popup, event_service, session
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 import lisp
+import vmath
 from scripting_api as sca import nil
 
 {.push gcsafe, raises: [].}
@@ -410,6 +411,12 @@ converter toInternal(c: ScrollSnapBehaviour): sca.ScrollSnapBehaviour =
   of MinDistanceOffscreen: sca.MinDistanceOffscreen
   of MinDistanceCenter: sca.MinDistanceCenter
 
+converter toInternal(c: OverlayRenderLocation): overlay_map.OverlayRenderLocation =
+  case c
+  of Inline: overlay_map.OverlayRenderLocation.Inline
+  of Below: overlay_map.OverlayRenderLocation.Below
+  of Above: overlay_map.OverlayRenderLocation.Above
+
 converter toWasm(c: sca.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
 converter toWasm(c: sca.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
 converter toWasm(c: clock.Lamport): Lamport = Lamport(replicaId: c.replicaId.uint16, value: c.value.uint32)
@@ -419,6 +426,7 @@ converter toWasm(c: sumtree.Bias): Bias =
   of sumtree.Right: Right
 converter toWasm(c: buffer.Anchor): Anchor = Anchor(timestamp: c.timestamp, offset: c.offset.uint32, bias: c.bias)
 converter toWasm(c: (buffer.Anchor, buffer.Anchor)): (Anchor, Anchor) = (c[0].toWasm, c[1].toWasm)
+converter toWasm(c: vmath.Vec2): Vec2f = Vec2f(x: c.x, y: c.y)
 
 converter toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
   result = {}
@@ -799,6 +807,52 @@ proc textEditorResolveAnchors*(instance: ptr InstanceData; editor: TextEditor; a
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     return editor.TextDocumentEditor.resolveAnchors(anchors.mapIt(it.toInternal)).mapIt(it.toWasm)
 
+proc textEditorAddCustomRenderCallback*(instance: ptr InstanceData; editor: TextEditor; fun: uint32; data: uint32): int64 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let id = editor.TextDocumentEditor.addCustomRenderer proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 =
+      try:
+        let ret = instance.funcs.handleTextOverlayRender(fun, data, id, size.toWasm, localOffset.int32).okOr(err):
+          log lvlWarn, "Failed to call custom render callback: " & err.msg
+          return
+        let wasmBufferLen = (ret shr 32).uint32.int
+        let wasmBufferAddr = cast[uint32](ret)
+
+        discard instance.funcs.mem[(wasmBufferAddr.int + wasmBufferLen - 1).WasmPtr] # crash if out of bounds. todo: replace this with bounds check
+        let width = instance.funcs.mem.read[:float32](wasmBufferAddr.WasmPtr)
+        let height = instance.funcs.mem.read[:float32]((wasmBufferAddr.int + sizeof(float32)).WasmPtr)
+        let wasmBuffer = cast[ptr UncheckedArray[byte]](instance.funcs.mem.getRawPtr((wasmBufferAddr + sizeof(float32) * 2).WasmPtr))
+        if wasmBuffer != nil:
+          var decoder = BinaryDecoder.init(wasmBuffer.toOpenArray(0, wasmBufferLen - sizeof(float32) * 2 - 1))
+          for command in decoder.decodeRenderCommands():
+            commands.commands.add(command)
+        else:
+          log lvlWarn, &"failed to get wasm buffer address"
+        return vec2(width, height)
+      except CatchableError as e:
+        log lvlWarn, &"Failed to run custom render: {e.msg}"
+        echo e.getStackTrace()
+    return id.int64
+
+proc textEditorRemoveCustomRenderCallback*(instance: ptr InstanceData; editor: TextEditor; cb: int64): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.removeCustomRenderer(cb.CustomRendererId)
+
+proc textEditorAddOverlay*(instance: ptr InstanceData; editor: TextEditor; selections: Selection; text: sink string; id: int64; scope: sink string; bias: Bias; renderId: int64; location: OverlayRenderLocation): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.addOverlay(selections.toInternal, text, id.int, scope, bias.toInternal, renderId.int, location.toInternal)
+
+proc textEditorClearOverlays*(instance: ptr InstanceData; editor: TextEditor; id: int64): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.clearOverlays(id.int)
+
 proc typesNewRope*(instance: ptr InstanceData, content: sink string): RopeResource =
   return RopeResource(rope: createRope(content).slice().suffix(Point()))
 
@@ -849,6 +903,13 @@ proc typesRuneAt*(instance: ptr InstanceData; self: var RopeResource; a: Cursor)
 
 proc typesByteAt*(instance: ptr InstanceData; self: var RopeResource; a: Cursor): uint8 =
   return self.rope.charAt(a.toInternal.toPoint).uint8
+
+proc typesFindAll*(instance: ptr InstanceData; self: var RopeResource; regex: sink string): seq[Selection] =
+  try:
+    let r = re(regex)
+    return self.rope.slice(int).findAll(r).mapIt(it.toSelection.toWasm)
+  except RegexError:
+    discard
 
 proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): bool =
   if permissions.disallowAll.get(false):
@@ -1135,6 +1196,28 @@ proc renderScrollDelta*(instance: ptr InstanceData; self: var RenderViewResource
 proc renderSetRenderWhenInactive*(instance: ptr InstanceData; self: var RenderViewResource; enabled: bool): void =
   self.view.setRenderWhenInactive(enabled)
 
+proc renderCreateTexture*(instance: ptr InstanceData; width: int32; height: int32; data: uint32; format: TextureFormat): uint64 =
+  var colors: seq[chroma.Color] = @[]
+  colors.setLen(width * height)
+
+  let bytesPerPixel = case format
+  of TextureFormat.Rgba32: 4 * sizeof(float32)
+
+  let wasmBufferLen = colors.len * bytesPerPixel
+  let wasmBufferAddr = data
+
+  discard instance.funcs.mem[(wasmBufferAddr.int + wasmBufferLen - 1).WasmPtr] # crash if out of bounds. todo: replace this with bounds check
+  let wasmBuffer = cast[ptr UncheckedArray[float]](instance.funcs.mem.getRawPtr(wasmBufferAddr.WasmPtr))
+  if wasmBuffer != nil:
+    copyMem(colors[0].addr, wasmBuffer[0].addr, wasmBufferLen)
+  else:
+    log lvlWarn, &"failed to get wasm buffer address"
+    return 0
+  return createTexture(width.int, height.int, colors).uint64
+
+proc renderDeleteTexture*(instance: ptr InstanceData; id: uint64): void =
+  deleteTexture(id.TextureId)
+
 proc renderSetPreventThrottling*(instance: ptr InstanceData; self: var RenderViewResource; enabled: bool): void =
   self.view.preventThrottling = enabled
 
@@ -1174,7 +1257,6 @@ proc renderAddMode*(instance: ptr InstanceData; self: var RenderViewResource; mo
 
 proc renderRemoveMode*(instance: ptr InstanceData; self: var RenderViewResource; mode: sink string): void =
   self.view.modes.removeShift(mode)
-
 
 ###################### Channel
 

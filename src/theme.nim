@@ -14,6 +14,7 @@ type
     foreground*: Option[Color]
     background*: Option[Color]
     fontStyle*: set[FontStyle]
+    fontScale*: float = 1.0
 
 type
   Theme* = ref object
@@ -84,7 +85,7 @@ proc tokenColor*(theme: Theme, name: string, default: Color = Color(r: 0, g: 0, 
       return default
   return theme.tokenColors.getCascading(name, Style()).foreground.get default.color
 
-proc tokenColor*(theme: Theme, names: seq[string], default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+proc tokenColor*(theme: Theme, names: openArray[string], default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   for name in names:
     theme.tokenColors.withValue(name, style):
       if style[].foreground.isSome:
@@ -115,6 +116,9 @@ proc tokenFontStyle*(theme: Theme, names: seq[string]): set[FontStyle] =
     theme.tokenColors.withValue(name, style):
       return style.fontStyle
   return {}
+
+proc tokenFontScale*(theme: Theme, name: string): float =
+  return theme.tokenColors.getCascading(name, Style(fontScale: 1.0)).fontScale
 
 proc anyColor*(theme: Theme, color: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   return if color.startsWith "#":
@@ -164,6 +168,8 @@ proc fromJsonHook*(style: var Style, jsonNode: JsonNode) {.raises: [ValueError].
     style.background = Color.none
   if jsonNode.hasKey("fontStyle"):
     style.fontStyle = jsonNode["fontStyle"].jsonTo set[FontStyle]
+  if jsonNode.hasKey("fontScale"):
+    style.fontScale = jsonNode["fontScale"].jsonTo float
 
 proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme {.raises: [ValueError].} =
   result = Theme()
@@ -179,7 +185,6 @@ proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme {.raises: [ValueError
   if json.hasKey("colors"):
     for (key, value) in json["colors"].fields.pairs:
       result.colors[key] = value.jsonTo Color
-      # result.colorsC[key.cstring] = value.jsonTo Color
 
   if json.hasKey("tokenColors"):
     for item in json["tokenColors"].elems:
@@ -201,13 +206,12 @@ proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme {.raises: [ValueError
           result.tokenColors[scope] = Style(foreground: Color.none, background: Color.none)
         if settings.hasKey("foreground"):
           result.tokenColors[scope].foreground = some(settings["foreground"].jsonTo Color)
-          # result.tokenColorsC[scope.cstring].foreground = some(settings["foreground"].jsonTo Color)
         if settings.hasKey("background"):
           result.tokenColors[scope].background = some(settings["background"].jsonTo Color)
-          # result.tokenColorsC[scope.cstring].background = some(settings["background"].jsonTo Color)
         if settings.hasKey("fontStyle"):
           result.tokenColors[scope].fontStyle = settings["fontStyle"].jsonTo set[FontStyle]
-          # result.tokenColorsC[scope.cstring].fontStyle = settings["fontStyle"].jsonTo set[FontStyle]
+        if settings.hasKey("fontScale"):
+          result.tokenColors[scope].fontScale = settings["fontScale"].jsonTo float
 
 proc loadFromString*(input: string, path: string = "string"): Option[Theme] =
   try:

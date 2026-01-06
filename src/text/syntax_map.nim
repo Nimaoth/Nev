@@ -5,6 +5,8 @@ from scripting_api as api import nil
 import misc/[custom_async, custom_unicode, util, regex, timer, rope_utils]
 import text/diff, text/custom_treesitter
 from language/lsp_types import nil
+import theme
+import chroma
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -42,15 +44,18 @@ type
 
   StyledChunk* = object
     chunk*: RopeChunk
-    scope*: string # todo: dont use string to avoid allocation on copying
     drawWhitespace*: bool = true
     underline*: Option[StyledChunkUnderline]
+    color*: Color
+    fontStyle*: set[FontStyle]
+    fontScale*: float = 1.0
 
   Highlighter* = object
     query*: TSQuery
     tree*: TsTree
+    theme*: Theme
 
-  Highlight = tuple[range: Range[Point], scope: string, priority: int]
+  Highlight = tuple[range: Range[Point], color: Color, fontStyle: set[FontStyle], fontScale: float, priority: int]
 
   DiagnosticEndPoint* = object
     severity*: lsp_types.DiagnosticSeverity
@@ -68,6 +73,7 @@ type
     diagnosticEndPoints*: seq[DiagnosticEndPoint]
     diagnosticIndex*: int
 
+    defaultColor: Color
     errorDepth: int
     warnDepth: int
     infoDepth: int
@@ -89,9 +95,9 @@ func `$`*(chunk: RopeChunk): string =
     var str = newStringOfCap(chunk.lenOriginal)
     for i in 0..<chunk.lenOriginal:
       str.add chunk.dataOriginal[i].escape
-    result = &"RC({chunk.point}...{chunk.endPoint}, '{result}', '{str}')"
+    result = &"RC({chunk.point}...{chunk.endPoint}, '{result}', '{str}', {chunk.external})"
   else:
-    result = &"RC({chunk.point}...{chunk.endPoint}, '{result}')"
+    result = &"RC({chunk.point}...{chunk.endPoint}, '{result}', {chunk.external})"
 
 func `[]`*(self: RopeChunk, range: Range[int]): RopeChunk =
   assert range.a >= 0 and range.a <= self.len
@@ -154,12 +160,12 @@ proc split*(self: RopeChunk, index: int): tuple[prefix: RopeChunk, suffix: RopeC
 proc split*(self: StyledChunk, index: int): tuple[prefix: StyledChunk, suffix: StyledChunk] =
   let (prefix, suffix) = self.chunk.split(index)
   (
-    StyledChunk(chunk: prefix, scope: self.scope, drawWhitespace: self.drawWhitespace, underline: self.underline),
-    StyledChunk(chunk: suffix, scope: self.scope, drawWhitespace: self.drawWhitespace, underline: self.underline),
+    StyledChunk(chunk: prefix, color: self.color, fontStyle: self.fontStyle, drawWhitespace: self.drawWhitespace, underline: self.underline, fontScale: self.fontScale),
+    StyledChunk(chunk: suffix, color: self.color, fontStyle: self.fontStyle, drawWhitespace: self.drawWhitespace, underline: self.underline, fontScale: self.fontScale),
   )
 
 proc `[]`*(self: StyledChunk, r: Range[int]): StyledChunk =
-  StyledChunk(chunk: self.chunk[r], scope: self.scope, drawWhitespace: self.drawWhitespace, underline: self.underline)
+  StyledChunk(chunk: self.chunk[r], color: self.color, fontStyle: self.fontStyle, drawWhitespace: self.drawWhitespace, underline: self.underline, fontScale: self.fontScale)
 
 proc init*(_: typedesc[ChunkIterator], rope {.byref.}: Rope): ChunkIterator =
   result.rope = rope.clone()
@@ -275,6 +281,7 @@ iterator ropeChunks*(rope: Rope, state: var RopeChunksState): RopeChunk =
       cursor.next()
 
     if cursor.item.isNone:
+      yield RopeChunk(data: nil, len: 0, point: cursor.startPos[0])
       break
 
     let inputChunk: ptr Chunk = cursor.item.get
@@ -376,14 +383,18 @@ proc next*(self: var ChunkIterator2): Option[RopeChunk] =
 
   return chunk.some
 
-proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope): StyledChunkIterator =
+proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, highlighter: Option[Highlighter] = Highlighter.none): StyledChunkIterator =
   result.chunks = ChunkIterator2.init(rope.clone())
+  result.defaultColor = color(1, 1, 1)
+  result.highlighter = highlighter
+  if result.highlighter.isSome:
+    result.defaultColor = result.highlighter.get.theme.color("editor.foreground", color(1, 1, 1))
 
 func point*(self: StyledChunkIterator): Point = self.chunks.state.nextPoint
 func point*(self: StyledChunk): Point = self.chunk.point
 func endPoint*(self: StyledChunk): Point = self.chunk.endPoint
 func len*(self: StyledChunk): int = self.chunk.len
-func `$`*(self: StyledChunk): string = &"SC({self.chunk}, {self.scope}, {self.drawWhitespace})"
+func `$`*(self: StyledChunk): string = &"SC({self.chunk}, {self.color}, {self.fontStyle}, {self.drawWhitespace})"
 template toOpenArray*(self: StyledChunk): openArray[char] = self.chunk.toOpenArray
 
 proc nextDiagnostic(self: var StyledChunkIterator) =
@@ -556,7 +567,10 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
             nodeRangeClamped.b.row = currentChunk.point.row
             nodeRangeClamped.b.column = uint32.high
 
-          var nextHighlight: Highlight = (nodeRangeClamped, capture.name, match.pattern)
+          let color = self.highlighter.get.theme.tokenColor(capture.name, self.defaultColor)
+          let fontStyle = self.highlighter.get.theme.tokenFontStyle(capture.name)
+          let fontScale = self.highlighter.get.theme.tokenFontScale(capture.name)
+          var nextHighlight: Highlight = (nodeRangeClamped, color, fontStyle, fontScale, match.pattern)
           if self.highlights.len > 0 and nextHighlight.range.a < self.highlights[^1].range.a:
             requiresSort = true
             self.highlights.add(nextHighlight.ensureMove)
@@ -616,7 +630,7 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
         currentChunk.dataOriginal = cast[ptr UncheckedArray[char]](currentChunk.dataOriginal[startOffset].addr)
         currentChunk.lenOriginal = self.localOffset - startOffset
         currentChunk.point.column += startOffset.uint32
-        return StyledChunk(chunk: currentChunk, underline: underline).some
+        return StyledChunk(chunk: currentChunk, underline: underline, color: self.defaultColor).some
       elif currentPoint < nextHighlight.range.b:
         self.localOffset = min(maxLocalOffset, nextHighlight.range.b.column.int - currentChunk.point.column.int)
         assert self.localOffset >= 0
@@ -626,7 +640,7 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
         currentChunk.dataOriginal = cast[ptr UncheckedArray[char]](currentChunk.dataOriginal[startOffset].addr)
         currentChunk.lenOriginal = self.localOffset - startOffset
         currentChunk.point.column += startOffset.uint32
-        return StyledChunk(chunk: currentChunk, scope: nextHighlight.scope, underline: underline).some
+        return StyledChunk(chunk: currentChunk, color: nextHighlight.color, fontStyle: nextHighlight.fontStyle, fontScale: nextHighlight.fontScale, underline: underline).some
       else:
         self.highlightsIndex.inc
 
@@ -637,7 +651,7 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
   currentChunk.dataOriginal = cast[ptr UncheckedArray[char]](currentChunk.dataOriginal[startOffset].addr)
   currentChunk.lenOriginal = self.localOffset - startOffset
   currentChunk.point.column += startOffset.uint32
-  return StyledChunk(chunk: currentChunk, underline: underline).some
+  return StyledChunk(chunk: currentChunk, underline: underline, color: self.defaultColor).some
 
 iterator chunks*[T](iter: var T): typeof(iter.next.get) =
   while iter.next().getSome(chunk):

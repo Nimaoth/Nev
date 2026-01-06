@@ -12,7 +12,7 @@ export platform
 
 logCategory "gui-platform"
 
-const logDeletedImageCount = false
+const logDeletedImageCount = true
 
 type
   GuiPlatform* = ref object of Platform
@@ -42,8 +42,11 @@ type
 
     textures: Table[string, Texture]
 
+    fontCache1: Table[(string, float32), Font]
+    fontCache2: Table[(UINodeFlags, float32), Font]
+    fontInfoCache: Table[(UINodeFlags, float32), FontInfo]
     typefaces: Table[string, Typeface]
-    glyphCache: LruCache[(Rune, UINodeFlags), string]
+    glyphCache: LruCache[(Rune, UINodeFlags, float), string]
     asciiGlyphCache: array[128, string]
 
     lastEvent: Option[(int64, Modifiers, Button)]
@@ -56,7 +59,6 @@ proc toInput(rune: Rune): int64
 proc toInput(button: Button): int64
 proc centerWindowOnMonitor*(window: Window, monitor: int)
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
-proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
 
 method moveToMonitor*(self: GuiPlatform, index: int) {.gcsafe, raises: [].} =
@@ -78,7 +80,7 @@ reserveTextureImpl = proc(): TextureId {.gcsafe, raises: [].} =
 method init*(self: GuiPlatform, options: AppOptions) =
   log lvlInfo, "Init GUI platform"
   try:
-    self.glyphCache = newLruCache[(Rune, UINodeFlags), string](5000, true)
+    self.glyphCache = newLruCache[(Rune, UINodeFlags, float), string](5000, true)
     self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=true)
     self.window.runeInputEnabled = true
     self.supportsThinCursor = true
@@ -321,28 +323,35 @@ proc getTypeface*(self: GuiPlatform, font: string): Typeface =
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font =
   assert font != ""
 
+  let key = (font, fontSize)
+  if key in self.fontCache1:
+    return self.fontCache1[key]
+
   let typeface = self.getTypeface(font)
   result = newFont(typeface)
   result.paint.color = color(1, 1, 1)
   result.size = fontSize
-
-proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font =
-  if Italic in style and Bold in style:
-    return self.getFont(self.fontBoldItalic, fontSize)
-  if Italic in style:
-    return self.getFont(self.fontItalic, fontSize)
-  if Bold in style:
-    return self.getFont(self.fontBold, fontSize)
-  return self.getFont(self.fontRegular, fontSize)
+  self.fontCache1[key] = result
 
 proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font =
+  let key = (flags, fontSize)
+  if key in self.fontCache2:
+    return self.fontCache2[key]
+
   if TextItalic in flags and TextBold in flags:
-    return self.getFont(self.fontBoldItalic, fontSize)
+    result = self.getFont(self.fontBoldItalic, fontSize)
+    self.fontCache2[key] = result
+    return
   if TextItalic in flags:
-    return self.getFont(self.fontItalic, fontSize)
+    result = self.getFont(self.fontItalic, fontSize)
+    self.fontCache2[key] = result
+    return
   if TextBold in flags:
-    return self.getFont(self.fontBold, fontSize)
-  return self.getFont(self.fontRegular, fontSize)
+    result = self.getFont(self.fontBold, fontSize)
+    self.fontCache2[key] = result
+    return
+  result = self.getFont(self.fontRegular, fontSize)
+  self.fontCache2[key] = result
 
 proc getTypeface*(self: GuiPlatform, flags: UINodeFlags): Typeface =
   if TextItalic in flags and TextBold in flags:
@@ -354,6 +363,10 @@ proc getTypeface*(self: GuiPlatform, flags: UINodeFlags): Typeface =
   return self.getTypeface(self.fontRegular)
 
 method getFontInfo*(self: GuiPlatform, fontSize: float, flags: UINodeFlags): FontInfo {.gcsafe, raises: [].} =
+  let key = (flags, fontSize.float32)
+  if key in self.fontInfoCache:
+    return self.fontInfoCache[key]
+
   let typeface = self.getTypeface(flags)
   let fontScale = fontSize / typeface.scale
   let lineHeight = round((typeface.ascent - typeface.descent + typeface.lineGap) * fontScale)
@@ -365,7 +378,7 @@ method getFontInfo*(self: GuiPlatform, fontSize: float, flags: UINodeFlags): Fon
   proc advance (rune: Rune): float =
     typeface.getAdvance(rune)
 
-  FontInfo(
+  result = FontInfo(
     ascent: typeface.ascent,
     lineHeight: lineHeight,
     lineGap: typeface.lineGap,
@@ -373,6 +386,7 @@ method getFontInfo*(self: GuiPlatform, fontSize: float, flags: UINodeFlags): Fon
     # kerningAdjustment: kerningAdjustment,
     advance: advance,
   )
+  self.fontInfoCache[key] = result
 
 method size*(self: GuiPlatform): Vec2 =
   try:
@@ -406,6 +420,9 @@ method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontIt
   self.fontBoldItalic = fontBoldItalic
   self.fallbackFonts = fallbackFonts
   self.typefaces.clear()
+  self.fontCache1.clear()
+  self.fontCache2.clear()
+  self.fontInfoCache.clear()
   self.updateCharWidth()
 
   try:
@@ -669,7 +686,7 @@ method render*(self: GuiPlatform, rerender: bool) =
     discard
 
 var solidPaint = newPaint(SolidPaint)
-proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune) =
+proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune, fontScale: float = 1.0) =
   let wrap = TextWrap in flags
   let wrapBounds = if flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
     vec2(bounds.w, bounds.h)
@@ -701,7 +718,7 @@ proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, colo
 
   # todo: convert typeset to not use strings to avoid copying
   try:
-    let font = platform.getFont(platform.ctx.fontSize, flags)
+    let font = platform.getFont(platform.ctx.fontSize * fontScale, flags)
 
     let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap, snapToPixel = false)
     template drawRune(i: int, rune: Rune, inColor: Color): untyped =
@@ -710,7 +727,7 @@ proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, colo
       else:
         color(1, 1, 1)
 
-      if rune.int < platform.asciiGlyphCache.len and textFlags == 0.UINodeFlags:
+      if rune.int < platform.asciiGlyphCache.len and textFlags == 0.UINodeFlags and fontScale == 1.0:
         if platform.asciiGlyphCache[rune.int].len == 0:
           var path = font.typeface.getGlyphPath(rune)
           let rect = arrangement.selectionRects[i]
@@ -725,7 +742,7 @@ proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, colo
         platform.boxy.drawImage(platform.asciiGlyphCache[rune.int], pos, color)
 
       else:
-        let key = (rune, textFlags)
+        let key = (rune, textFlags, fontScale)
         if not platform.glyphCache.contains(key):
           var path = font.typeface.getGlyphPath(rune)
           let rect = arrangement.selectionRects[i]
@@ -753,7 +770,7 @@ proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, colo
   except GLerror, Exception:
     discard
 
-proc drawText(platform: GuiPlatform, text: string, arrangement: render_command.Arrangement, indices: RenderCommandArrangement, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune) =
+proc drawText(platform: GuiPlatform, text: string, arrangement: render_command.Arrangement, indices: RenderCommandArrangement, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune, fontSizeScale: float = 1.0) =
   let textFlags = flags * &{TextItalic, TextBold}
 
   proc tintRune(r: Rune): bool =
@@ -762,7 +779,7 @@ proc drawText(platform: GuiPlatform, text: string, arrangement: render_command.A
   # todo: convert typeset to not use strings to avoid copying
   try:
     let typeface = platform.getTypeface(flags)
-    let fontScale = platform.ctx.fontSize / typeface.scale
+    let fontScale = fontSizeScale * platform.ctx.fontSize / typeface.scale
     let solidPaint = ({.cast(gcsafe).}: solidPaint)
     solidPaint.color = color(1, 1, 1)
     template drawRune(i: int, rune: Rune, inColor: Color): untyped =
@@ -770,7 +787,7 @@ proc drawText(platform: GuiPlatform, text: string, arrangement: render_command.A
         inColor
       else:
         color(1, 1, 1)
-      let key = (rune, textFlags)
+      let key = (rune, textFlags, fontScale)
       if not platform.glyphCache.contains(key):
         var path = typeface.getGlyphPath(rune)
         let rect = arrangement.selectionRects[i]
@@ -799,38 +816,38 @@ proc drawText(platform: GuiPlatform, text: string, arrangement: render_command.A
   except GLerror, Exception:
     discard
 
-proc handleRenderCommand(platform: GuiPlatform, renderCommands: ptr RenderCommands, command: RenderCommand, nodePos: Vec2, spaceColor: Color, space: Rune, maskBounds: var seq[Rect]) {.inline, raises: [Exception].} =
+proc handleRenderCommand(platform: GuiPlatform, renderCommands: ptr RenderCommands, command: RenderCommand, spaceColor: Color, space: Rune, maskBounds: var seq[Rect], offsets: var seq[Vec2], offset: var Vec2) {.inline, raises: [Exception].} =
   case command.kind
   of RenderCommandKind.Rect:
-    platform.boxy.strokeRect(command.bounds + nodePos, command.color)
+    platform.boxy.strokeRect(command.bounds + offset, command.color)
   of RenderCommandKind.Image:
     {.gcsafe.}:
       if gTextures.tryGet(command.textureId).getSome(tex):
         if tex != nil:
           let glTexId = tex.textureId
-          platform.boxy.drawUvRect(nodePos + command.bounds.xy, nodePos + command.bounds.xy + command.bounds.wh, command.uv0, command.uv1, command.color, glTexId)
+          platform.boxy.drawUvRect(offset + command.bounds.xy, offset + command.bounds.xy + command.bounds.wh, command.uv0, command.uv1, command.color, glTexId)
 
   of RenderCommandKind.FilledRect:
-    platform.boxy.drawRect(command.bounds + nodePos, command.color)
+    platform.boxy.drawRect(command.bounds + offset, command.color)
   of RenderCommandKind.TextRaw:
     # todo: don't copy string data
     var text = newStringOfCap(command.len)
     if command.len > 0:
       text.setLen(command.len)
       copyMem(text[0].addr, command.data, command.len)
-      platform.drawText(text, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, spaceColor, command.flags, command.underlineColor, space)
+      platform.drawText(text, command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
 
   of RenderCommandKind.Text:
     # todo: don't copy string data
     assert renderCommands != nil
     let text = renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
     if command.arrangementIndex == uint32.high:
-      platform.drawText(text, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, spaceColor, command.flags, command.underlineColor, space)
+      platform.drawText(text, command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
     else:
-      platform.drawText(text, renderCommands.arrangement, renderCommands.arrangements[command.arrangementIndex], command.bounds.xy + nodePos, command.bounds + nodePos, command.color, spaceColor, command.flags, command.underlineColor, space)
+      platform.drawText(text, renderCommands.arrangement, renderCommands.arrangements[command.arrangementIndex], command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
   of RenderCommandKind.ScissorStart:
     platform.boxy.pushLayer()
-    maskBounds.add(command.bounds + nodePos)
+    maskBounds.add(command.bounds + offset)
   of RenderCommandKind.ScissorEnd:
     if maskBounds.len == 0:
       # log lvlError, &"Unbalanced ScisscorStart/End pairs"
@@ -840,6 +857,12 @@ proc handleRenderCommand(platform: GuiPlatform, renderCommands: ptr RenderComman
     platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
     platform.boxy.popLayer(blendMode = MaskBlend)
     platform.boxy.popLayer()
+  of RenderCommandKind.TransformStart:
+    offsets.add offset
+    offset += command.bounds.xy
+  of RenderCommandKind.TransformEnd:
+    if offsets.len > 0:
+      offset = offsets.pop()
 
 proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
   try:
@@ -890,15 +913,28 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
         platform.boxy.drawBorder(bounds, node.borderColor, node.border)
 
     var maskBounds: seq[Rect]
+    var offsets: seq[Vec2]
+    var currentOffset = nodePos
     for list in node.renderCommandList:
+      offsets.setLen(0)
+      currentOffset = nodePos
       for command in list.commands:
-        handleRenderCommand(platform, list[].addr, command, nodePos, list.spacesColor, list.space, maskBounds)
+        handleRenderCommand(platform, list[].addr, command, list.spacesColor, list.space, maskBounds, offsets, currentOffset)
+
+      offsets.setLen(0)
+      currentOffset = nodePos
       for command in list[].decodeRenderCommands:
-        handleRenderCommand(platform, list[].addr, command, nodePos, node.textColor, list.space, maskBounds)
+        handleRenderCommand(platform, list[].addr, command, node.textColor, list.space, maskBounds, offsets, currentOffset)
+
+    offsets.setLen(0)
+    currentOffset = nodePos
     for command in node.renderCommands.commands:
-      handleRenderCommand(platform, node.renderCommands.addr, command, nodePos, node.renderCommands.spacesColor, node.renderCommands.space, maskBounds)
+      handleRenderCommand(platform, node.renderCommands.addr, command, node.renderCommands.spacesColor, node.renderCommands.space, maskBounds, offsets, currentOffset)
+
+    offsets.setLen(0)
+    currentOffset = nodePos
     for command in node.renderCommands.decodeRenderCommands:
-      handleRenderCommand(platform, node.renderCommands.addr, command, nodePos, node.textColor, node.renderCommands.space, maskBounds)
+      handleRenderCommand(platform, node.renderCommands.addr, command, node.textColor, node.renderCommands.space, maskBounds, offsets, currentOffset)
 
   except GLerror, Exception:
     discard

@@ -246,8 +246,7 @@ method previewItem*(self: FilePreviewer, item: FinderItem, editor: DocumentEdito
   if self.editor.document.filename == path and self.editor.document.staged == self.currentStaged:
     if location.getSome(location):
       self.editor.targetSelection = location.toSelection
-      self.editor.centerCursor()
-      self.editor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
+      self.editor.centerCursor(snap = true)
     else:
       self.editor.targetSelection = (0, 0).toSelection
       self.editor.scrollToTop()

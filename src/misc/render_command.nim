@@ -58,6 +58,8 @@ type
     TextRaw
     ScissorStart
     ScissorEnd
+    TransformStart
+    TransformEnd
 
   TextureId* = distinct uint64
 
@@ -66,6 +68,7 @@ type
     color*: Color # 16
     flags*: UINodeFlags # 8
     underlineColor*: Color
+    fontScale*: float32 = 1.0
     case kind*: RenderCommandKind # 1
     of RenderCommandKind.Text:
       textOffset*: uint32
@@ -182,6 +185,10 @@ proc write*(self: var BinaryEncoder, command: RenderCommand) =
     self.write(command.bounds)
   of RenderCommandKind.ScissorEnd:
     discard
+  of RenderCommandKind.TransformStart:
+    self.write(command.bounds.xy)
+  of RenderCommandKind.TransformEnd:
+    discard
 
 iterator decodeRenderCommands*(self: var BinaryDecoder): RenderCommand =
   while self.pos < self.len:
@@ -221,6 +228,11 @@ iterator decodeRenderCommands*(self: var BinaryDecoder): RenderCommand =
       yield RenderCommand(kind: RenderCommandKind.ScissorStart, bounds: bounds)
     of RenderCommandKind.ScissorEnd:
       yield RenderCommand(kind: RenderCommandKind.ScissorEnd)
+    of RenderCommandKind.TransformStart:
+      let offset = self.read(Vec2)
+      yield RenderCommand(kind: RenderCommandKind.TransformStart, bounds: rect(offset, vec2(0, 0)))
+    of RenderCommandKind.TransformEnd:
+      yield RenderCommand(kind: RenderCommandKind.TransformEnd)
 
   # yield RenderCommand(kind: TextRaw, data: nil, len: 0)
 
@@ -289,6 +301,110 @@ proc clear*(self: var RenderCommands) =
   self.arrangement.selectionRects.setLen(0)
   self.raw.setLen(0)
 
+proc drawRect*(self: var BinaryEncoder, inBounds: Rect, inColor: Color) =
+  self.write(RenderCommandKind.Rect.uint8 + 1.uint8)
+  self.write(inBounds)
+  self.write(inColor)
+  self.write(0.UINodeFlags)
+proc fillRect*(self: var BinaryEncoder, inBounds: Rect, inColor: Color) =
+  self.write(RenderCommandKind.FilledRect.uint8 + 1.uint8)
+  self.write(inBounds)
+  self.write(inColor)
+  self.write(0.UINodeFlags)
+proc fillRect*(self: var BinaryEncoder, inBounds: Rect, inColor: Color, inFlags: UINodeFlags) =
+  self.write(RenderCommandKind.FilledRect.uint8 + 1.uint8)
+  self.write(inBounds)
+  self.write(inColor)
+  self.write(inFlags)
+proc drawText*(self: var BinaryEncoder, inText: string, inBounds: Rect, inColor: Color, inFlags: UINodeFlags) =
+  let txt = inText
+  self.write(RenderCommandKind.TextRaw.uint8 + 1.uint8)
+  self.write(inBounds)
+  self.write(inColor)
+  self.write(inFlags)
+  self.write(txt.toOpenArray(0, txt.high))
+proc drawText*(self: var BinaryEncoder, inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags) =
+  self.write(RenderCommandKind.TextRaw.uint8 + 1.uint8)
+  self.write(inBounds)
+  self.write(inColor)
+  self.write(inFlags)
+  self.write(inText)
+# proc drawText*(self: var BinaryEncoder, inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags) =
+#   let offset = renderCommands.strings.len.uint32
+#   for c in inText:
+#     renderCommands.strings.add c
+#   let len = renderCommands.strings.len.uint32 - offset
+#   renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: uint32.high))
+# proc drawText*(self: var BinaryEncoder, inText: openArray[char], arrangementIndex: int, inBounds: Rect, inColor: Color, inFlags: UINodeFlags, inUnderlineColor: Color) =
+#   let offset = renderCommands.strings.len.uint32
+#   for c in inText:
+#     renderCommands.strings.add c
+#   let len = renderCommands.strings.len.uint32 - offset
+#   renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: arrangementIndex.uint32, underlineColor: inUnderlineColor))
+proc startScissor*(self: var BinaryEncoder, inBounds: Rect) =
+  self.write(RenderCommandKind.ScissorStart.uint8 + 1.uint8)
+  self.write(inBounds)
+proc endScissor*(self: var BinaryEncoder) =
+  self.write(RenderCommandKind.ScissorEnd.uint8 + 1.uint8)
+proc startTransform*(self: var BinaryEncoder, offset: Vec2) =
+  self.write(RenderCommandKind.TransformStart.uint8 + 1.uint8)
+  self.write(offset)
+proc endTransform*(self: var BinaryEncoder) =
+  self.write(RenderCommandKind.TransformEnd.uint8 + 1.uint8)
+proc drawImage*(self: var BinaryEncoder, inBounds: Rect, inTextureId: TextureId) =
+  self.write(RenderCommandKind.Image.uint8 + 1)
+  self.write(inBounds)
+  self.write(vec2(0, 0))
+  self.write(vec2(1, 1))
+  self.write(color(1, 1, 1))
+  self.write(inTextureId)
+  self.write(0.UINodeFlags)
+proc drawImage*(self: var BinaryEncoder, inBounds: Rect, inUV0: Vec2, inUV1: Vec2, inTextureId: TextureId) =
+  self.write(RenderCommandKind.Image.uint8 + 1)
+  self.write(inBounds)
+  self.write(inUV0)
+  self.write(inUV1)
+  self.write(color(1, 1, 1))
+  self.write(inTextureId)
+  self.write(0.UINodeFlags)
+
+proc drawRect*(renderCommands: var RenderCommands, inBounds: Rect, inColor: Color) =
+  renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Rect, bounds: inBounds, color: inColor))
+proc fillRect*(renderCommands: var RenderCommands, inBounds: Rect, inColor: Color) =
+  renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: inBounds, color: inColor))
+proc fillRect*(renderCommands: var RenderCommands, inBounds: Rect, inColor: Color, inFlags: UINodeFlags) =
+  renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: inBounds, color: inColor, flags: inFlags))
+proc drawImage*(renderCommands: var RenderCommands, inBounds: Rect, inTextureId: TextureId) =
+  renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Image, bounds: inBounds, color: color(1, 1, 1), textureId: inTextureId, uv1: vec2(1, 1)))
+proc drawImage*(renderCommands: var RenderCommands, inBounds: Rect, inUV0: Vec2, inUV1: Vec2, inTextureId: TextureId) =
+  renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Image, bounds: inBounds, color: color(1, 1, 1), textureId: inTextureId, uv0: inUV0, uv1: inUV1))
+proc drawText*(renderCommands: var RenderCommands, inText: string, inBounds: Rect, inColor: Color, inFlags: UINodeFlags) =
+  let txt = inText
+  let offset = renderCommands.strings.len.uint32
+  renderCommands.strings.add txt
+  renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: txt.len.uint32, bounds: inBounds, color: inColor, underlineColor: inColor, flags: inFlags))
+proc drawText*(renderCommands: var RenderCommands, inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags) =
+  let offset = renderCommands.strings.len.uint32
+  for c in inText:
+    renderCommands.strings.add c
+  let len = renderCommands.strings.len.uint32 - offset
+  renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: uint32.high))
+proc drawText*(renderCommands: var RenderCommands, inText: openArray[char], arrangementIndex: int, inBounds: Rect, inColor: Color, inFlags: UINodeFlags, inUnderlineColor: Color) =
+  let offset = renderCommands.strings.len.uint32
+  for c in inText:
+    renderCommands.strings.add c
+  let len = renderCommands.strings.len.uint32 - offset
+  renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: arrangementIndex.uint32, underlineColor: inUnderlineColor))
+proc startScissor*(renderCommands: var RenderCommands, inBounds: Rect) =
+  renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorStart, bounds: inBounds))
+proc endScissor*(renderCommands: var RenderCommands) =
+  renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorEnd))
+
+proc startTransform*(self: var RenderCommands, offset: Vec2) =
+  self.commands.add(RenderCommand(kind: RenderCommandKind.TransformStart, bounds: rect(offset, vec2(0, 0))))
+proc endTransform*(self: var RenderCommands) =
+  self.commands.add(RenderCommand(kind: RenderCommandKind.TransformEnd))
+
 template buildCommands*(renderCommands: var RenderCommands, body: untyped) =
   block:
     template drawRect(inBounds: Rect, inColor: Color): untyped {.used.} =
@@ -301,23 +417,18 @@ template buildCommands*(renderCommands: var RenderCommands, body: untyped) =
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Image, bounds: inBounds, color: color(1, 1, 1), textureId: inTextureId, uv1: vec2(1, 1)))
     template drawImage(inBounds: Rect, inUV0: Vec2, inUV1: Vec2, inTextureId: TextureId): untyped {.used.} =
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Image, bounds: inBounds, color: color(1, 1, 1), textureId: inTextureId, uv0: inUV0, uv1: inUV1))
-    template drawText(inText: string, inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
-      let txt = inText
-      let offset = renderCommands.strings.len.uint32
-      renderCommands.strings.add txt
-      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: txt.len.uint32, bounds: inBounds, color: inColor, underlineColor: inColor, flags: inFlags))
-    template drawText(inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
+    template drawText(inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags, inFontScale: float = 1.0): untyped {.used.} =
       let offset = renderCommands.strings.len.uint32
       for c in inText:
         renderCommands.strings.add c
       let len = renderCommands.strings.len.uint32 - offset
-      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: uint32.high))
-    template drawText(inText: openArray[char], arrangementIndex: int, inBounds: Rect, inColor: Color, inFlags: UINodeFlags, inUnderlineColor: Color): untyped {.used.} =
+      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: uint32.high, fontScale: inFontScale))
+    template drawText(inText: openArray[char], arrangementIndex: int, inBounds: Rect, inColor: Color, inFlags: UINodeFlags, inUnderlineColor: Color, inFontScale: float): untyped {.used.} =
       let offset = renderCommands.strings.len.uint32
       for c in inText:
         renderCommands.strings.add c
       let len = renderCommands.strings.len.uint32 - offset
-      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: arrangementIndex.uint32, underlineColor: inUnderlineColor))
+      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: arrangementIndex.uint32, underlineColor: inUnderlineColor, fontScale: inFontScale))
     template startScissor(inBounds: Rect): untyped {.used.} =
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorStart, bounds: inBounds))
     template endScissor(): untyped {.used.} =
@@ -355,18 +466,6 @@ template buildCommands*(self: var BinaryEncoder, body: untyped) =
       self.write(inColor)
       self.write(inFlags)
       self.write(inText)
-    # template drawText(inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
-    #   let offset = renderCommands.strings.len.uint32
-    #   for c in inText:
-    #     renderCommands.strings.add c
-    #   let len = renderCommands.strings.len.uint32 - offset
-    #   renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: uint32.high))
-    # template drawText(inText: openArray[char], arrangementIndex: int, inBounds: Rect, inColor: Color, inFlags: UINodeFlags, inUnderlineColor: Color): untyped {.used.} =
-    #   let offset = renderCommands.strings.len.uint32
-    #   for c in inText:
-    #     renderCommands.strings.add c
-    #   let len = renderCommands.strings.len.uint32 - offset
-    #   renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: arrangementIndex.uint32, underlineColor: inUnderlineColor))
     template startScissor(inBounds: Rect): untyped {.used.} =
       self.write(RenderCommandKind.ScissorStart.uint8 + 1.uint8)
       self.write(inBounds)

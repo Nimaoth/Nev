@@ -1,7 +1,7 @@
 import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options, tables, sets]
 import fusion/matching
 import chroma, vmath
-import misc/[util, id, custom_unicode, array_set, rect_utils, custom_logger, render_command]
+import misc/[util, id, custom_unicode, array_set, rect_utils, custom_logger, render_command, arena]
 import input, theme
 
 export util, id, input, chroma, vmath, rect_utils
@@ -135,6 +135,8 @@ type
     modifiers: set[Modifier]
 
     maxBounds: seq[Vec2]
+
+    arena*: Arena
 
 proc pushMaxBounds*(self: UINodeBuilder, bounds: Vec2) =
   self.maxBounds.add(bounds)
@@ -300,6 +302,7 @@ proc newNodeBuilder*(): UINodeBuilder =
   var id = UIUserId(kind: None)
   result.root = result.unpoolNode(userId = id)
   result.animatingNodes = @[]
+  result.arena = initArena(8 * 1024 * 1024)
 
 proc currentParent*(builder: UINodeBuilder): UINode = builder.currentParent
 

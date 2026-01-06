@@ -1046,7 +1046,7 @@ declareSettings UiSettings, "ui":
   declare smoothScroll, bool, true
 
   ## How fast smooth scrolling interpolates.
-  declare smoothScrollSpeed, float, 15.0
+  declare smoothScrollSpeed, float, 25.0
 
   ## Percentage of screen height at which the smooth scroll offset will be snapped to the target location.
   ## E.g. if this is 0.5, then if the smooth scroll offset if further from the target scroll offset than 50% of the

@@ -1,7 +1,7 @@
 import std/[options, strutils, atomics, strformat, tables]
 import nimsumtree/[rope, sumtree, buffer, clock, static_array]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
-import syntax_map
+import syntax_map, theme, chroma
 
 var debugOverlayMap* = false
 
@@ -48,6 +48,11 @@ type
     Rope
     # DisplayMap
 
+  OverlayRenderLocation* {.pure.} = enum
+    Inline
+    Below
+    Above
+
   OverlayMapChunk* = object
     id*: int
     src*: Point
@@ -60,6 +65,8 @@ type
     of OverlayMapChunkKind.String:
       text*: string
       scope*: string
+      renderId*: int
+      location*: OverlayRenderLocation
     of OverlayMapChunkKind.Rope:
       r: RopeSlice[Point]
 
@@ -78,7 +85,7 @@ type
 func clone*(self: OverlayMapChunk): OverlayMapChunk =
   case self.kind
   of OverlayMapChunkKind.Empty: OverlayMapChunk(kind: OverlayMapChunkKind.Empty, id: self.id, src: self.src, dst: self.dst, srcBytes: self.srcBytes, dstBytes: self.dstBytes, bias: self.bias)
-  of OverlayMapChunkKind.String: OverlayMapChunk(kind: OverlayMapChunkKind.String, id: self.id, src: self.src, dst: self.dst, srcBytes: self.srcBytes, dstBytes: self.dstBytes, text: self.text, scope: self.scope, bias: self.bias)
+  of OverlayMapChunkKind.String: OverlayMapChunk(kind: OverlayMapChunkKind.String, id: self.id, src: self.src, dst: self.dst, srcBytes: self.srcBytes, dstBytes: self.dstBytes, text: self.text, scope: self.scope, bias: self.bias, renderId: self.renderId, location: self.location)
   of OverlayMapChunkKind.Rope: OverlayMapChunk(kind: OverlayMapChunkKind.Rope, id: self.id, src: self.src, dst: self.dst, srcBytes: self.srcBytes, dstBytes: self.dstBytes, r: self.r.clone(), bias: self.bias)
 
 func summary*(self: OverlayMapChunk): OverlayMapChunkSummary =
@@ -121,6 +128,9 @@ type
   OverlayChunk* = object
     styledChunk*: InputChunk
     overlayPoint*: OverlayPoint
+    localOffset*: int
+    renderId*: int
+    location*: OverlayRenderLocation
 
   OverlayMapChunkCursor* = sumtree.Cursor[OverlayMapChunk, OverlayMapChunkSummary]
 
@@ -149,6 +159,8 @@ type
     stringLine: int
     ropeIter: ChunkIterator
 
+    highlighter: Option[Highlighter]
+
 func clone*(self: OverlayMapSnapshot): OverlayMapSnapshot =
   OverlayMapSnapshot(map: self.map.clone(), buffer: self.buffer.clone(), version: self.version)
 
@@ -176,15 +188,19 @@ proc `$`*(self: OverlayMapSnapshot): string =
         result.add "  '"
         result.add item.text
         result.add "'"
+        if item.renderId != 0:
+          result.add " "
+          result.add $item.renderId
       result.add "\n"
       inc i
 
-proc iter*(overlay {.byref.}: OverlayMapSnapshot): OverlayChunkIterator =
+proc iter*(overlay {.byref.}: OverlayMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none): OverlayChunkIterator =
   # debugEcho &"OverlayMapSnapshot.iter {overlay}"
   result = OverlayChunkIterator(
-    styledChunks: InputChunkIterator.init(overlay.buffer.visibleText),
+    styledChunks: InputChunkIterator.init(overlay.buffer.visibleText, highlighter),
     overlayMap: overlay.clone(),
     overlayMapCursor: overlay.map.initCursor(OverlayMapChunkSummary),
+    highlighter: highlighter,
   )
 
 func point*(self: OverlayChunkIterator): Point = self.styledChunks.point
@@ -196,7 +212,6 @@ func endOverlayPoint*(self: OverlayChunk): OverlayPoint = overlayPoint(self.over
 func len*(self: OverlayChunk): int = self.styledChunk.len
 func `$`*(self: OverlayChunk): string = &"OC({self.overlayPoint}...{self.endOverlayPoint}, {self.styledChunk})"
 template toOpenArray*(self: OverlayChunk): openArray[char] = self.styledChunk.toOpenArray
-template scope*(self: OverlayChunk): string = self.styledChunk.scope
 
 func isNil*(self: OverlayMapSnapshot): bool = self.map.isNil
 
@@ -214,7 +229,7 @@ proc toOverlayBytes*(self: OverlayMapChunkCursor, bytes: int): int =
 
 proc toOverlayPoint*(self: OverlayMapSnapshot, point: Point, bias: Bias = Bias.Right): OverlayPoint =
   var c = self.map.initCursor(OverlayMapChunkSummary)
-  discard c.seek(point.OverlayMapChunkSrc, Bias.Right, ())
+  discard c.seek(point.OverlayMapChunkSrc, bias, ())
   if c.item.getSome(item) and item.src == Point():
     c.next()
 
@@ -222,13 +237,13 @@ proc toOverlayPoint*(self: OverlayMapSnapshot, point: Point, bias: Bias = Bias.R
 
 proc toOverlayRange*(self: OverlayMapSnapshot, range: Range[Point], bias: Bias = Bias.Right): Range[OverlayPoint] =
   var c = self.map.initCursor(OverlayMapChunkSummary)
-  discard c.seek(range.a.OverlayMapChunkSrc, Bias.Right, ())
+  discard c.seek(range.a.OverlayMapChunkSrc, bias, ())
   if c.item.getSome(item) and item.src == Point():
     c.next()
 
   result.a = c.toOverlayPoint(range.a)
   if range.b > c.endPos.src:
-    discard c.seek(range.b.OverlayMapChunkSrc, Bias.Right, ())
+    discard c.seek(range.b.OverlayMapChunkSrc, bias, ())
     if c.item.getSome(item) and item.src == Point():
       c.next()
 
@@ -648,7 +663,7 @@ proc clear*(self: OverlayMap, id: int = -1) =
   let patch = self.snapshot.clear(id)
   self.onUpdated.invoke (self, old, patch)
 
-proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, scope: string = "", bias: Bias = Bias.Left) =
+proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, scope: string = "", bias: Bias = Bias.Left, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) =
   logOverlayMapUpdate &"OverlayMap.add {range}, '{text}', {id}, '{scope}', bias, {self.snapshot.desc}"
 
   template log(msg: untyped) =
@@ -687,7 +702,7 @@ proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, s
         log &"  add start of overlappin chunk {newRange}"
         newMap.add OverlayMapChunk(src: newRange, dst: newRange.OverlayPoint, srcBytes: newByteRange, dstBytes: newByteRange)
 
-  newMap.add OverlayMapChunk(id: id, src: range.len, dst: newSummary.lines.OverlayPoint, srcBytes: byteRange.len, dstBytes: newSummary.bytes, kind: OverlayMapChunkKind.String, text: text, scope: scope, bias: bias)
+  newMap.add OverlayMapChunk(id: id, src: range.len, dst: newSummary.lines.OverlayPoint, srcBytes: byteRange.len, dstBytes: newSummary.bytes, kind: OverlayMapChunkKind.String, text: text, scope: scope, bias: bias, renderId: renderId, location: location)
 
   let overlayRangeOld = self.toOverlayPoint(range.a)...self.toOverlayPoint(range.b)
   let overlayRangeNew = overlayRangeOld.a...(overlayRangeOld.a + newSummary.lines.OverlayPoint)
@@ -862,11 +877,11 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
           point: mappedPoint + point(line, 0),
           external: true,
         ),
-        scope: item.scope,
+        color: if self.highlighter.isSome: self.highlighter.get.theme.tokenColor(item.scope, color(1, 1, 1)) else: color(1, 1, 1),
         drawWhitespace: false,
       )
 
-      let overlayChunk = OverlayChunk(styledChunk: currentChunk, overlayPoint: self.overlayPoint)
+      let overlayChunk = OverlayChunk(styledChunk: currentChunk, overlayPoint: self.overlayPoint, localOffset: offset, renderId: item.renderId, location: item.location)
       logIter &"  overlay chunk {overlayChunk}, endOffset: {endOffset}, len: {item.text.len}"
 
       if endOffset == item.text.len:
@@ -978,14 +993,15 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
 proc split*(self: OverlayChunk, index: int): tuple[prefix: OverlayChunk, suffix: OverlayChunk] =
   let (prefix, suffix) = self.styledChunk.split(index)
   (
-    OverlayChunk(styledChunk: prefix, overlayPoint: self.overlayPoint),
-    OverlayChunk(styledChunk: suffix, overlayPoint: overlayPoint(self.overlayPoint.row, self.overlayPoint.column + index.uint32)),
+    OverlayChunk(styledChunk: prefix, overlayPoint: self.overlayPoint, renderId: self.renderId, location: self.location, localOffset: self.localOffset),
+    OverlayChunk(styledChunk: suffix, overlayPoint: overlayPoint(self.overlayPoint.row, self.overlayPoint.column + index.uint32), renderId: self.renderId, location: self.location, localOffset: self.localOffset + index.int),
   )
 
 proc `[]`*(self: OverlayChunk, r: Range[int]): OverlayChunk =
-  OverlayChunk(styledChunk: self.styledChunk[r], overlayPoint: overlayPoint(self.overlayPoint.row, self.overlayPoint.column + r.a.uint32))
+  OverlayChunk(styledChunk: self.styledChunk[r], overlayPoint: overlayPoint(self.overlayPoint.row, self.overlayPoint.column + r.a.uint32), renderId: self.renderId, location: self.location, localOffset: self.localOffset + r.a.int)
 
 func toOutputPoint*(self: OverlayMapSnapshot, point: Point, bias: Bias): OverlayPoint {.inline.} = self.toOverlayPoint(point, bias)
+proc toOutputBytes*(self: OverlayMapSnapshot, point: OverlayPoint, bias: Bias = Bias.Right): int {.inline.} = self.toOverlayBytes(point, bias)
 func `outputPoint=`*(self: var OverlayChunk, point: OverlayPoint) = self.overlayPoint = point
 template outputPoint*(self: OverlayChunk): OverlayPoint = self.overlayPoint
 template endOutputPoint*(self: OverlayChunk): OverlayPoint = self.endOverlayPoint

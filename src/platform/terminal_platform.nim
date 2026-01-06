@@ -774,7 +774,7 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string, color: chroma.Co
         self.writeLine(pos + vec2(0, yOffset), line, italic)
       yOffset += 1
 
-proc handleCommand(builder: UINodeBuilder, platform: TerminalPlatform, renderCommands: ptr RenderCommands, command: RenderCommand, offset: Vec2) =
+proc handleCommand(builder: UINodeBuilder, platform: TerminalPlatform, renderCommands: ptr RenderCommands, command: RenderCommand, offsets: var seq[Vec2], offset: var Vec2) =
   const cursorFlags = &{CursorBlock, CursorBar, CursorUnderline, CursorBlinking}
   case command.kind
   of RenderCommandKind.Rect:
@@ -806,6 +806,12 @@ proc handleCommand(builder: UINodeBuilder, platform: TerminalPlatform, renderCom
     platform.pushMask(command.bounds + offset)
   of RenderCommandKind.ScissorEnd:
     platform.popMask()
+  of RenderCommandKind.TransformStart:
+    offsets.add offset
+    offset += command.bounds.xy
+  of RenderCommandKind.TransformEnd:
+    if offsets.len > 0:
+      offset = offsets.pop()
 
 proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
   {.gcsafe.}:
@@ -860,16 +866,28 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
     if FlushBorders in node.flags:
       platform.flushBorders()
 
+    var offset = nodePos
+    var offsets: seq[Vec2]
     for list in node.renderCommandList:
+      offsets.setLen(0)
+      offset = nodePos
       for command in list.commands:
-        handleCommand(builder, platform, list[].addr, command, nodePos)
-      for command in list[].decodeRenderCommands:
-        handleCommand(builder, platform, list[].addr, command, nodePos)
+        handleCommand(builder, platform, list[].addr, command, offsets, offset)
 
+      offsets.setLen(0)
+      offset = nodePos
+      for command in list[].decodeRenderCommands:
+        handleCommand(builder, platform, list[].addr, command, offsets, offset)
+
+    offsets.setLen(0)
+    offset = nodePos
     for command in node.renderCommands.commands:
-      handleCommand(builder, platform, node.renderCommands.addr, command, nodePos)
+      handleCommand(builder, platform, node.renderCommands.addr, command, offsets, offset)
+
+    offsets.setLen(0)
+    offset = nodePos
     for command in node.renderCommands.decodeRenderCommands:
-      handleCommand(builder, platform, node.renderCommands.addr, command, nodePos)
+      handleCommand(builder, platform, node.renderCommands.addr, command, offsets, offset)
 
     if DrawBorderTerminal in node.flags:
       platform.drawBorder(bounds, node.borderColor, node.border, node.backgroundColor)

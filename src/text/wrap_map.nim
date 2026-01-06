@@ -127,9 +127,9 @@ func clone*(self: WrapMapSnapshot): WrapMapSnapshot =
 proc new*(_: typedesc[WrapMap]): WrapMap =
   result = WrapMap(snapshot: WrapMapSnapshot(map: SumTree[WrapMapChunk].new([WrapMapChunk()])))
 
-proc iter*(wrapMap: var WrapMapSnapshot): WrapChunkIterator =
+proc iter*(wrapMap: var WrapMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none): WrapChunkIterator =
   result = WrapChunkIterator(
-    inputChunks: wrapMap.input.iter(),
+    inputChunks: wrapMap.input.iter(highlighter),
     wrapMap: wrapMap.clone(),
     wrapMapCursor: wrapMap.map.initCursor(WrapMapChunkSummary),
   )
@@ -192,7 +192,7 @@ proc toWrapPointNoClamp*(self: WrapMapChunkCursor, point: InputPoint): WrapPoint
 
 proc toWrapPoint*(self: WrapMapSnapshot, point: InputPoint, bias: Bias = Bias.Right): WrapPoint =
   var c = self.map.initCursor(WrapMapChunkSummary)
-  discard c.seek(point.WrapMapChunkSrc, Bias.Right, ())
+  discard c.seek(point.WrapMapChunkSrc, bias, ())
   if c.item.getSome(item) and item.src == inputPoint():
     c.next()
 
@@ -209,9 +209,9 @@ proc toInputPoint*(self: WrapMapChunkCursor, point: WrapPoint): InputPoint =
   let offset = point - self.startPos.dst
   return self.startPos.src + offset.toInputPoint
 
-proc toInputPoint*(self: WrapMapSnapshot, point: WrapPoint, bias: Bias = Bias.Right): InputPoint =
+proc toInputPoint*(self: WrapMapSnapshot, point: WrapPoint, bias: Bias = Bias.Left): InputPoint =
   var c = self.map.initCursor(WrapMapChunkSummary)
-  discard c.seek(point.WrapMapChunkDst, Bias.Left, ())
+  discard c.seek(point.WrapMapChunkDst, bias, ())
   if c.item.getSome(item) and item.src == inputPoint():
     c.next()
 
@@ -219,18 +219,6 @@ proc toInputPoint*(self: WrapMapSnapshot, point: WrapPoint, bias: Bias = Bias.Ri
 
 proc toInputPoint*(self: WrapMap, point: WrapPoint, bias: Bias = Bias.Right): InputPoint =
   self.snapshot.toInputPoint(point, bias)
-
-proc setInput*(self: WrapMap, input: sink InputMapSnapshot) =
-  # logMapUpdate &"WrapMap.setInput {self.snapshot.desc} -> {input.desc}"
-  if self.snapshot.buffer.remoteId == input.buffer.remoteId and self.snapshot.buffer.version == input.buffer.version and self.snapshot.input.version == input.version:
-    return
-
-  let endPoint = input.endOutputPoint
-  self.snapshot = WrapMapSnapshot(
-    map: SumTree[WrapMapChunk].new([WrapMapChunk(src: endPoint, dst: endPoint.WrapPoint)]),
-    input: input.ensureMove,
-  )
-  self.pendingEdits.setLen(0)
 
 proc validate*(self: WrapMapSnapshot) =
   var c = self.map.initCursor(WrapMapChunkSummary)
@@ -470,7 +458,9 @@ proc update*(self: var WrapMapSnapshot, input: sink InputMapSnapshot, wrapWidth:
 
       else:
         assert chunk.outputPoint.column.int < nextWrapColumn
-        let (prefix, suffix) = chunk.split(nextWrapColumn - chunk.outputPoint.column.int)
+        let fontScale = chunk.inputChunk.styledChunk.fontScale
+        let splitIndex = ((nextWrapColumn - chunk.outputPoint.column.int).float / fontScale).int
+        let (prefix, suffix) = chunk.split(splitIndex)
         currentRange.b.column += prefix.len.uint32
         currentDisplayRange.b.column += prefix.len.uint32
 
@@ -581,6 +571,20 @@ proc clear*(self: WrapMap) =
   let oldSnapshot = self.snapshot.clone()
   self.snapshot.clear()
   self.onUpdated.invoke((self, oldSnapshot))
+
+proc setInput*(self: WrapMap, input: sink InputMapSnapshot) =
+  # logMapUpdate &"WrapMap.setInput {self.snapshot.desc} -> {input.desc}"
+  if self.snapshot.buffer.remoteId == input.buffer.remoteId and self.snapshot.buffer.version == input.buffer.version and self.snapshot.input.version == input.version:
+    return
+
+  let endPoint = input.endOutputPoint
+  self.snapshot = WrapMapSnapshot(
+    map: SumTree[WrapMapChunk].new([WrapMapChunk(src: endPoint, dst: endPoint.WrapPoint)]),
+    input: input.ensureMove,
+  )
+  self.pendingEdits.setLen(0)
+  if self.wrapWidth != 0:
+    asyncSpawn self.updateAsync()
 
 proc update*(self: WrapMap, wrapWidth: int, force: bool = false) =
   if not force and self.wrapWidth == wrapWidth:
