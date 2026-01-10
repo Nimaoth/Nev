@@ -53,7 +53,6 @@ type
   Highlighter* = object
     query*: TSQuery
     tree*: TsTree
-    theme*: Theme
 
   Highlight = tuple[range: Range[Point], color: Color, fontStyle: set[FontStyle], fontScale: float, priority: int]
 
@@ -68,6 +67,7 @@ type
     localOffset: int
     atEnd: bool
     highlighter*: Option[Highlighter]
+    theme*: Theme
     highlights: seq[Highlight]
     highlightsIndex: int = -1
     diagnosticEndPoints*: seq[DiagnosticEndPoint]
@@ -383,12 +383,13 @@ proc next*(self: var ChunkIterator2): Option[RopeChunk] =
 
   return chunk.some
 
-proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, highlighter: Option[Highlighter] = Highlighter.none): StyledChunkIterator =
+proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): StyledChunkIterator =
   result.chunks = ChunkIterator2.init(rope.clone())
   result.defaultColor = color(1, 1, 1)
   result.highlighter = highlighter
-  if result.highlighter.isSome:
-    result.defaultColor = result.highlighter.get.theme.color("editor.foreground", color(1, 1, 1))
+  result.theme = theme
+  if theme != nil:
+    result.defaultColor = theme.color("editor.foreground", color(1, 1, 1))
 
 func point*(self: StyledChunkIterator): Point = self.chunks.state.nextPoint
 func point*(self: StyledChunk): Point = self.chunk.point
@@ -567,9 +568,9 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
             nodeRangeClamped.b.row = currentChunk.point.row
             nodeRangeClamped.b.column = uint32.high
 
-          let color = self.highlighter.get.theme.tokenColor(capture.name, self.defaultColor)
-          let fontStyle = self.highlighter.get.theme.tokenFontStyle(capture.name)
-          let fontScale = self.highlighter.get.theme.tokenFontScale(capture.name)
+          let color = self.theme.tokenColor(capture.name, self.defaultColor)
+          let fontStyle = self.theme.tokenFontStyle(capture.name)
+          let fontScale = self.theme.tokenFontScale(capture.name)
           var nextHighlight: Highlight = (nodeRangeClamped, color, fontStyle, fontScale, match.pattern)
           if self.highlights.len > 0 and nextHighlight.range.a < self.highlights[^1].range.a:
             requiresSort = true

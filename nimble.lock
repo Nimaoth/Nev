@@ -150,7 +150,7 @@
     },
     "boxy": {
       "version": "0.4.4",
-      "vcsRevision": "bfc8665443fe9af264eaa80769a6699679f5f273",
+      "vcsRevision": "cb4ab84eafae04e19890b6ec4535bc28c4e2905f",
       "url": "https://github.com/Nimaoth/boxy",
       "downloadMethod": "git",
       "dependencies": [
@@ -160,7 +160,7 @@
         "bitty"
       ],
       "checksums": {
-        "sha1": "81becde73d830307dd6dc5a77967e9b1ebe8953a"
+        "sha1": "673e7e89cdf6ec3cf91f92e4b8d7943fd29dc0bd"
       }
     },
     "results": {
@@ -364,12 +364,12 @@
     },
     "treesitter": {
       "version": "0.1.21",
-      "vcsRevision": "cd29e9ba901909e55131a2deb793fd5493af2b72",
+      "vcsRevision": "893dd7103a86b30de7951185c047068b9d2f3347",
       "url": "https://github.com/Nimaoth/nimtreesitter-api",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "bbd7bf3e90a390cca7212453b6c06aa4fed553a0"
+        "sha1": "f600e210b6ee6b728af8b1b31bbcb0d25d9411d0"
       }
     },
     "urlly": {

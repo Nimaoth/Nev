@@ -47,7 +47,8 @@ proc alloc*(arena: var Arena, size: int, alignment: int): pointer =
   let alignedAddress = align(address.int, alignment.int).uint64
   # echo &"mem_stack_alloc {size}, {alignment} -> {address} -> {alignedAddress} ({bucket[].len})"
 
-  bucket[].len += (alignedAddress - address).int + size.int
+  bucket.len += (alignedAddress - address).int + size.int
+  assert bucket.len <= bucket.capacity
   return cast[pointer](alignedAddress)
 
 proc allocEmptyArray*(arena: var Arena, num: int, T: typedesc): ArrayView[T] =
@@ -55,6 +56,12 @@ proc allocEmptyArray*(arena: var Arena, num: int, T: typedesc): ArrayView[T] =
     return ArrayView[T].default
   let data = cast[ptr UncheckedArray[T]](arena.alloc(num * sizeof(T), alignof(T)))
   return initArrayView(data, len = 0, capacity = num)
+
+proc allocArray*(arena: var Arena, num: int, T: typedesc): ArrayView[T] =
+  if num == 0:
+    return ArrayView[T].default
+  let data = cast[ptr UncheckedArray[T]](arena.alloc(num * sizeof(T), alignof(T)))
+  return initArrayView(data, len = num, capacity = num)
 
 proc realloc*(arena: var Arena, address: pointer, oldSize: int, size: int, alignment: int): pointer =
   ## Allocate memory on top of the stack.
@@ -137,3 +144,4 @@ proc restoreCheckpoint*(arena: var Arena, p: uint64) =
   # echo &"mem_stack_restore {oldBucketsLen}, {oldLen} -> {bucketsLen}, {len}"
   if arena.buckets.len > 0:
     arena.buckets[arena.buckets.high].len = len
+    assert arena.buckets[arena.buckets.high].len <= arena.buckets[arena.buckets.high].capacity

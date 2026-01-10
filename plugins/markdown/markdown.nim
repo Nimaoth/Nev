@@ -1,110 +1,100 @@
-import std/[strformat, json, jsonutils, strutils, options, random, math, sequtils, sugar, streams, tables]
+import std/[os, strformat, json, jsonutils, strutils, options, random, math, sequtils, sugar, streams, tables, sets]
 import pixie, chroma
 import results
-import util, render_command, binary_encoder
+import util, render_command, binary_encoder, arena
 import api
-import clay
+import regex
+import gif
 
-import "../../src/scroll_box.nim"
-type ScrollView = ScrollBox
+type
+  RequestKind = enum ScanFile, UpdateRemaps, ClearImageCache, ActiveGifs
+  Request = object
+    case kind: RequestKind
+    of ScanFile:
+      editor: TextEditor
+      path: string
+      ropePath: string
+    of UpdateRemaps:
+      remaps: seq[tuple[src: string, dst: string]]
+    of ClearImageCache:
+      discard
+    of ActiveGifs:
+      textures: seq[TextureId]
 
-var views: seq[RenderView] = @[]
-var renderCommandEncoder: BinaryEncoder
-var num = 1
+  ResponseKind = enum UpdateImages
+  Response = object
+    case kind: ResponseKind
+    of UpdateImages:
+      editor: TextEditor
+      path: string
+      images: seq[ImageOverlay]
+
+  ImageOverlay = object
+    range: Selection
+    texture: LoadedTexture
+
+  LoadedTexture = object
+    texture: TextureId
+    width: int
+    height: int
+    frames: seq[string]
+    animated: bool
+
+  GifState = ref object
+    lastTime: float
+    data: string
+    texture: LoadedTexture
+    iter: iterator(state: GifState): tuple[image: Image, timestamp: float] {.closure.}
+
+  BackgroundState = object
+    remaps: seq[tuple[src: string, dst: string]]
+    loadedTextures: Table[string, LoadedTexture]
+    imageScale: float = 1
+    arena: Arena
+    gifStates: Table[TextureId, GifState]
+    activeGifs: seq[TextureId]
+
+  OverlayInstance = object
+    editor: TextEditor
+    location: OverlayRenderLocation
+    textureId: TextureId
+    width: float
+    height: float
+    len: int
+    frames: seq[SharedBuffer]
+    animated: bool
+    frameIndex: int
+    frameTime: float
+    lastTime: float
+
+var bgState = BackgroundState(arena: initArena(25 * 1024 * 1024))
+      # var normalizedPath = path.replace("https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/", "C:/NevScreenshots/")
 
 converter toWitString(s: string): WitString = ws(s)
-var target = 50
-
-proc measureClayText(text: ClayStringSlice; config: ptr ClayTextElementConfig; userData: pointer): ClayDimensions {.cdecl.} =
-  return ClayDimensions(width: text.length.float * 10, height: 20)
-
-let totalMemorySize = clay.minMemorySize()
-var memory = ClayArena(capacity: totalMemorySize, memory: cast[ptr UncheckedArray[uint8]](allocShared0(totalMemorySize)))
-var clayErrorHandler = ClayErrorHandler(
-  errorHandlerFunction: proc (error: ClayErrorData) =
-    log lvlError, &"[clay] {error.errorType}: {error.errorText}"
-)
-var clayContext* = clay.initialize(memory, ClayDimensions(width: 1024, height: 768), clayErrorHandler)
-clay.setMeasureTextFunction(measureClayText, nil)
-clay.setDebugModeEnabled(true)
-
-proc toggleClayDebugMode() =
-  clay.setDebugModeEnabled(not clay.isDebugModeEnabled())
-
-converter toRect(c: ClayBoundingBox): bumpy.Rect =
-  rect(c.x, c.y, c.width, c.height)
-
-converter toColor(c: Color): ClayColor =
-  clayColor(c.r / 255, c.g / 255, c.b / 255, c.a / 255)
-
-converter toColor(c: ClayColor): Color =
-  color(c.r / 255, c.g / 255, c.b / 255, c.a / 255)
-
-converter toClayVec(c: Vec2f): ClayVector2 =
-  ClayVector2(x: c.x, y: c.y)
-
-converter toClayVec(c: Vec2): ClayVector2 =
-  ClayVector2(x: c.x, y: c.y)
 
 converter toVec(c: Vec2f): Vec2 =
   vec2(c.x, c.y)
 
-proc encodeClayRenderCommands(renderCommandEncoder: var BinaryEncoder, clayRenderCommands: ClayRenderCommandArray) =
-  buildCommands(renderCommandEncoder):
-    for c in clayRenderCommands:
-      case c.commandType
-      of None:
-        discard
-      of Rectangle:
-        let color = c.renderData.rectangle.backgroundColor.toColor
-        let bounds = c.boundingBox.toRect
-        fillRect(bounds, color)
-      of Border:
-        let color = c.renderData.border.color.toColor
-        let bounds = c.boundingBox.toRect
-        # let width = c.renderData.border.width
-        # todo: width > 1
-        drawRect(bounds, color)
-      of Text:
-        let color = c.renderData.text.textColor.toColor
-        let bounds = c.boundingBox.toRect
-        drawText(c.renderData.text.stringContents.toOpenArray(), bounds, color, 0.UINodeFlags)
-      of Image:
-        log lvlError, &"Not implemented: {c.commandType}"
-      of ScissorStart:
-        startScissor(c.boundingBox.toRect)
-      of ScissorEnd:
-        endScissor()
-      of Custom:
-        log lvlError, &"Not implemented: {c.commandType}"
-
-var lastTime = 0.0
-var lastRenderTime = 0.0
-var lastRenderTimeStr = ""
-var scrollView = ScrollBox()
-
-var blocks: seq[tuple[height: float, color: Color]] = @[]
-for i in 0..<100000:
-  if rand(0.0..1.0) < 0.1:
-    blocks.add (rand(900.0..2000.0).floor, color(rand(1.0), rand(1.0), rand(1.0)))
-  else:
-    blocks.add (rand(25.0..200.0).floor, color(rand(1.0), rand(1.0), rand(1.0)))
+proc sendRequest(request: Request) {.raises: [].}
 
 var renderBuffer = BinaryEncoder()
-var selected = 0
-var sizeOffset = 0.0
-var textEditor: TextEditor
-var overlays: Table[int64, tuple[location: OverlayRenderLocation, textureId: TextureId, width: float, height: float, len: int]]
-proc customOverlayRender(id: int64, overlaySize: Vec2f, localOffset: int): (pointer, int) {.cdecl.} =
-  # echo &"customOverlayRender {id}, {overlaySize}, {localOffset}"
+var overlays: Table[int64, OverlayInstance]
+var lastRenderedOverlays = initHashSet[int64]()
+var currentRenderedOverlays = initHashSet[int64]()
+proc drawOverlayImage(id: int64, overlaySize: Vec2f, localOffset: int): (pointer, int) {.cdecl, raises: [].} =
   renderBuffer.reset()
+  currentRenderedOverlays.incl(id)
 
   if id in overlays:
-    let overlay = overlays[id]
+    let overlay = overlays[id].addr
     let textureId = overlay.textureId
     let aspectRatio = overlay.width / overlay.height
 
-    var imageWidth = max(overlaySize.x + sizeOffset, 1)
+    let now = getTime()
+    let dt = now - overlay.lastTime
+    overlay.lastTime = now
+
+    var imageWidth = max(overlaySize.x * bgState.imageScale, 1)
     var imageOffsetY = 0.0
 
     if overlay.location == Inline:
@@ -119,6 +109,18 @@ proc customOverlayRender(id: int64, overlaySize: Vec2f, localOffset: int): (poin
     renderBuffer.write(resultSize.y.float32) # height
     renderBuffer.drawImage(r, textureId)
     renderBuffer.drawRect(r, color(1, 1, 1))
+
+    if overlay.frames.len > 0:
+      overlay.frameTime += dt
+      if overlay.frameTime > 50:
+        overlay.frameTime = 0
+        inc overlay.frameIndex
+        if overlay.frameIndex >= overlay.frames.len:
+          overlay.frameIndex = 0
+
+        # updateTextureBuffer(textureId.uint64, overlay.width.int, overlay.height.int, overlay.frames[overlay.frameIndex], 0, Rgba8)
+    if overlay.animated:
+      discard overlay.editor.command(ws"rerender", ws"")
   else:
     let r = rect(vec2(0), overlaySize)
     renderBuffer.write(overlaySize.x.float32) # width
@@ -133,89 +135,116 @@ proc getArg(args: JsonNode, index: int, T: typedesc): T =
     return args.elems[index].jsonTo(T)
   return T.default
 
-proc createTextureForFile(path: string): tuple[id: TextureId, width: float, height: float] =
-  var res = readSync(path, {Binary})
+proc remapPath(bgState: BackgroundState, path: string): string =
+  for r in bgState.remaps:
+    if path.startsWith(r.src):
+      var subPath = path
+      subPath.removePrefix(r.src)
+      return r.dst & subPath
+
+  return path
+
+iterator gifFrames(state: GifState): tuple[image: Image, timestamp: float] {.closure.} =
+  try:
+    var firstFrame: tuple[image: Image, timestamp: float]
+    for frame in decodeGif(state.data, loop = true):
+      yield frame
+  except CatchableError:
+    discard
+
+proc tickGifs(state: BackgroundState) {.raises: [].} =
+  let t = getTime() * 0.001
+  for gifTex in state.activeGifs:
+    let gif = state.gifStates.getOrDefault(gifTex, nil)
+    if gif == nil:
+      continue
+
+    try:
+      let dt = t - gif.lastTime
+      if t > gif.lastTime:
+        let (frame, timestamp) = gif.iter(gif)
+        if finished(gif.iter):
+          gif.iter = gifFrames
+          continue
+        gif.lastTime = t + timestamp
+        if frame == nil or frame.data.len == 0:
+          continue
+        updateTexture(gif.texture.texture.uint64, gif.texture.width.int32, gif.texture.height.int32, cast[uint32](frame.data[0].addr), Rgba8)
+    except:
+      discard
+
+proc createTextureForFile(path: string): LoadedTexture =
+  let s = stackSave()
+  defer:
+    stackRestore(s)
+
+  let s2 = bgState.arena.checkpoint()
+  defer:
+    bgState.arena.restoreCheckpoint(s2)
+
+  if path in bgState.loadedTextures:
+    return bgState.loadedTextures[path]
+
+  let remappedPath = bgState.remapPath(path)
+  var res = readSync(remappedPath, {Binary})
   if res.isOk:
-    var image = decodeImage($res.get)
-    var data: seq[chroma.Color]
-    data.setLen(image.data.len)
-    for i in 0..image.data.high:
-      data[i] = image.data[i].color()
-    let id = createTexture(image.width.int32, image.height.int32, cast[uint32](data[0].addr), Rgba32)
-    return (id.TextureId, image.width.float, image.height.float)
+    try:
+      if path.endsWith(".gif"):
+        # Create texture for first frame
+        for (frame, timestamp) in decodeGif(res.get.toOpenArray()):
+          let id = createTexture(frame.width.int32, frame.height.int32, cast[uint32](frame.data[0].addr), Rgba8, true)
+          result = LoadedTexture(texture: id.TextureId, width: frame.width, height: frame.height, animated: true)
+          break
+
+        bgState.gifStates[result.texture] = GifState(iter: gifFrames, data: $res.get, texture: result, lastTime: getTime() * 0.001)
+        bgState.loadedTextures[path] = result
+      else:
+        let image = decodeImage($res.get)
+        let id = createTexture(image.width.int32, image.height.int32, cast[uint32](image.data[0].addr), Rgba8, false)
+        result = LoadedTexture(texture: id.TextureId, width: image.width, height: image.height)
+        bgState.loadedTextures[path] = result
+    except CatchableError as e:
+      log lvlError, &"Failed to decode image: {e.msg}\n{e.getStackTrace()}"
+      return
   else:
-    log lvlError, &"Failed to read image: {res.error}"
+    log lvlError, &"Failed to read image '{path}' (mapped to '{remappedPath}'): {res.error}"
+    result = LoadedTexture()
+    bgState.loadedTextures[path] = result
     return
 
-defineCommand(ws"md-images",
-  active = false,
-  docs = ws"Decrease the size of the square",
-  params = wl[(WitString, WitString)](nil, 0),
-  returnType = ws"",
-  context = ws"",
-  data = 123):
-  proc(data: uint32, argsJson: WitString): WitString {.cdecl.} =
-    try:
-      var args = newJArray()
-      for a in newStringStream($argsJson).parseJsonFragments():
-        args.add a
+proc toCursor(content: string, index: int): Cursor =
+  result.line = 0
+  result.column = index.int32
+  for l in content.splitLines:
+    if result.column > l.len:
+      result.column -= l.len
+      result.line += 1
+    else:
+      break
 
-      let location = args.getArg(0, OverlayRenderLocation)
-      if activeTextEditor({}).getSome(editor):
-        editor.clearOverlays(5)
-        textEditor = editor
-        let regex = "\\[.*?\\]\\(.*?\\)"
-        let content = textEditor.content
-        let imageRanges = content.findAll(regex)
-        for r in imageRanges:
-          let text = $content.sliceSelection(r, false).text()
-          let start = text.find("(")
-          if start != -1:
-            let file = text[(start + 1)..^2]
-            if not file.endsWith("png"):
-              continue
+proc toSelection(content: string, index: Slice[int]): Selection =
+  return Selection(first: content.toCursor(index.a), last: content.toCursor(index.b + 1))
 
-            log lvlInfo, &"{r} -> {file}"
-            let (texture, width, height) = createTextureForFile(file)
-            if texture == 0.TextureId:
-              continue
-            let id = editor.addCustomRender(customOverlayRender)
-            overlays[id] = (location, texture, width, height, r.last.column.int - r.first.column.int)
-            editor.addOverlay(Selection(first: r.first, last: r.first), "*", 5, "comment", Bias.Right, id, location )
-    except CatchableError as e:
-      log lvlError, &"[guest] err: {e.msg}"
-    return ws""
-
-type ImageOverlay = object
-  range: Selection
-  texture: TextureId
-  width: float
-  height: float
-
-proc findImagesInFile(content: Rope): seq[ImageOverlay] =
+iterator findImagesInFile(content: Rope): ImageOverlay =
   let regex = "\\[.*?\\]\\(.*?\\)"
   let imageRanges = content.findAll(regex)
-  echo &"findImagesInFile {imageRanges}"
   for r in imageRanges:
     let text = $content.sliceSelection(r, false).text()
     let start = text.find("(")
     if start != -1:
       let file = text[(start + 1)..^2]
-      if not file.endsWith("png"):
+      let ext = file.splitFile.ext
+      case ext
+      of ".png", ".jpeg", ".gif", ".bpm", ".qoi", ".ppm":
+        discard
+      else:
         continue
 
-      echo &"{r} -> {file}"
-      let (texture, width, height) = createTextureForFile(file)
-      if texture == 0.TextureId:
+      let tex = createTextureForFile(file)
+      if tex.texture == 0.TextureId:
         continue
 
-      result.add ImageOverlay(range: r, texture: texture, width: width, height: height)
-
-proc readMemoryChannel(chan: ref tuple[open: bool, write: WriteChannel, read: BufferedReadChannel]) {.async.} =
-  while not chan.read.atEnd:
-    let s = await chan.read.readLine()
-    echo "\n'" & s & "'"
-  echo "============= done"
+      yield ImageOverlay(range: r, texture: tex)
 
 var task: BackgroundTask = nil
 
@@ -237,107 +266,219 @@ proc fromJsonHook*(id: var TextureId, json: JsonNode) =
   else:
     id = 0.TextureId
 
-type
-  RequestKind = enum ScanFile
-  Request = object
-    case kind: RequestKind
-    of ScanFile:
-      editor: TextEditor
-      path: string
-      ropePath: string
+var sharedBuffers: Table[string, SharedBuffer]
 
-  ResponseKind = enum UpdateImages
-  Response = object
-    case kind: ResponseKind
-    of UpdateImages:
-      editor: TextEditor
-      images: seq[ImageOverlay]
+proc handleResponse(response: Response) =
+  # log lvlDebug, &"{response}"
+  case response.kind
+  of UpdateImages:
+    let currentPath = $response.editor.getDocument().mapIt(it.path()).get("")
+    if currentPath != response.path:
+      return
+    response.editor.clearOverlays(5)
+    for overlay in response.images:
+      let id = response.editor.addCustomRender(drawOverlayImage)
+      let r = overlay.range
+      response.editor.addOverlay(Selection(first: r.first, last: r.first), "*", 5, "comment", Bias.Right, id, Inline)
+
+      var frames: seq[SharedBuffer] = @[]
+      for f in overlay.texture.frames:
+        if f in sharedBuffers:
+          frames.add sharedBuffers[f].cloneRef()
+        else:
+          var buf = sharedBufferOpen(f.ws)
+          if buf.isSome:
+            sharedBuffers[f] = buf.get.cloneRef()
+            frames.add SharedBuffer()
+            swap(frames[^1], buf.get)
+      overlays[id] = OverlayInstance(
+        editor: response.editor,
+        location: Inline,
+        textureId: overlay.texture.texture,
+        width: overlay.texture.width.float,
+        height: overlay.texture.height.float,
+        len: r.last.column.int - r.first.column.int,
+        frames: frames.ensureMove,
+        animated: overlay.texture.animated,
+      )
+
+var responseCache = initTable[string, Response]()
 
 proc readThreadChannel(task: BackgroundTask) {.async.} =
   while not task.reader.atEnd:
     try:
       let line = await task.reader.readLine()
       let response = line.parseJson().jsonTo(Response)
-      log lvlInfo, &"handleResponse {response}"
-      case response.kind
-      of UpdateImages:
-        response.editor.clearOverlays(5)
-        for overlay in response.images:
-          let id = response.editor.addCustomRender(customOverlayRender)
-          let r = overlay.range
-          overlays[id] = (Below, overlay.texture, overlay.width, overlay.height, r.last.column.int - r.first.column.int)
-          log lvlInfo, &"Add image overlay {overlay} with id {id}"
-          response.editor.addOverlay(Selection(first: r.first, last: r.first), "*", 5, "comment", Bias.Right, id, Below)
+      handleResponse(response)
+      # responseCache[response.path] = response
     except CatchableError as e:
       log lvlError, &"Failed to add image overlays: {e.msg}"
-  log lvlError, "[readThreadChannel] done"
 
 proc sendRequest(request: Request) =
   {.gcsafe.}:
     let str = $request.toJson() & "\n"
-    echo &"sendRequest {request}"
     task.writer.writeString(str.ws)
 
 proc sendResponse(task: BackgroundTask, response: Response) =
   {.gcsafe.}:
     let str = $response.toJson() & "\n"
-    echo &"sendResponse {response}"
     task.writer.writeString(str.ws)
 
-proc init() =
-  if isMainThread():
-    listenEvent "editor/*/loaded", proc(data: uint32, event: WitString, payload: WitString) {.cdecl, gcsafe, raises: [].} =
-      try:
-        let editor = TextEditor(id: ($payload).parseBiggestUint())
-        let path = $editor.getDocument().mapIt(it.path()).get("")
-        if path.endsWith(".md"):
-          echo &"loaded {path}"
-          let ropePath = editor.content().ropeMount(path.ws, true)
-          sendRequest(Request(kind: ScanFile, editor: editor, path: path, ropePath: $ropePath))
-      except CatchableError:
-        discard
+proc scanFile(editor: TextEditor) =
+  let path = $editor.getDocument().mapIt(it.path()).get("")
+  {.gcsafe.}:
+    if path in responseCache:
+      handleResponse(responseCache[path])
+      return
+  if path.endsWith(".md"):
+    let ropePath = editor.content().ropeMount(path.ws, true)
+    sendRequest(Request(kind: ScanFile, editor: editor, path: path, ropePath: $ropePath))
 
-    listenEvent "editor/*/saved", proc(data: uint32, event: WitString, payload: WitString) {.cdecl, gcsafe, raises: [].} =
-      try:
-        let editor = TextEditor(id: ($payload).parseBiggestUint())
-        let path = $editor.getDocument().mapIt(it.path()).get("")
-        if path.endsWith(".md"):
-          echo &"saved {path}"
-          let ropePath = editor.content().ropeMount(path.ws, true)
-          sendRequest(Request(kind: ScanFile, editor: editor, path: path, ropePath: $ropePath))
-      except CatchableError:
-        discard
+proc updateRemaps() =
+  let remaps = getSetting("plugin.markdown.path-remaps", seq[seq[string]])
+  var request = Request(kind: UpdateRemaps)
+  for r in remaps:
+    if r.len == 2:
+      request.remaps.add (r[0], r[1])
+    else:
+      log lvlError, &"Invalid markdown image path remap, expected array of two strings (src and dst), got {r}"
+  sendRequest(request)
 
-    task = runInBackground Thread:
-      proc(task: BackgroundTask) {.nimcall, async.} =
-        while not task.reader.atEnd:
-          try:
-            let line = await task.reader.readLine()
-            let request = line.parseJson().jsonTo(Request)
-            echo &"handleRequest {request}"
-            case request.kind
-            of ScanFile:
-              var rope = ropeOpen(request.ropePath.ws)
-              if rope.isSome:
-                echo &"got rope {request.ropePath.ws}"
-                let images = findImagesInFile(rope.get)
-                task.sendResponse(Response(kind: UpdateImages, editor: request.editor, images: images))
+if isMainThread():
+  proc saveState() =
+    setSessionData("imageScale", bgState.imageScale)
 
-          except CatchableError as e:
-            echo e.msg
+  proc loadState() =
+    bgState.imageScale = getSessionData("imageScale", float)
+    bgState.imageScale = clamp(bgState.imageScale, 0.001, 10000)
 
-        task.writer.close()
-        finishBackground()
+  listenEvent "session/save", proc(data: uint32, event: WitString, payload: WitString) {.cdecl, gcsafe, raises: [].} =
+    saveState()
 
-    discard task.readThreadChannel()
+  listenEvent "session/restored", proc(data: uint32, event: WitString, payload: WitString) {.cdecl, gcsafe, raises: [].} =
+    loadState()
 
-    # for editor in allTextEditors():
-    #   let path = $editor.getDocument().mapIt(it.path()).get("")
-    #   if path.endsWith(".md"):
-    #     let ropePath = editor.content().ropeMount(path.ws, true)
-    #     sendRequest(Request(kind: ScanFile, path: path, ropePath: $ropePath))
-  else:
-    discard defaultThreadHandler()
+  listenEvent "platform/prerender", proc(data: uint32, event: WitString, payload: WitString) {.cdecl, gcsafe, raises: [].} =
+    if lastRenderedOverlays != currentRenderedOverlays:
+      let textures = collect:
+        for id in currentRenderedOverlays:
+          if id in overlays:
+            overlays[id].textureId
+      sendRequest(Request(kind: ActiveGifs, textures: textures))
+    lastRenderedOverlays = currentRenderedOverlays
+    currentRenderedOverlays.clear()
 
+  setPluginSaveCallback(proc(): string =
+    saveState()
+    return ""
+  )
 
-init()
+  listenEvent "editor/*/loaded", proc(data: uint32, event: WitString, payload: WitString) {.cdecl, gcsafe, raises: [].} =
+    try:
+      let editor = TextEditor(id: ($payload).parseBiggestUint())
+      scanFile(editor)
+    except CatchableError:
+      discard
+
+  listenEvent "editor/*/saved", proc(data: uint32, event: WitString, payload: WitString) {.cdecl, gcsafe, raises: [].} =
+    try:
+      let editor = TextEditor(id: ($payload).parseBiggestUint())
+      scanFile(editor)
+    except CatchableError:
+      discard
+
+  loadState()
+
+  proc threadTickGifs() {.async.} =
+    while true:
+      await sleepAsync(10)
+      bgState.tickGifs()
+
+  task = runInBackground Thread:
+    proc(task: BackgroundTask) {.nimcall, async.} =
+      discard threadTickGifs()
+      while not task.reader.atEnd:
+        try:
+          let line = await task.reader.readLine()
+          let request = line.parseJson().jsonTo(Request)
+          case request.kind
+          of ScanFile:
+            var rope = ropeOpen(request.ropePath.ws)
+            if rope.isSome:
+              var images: seq[ImageOverlay] = @[]
+              for image in findImagesInFile(rope.get):
+                images.add(image)
+                task.sendResponse(Response(kind: UpdateImages, editor: request.editor, path: request.path, images: images))
+          of UpdateRemaps:
+            bgState.remaps = request.remaps
+          of ClearImageCache:
+            # todo: delete textures
+            for tex in bgState.loadedTextures.values:
+              deleteTexture(tex.texture.uint64)
+            bgState.loadedTextures.clear()
+          of ActiveGifs:
+            bgState.activeGifs = request.textures
+
+        except CatchableError as e:
+          log lvlError, e.msg
+
+      task.writer.close()
+      finishBackground()
+
+  discard task.readThreadChannel()
+
+  updateRemaps()
+
+  for editor in allTextEditors():
+    scanFile(editor)
+else:
+  discard defaultThreadHandler()
+
+defineCommand(ws"change-image-scale",
+  active = false,
+  docs = ws"Change size of images",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    try:
+      let s = ($args).parseJson.jsonTo(float)
+      bgState.imageScale *= s
+      bgState.imageScale = clamp(bgState.imageScale, 0.001, 10000)
+      for editor in allTextEditors():
+        discard editor.command(ws"rerender", ws"")
+    except CatchableError as e:
+      log lvlError, &"[guest] err: {e.msg}"
+    return ws""
+
+defineCommand(ws"set-image-scale",
+  active = false,
+  docs = ws"Change size of images",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    try:
+      let s = ($args).parseJson.jsonTo(float)
+      bgState.imageScale = clamp(s, 0.001, 10000)
+      for editor in allTextEditors():
+        discard editor.command(ws"rerender", ws"")
+    except CatchableError as e:
+      log lvlError, &"[guest] err: {e.msg}"
+    return ws""
+
+defineCommand(ws"clear-image-cache",
+  active = false,
+  docs = ws"Change size of images",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    try:
+      sendRequest(Request(kind: ClearImageCache))
+    except CatchableError as e:
+      log lvlError, &"[guest] err: {e.msg}"
+    return ws""

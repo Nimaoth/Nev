@@ -20,7 +20,7 @@ type
   RenderView* = object
     handle*: int32
   TextureFormat* = enum
-    Rgba32 = "rgba32"
+    Rgba8 = "rgba8", Rgba32 = "rgba32"
 proc renderRenderViewDrop(a: int32): void {.
     wasmimport("[resource-drop]render-view", "nev:plugins/render").}
 proc `=copy`*(a: var RenderView; b: RenderView) {.error.}
@@ -313,21 +313,85 @@ proc removeMode*(self: RenderView; mode: WitString): void {.nodestroy.} =
   arg2 = cast[int32](mode.len)
   renderRemoveModeImported(arg0, arg1, arg2)
 
-proc renderCreateTextureImported(a0: int32; a1: int32; a2: uint32; a3: int8): uint64 {.
+proc renderCreateTextureImported(a0: int32; a1: int32; a2: uint32; a3: int8;
+                                 a4: bool): uint64 {.
     wasmimport("create-texture", "nev:plugins/render").}
 proc createTexture*(width: int32; height: int32; data: uint32;
-                    format: TextureFormat): uint64 {.nodestroy.} =
+                    format: TextureFormat; dynamic: bool): uint64 {.nodestroy.} =
   var
     arg0: int32
     arg1: int32
     arg2: uint32
     arg3: int8
+    arg4: bool
   arg0 = width
   arg1 = height
   arg2 = data
   arg3 = cast[int8](format)
-  let res = renderCreateTextureImported(arg0, arg1, arg2, arg3)
+  arg4 = dynamic
+  let res = renderCreateTextureImported(arg0, arg1, arg2, arg3, arg4)
   result = convert(res, uint64)
+
+proc renderCreateTextureBufferImported(a0: int32; a1: int32; a2: int32;
+                                       a3: uint32; a4: int8; a5: bool): uint64 {.
+    wasmimport("create-texture-buffer", "nev:plugins/render").}
+proc createTextureBuffer*(width: int32; height: int32; data: SharedBuffer;
+                          offset: uint32; format: TextureFormat; dynamic: bool): uint64 {.
+    nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: uint32
+    arg4: int8
+    arg5: bool
+  arg0 = width
+  arg1 = height
+  arg2 = cast[int32](data.handle - 1)
+  arg3 = offset
+  arg4 = cast[int8](format)
+  arg5 = dynamic
+  let res = renderCreateTextureBufferImported(arg0, arg1, arg2, arg3, arg4, arg5)
+  result = convert(res, uint64)
+
+proc renderUpdateTextureImported(a0: uint64; a1: int32; a2: int32; a3: uint32;
+                                 a4: int8): void {.
+    wasmimport("update-texture", "nev:plugins/render").}
+proc updateTexture*(id: uint64; width: int32; height: int32; data: uint32;
+                    format: TextureFormat): void {.nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: uint32
+    arg4: int8
+  arg0 = id
+  arg1 = width
+  arg2 = height
+  arg3 = data
+  arg4 = cast[int8](format)
+  renderUpdateTextureImported(arg0, arg1, arg2, arg3, arg4)
+
+proc renderUpdateTextureBufferImported(a0: uint64; a1: int32; a2: int32;
+                                       a3: int32; a4: uint32; a5: int8): void {.
+    wasmimport("update-texture-buffer", "nev:plugins/render").}
+proc updateTextureBuffer*(id: uint64; width: int32; height: int32;
+                          data: SharedBuffer; offset: uint32;
+                          format: TextureFormat): void {.nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: int32
+    arg4: uint32
+    arg5: int8
+  arg0 = id
+  arg1 = width
+  arg2 = height
+  arg3 = cast[int32](data.handle - 1)
+  arg4 = offset
+  arg5 = cast[int8](format)
+  renderUpdateTextureBufferImported(arg0, arg1, arg2, arg3, arg4, arg5)
 
 proc renderDeleteTextureImported(a0: uint64): void {.
     wasmimport("delete-texture", "nev:plugins/render").}

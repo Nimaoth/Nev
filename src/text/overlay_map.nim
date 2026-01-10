@@ -159,7 +159,7 @@ type
     stringLine: int
     ropeIter: ChunkIterator
 
-    highlighter: Option[Highlighter]
+    theme: Theme
 
 func clone*(self: OverlayMapSnapshot): OverlayMapSnapshot =
   OverlayMapSnapshot(map: self.map.clone(), buffer: self.buffer.clone(), version: self.version)
@@ -194,13 +194,13 @@ proc `$`*(self: OverlayMapSnapshot): string =
       result.add "\n"
       inc i
 
-proc iter*(overlay {.byref.}: OverlayMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none): OverlayChunkIterator =
+proc iter*(overlay {.byref.}: OverlayMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): OverlayChunkIterator =
   # debugEcho &"OverlayMapSnapshot.iter {overlay}"
   result = OverlayChunkIterator(
-    styledChunks: InputChunkIterator.init(overlay.buffer.visibleText, highlighter),
+    styledChunks: InputChunkIterator.init(overlay.buffer.visibleText, highlighter, theme),
     overlayMap: overlay.clone(),
     overlayMapCursor: overlay.map.initCursor(OverlayMapChunkSummary),
-    highlighter: highlighter,
+    theme: theme,
   )
 
 func point*(self: OverlayChunkIterator): Point = self.styledChunks.point
@@ -877,7 +877,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
           point: mappedPoint + point(line, 0),
           external: true,
         ),
-        color: if self.highlighter.isSome: self.highlighter.get.theme.tokenColor(item.scope, color(1, 1, 1)) else: color(1, 1, 1),
+        color: if self.theme != nil: self.theme.tokenColor(item.scope, color(1, 1, 1)) else: color(1, 1, 1),
         drawWhitespace: false,
       )
 

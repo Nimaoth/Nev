@@ -277,7 +277,7 @@ import language_server_paths
 import language_server_regex
 import language_server_ctags
 import scripting/expose
-import config_provider
+import config_provider, event_service
 import vcs/vcs_api
 import collab
 {.pop.}
@@ -324,6 +324,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions) =
 
   var lowPowerMode = false
 
+  var eventBus: EventService = app.services.getServiceChecked(EventService)
   while not app.closeRequested:
     defer:
       inc frameIndex
@@ -353,6 +354,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions) =
 
       plat.builder.frameTime = delta
       plat.onPreRender.invoke(plat)
+      eventBus.emit(&"platform/prerender", "")
 
       when enableGui:
         let size = if plat of GuiPlatform and plat.GuiPlatform.showDrawnNodes: plat.size * vec2(0.5, 1) else: plat.size

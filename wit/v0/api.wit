@@ -51,6 +51,22 @@ interface types {
     bias: bias,
   }
 
+  /// Shared reference to a byte buffer. The data is stored in the editor, not in the plugin, so shared buffers
+  /// can be used to efficiently share data with another plugin or another thread.
+  /// Buffers are reference counted internally, and this resource also affects that reference count.
+  resource shared-buffer {
+    constructor(size: s64);
+    clone-ref: func() -> shared-buffer;
+    len: func() -> s64;
+    write-string: func(index: s64, data: string);
+    write: func(index: s64, data: list<u8>);
+    read-into: func(index: s64, dst: u32, len: s32);
+    read: func(index: s64, len: s32) -> list<u8>;
+
+    open: static func(path: string) -> option<shared-buffer>;
+    mount: static func(buffer: shared-buffer, path: string, unique: bool) -> string;
+  }
+
   /// Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   /// can be used to efficiently access any document content or share a string with another plugin.
   /// Ropes are reference counted internally, and this resource also affects that reference count.
@@ -436,7 +452,7 @@ interface layout {
 }
 
 interface render {
-  use types.{vec2f};
+  use types.{vec2f, shared-buffer};
   use layout.{view};
 
   /// Shared handle to a custom render view
@@ -493,10 +509,14 @@ interface render {
   }
 
   enum texture-format {
-    rgba32
+    rgba8,
+    rgba32,
   }
 
-  create-texture: func(width: s32, height: s32, data: u32, format: texture-format) -> u64;
+  create-texture: func(width: s32, height: s32, data: u32, format: texture-format, dynamic: bool) -> u64;
+  create-texture-buffer: func(width: s32, height: s32, data: borrow<shared-buffer>, offset: u32, format: texture-format, dynamic: bool) -> u64;
+  update-texture: func(id: u64, width: s32, height: s32, data: u32, format: texture-format);
+  update-texture-buffer: func(id: u64, width: s32, height: s32, data: borrow<shared-buffer>, offset: u32, format: texture-format);
   delete-texture: func(id: u64);
 }
 
@@ -534,6 +554,8 @@ interface core {
 
   /// Destroy the current plugin instance.
   finish-background: func();
+
+  sleep-async: func(task: u64, milliseconds: u32);
 }
 
 interface commands {

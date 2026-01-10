@@ -1,7 +1,7 @@
 import std/[options, atomics, strformat, tables]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
-import syntax_map, overlay_map, tab_map
+import syntax_map, overlay_map, tab_map, theme
 
 {.push warning[Deprecated]:off.}
 import std/[threadpool]
@@ -127,9 +127,9 @@ func clone*(self: WrapMapSnapshot): WrapMapSnapshot =
 proc new*(_: typedesc[WrapMap]): WrapMap =
   result = WrapMap(snapshot: WrapMapSnapshot(map: SumTree[WrapMapChunk].new([WrapMapChunk()])))
 
-proc iter*(wrapMap: var WrapMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none): WrapChunkIterator =
+proc iter*(wrapMap: var WrapMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): WrapChunkIterator =
   result = WrapChunkIterator(
-    inputChunks: wrapMap.input.iter(highlighter),
+    inputChunks: wrapMap.input.iter(highlighter, theme),
     wrapMap: wrapMap.clone(),
     wrapMapCursor: wrapMap.map.initCursor(WrapMapChunkSummary),
   )

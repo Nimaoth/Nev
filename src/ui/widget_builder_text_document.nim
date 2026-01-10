@@ -1163,8 +1163,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   proc createIter(): DisplayChunkIterator =
     var highlighter = Highlighter.none
     if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
-      highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree, theme: builder.theme).some
-    var res = self.displayMap.iter(highlighter)
+      highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
+    var res = self.displayMap.iter(highlighter, builder.theme)
     res.styledChunks.diagnosticEndPoints = self.document.diagnosticEndPoints # todo: don't copy everything here
     if indentGuide:
       let cursorIndentLevel = self.document.rope.indentRunes(self.selection.last.line).int
@@ -1174,8 +1174,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   proc createDiffIter(): DisplayChunkIterator =
     var highlighter = Highlighter.none
     if self.diffDocument.tsTree.isNotNil and self.diffDocument.highlightQuery.isNotNil and highlight:
-      highlighter = Highlighter(query: self.diffDocument.highlightQuery, tree: self.diffDocument.tsTree, theme: builder.theme).some
-    var res = self.diffDisplayMap.iter(highlighter)
+      highlighter = Highlighter(query: self.diffDocument.highlightQuery, tree: self.diffDocument.tsTree).some
+    var res = self.diffDisplayMap.iter(highlighter, builder.theme)
     return res
 
   let signShow = self.settings.signs.show.get()
@@ -1348,16 +1348,18 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   selectionsNode.markDirty(builder)
   currentNode.markDirty(builder)
 
+  let chunkBounds = @(state.chunkBounds.toOpenArray(0, state.chunkBounds.high))
+  let charBounds = @(state.charBounds.toOpenArray(0, state.charBounds.high))
   type MouseEventKind = enum Click, Drag, Hover
   proc handleMouseEvent(self: TextDocumentEditor, btn: MouseButton, pos: Vec2, mods: set[Modifier], event: MouseEventKind) =
     if self.document.isNil:
       return
 
-    var (_, index) = state.chunkBounds.toOpenArray().binarySearchRange(pos, Bias.Left, cmp)
-    if index notin 0..state.chunkBounds.high:
+    var (_, index) = chunkBounds.binarySearchRange(pos, Bias.Left, cmp)
+    if index notin 0..chunkBounds.high:
       return
 
-    if index + 1 < state.chunkBounds.len and pos.y >= state.chunkBounds[index].bounds.yh and pos.y < state.chunkBounds[index + 1].bounds.yh:
+    if index + 1 < chunkBounds.len and pos.y >= chunkBounds[index].bounds.yh and pos.y < chunkBounds[index + 1].bounds.yh:
       index += 1
 
     if event == Click:
@@ -1368,15 +1370,15 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     # if line >= self.document.numLines:
     #   return
 
-    let chunk = state.chunkBounds[index]
+    let chunk = chunkBounds[index]
 
     let posAdjusted = if self.isThickCursor(): pos else: pos + vec2(builder.charWidth * 0.5, 0)
     let searchPosition = vec2(posAdjusted.x - chunk.bounds.x, 0)
-    var (_, charIndex) = state.charBounds.toOpenArray(chunk.charsRange.a, chunk.charsRange.b - 1).binarySearchRange(searchPosition, Left, cmp)
+    var (_, charIndex) = charBounds.toOpenArray(chunk.charsRange.a, chunk.charsRange.b - 1).binarySearchRange(searchPosition, Left, cmp)
 
     var newCursor = self.selection.last
     if charIndex + chunk.charsRange.a in chunk.charsRange.a..<chunk.charsRange.b:
-      if searchPosition.x >= state.charBounds[chunk.charsRange.a + charIndex].xw and (index == state.chunkBounds.high or state.chunkBounds[index + 1].range.a.row > chunk.range.a.row):
+      if searchPosition.x >= charBounds[chunk.charsRange.a + charIndex].xw and (index == chunkBounds.high or chunkBounds[index + 1].range.a.row > chunk.range.a.row):
         charIndex += 1
       newCursor = chunk.range.a.toCursor + (0, charIndex) # todo unicode offset
 

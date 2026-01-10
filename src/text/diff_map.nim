@@ -3,6 +3,7 @@ import nimsumtree/[rope, buffer, clock]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
 import diff, syntax_map, overlay_map, wrap_map
 import nimsumtree/sumtree except mapIt
+import theme
 
 type InputMapSnapshot = WrapMapSnapshot
 type InputChunkIterator = WrapChunkIterator
@@ -117,9 +118,9 @@ func clone*(self: DiffMapSnapshot): DiffMapSnapshot =
 proc new*(_: typedesc[DiffMap]): DiffMap =
   result = DiffMap(snapshot: DiffMapSnapshot(map: SumTree[DiffMapChunk].new([DiffMapChunk()])))
 
-proc iter*(diffMap: var DiffMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none): DiffChunkIterator =
+proc iter*(diffMap: var DiffMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): DiffChunkIterator =
   result = DiffChunkIterator(
-    inputChunks: diffMap.input.iter(highlighter),
+    inputChunks: diffMap.input.iter(highlighter, theme),
     diffMap: diffMap.clone(),
     diffMapCursor: diffMap.map.initCursor(DiffMapChunkSummary),
   )

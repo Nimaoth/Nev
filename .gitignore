@@ -54,6 +54,7 @@ clear
 *.map
 plugins/pong
 
+deps
 deps/winim
 tags
 stdtags
