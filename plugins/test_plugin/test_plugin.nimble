@@ -1,5 +1,6 @@
 requires "nim >= 2.0.0"
 requires "https://github.com/Nimaoth/vmath#661bdaa"
+requires "https://github.com/Nimaoth/pixie >= 5.0.10"
 requires "bumpy >= 1.1.2"
 requires "chroma >= 0.2.7"
 requires "fusion >= 1.2"

@@ -6,6 +6,7 @@
 	"wasm": "markdown.m.wasm",
 	// "wasm": "markdown.wat",
 	"autoLoad": false,
+	// "autoReload": true,
 	// "load": [
 	// 	{
 	// 		"event": "command"
