@@ -12,15 +12,25 @@
       }
     },
     "bumpy": {
-      "version": "1.1.2",
-      "vcsRevision": "d7eaf00c24820ad0317c9926737402e62431e931",
+      "version": "1.1.3",
+      "vcsRevision": "edc6e19ddbe6b9e46c3384e9a4131d7063a3f610",
       "url": "https://github.com/treeform/bumpy",
       "downloadMethod": "git",
       "dependencies": [
         "vmath"
       ],
       "checksums": {
-        "sha1": "acc789c4e31b3ee969a13dd0c238d808f39b19c7"
+        "sha1": "8a55667a7585612b7cefecd9a25ac3e761f03097"
+      }
+    },
+    "c2nim": {
+      "version": "0.9.19",
+      "vcsRevision": "5753fa7658ed50432ea6c2df84f0a45e36bcb2ea",
+      "url": "https://github.com/nim-lang/c2nim",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "1954eb89cc353cf2a4e54804d38d5a1e72f3c98e"
       }
     },
     "chroma": {
@@ -31,6 +41,38 @@
       "dependencies": [],
       "checksums": {
         "sha1": "f873f4b97e87a82e27e0b85bf9130fe3e320a2b8"
+      }
+    },
+    "nimsimd": {
+      "version": "1.2.13",
+      "vcsRevision": "c052a1bd348caa9a0bf0b11660067088bf4589b5",
+      "url": "https://github.com/guzba/nimsimd",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "bfc96b6f70286cc607afc16bbab5156310e5ed38"
+      }
+    },
+    "crunchy": {
+      "version": "0.1.11",
+      "vcsRevision": "98eb6526982bb8aae8eec6e8781f4539fa19e049",
+      "url": "https://github.com/guzba/crunchy",
+      "downloadMethod": "git",
+      "dependencies": [
+        "nimsimd"
+      ],
+      "checksums": {
+        "sha1": "d34f03fc0f6876dbf53f99601096728ec31f47a3"
+      }
+    },
+    "flatty": {
+      "version": "0.3.4",
+      "vcsRevision": "07f6ba8ab96238e5bd1264cf0cea1d1746abb00c",
+      "url": "https://github.com/treeform/flatty",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "5775e6ea6ca339efc5bd37b082b8294342d49dc5"
       }
     },
     "fusion": {
@@ -53,14 +95,40 @@
         "sha1": "5ec93ba563031987f9260ee016272d30b7eed775"
       }
     },
-    "nimgen": {
-      "version": "0.5.4",
-      "vcsRevision": "e6697aabbe36e42e4dd261cfd0b8a8be16f6f342",
-      "url": "https://github.com/Nimaoth/nimgen",
+    "unicodedb": {
+      "version": "0.13.2",
+      "vcsRevision": "66f2458710dc641dd4640368f9483c8a0ec70561",
+      "url": "https://github.com/nitely/nim-unicodedb",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "d563cc29937e4d2d66ebeb3eaacef95c6284fb4c"
+        "sha1": "739102d885d99bb4571b1955f5f12aee423c935b"
+      }
+    },
+    "regex": {
+      "version": "0.26.3",
+      "vcsRevision": "4593305ed1e49731fc75af1dc572dd2559aad19c",
+      "url": "https://github.com/nitely/nim-regex",
+      "downloadMethod": "git",
+      "dependencies": [
+        "unicodedb"
+      ],
+      "checksums": {
+        "sha1": "4d24e7d7441137cd202e16f2359a5807ddbdc31f"
+      }
+    },
+    "nimgen": {
+      "version": "0.5.4",
+      "vcsRevision": "b7e2cb43b4acc5c720f492cb0e33deca46fa6cd8",
+      "url": "https://github.com/Nimaoth/nimgen",
+      "downloadMethod": "git",
+      "dependencies": [
+        "c2nim",
+        "regex",
+        "unicodedb"
+      ],
+      "checksums": {
+        "sha1": "0adf8b68b9e1308afd6e57bf01749ffc28b979fc"
       }
     },
     "nimwasmtime": {
@@ -75,26 +143,32 @@
         "sha1": "99df4090ca3d7cb8f18f3d0944603044dffcfe65"
       }
     },
-    "unicodedb": {
-      "version": "0.12.0",
-      "vcsRevision": "b055310c08db8f879057b4fec15c8301ee93bb2a",
-      "url": "https://github.com/nitely/nim-unicodedb",
+    "zippy": {
+      "version": "0.10.17",
+      "vcsRevision": "ab4d3d52e966b725cad2468aa0594da5db7fa2ac",
+      "url": "https://github.com/Nimaoth/zippy",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "4452416471e2fe8726eb6070ed6ea7368171cc09"
+        "sha1": "be016c6a727ab9f1a6ef0645cc22442b0473c294"
       }
     },
-    "regex": {
-      "version": "0.25.0",
-      "vcsRevision": "cb8b7bfdcdc2272aadf92153c668acd3c901bd6b",
-      "url": "https://github.com/nitely/nim-regex",
+    "pixie": {
+      "version": "5.0.10",
+      "vcsRevision": "7168ac52824fe2d3ad59171f8fb3b496add20e4d",
+      "url": "https://github.com/Nimaoth/pixie",
       "downloadMethod": "git",
       "dependencies": [
-        "unicodedb"
+        "vmath",
+        "chroma",
+        "zippy",
+        "flatty",
+        "nimsimd",
+        "bumpy",
+        "crunchy"
       ],
       "checksums": {
-        "sha1": "cb2e24397c051e55ad5b72b3c0d4f270a90084df"
+        "sha1": "de520769c4dfc49ca347037c20b9e18cde18410a"
       }
     },
     "results": {

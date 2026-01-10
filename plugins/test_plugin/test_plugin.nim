@@ -1,8 +1,12 @@
-import std/[strformat, json, jsonutils, strutils]
+import std/[strformat, json, jsonutils, strutils, options, random, math, sequtils, sugar, streams, tables]
+import pixie, chroma
 import results
 import util, render_command, binary_encoder
 import api
 import clay
+
+import "../../src/scroll_box.nim"
+type ScrollView = ScrollBox
 
 var views: seq[RenderView] = @[]
 var renderCommandEncoder: BinaryEncoder
@@ -48,11 +52,14 @@ proc openCustomView(show: bool) =
   renderView.get.addMode(ws"test-plugin")
   renderView.get.markDirty()
   if show:
-    show(renderView.get.view, ws"#new-tab", true, true)
+    show(renderView.get.view, ws"#build-run-terminal", true, true)
   views.add(renderView.take)
 
 converter toRect(c: ClayBoundingBox): bumpy.Rect =
   rect(c.x, c.y, c.width, c.height)
+
+converter toColor(c: Color): ClayColor =
+  clayColor(c.r / 255, c.g / 255, c.b / 255, c.a / 255)
 
 converter toColor(c: ClayColor): Color =
   color(c.r / 255, c.g / 255, c.b / 255, c.a / 255)
@@ -98,6 +105,53 @@ proc encodeClayRenderCommands(renderCommandEncoder: var BinaryEncoder, clayRende
 var lastTime = 0.0
 var lastRenderTime = 0.0
 var lastRenderTimeStr = ""
+var scrollView = ScrollBox()
+
+var blocks: seq[tuple[height: float, color: Color]] = @[]
+for i in 0..<100000:
+  if rand(0.0..1.0) < 0.1:
+    blocks.add (rand(900.0..2000.0).floor, color(rand(1.0), rand(1.0), rand(1.0)))
+  else:
+    blocks.add (rand(25.0..200.0).floor, color(rand(1.0), rand(1.0), rand(1.0)))
+
+var renderBuffer = BinaryEncoder()
+var selected = 0
+var sizeOffset = 0.0
+var textEditor: TextEditor
+var overlays: Table[int64, tuple[location: OverlayRenderLocation, textureId: TextureId, width: float, height: float, len: int]]
+proc customOverlayRender(id: int64, overlaySize: Vec2f, localOffset: int): (pointer, int) {.cdecl.} =
+  # echo &"customOverlayRender {id}, {overlaySize}, {localOffset}"
+  renderBuffer.reset()
+
+  if id in overlays:
+    let overlay = overlays[id]
+    let textureId = overlay.textureId
+    let aspectRatio = overlay.width / overlay.height
+
+    var imageWidth = max(overlaySize.x + sizeOffset, 1)
+    var imageOffsetY = 0.0
+
+    if overlay.location == Inline:
+      imageWidth *= overlay.len.float
+      imageOffsetY = overlaySize.y.float
+
+    let imageSize = vec2(imageWidth, imageWidth / aspectRatio)
+    let resultSize = vec2(overlaySize.x, imageSize.y + imageOffsetY)
+
+    let r = rect(vec2(0, imageOffsetY), imageSize)
+    renderBuffer.write(resultSize.x.float32) # width
+    renderBuffer.write(resultSize.y.float32) # height
+    renderBuffer.drawImage(r, textureId)
+    renderBuffer.drawRect(r, color(1, 1, 1))
+  else:
+    let r = rect(vec2(0), overlaySize)
+    renderBuffer.write(overlaySize.x.float32) # width
+    renderBuffer.write(overlaySize.y.float32) # height
+    renderBuffer.drawRect(r, color(1, 1, 1))
+
+  result = (renderBuffer.toOpenArray()[0].addr, renderBuffer.toOpenArray().len)
+  return
+
 proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
   let index = data.int
   if index notin 0..views.high:
@@ -106,6 +160,7 @@ proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
 
   let view {.cursor.} = views[index]
 
+  let texts = scrollView.items.mapIt($it)
   try:
     let version = apiVersion()
     inc num
@@ -124,27 +179,73 @@ proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
     clay.setLayoutDimensions(ClayDimensions(width: size.x, height: size.y))
     clay.setPointerState(view.mousePos, view.mouseDown(0))
     clay.updateScrollContainers(true, view.scrollDelta.toVec * 4.0, deltaTime)
+    if view.scrollDelta.y != 0:
+      sizeOffset += view.scrollDelta.y * 2
+      discard textEditor.command(ws"rerender", ws"")
 
     var layoutElement = ClayLayoutConfig(padding: ClayPadding(left: 5, right: 10), layoutDirection: TopToBottom)
     var textConfig = ClayTextElementConfig(textColor: clayColor(1, 1, 1))
 
     clay.beginLayout()
     UI(backgroundColor = clayColor(0.3, 0, 0), layout = layoutElement, clip = ClayClipElementConfig(vertical: true, childOffset: clay.getScrollOffset())):
-      let s = stackWitString("test_plugin version " & $version)
-      clayText(s.toOpenArray, textColor = clayColor(1, 1, 1))
+      let s = "test_plugin version " & $version
+      clayText(s, textColor = clayColor(1, 1, 1))
       clayText(lastRenderTimeStr, textColor = clayColor(1, 1, 1))
+      let uiae = &"{scrollView.items.len} items, {scrollView.index}, {scrollView.offset}"
+      clayText(uiae, textColor = clayColor(1, 1, 1))
+      let xvlc = &"{scrollView.scrollMomentum}"
+      clayText(xvlc, textColor = clayColor(1, 1, 1))
 
-      for i in 0..90:
+      # echo "============================================="
+      # echo texts.join("\n")
+      for i in 0..scrollView.items.high:
         UI(backgroundColor = clayColor(0, 0.3, 0), cornerRadius = cornerRadius(1, 2, 3, 4), layout = ClayLayoutConfig(padding: ClayPadding(left: 20, right: 30))):
-          clayText("hello", textColor = clayColor(0, 1, 1))
-          clayText("world", textConfig)
-      clayText("end", textColor = clayColor(1, 1, 1))
+          clayText(texts[i], textColor = clayColor(0, 1, 1))
 
     let clayRenderCommands = clay.endLayout()
 
-    renderCommandEncoder.buffer.setLen(0)
+    renderCommandEncoder.reset()
     renderCommandEncoder.encodeClayRenderCommands(clayRenderCommands)
-    view.setRenderCommands(@@(renderCommandEncoder.buffer.toOpenArray(0, renderCommandEncoder.buffer.high)))
+
+    scrollView.scrollWithMomentum(view.scrollDelta.y * 15)
+    scrollView.updateScroll(deltaTime)
+
+    var fixups: seq[tuple[itemIndex: int, renderCommandHead: int]]
+    proc itemRenderer(sv: ScrollView, index: int): Option[Vec2] =
+      if index in 0..blocks.high:
+        fixups.add (index, renderCommandEncoder.head)
+        let height = blocks[index][0]
+        renderCommandEncoder.startTransform(vec2(0))
+        var color = blocks[index][1]
+        renderCommandEncoder.fillRect(rect(0, 0, sv.size.x, height), color.lighten(-0.2))
+        renderCommandEncoder.drawText($index, rect(5, 5, 0, 0), color.lighten(0.2), 0.UINodeFlags)
+        if index == selected:
+          for i in 0..3:
+            renderCommandEncoder.drawRect(rect(0, 0, sv.size.x, height).grow(-i.float.vec2), color(1, 1, 1))
+        renderCommandEncoder.endTransform()
+        return vec2(100, height).some
+      return Vec2.none
+
+    scrollView.beginRender(vec2(600, 600), 0.UINodeFlags, blocks.high)
+    renderCommandEncoder.startTransform(vec2(400, 400))
+    renderCommandEncoder.drawRect(rect(0, 0, scrollView.size.x, scrollView.size.y).grow(vec2(1)), color(1, 1, 1))
+    renderCommandEncoder.startScissor(rect(0, 0, scrollView.size.x, scrollView.size.y))
+    while scrollView.renderItem(itemRenderer):
+      discard
+
+    renderCommandEncoder.endScissor()
+    renderCommandEncoder.endTransform()
+
+    scrollView.endRender()
+    scrollView.clamp(blocks.high)
+
+    for fix in fixups:
+      renderCommandEncoder.head = fix.renderCommandHead
+      if scrollView.itemBounds(fix.itemIndex).getSome(b):
+        renderCommandEncoder.startTransform(vec2(0, b.y))
+    renderCommandEncoder.resetHead()
+
+    view.setRenderCommands(@@(renderCommandEncoder.toOpenArray()))
 
     let interval = getSetting("test.render-interval", 500)
     view.setRenderInterval(interval)
@@ -154,6 +255,119 @@ proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
     lastRenderTimeStr = &"dt: {lastRenderTime} ms"
   except Exception as e:
     log lvlError, &"[guest] Failed to render: {e.msg}\n{e.getStackTrace()}"
+
+proc getArg(args: JsonNode, index: int, T: typedesc): T =
+  if args != nil and args.kind == JArray and index < args.elems.len:
+    return args.elems[index].jsonTo(T)
+  return T.default
+
+defineCommand(ws"add-custom-overlay-renderer",
+  active = false,
+  docs = ws"Decrease the size of the square",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, argsJson: WitString): WitString {.cdecl.} =
+    try:
+      var args = newJArray()
+      for a in newStringStream($argsJson).parseJsonFragments():
+        args.add a
+
+      var text = args.getArg(0, string)
+      let location = args.getArg(1, OverlayRenderLocation)
+
+      if text.len == 0:
+        text = "          \n        \n\n"
+
+      var imageId: uint64 = 0
+      var width = 0.0
+      var height = 0.0
+      var res = readSync("app://screenshots/browse-keybinds-command.png", {Binary})
+      if res.isOk:
+        var image = decodeImage($res.get)
+        imageId = createTexture(image.width.int32, image.height.int32, cast[uint32](image.data[0].addr), Rgba8, false)
+        width = image.width.float
+        height = image.height.float
+      else:
+        log lvlError, &"Failed to read image: {res.error}"
+      if activeTextEditor({}).getSome(editor):
+        textEditor = editor
+        let id = editor.addCustomRender(customOverlayRender)
+        overlays[id] = (location, imageId.TextureId, width, height, 10)
+        editor.addOverlay(editor.getSelection, text.ws, 5, "comment", Bias.Right, id, location)
+    except CatchableError as e:
+      log lvlError, &"[guest] err: {e.msg}"
+    return ws""
+
+defineCommand(ws"scroll",
+  active = false,
+  docs = ws"Decrease the size of the square",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    try:
+      let s = ($args).parseJson.jsonTo(float)
+      scrollView.scrollWithMomentum(s)
+    except CatchableError as e:
+      log lvlError, &"[guest] err: {e.msg}"
+    return ws""
+
+defineCommand(ws"select-next",
+  active = false,
+  docs = ws"Decrease the size of the square",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    try:
+      let s = ($args).parseJson.jsonTo(int)
+      selected += s
+      selected = selected.clamp(0, blocks.high)
+      scrollView.scrollTo(selected)
+    except CatchableError as e:
+      log lvlError, &"[guest] err: {e.msg}"
+    return ws""
+
+defineCommand(ws"center-next",
+  active = false,
+  docs = ws"Decrease the size of the square",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    try:
+      let s = ($args).parseJson.jsonTo(int)
+      selected += s
+      selected = selected.clamp(0, blocks.high)
+      scrollView.scrollTo(selected, center = true)
+    except CatchableError as e:
+      log lvlError, &"[guest] err: {e.msg}"
+    return ws""
+
+defineCommand(ws"scroll-to",
+  active = false,
+  docs = ws"Decrease the size of the square",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    try:
+      let s = ($args).parseJson.jsonTo(int)
+      let index = if s < 0:
+        blocks.len + s
+      else:
+        s
+      selected = index.clamp(0, blocks.high)
+      scrollView.scrollTo(selected)
+    except CatchableError as e:
+      log lvlError, &"[guest] err: {e.msg}"
+    return ws""
 
 defineCommand(ws"test-command-1",
   active = false,
