@@ -4,16 +4,12 @@
 	"authors": ["Nimaoth"],
 	"repository": "https://github.com/Nimaoth/Nev/plugins/markdown",
 	"wasm": "markdown.m.wasm",
-	// "wasm": "markdown.wat",
 	"autoLoad": false,
 	// "autoReload": true,
-	// "load": [
-	// 	{
-	// 		"event": "command"
-	// 	}
-	// ],
 	"commands": {
-		"md-images": {},
+		"clear-image-cache": {},
+		"set-image-scale": {},
+		"change-image-scale": {},
 	},
 	"permissions": {
 		"filesystem": {
