@@ -25,7 +25,7 @@ macro includePluginApi() =
 includePluginApi()
 
 proc emscripten_notify_memory_growth*(a: int32) {.exportc.} =
-  echo "emscripten_notify_memory_growth"
+  discard
 
 proc emscripten_stack_init*() {.importc.}
 
@@ -165,7 +165,7 @@ proc wl*[T](): WitList[T] = WitList[T].default()
 when pluginWorld == "plugin":
   proc getSetting*(name: string, T: typedesc): T =
     try:
-      return getSettingRaw(name).parseJson().jsonTo(T)
+      return ($getSettingRaw(ws(name))).parseJson().jsonTo(T)
     except:
       return T.default
 
@@ -177,7 +177,7 @@ when pluginWorld == "plugin":
 
   proc getSetting*(editor: TextEditor, name: string, T: typedesc): T =
     try:
-      return getSettingRaw(editor, name).parseJson().jsonTo(T)
+      return ($getSettingRaw(editor, ws(name))).parseJson().jsonTo(T)
     except:
       return T.default
 
@@ -299,6 +299,19 @@ when pluginWorld == "plugin":
   proc multiMove*(editor: TextEditor, selections: openArray[Selection], move: WitString|string): WitList[Selection] =
     editor.multiMove(@@selections, ws(move), 0, false, true)
 
+  proc getSessionData*(name: string, T: typedesc): T =
+    try:
+      return ($getSessionData(name.ws)).parseJson().jsonTo(T)
+    except:
+      return T.default
+
+  proc setSessionData*[T](name: string, value: T) =
+    try:
+      let str = $value.toJson()
+      setSessionData(name.ws, str.ws)
+    except:
+      discard
+
 func toSelection*(cursor: Cursor, default: Selection, which: sca.SelectionCursor): Selection =
   case which
   of sca.SelectionCursor.Config: return default
@@ -314,6 +327,16 @@ proc `[]`*(rope: Rope, s: Selection): Rope = rope.sliceSelection(s, inclusive = 
 
 proc asEditor*(editor: TextEditor): Editor = Editor(id: editor.id)
 proc asDocument*(document: TextDocument): Document = Document(id: document.id)
+
+proc sleepAsync*(milliseconds: uint32): Future[void] =
+  var fut = newFuture[void]("sleepAsync")
+  let id = tasks.add(TaskWrapper())
+  sleepAsync(id.uint64, milliseconds)
+  proc done() {.raises: [].} =
+    fut.complete()
+    tasks.del(id)
+  tasks.set(id, TaskWrapper(done: done))
+  return fut
 
 proc listen*(self: ReadChannel, data: uint32, fun: ChannelUpdateHandler) =
   self.listen(cast[uint32](fun), data)

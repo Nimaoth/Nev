@@ -40,6 +40,9 @@ type
     timestamp*: Lamport
     offset*: uint32
     bias*: Bias
+  ## Shared reference to a byte buffer. The data is stored in the editor, not in the plugin, so shared buffers
+  ## can be used to efficiently share data with another plugin or another thread.
+  ## Buffers are reference counted internally, and this resource also affects that reference count.
   ## Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   ## can be used to efficiently access any document content or share a string with another plugin.
   ## Ropes are reference counted internally, and this resource also affects that reference count.
@@ -67,7 +70,7 @@ type
     id*: int32
   ## Shared handle to a custom render view
   TextureFormat* = enum
-    Rgba32 = "rgba32"
+    Rgba8 = "rgba8", Rgba32 = "rgba32"
   Platform* = enum
     Gui = "gui", Tui = "tui"
   BackgroundExecutor* = enum
@@ -87,6 +90,9 @@ type
     Never = "never", Always = "always",
     MinDistanceOffscreen = "min-distance-offscreen",
     MinDistanceCenter = "min-distance-center"
+when not declared(SharedBufferResource):
+  {.error: "Missing resource type definition for " & "SharedBufferResource" &
+      ". Define the type before the importWit statement.".}
 when not declared(RopeResource):
   {.error: "Missing resource type definition for " & "RopeResource" &
       ". Define the type before the importWit statement.".}
@@ -626,6 +632,8 @@ proc coreGetArguments*(instance: ptr InstanceData): string
 proc coreSpawnBackground*(instance: ptr InstanceData; args: sink string;
                           executor: BackgroundExecutor): void
 proc coreFinishBackground*(instance: ptr InstanceData): void
+proc coreSleepAsync*(instance: ptr InstanceData; task: uint64;
+                     milliseconds: uint32): void
 proc commandsDefineCommand*(instance: ptr InstanceData; name: sink string;
                             active: bool; docs: sink string;
                             params: sink seq[(string, string)];
@@ -637,6 +645,23 @@ proc commandsExitCommandLine*(instance: ptr InstanceData): void
 proc settingsGetSettingRaw*(instance: ptr InstanceData; name: sink string): string
 proc settingsSetSettingRaw*(instance: ptr InstanceData; name: sink string;
                             value: sink string): void
+proc typesNewSharedBuffer*(instance: ptr InstanceData; size: int64): SharedBufferResource
+proc typesCloneRef*(instance: ptr InstanceData; self: var SharedBufferResource): SharedBufferResource
+proc typesLen*(instance: ptr InstanceData; self: var SharedBufferResource): int64
+proc typesWriteString*(instance: ptr InstanceData;
+                       self: var SharedBufferResource; index: int64;
+                       data: sink string): void
+proc typesWrite*(instance: ptr InstanceData; self: var SharedBufferResource;
+                 index: int64; data: sink seq[uint8]): void
+proc typesReadInto*(instance: ptr InstanceData; self: var SharedBufferResource;
+                    index: int64; dst: uint32; len: int32): void
+proc typesRead*(instance: ptr InstanceData; self: var SharedBufferResource;
+                index: int64; len: int32): seq[uint8]
+proc typesSharedBufferOpen*(instance: ptr InstanceData; path: sink string): Option[
+    SharedBufferResource]
+proc typesSharedBufferMount*(instance: ptr InstanceData;
+                             buffer: sink SharedBufferResource;
+                             path: sink string; unique: bool): string
 proc typesNewRope*(instance: ptr InstanceData; content: sink string): RopeResource
 proc typesClone*(instance: ptr InstanceData; self: var RopeResource): RopeResource
 proc typesBytes*(instance: ptr InstanceData; self: var RopeResource): int64
@@ -830,7 +855,18 @@ proc renderAddMode*(instance: ptr InstanceData; self: var RenderViewResource;
 proc renderRemoveMode*(instance: ptr InstanceData; self: var RenderViewResource;
                        mode: sink string): void
 proc renderCreateTexture*(instance: ptr InstanceData; width: int32;
-                          height: int32; data: uint32; format: TextureFormat): uint64
+                          height: int32; data: uint32; format: TextureFormat;
+                          dynamic: bool): uint64
+proc renderCreateTextureBuffer*(instance: ptr InstanceData; width: int32;
+                                height: int32; data: var SharedBufferResource;
+                                offset: uint32; format: TextureFormat;
+                                dynamic: bool): uint64
+proc renderUpdateTexture*(instance: ptr InstanceData; id: uint64; width: int32;
+                          height: int32; data: uint32; format: TextureFormat): void
+proc renderUpdateTextureBuffer*(instance: ptr InstanceData; id: uint64;
+                                width: int32; height: int32;
+                                data: var SharedBufferResource; offset: uint32;
+                                format: TextureFormat): void
 proc renderDeleteTexture*(instance: ptr InstanceData; id: uint64): void
 proc vfsReadSync*(instance: ptr InstanceData; path: sink string;
                   readFlags: ReadFlags): Result[string, VfsError]
@@ -904,6 +940,15 @@ proc sessionGetSessionData*(instance: ptr InstanceData; name: sink string): stri
 proc sessionSetSessionData*(instance: ptr InstanceData; name: sink string;
                             value: sink string): void
 proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
+  block:
+    let e = block:
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[resource-drop]shared-buffer",
+                                 newFunctype([WasmValkind.I32], [])):
+        var instance = cast[ptr InstanceData](store.getData())
+        instance.resources.resourceDrop(parameters[0].i32, callDestroy = true)
+    if e.isErr:
+      return e
   block:
     let e = block:
       linker.defineFuncUnchecked("nev:plugins/types", "[resource-drop]rope",
@@ -1051,6 +1096,19 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
       linker.defineFuncUnchecked("nev:plugins/core", "finish-background", ty):
         var instance = cast[ptr InstanceData](store.getData())
         coreFinishBackground(instance)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/core", "sleep-async", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var task: uint64
+        var milliseconds: uint32
+        task = convert(parameters[0].i64, uint64)
+        milliseconds = convert(parameters[1].i32, uint32)
+        coreSleepAsync(instance, task, milliseconds)
     if e.isErr:
       return e
   block:
@@ -1252,6 +1310,259 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           for i0 in 0 ..< value.len:
             value[i0] = p0[i0]
         settingsSetSettingRaw(instance, name, value)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[constructor]shared-buffer", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var size: int64
+        size = convert(parameters[0].i64, int64)
+        let res = typesNewSharedBuffer(instance, size)
+        parameters[0].i32 = ?instance.resources.resourceNew(store, res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[method]shared-buffer.clone-ref", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var self: ptr SharedBufferResource
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            SharedBufferResource)
+        let res = typesCloneRef(instance, self[])
+        parameters[0].i32 = ?instance.resources.resourceNew(store, res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I64])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[method]shared-buffer.len", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var self: ptr SharedBufferResource
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            SharedBufferResource)
+        let res = typesLen(instance, self[])
+        parameters[0].i64 = cast[int64](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I64, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[method]shared-buffer.write-string", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr SharedBufferResource
+        var index: int64
+        var data: string
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            SharedBufferResource)
+        index = convert(parameters[1].i64, int64)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[2].i32].addr)
+          data = newString(parameters[3].i32)
+          for i0 in 0 ..< data.len:
+            data[i0] = p0[i0]
+        typesWriteString(instance, self[], index, data)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I64, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[method]shared-buffer.write", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr SharedBufferResource
+        var index: int64
+        var data: seq[uint8]
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            SharedBufferResource)
+        index = convert(parameters[1].i64, int64)
+        block:
+          let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[2].i32].addr)
+          data = newSeq[typeof(data[0])](parameters[3].i32)
+          for i0 in 0 ..< data.len:
+            data[i0] = convert(cast[ptr uint8](p0[i0 * 1 + 0].addr)[], uint8)
+        typesWrite(instance, self[], index, data)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I64, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[method]shared-buffer.read-into", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var self: ptr SharedBufferResource
+        var index: int64
+        var dst: uint32
+        var len: int32
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            SharedBufferResource)
+        index = convert(parameters[1].i64, int64)
+        dst = convert(parameters[2].i32, uint32)
+        len = convert(parameters[3].i32, int32)
+        typesReadInto(instance, self[], index, dst, len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I64, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[method]shared-buffer.read", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var self: ptr SharedBufferResource
+        var index: int64
+        var len: int32
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            SharedBufferResource)
+        index = convert(parameters[1].i64, int64)
+        len = convert(parameters[2].i32, int32)
+        let res = typesRead(instance, self[], index, len)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              cast[ptr uint8](memory[dataPtrWasm0 + i0 * 1 + 0].addr)[] = res[i0]
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[static]shared-buffer.open", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var path: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          path = newString(parameters[1].i32)
+          for i0 in 0 ..< path.len:
+            path[i0] = p0[i0]
+        let res = typesSharedBufferOpen(instance, path)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isSome.int32
+        if res.isSome:
+          cast[ptr int32](memory[retArea + 4].addr)[] = ?instance.resources.resourceNew(
+              store, res.get)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[static]shared-buffer.mount", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var buffer: SharedBufferResource
+        var path: string
+        var unique: bool
+        block:
+          let resPtr = ?instance.resources.resourceHostData(
+              parameters[0].i32, SharedBufferResource)
+          copyMem(buffer.addr, resPtr, sizeof(typeof(buffer)))
+          ?instance.resources.resourceDrop(parameters[0].i32,
+              callDestroy = false)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          path = newString(parameters[2].i32)
+          for i0 in 0 ..< path.len:
+            path[i0] = p0[i0]
+        unique = parameters[3].i32.bool
+        let res = typesSharedBufferMount(instance, buffer, path, unique)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              memory[dataPtrWasm0 + i0] = cast[uint8](res[i0])
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
     if e.isErr:
       return e
   block:
@@ -3996,21 +4307,93 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
-          [WasmValkind.I64])
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [WasmValkind.I64])
       linker.defineFuncUnchecked("nev:plugins/render", "create-texture", ty):
         var instance = cast[ptr InstanceData](store.getData())
         var width: int32
         var height: int32
         var data: uint32
         var format: TextureFormat
+        var dynamic: bool
         width = convert(parameters[0].i32, int32)
         height = convert(parameters[1].i32, int32)
         data = convert(parameters[2].i32, uint32)
         format = cast[TextureFormat](parameters[3].i32)
-        let res = renderCreateTexture(instance, width, height, data, format)
+        dynamic = parameters[4].i32.bool
+        let res = renderCreateTexture(instance, width, height, data, format,
+                                      dynamic)
         parameters[0].i64 = cast[int64](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [WasmValkind.I64])
+      linker.defineFuncUnchecked("nev:plugins/render", "create-texture-buffer",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var width: int32
+        var height: int32
+        var data: ptr SharedBufferResource
+        var offset: uint32
+        var format: TextureFormat
+        var dynamic: bool
+        width = convert(parameters[0].i32, int32)
+        height = convert(parameters[1].i32, int32)
+        data = ?instance.resources.resourceHostData(parameters[2].i32,
+            SharedBufferResource)
+        offset = convert(parameters[3].i32, uint32)
+        format = cast[TextureFormat](parameters[4].i32)
+        dynamic = parameters[5].i32.bool
+        let res = renderCreateTextureBuffer(instance, width, height, data[],
+            offset, format, dynamic)
+        parameters[0].i64 = cast[int64](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render", "update-texture", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var id: uint64
+        var width: int32
+        var height: int32
+        var data: uint32
+        var format: TextureFormat
+        id = convert(parameters[0].i64, uint64)
+        width = convert(parameters[1].i32, int32)
+        height = convert(parameters[2].i32, int32)
+        data = convert(parameters[3].i32, uint32)
+        format = cast[TextureFormat](parameters[4].i32)
+        renderUpdateTexture(instance, id, width, height, data, format)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/render", "update-texture-buffer",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var id: uint64
+        var width: int32
+        var height: int32
+        var data: ptr SharedBufferResource
+        var offset: uint32
+        var format: TextureFormat
+        id = convert(parameters[0].i64, uint64)
+        width = convert(parameters[1].i32, int32)
+        height = convert(parameters[2].i32, int32)
+        data = ?instance.resources.resourceHostData(parameters[3].i32,
+            SharedBufferResource)
+        offset = convert(parameters[4].i32, uint32)
+        format = cast[TextureFormat](parameters[5].i32)
+        renderUpdateTextureBuffer(instance, id, width, height, data[], offset,
+                                  format)
     if e.isErr:
       return e
   block:

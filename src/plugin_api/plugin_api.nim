@@ -1,5 +1,5 @@
 import std/[macros, strutils, os, strformat, sequtils, json, sets, tables, atomics, locks]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils, regex, rope_regex, generational_seq]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils, regex, rope_regex, generational_seq, shared_buffer]
 import nimsumtree/[rope, sumtree, arc, clock, buffer]
 import service
 import layout
@@ -21,6 +21,9 @@ logCategory "plugin-api-v0"
 const apiVersion: int32 = 0
 
 type Resource = object of RootObj
+
+type SharedBufferResource = object of Resource
+  buffer: SharedBuffer
 
 type RopeResource = object of Resource
   rope: RopeSlice[Point]
@@ -72,6 +75,7 @@ type
     vfs: VFS
     permissions: PluginPermissions
     commands: seq[CommandId]
+    customRenderers: seq[tuple[editor: TextDocumentEditor, id: CustomRendererId]]
     namespace: string
     args: string
     destroyRequested: Atomic[bool]
@@ -170,6 +174,7 @@ when defined(witRebuild):
     mapName "read-channel", ReadChannelResource
     mapName "write-channel", WriteChannelResource
     mapName "process", ProcessResource
+    mapName "shared-buffer", SharedBufferResource
 
 else:
   static: hint("Using cached plugin_api.wit (plugin_api_host.nim)")
@@ -362,6 +367,9 @@ method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
   for commandId in instanceData.get.commands:
     self.host.commands.unregisterCommand(commandId)
 
+  for cmd in instanceData.get.customRenderers:
+    cmd.editor.removeCustomRenderer(cmd.id)
+
   instanceData.getMutUnsafe.resources.dropResources(instanceData.get.store.context, callDestroy = true)
   instanceData.get.store.delete()
   self.instances.removeShift(instance)
@@ -425,7 +433,7 @@ proc runInstanceThread(instance: sink Arc[InstanceDataImpl]) =
     return
 
   while not instance.getMutUnsafe.destroyRequested.load():
-    poll(2000)
+    poll(5)
 
   instance.getMutUnsafe.resources.dropResources(instance.get.store.context, callDestroy = true)
   instance.get.store.delete()
@@ -896,6 +904,7 @@ proc textEditorAddCustomRenderCallback*(instance: ptr InstanceData; editor: Text
       except CatchableError as e:
         log lvlWarn, &"Failed to run custom render: {e.msg}"
         echo e.getStackTrace()
+    instance.customRenderers.add((editor.TextDocumentEditor, id))
     return id.int64
 
 proc textEditorRemoveCustomRenderCallback*(instance: ptr InstanceData; editor: TextEditor; cb: int64): void =
@@ -903,6 +912,10 @@ proc textEditorRemoveCustomRenderCallback*(instance: ptr InstanceData; editor: T
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.removeCustomRenderer(cb.CustomRendererId)
+    for i in 0..instance.customRenderers.high:
+      if instance.customRenderers[i].editor == editor.TextDocumentEditor and instance.customRenderers[i].id.int64 == cb:
+        instance.customRenderers.removeSwap(i)
+        break
 
 proc textEditorAddOverlay*(instance: ptr InstanceData; editor: TextEditor; selections: Selection; text: sink string; id: int64; scope: sink string; bias: Bias; renderId: int64; location: OverlayRenderLocation): void =
   if instance.host == nil:
@@ -915,6 +928,52 @@ proc textEditorClearOverlays*(instance: ptr InstanceData; editor: TextEditor; id
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.clearOverlays(id.int)
+
+proc typesNewSharedBuffer*(instance: ptr InstanceData, size: int64): SharedBufferResource =
+  return SharedBufferResource(buffer: SharedBuffer.new(size))
+
+proc typesCloneRef*(instance: ptr InstanceData; self: var SharedBufferResource): SharedBufferResource =
+  return self
+
+proc typesLen*(instance: ptr InstanceData; self: var SharedBufferResource): int64 =
+  if self.buffer.isNil:
+    return 0
+  return self.buffer.len
+
+proc typesWriteString*(instance: ptr InstanceData; self: var SharedBufferResource; index: int64; data: sink string): void =
+  if self.buffer.isNil or index + data.len > self.buffer.len:
+    log lvlError, &"Buffer write out of bounds: {index}..<{index + data.len} notin 0..<{self.buffer.len}"
+    return
+  self.buffer.write(index, data)
+
+proc typesWrite*(instance: ptr InstanceData; self: var SharedBufferResource; index: int64; data: sink seq[uint8]): void =
+  if self.buffer.isNil or index + data.len > self.buffer.len:
+    log lvlError, &"Buffer write out of bounds: {index}..<{index + data.len} notin 0..<{self.buffer.len}"
+    return
+  self.buffer.write(index, data)
+
+proc typesReadInto*(instance: ptr InstanceData; self: var SharedBufferResource; index: int64; dst: uint32; len: int32): void =
+  if self.buffer.isNil or len <= 0 or index + len > self.buffer.len:
+    log lvlError, &"Buffer read out of bounds: {index}..<{index + len} notin 0..<{self.buffer.len}"
+    return
+  discard instance.funcs.mem[(dst.int + len.int - 1).WasmPtr] # crash if out of bounds. todo: replace this with bounds check
+  let wasmBuffer = instance.funcs.mem.getRawPtr(dst.WasmPtr)
+  if wasmBuffer != nil:
+    self.buffer.readInto(index, wasmBuffer.toOpenArray(0, len - 1))
+
+proc typesRead*(instance: ptr InstanceData; self: var SharedBufferResource; index: int64; len: int32): seq[uint8] =
+  if self.buffer.isNil or len <= 0 or index + len > self.buffer.len:
+    return @[]
+  result = newSeq[uint8](len)
+  self.buffer.readInto(0, result)
+
+proc typesSharedBufferOpen*(instance: ptr InstanceData; path: sink string): Option[SharedBufferResource] =
+  let buff = openGlobalBuffer(path)
+  if buff.isSome:
+    return SharedBufferResource(buffer: buff.get).some
+
+proc typesSharedBufferMount*(instance: ptr InstanceData; buffer: sink SharedBufferResource; path: sink string; unique: bool): string =
+  mountGlobalBuffer(path, buffer.buffer, unique)
 
 proc typesNewRope*(instance: ptr InstanceData, content: sink string): RopeResource =
   return RopeResource(rope: createRope(content).slice().suffix(Point()))
@@ -993,19 +1052,31 @@ proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): boo
       return true
   return false
 
+proc isAllowed*(permissions: FilesystemPermissions, path: string): bool =
+  if permissions.disallowAll.get(false):
+    return false
+  for prefix in permissions.disallow:
+    if path.startsWith(prefix):
+      return false
+  if permissions.allowAll.get(false):
+    return true
+  for prefix in permissions.allow:
+    if path.startsWith(prefix):
+      return true
+  return false
+
 proc vfsReadSync*(instance: ptr InstanceData, path: sink string, readFlags: ReadFlags): Result[string, VfsError] =
   if instance.host == nil:
-    if instance.vfs != nil:
-      try:
-        let normalizedPath = instance.vfs.normalize(path)
-        if not instance.permissions.filesystemRead.isAllowed(normalizedPath, instance.vfs):
-          result.err(VfsError.NotAllowed)
-          return
-        return results.ok(instance.vfs.read(normalizedPath, readFlags.toInternal).waitFor())
-      except IOError as e:
-        log lvlWarn, &"Failed to read file for plugin: {e.msg}"
-        result.err(VfsError.NotFound)
-    return
+    # Background thread, can't access vfs for now because it's not thread save (yet)
+    try:
+      if not instance.permissions.filesystemRead.isAllowed(path):
+        result.err(VfsError.NotAllowed)
+        return
+      let f = readFile(path)
+      return results.ok(f)
+    except IOError as e:
+      result.err(VfsError.NotFound)
+      return
 
   try:
     let normalizedPath = instance.host.vfs.normalize(path)
@@ -1085,6 +1156,15 @@ proc coreIsMainThread*(instance: ptr InstanceData): bool =
 
 proc coreGetArguments*(instance: ptr InstanceData): string =
   return instance.args
+
+proc sleepImpl(instance: ptr InstanceData, task: uint64, time: int) {.async.} =
+  await sleepAsync(time.milliseconds)
+  let res = instance.funcs.notifyTaskComplete(task, canceled = false)
+  if res.isErr:
+    log lvlError, "Failed to call notifyTaskComplete: " & res.err.msg
+
+proc coreSleepAsync*(instance: ptr InstanceData, task: uint64, milliseconds: uint32) =
+  asyncSpawn sleepImpl(instance, task, milliseconds.int)
 
 type ThreadState = object
   instance: Arc[InstanceDataImpl]
@@ -1277,24 +1357,82 @@ proc renderScrollDelta*(instance: ptr InstanceData; self: var RenderViewResource
 proc renderSetRenderWhenInactive*(instance: ptr InstanceData; self: var RenderViewResource; enabled: bool): void =
   self.view.setRenderWhenInactive(enabled)
 
-proc renderCreateTexture*(instance: ptr InstanceData; width: int32; height: int32; data: uint32; format: TextureFormat): uint64 =
-  var colors: seq[chroma.Color] = @[]
+proc readTextureData*(instance: ptr InstanceData; width: int; height: int; data: uint32; format: TextureFormat): seq[chroma.ColorRGBX] =
+  if width * height == 0:
+    return
+  var colors: seq[chroma.ColorRGBX] = @[]
   colors.setLen(width * height)
 
   let bytesPerPixel = case format
   of TextureFormat.Rgba32: 4 * sizeof(float32)
+  of TextureFormat.Rgba8: 4 * sizeof(uint8)
 
   let wasmBufferLen = colors.len * bytesPerPixel
   let wasmBufferAddr = data
 
+  if wasmBufferAddr.int + wasmBufferLen - 1 > int32.high.int:
+    echo &"Memory out of bounds: {wasmBufferAddr.int} + {wasmBufferLen} - 1 = {wasmBufferAddr.int + wasmBufferLen - 1} > {int32.high}"
+    return @[]
   discard instance.funcs.mem[(wasmBufferAddr.int + wasmBufferLen - 1).WasmPtr] # crash if out of bounds. todo: replace this with bounds check
   let wasmBuffer = cast[ptr UncheckedArray[float]](instance.funcs.mem.getRawPtr(wasmBufferAddr.WasmPtr))
   if wasmBuffer != nil:
     copyMem(colors[0].addr, wasmBuffer[0].addr, wasmBufferLen)
   else:
     log lvlWarn, &"failed to get wasm buffer address"
+    return @[]
+
+  return colors
+
+proc readTextureData*(instance: ptr InstanceData; width: int; height: int; data: SharedBufferResource; offset: int; format: TextureFormat): seq[chroma.ColorRGBX] =
+  var colors: seq[chroma.ColorRGBX] = @[]
+  colors.setLen(width * height)
+  if colors.len == 0:
+    return colors
+
+  let bytesPerPixel = case format
+  of TextureFormat.Rgba32: 4 * sizeof(float32)
+  of TextureFormat.Rgba8: 4 * sizeof(uint8)
+
+  let bufferLen = colors.len * bytesPerPixel
+  if offset + bufferLen > data.buffer.len:
+    # echo &"Memory out of bounds: {bufferLen} > {data.buffer.len}"
+    return @[]
+  data.buffer.readInto(offset, cast[ptr UncheckedArray[uint8]](colors[0].addr).toOpenArray(0, bufferLen - 1))
+  return colors
+
+proc renderCreateTexture*(instance: ptr InstanceData; width: int32; height: int32; data: uint32; format: TextureFormat, dynamic: bool): uint64 =
+  let width = width.int
+  let height = height.int
+  if width * height > int32.high.int:
+    echo &"Texture too big: {width}, {height}"
     return 0
-  return createTexture(width.int, height.int, colors).uint64
+  let colors = instance.readTextureData(width, height, data, format)
+  if colors.len == 0:
+    return 0
+  return createTexture(width, height, colors, dynamic).uint64
+
+proc renderCreateTextureBuffer*(instance: ptr InstanceData; width: int32; height: int32; data: var SharedBufferResource; offset: uint32; format: TextureFormat, dynamic: bool): uint64 =
+  let colors = instance.readTextureData(width.int, height.int, data, offset.int, format)
+  if colors.len == 0:
+    return 0
+  return createTexture(width, height, colors, dynamic).uint64
+
+proc renderUpdateTexture*(instance: ptr InstanceData; id: uint64; width: int32; height: int32; data: uint32; format: TextureFormat) =
+  let width = width.int
+  let height = height.int
+  if width * height > int32.high.int:
+    echo &"Texture too big: {width}, {height}"
+    return
+  let colors = instance.readTextureData(width, height, data, format)
+  if colors.len == 0:
+    return
+  updateTexture(id.TextureId, width, height, colors)
+
+proc renderUpdateTextureBuffer*(instance: ptr InstanceData; id: uint64; width: int32; height: int32; data: var SharedBufferResource; offset: uint32; format: TextureFormat) =
+  let colors = instance.readTextureData(width.int, height.int, data, offset.int, format)
+  if colors.len == 0:
+    return
+  updateTexture(id.TextureId, width, height, colors)
 
 proc renderDeleteTexture*(instance: ptr InstanceData; id: uint64): void =
   deleteTexture(id.TextureId)

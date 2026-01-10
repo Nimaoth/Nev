@@ -148,6 +148,11 @@ func len*[T](arr: ArrayView[T]): int =
 func cap*[T](arr: ArrayView[T]): int =
   arr.capacity.int
 
+func setLen*[T](arr: var ArrayView[T], newLen: int) =
+  assert newLen >= 0
+  assert newLen <= arr.capacity
+  arr.len = newLen
+
 func `len=`*[T](arr: var ArrayView[T], newLen: int) =
   assert newLen >= 0
   assert newLen <= arr.capacity
@@ -160,3 +165,14 @@ iterator items*[T](arr: ArrayView[T]): T =
 iterator mitems*[T](arr: var ArrayView[T]): var T =
   for i in 0..<arr.len:
     yield arr.data[i]
+
+iterator pairs*[T](arr: ArrayView[T]): (int, T) =
+  for i in 0..<arr.len:
+    yield (i, arr.data[i])
+
+iterator pairs*[T](arr: var ArrayView[T]): (int, var T) =
+  for i in 0..<arr.len:
+    yield (i, arr.data[i])
+
+func data*[T](arr: var ArrayView[T]): ptr UncheckedArray[T] =
+  return arr.data

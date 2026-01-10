@@ -576,12 +576,17 @@ proc updateTextures(self: GuiPlatform) =
     for tex in texturesToUpload:
       try:
         if tex.id in textures[]:
-          let image = newImage(tex.width, tex.height)
-          for y in 0..<tex.height:
-            for x in 0..<tex.width:
-              image.data[x + y * tex.width] = tex.data[x + y * tex.width].toRgbaFast()
-          let texture = newTexture(image)
-          textures[].set(tex.id, texture)
+          let existing = textures[][tex.id]
+          if existing != nil:
+            if existing.streaming:
+              existing.streamImage(tex.data[0].addr)
+            else:
+              existing.updateSubImage(0, 0, tex.width, tex.height, tex.data[0].addr, existing.format, 0)
+          else:
+            var image = newImage(tex.width, tex.height)
+            image.data = tex.data
+            let texture = newTexture(image, streaming = tex.dynamic)
+            textures[].set(tex.id, texture)
       except CatchableError as e:
         log lvlError, &"Failed to create texture: {e.msg}"
       except GLerror as e:

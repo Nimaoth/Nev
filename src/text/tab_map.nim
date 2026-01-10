@@ -116,21 +116,21 @@ proc desc*(self: TabMapSnapshot): string =
 proc `$`*(self: TabMapSnapshot): string =
   result.add self.desc
 
-proc iter*(self {.byref.}: TabMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none): TabChunkIterator =
+proc iter*(self {.byref.}: TabMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): TabChunkIterator =
   let r = tabPoint(0, 0)...self.endTabPoint # todo: pass as parameter
   var (_, _, toNextStop) = self.toInputPointEx(r.a)
   if r.a + tabPoint(0, toNextStop) > r.b:
     toNextStop = r.b.column.int - r.a.column.int
   result = TabChunkIterator(
-    inputChunks: self.input.iter(highlighter),
+    inputChunks: self.input.iter(highlighter, theme),
     tabMap: self.clone(),
     maxExpansionColumn: self.maxExpansionColumn,
     insideLeadingTab: toNextStop > 0,
     tabTexts: "|" & " ".repeat(self.tabWidth - 1),
     tabColor: color(1, 1, 1),
   )
-  if highlighter.isSome:
-    result.tabColor = highlighter.get.theme.tokenColor(["tab", "comment"], color(1, 1, 1))
+  if theme != nil:
+    result.tabColor = theme.tokenColor(["tab", "comment"], color(1, 1, 1))
 
 func expandTabs*(self: TabMapSnapshot, chunks: var InputChunkIterator, column: int): int =
   if self.buffer.visibleText.summary.tabs == 0:

@@ -62,12 +62,12 @@ method moveToMonitor*(self: Platform, index: int) {.base, gcsafe, raises: [].} =
 method createTexture*(self: Platform, image: Image): TextureId {.base, gcsafe, raises: [].} = discard
 method focusWindow*(self: Platform) {.base, gcsafe, raises: [].} = discard
 
-var texturesToUpload: seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.Color]]]
+var texturesToUpload: seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.ColorRGBX], dynamic: bool]]
 var texturesToDelete: seq[TextureId]
 var texturesLock*: Lock
 texturesLock.initLock()
 
-proc takeTexturesToUpload*(): seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.Color]]] =
+proc takeTexturesToUpload*(): seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.ColorRGBX], dynamic: bool]] =
   {.gcsafe.}:
     withLock(texturesLock):
       swap(result, texturesToUpload)
@@ -78,14 +78,19 @@ proc takeTexturesToDelete*(): seq[TextureId] =
       swap(result, texturesToDelete)
 
 var reserveTextureImpl*: proc(): TextureId {.gcsafe, raises: [].}
-proc createTexture*(width: int, height: int, data: sink seq[chroma.Color]): TextureId =
+proc createTexture*(width: int, height: int, data: sink seq[chroma.ColorRGBX], dynamic: bool = false): TextureId =
   {.gcsafe.}:
     withLock(texturesLock):
       if reserveTextureImpl == nil:
         return 0.TextureId
       let id = reserveTextureImpl()
-      texturesToUpload.add((id, width, height, data))
+      texturesToUpload.add((id, width, height, data, dynamic))
       return id
+
+proc updateTexture*(id: TextureId, width: int, height: int, data: sink seq[chroma.ColorRGBX]) =
+  {.gcsafe.}:
+    withLock(texturesLock):
+      texturesToUpload.add((id, width, height, data, true))
 
 proc deleteTexture*(id: TextureId) =
   {.gcsafe.}:

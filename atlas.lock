@@ -99,13 +99,13 @@
     "boxy.Nimaoth.github.com": {
       "dir": "$deps\\boxy.Nimaoth.github.com",
       "url": "https://github.com/Nimaoth/boxy",
-      "commit": "bfc8665443fe9af264eaa80769a6699679f5f273",
+      "commit": "cb4ab84eafae04e19890b6ec4535bc28c4e2905f",
       "version": ""
     },
     "nimtreesitter-api.Nimaoth.github.com": {
       "dir": "$deps\\nimtreesitter-api.Nimaoth.github.com",
       "url": "https://github.com/Nimaoth/nimtreesitter-api",
-      "commit": "cd29e9ba901909e55131a2deb793fd5493af2b72",
+      "commit": "893dd7103a86b30de7951185c047068b9d2f3347",
       "version": ""
     },
     "nimwasmtime.Nimaoth.github.com": {
@@ -323,8 +323,8 @@
       "# requires \"https://github.com/Nimaoth/ws >= 0.5.0\"",
       "requires \"https://github.com/Nimaoth/windy#ae1627e\"",
       "requires \"https://github.com/Nimaoth/lrucache.nim#479d4cf\"",
-      "requires \"https://github.com/Nimaoth/boxy#bfc8665\"",
-      "requires \"https://github.com/Nimaoth/nimtreesitter-api#cd29e9b\"",
+      "requires \"https://github.com/Nimaoth/boxy#cb4ab84\"",
+      "requires \"https://github.com/Nimaoth/nimtreesitter-api#893dd71\"",
       "requires \"https://github.com/Nimaoth/nimwasmtime#8e0fe14\"",
       "requires \"https://github.com/Nimaoth/nimsumtree#ee2d92b\"",
       "requires \"https://github.com/Nimaoth/zippy >= 0.10.17\"",

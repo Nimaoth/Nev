@@ -528,12 +528,26 @@ proc createTerminalBuffer*(state: var TerminalThreadState): TerminalBuffer =
       result[col, scrolledRow] = c
       prevOverlap = cell.width.int
 
+proc toRgbaFast(c: colortypes.Color): ColorRGBA {.inline.} =
+  ## Convert Color to ColorRGBA
+  result.r = (c.r * 255 + 0.5).uint8
+  result.g = (c.g * 255 + 0.5).uint8
+  result.b = (c.b * 255 + 0.5).uint8
+  result.a = (c.a * 255 + 0.5).uint8
+
+proc toRgbx*(colors: openArray[chroma.Color]): seq[chroma.ColorRGBX] =
+  var colorsRgbx = newSeq[chroma.ColorRGBX](colors.len)
+  for i in 0..<colors.len:
+    colorsRgbx[i] = colors[i].toRgbaFast()
+  return colorsRgbx
+
 proc createTexture(self: TerminalService, sixel: sink Sixel) =
   try:
     # debugf"cache sixel {sixel.contentHash} {sixel.width}x{sixel.height}"
     var colors = newSeq[chroma.Color]()
     swap(colors, sixel.colors)
-    let textureId = createTexture(sixel.width, sixel.height, colors.ensureMove)
+
+    let textureId = createTexture(sixel.width, sixel.height, colors.toRgbx)
     self.sixelTextures[sixel.contentHash] = textureId
   except PixieError as e:
     log lvlError, &"Failed to create image for sixel: {e.msg}"
@@ -1285,7 +1299,7 @@ template kittyDebugf*(x: static string) =
 proc addImage(s: var KittyState, id: int, width, height: int, colors: var seq[chroma.Color]) =
   var tempColors = newSeq[chroma.Color]()
   swap(tempColors, colors)
-  let textureId = createTexture(width, height, tempColors.ensureMove)
+  let textureId = createTexture(width, height, tempColors.toRgbx)
   kittyDebugf"Kitty.add image {id} {width}x{height}, {textureId.int}"
   s.images[id] = (width, height, textureId)
 

@@ -104,13 +104,13 @@ proc new*(_: typedesc[DisplayMap]): DisplayMap =
   discard result.wrapMap.onUpdated.subscribe (a: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(a[0], a[1])
   discard result.diffMap.onUpdated.subscribe (a: (DiffMap, DiffMapSnapshot)) => self.handleDiffMapUpdated(a[0], a[1])
 
-proc iter*(displayMap: var DisplayMap, highlighter: Option[Highlighter] = Highlighter.none): DisplayChunkIterator =
+proc iter*(displayMap: var DisplayMap, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): DisplayChunkIterator =
   result = DisplayChunkIterator(
-    diffChunks: displayMap.diffMap.snapshot.iter(highlighter),
+    diffChunks: displayMap.diffMap.snapshot.iter(highlighter, theme),
     indentGuideColor: color(1, 1, 1),
   )
-  if highlighter.isSome:
-    result.indentGuideColor = highlighter.get.theme.tokenColor(["indentGuide", "comment"], color(1, 1, 1))
+  if theme != nil:
+    result.indentGuideColor = theme.tokenColor(["indentGuide", "comment"], color(1, 1, 1))
 
 func remoteId*(self: DisplayMap): BufferId = self.wrapMap.snapshot.buffer.remoteId
 func buffer*(self: DisplayMap): lent BufferSnapshot = self.wrapMap.snapshot.buffer

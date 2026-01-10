@@ -74,3 +74,13 @@ proc coreFinishBackgroundImported(): void {.
 proc finishBackground*(): void {.nodestroy.} =
   ## Destroy the current plugin instance.
   coreFinishBackgroundImported()
+
+proc coreSleepAsyncImported(a0: uint64; a1: uint32): void {.
+    wasmimport("sleep-async", "nev:plugins/core").}
+proc sleepAsync*(task: uint64; milliseconds: uint32): void {.nodestroy.} =
+  var
+    arg0: uint64
+    arg1: uint32
+  arg0 = task
+  arg1 = milliseconds
+  coreSleepAsyncImported(arg0, arg1)
