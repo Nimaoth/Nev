@@ -201,3 +201,7 @@ task buildStacktracer, "Build stacktracer (Rust library for getting stack traces
     exec "cargo build --release"
   when defined(windows):
     exec "cp ./stacktracer/target/release/stacktracer.dll ."
+
+# Put custom build commands which shouldn't be commited in nev.nimble
+when withDir(thisDir(), fileExists("local-nimble.nim")):
+  include "local-nimble.nim"
