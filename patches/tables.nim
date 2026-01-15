@@ -744,6 +744,25 @@ template withValue*[A, B](t: Table[A, B], key: A,
   withValue(t, key, value, body):
     discard
 
+template withValue2*[A, B, C](t: Table[A, B], key: C,
+                          value, body1, body2: untyped) =
+  ## Retrieves the value at `t[key]` if it exists, assigns
+  ## it to the variable `value` and executes `body`
+  mixin rawGet
+  var hc: Hash
+  var index = rawGet(t, key, hc)
+  if index >= 0:
+    let value {.cursor, inject.} = t.data[index].val
+    body1
+  else:
+    body2
+
+template withValue2*[A, B, C](t: Table[A, B], key: C,
+                          value, body: untyped) =
+  ## Retrieves the value at `t[key]` if it exists, assigns
+  ## it to the variable `value` and executes `body`
+  withValue2(t, key, value, body):
+    discard
 
 iterator pairs*[A, B](t: Table[A, B]): (A, B) =
   ## Iterates over any `(key, value)` pair in the table `t`.
@@ -2393,6 +2412,15 @@ proc enlarge[A](t: var CountTable[A]) =
   swap(t.data, n)
 
 proc rawGet[A](t: CountTable[A], key: A): int =
+  if t.data.len == 0:
+    return -1
+  var h: Hash = hash(key) and high(t.data) # start with real hash value
+  while t.data[h].val != 0:
+    if t.data[h].key == key: return h
+    h = nextTry(h, high(t.data))
+  result = -1 - h # < 0 => MISSING; insert idx = -1 - result
+
+proc rawGet[A, B](t: CountTable[A], key: B): int =
   if t.data.len == 0:
     return -1
   var h: Hash = hash(key) and high(t.data) # start with real hash value

@@ -47,7 +47,7 @@ method processEvents*(self: Platform): int {.base, gcsafe, raises: [].} = discar
 method `fontSize=`*(self: Platform, fontSize: float) {.base, gcsafe, raises: [].} = discard
 method `lineDistance=`*(self: Platform, lineDistance: float) {.base, gcsafe, raises: [].} = discard
 method setFont*(self: Platform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) {.base, gcsafe, raises: [].} = discard
-method getFontInfo*(self: Platform, fontSize: float, flags: UINodeFlags): FontInfo {.base, gcsafe, raises: [].} = discard
+method getFontInfo*(self: Platform, fontSize: float, flags: UINodeFlags): ptr FontInfo {.base, gcsafe, raises: [].} = discard
 method fontSize*(self: Platform): float {.base, gcsafe, raises: [].} = discard
 method lineDistance*(self: Platform): float {.base, gcsafe, raises: [].} = discard
 method lineHeight*(self: Platform): float {.base, gcsafe, raises: [].} = discard

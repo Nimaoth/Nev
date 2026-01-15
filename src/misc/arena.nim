@@ -16,6 +16,12 @@ type
     bucketSize: int
     buckets: seq[Bucket] = @[]
 
+proc `=copy`(x: var Arena, y: Arena) {.error.}
+
+proc `=destroy`(arena: Arena) =
+  for i in 0..arena.buckets.high:
+    deallocShared(arena.buckets[i].data)
+
 proc align(address, alignment: int): int =
   if alignment == 0: # Actually, this is illegal. This branch exists to actively
                      # hide problems.

@@ -60,6 +60,8 @@ type
     pixelSize: IVec2
     cellPixelSize: IVec2
 
+    fontInfo: FontInfo
+
 proc enterFullScreen() =
   ## Enters full-screen mode (clears the terminal).
   when defined(windows):
@@ -235,6 +237,14 @@ method init*(self: TerminalPlatform, options: AppOptions) =
 
     self.inputParser.enableEscapeTimeout = true
     self.inputParser.escapeTimeout = 32
+
+    self.fontInfo = FontInfo(
+      ascent: 0,
+      lineHeight: 1,
+      lineGap: 0,
+      scale: 1,
+      advance: proc(rune: Rune): float = 1
+    )
 
     when defined(windows):
       self.readInputOnThread = true
@@ -433,14 +443,8 @@ proc popMask(self: TerminalPlatform) =
 
 method setVsync*(self: TerminalPlatform, enabled: bool) {.gcsafe, raises: [].} = discard
 
-method getFontInfo*(self: TerminalPlatform, fontSize: float, flags: UINodeFlags): FontInfo {.gcsafe, raises: [].} =
-  FontInfo(
-    ascent: 0,
-    lineHeight: 1,
-    lineGap: 0,
-    scale: 1,
-    advance: proc(rune: Rune): float = 1
-  )
+method getFontInfo*(self: TerminalPlatform, fontSize: float, flags: UINodeFlags): ptr FontInfo {.gcsafe, raises: [].} =
+  self.fontInfo.addr
 
 method processEvents*(self: TerminalPlatform): int {.gcsafe.} =
   try:
