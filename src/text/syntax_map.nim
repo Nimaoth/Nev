@@ -2,7 +2,7 @@ import std/[options, strformat, tables, algorithm]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import misc/[custom_async, custom_unicode, util, regex, timer, rope_utils]
+import misc/[custom_async, custom_unicode, util, regex, timer, rope_utils, arena, array_view]
 import text/diff, text/custom_treesitter
 from language/lsp_types import nil
 import theme
@@ -40,7 +40,7 @@ type
 
 type
   StyledChunkUnderline* = object
-    color*: string # todo: dont use string to avoid allocation on copying
+    color*: Color # todo: dont use string to avoid allocation on copying
 
   StyledChunk* = object
     chunk*: RopeChunk
@@ -72,12 +72,18 @@ type
     highlightsIndex: int = -1
     diagnosticEndPoints*: seq[DiagnosticEndPoint]
     diagnosticIndex*: int
-
+    matches: seq[TSQueryMatch]
+    predicates: seq[TSPredicateResult]
     defaultColor: Color
     errorDepth: int
     warnDepth: int
     infoDepth: int
     hintDepth: int
+    errorColor: Color
+    warningColor: Color
+    infoColor: Color
+    hintColor: Color
+    arena: Arena
 
 func high*(_: typedesc[Point]): Point = Point(row: uint32.high, column: uint32.high)
 
@@ -388,8 +394,20 @@ proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, highlighter: 
   result.defaultColor = color(1, 1, 1)
   result.highlighter = highlighter
   result.theme = theme
+  # todo: reuse this arena every frame
+  result.arena = initArena(16 * 1024)
+
+  result.errorColor = result.defaultColor
+  result.warningColor = result.defaultColor
+  result.infoColor = result.defaultColor
+  result.hintColor = result.defaultColor
+
   if theme != nil:
     result.defaultColor = theme.color("editor.foreground", color(1, 1, 1))
+    result.errorColor = theme.tokenColor("error", result.defaultColor)
+    result.warningColor = theme.tokenColor("warning", result.defaultColor)
+    result.infoColor = theme.tokenColor("info", result.defaultColor)
+    result.hintColor = theme.tokenColor("hint", result.defaultColor)
 
 func point*(self: StyledChunkIterator): Point = self.chunks.state.nextPoint
 func point*(self: StyledChunk): Point = self.chunk.point
@@ -481,12 +499,11 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
       let point = currentChunk.point
       let endPoint = currentChunk.endPoint
       let range = tsRange(tsPoint(point.row.int, point.column.int), tsPoint(endPoint.row.int, endPoint.column.int))
-      var matches: seq[TSQueryMatch] = self.highlighter.get.query.matches(self.highlighter.get.tree.root, range)
+      self.arena.restoreCheckpoint(0)
 
       var requiresSort = false
-
-      for match in matches:
-        let predicates = self.highlighter.get.query.predicatesForPattern(match.pattern)
+      for match in self.highlighter.get.query.matches(self.highlighter.get.tree.root, range, self.arena):
+        let predicates = self.highlighter.get.query.predicatesForPattern(match.pattern, self.arena)
         for capture in match.captures:
           let node = capture.node
           let byteRange = node.startByte...node.endByte
@@ -508,47 +525,47 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
                 break
 
               case predicate.operator
-              of "match?":
-                if not regexes[].contains(operand.`type`):
-                  try:
-                    regexes[][operand.`type`] = re(operand.`type`)
-                  except RegexError:
-                    matches = false
-                    break
-                let regex {.cursor.} = regexes[][operand.`type`]
+              # of "match?":
+              #   if not regexes[].contains(operand.`type`):
+              #     try:
+              #       regexes[][operand.`type`] = re(operand.`type`)
+              #     except RegexError:
+              #       matches = false
+              #       break
+              #   let regex {.cursor.} = regexes[][operand.`type`]
 
-                let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                if nodeText.matchLen(regex, 0) != nodeText.len:
-                  matches = false
-                  break
+              #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+              #   if nodeText.matchLen(regex, 0) != nodeText.len:
+              #     matches = false
+              #     break
 
-              of "not-match?":
-                if not regexes[].contains(operand.`type`):
-                  try:
-                    regexes[][operand.`type`] = re(operand.`type`)
-                  except RegexError:
-                    matches = false
-                    break
-                let regex {.cursor.} = regexes[][operand.`type`]
+              # of "not-match?":
+              #   if not regexes[].contains(operand.`type`):
+              #     try:
+              #       regexes[][operand.`type`] = re(operand.`type`)
+              #     except RegexError:
+              #       matches = false
+              #       break
+              #   let regex {.cursor.} = regexes[][operand.`type`]
 
-                let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                if nodeText.matchLen(regex, 0) == nodeText.len:
-                  matches = false
-                  break
+              #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+              #   if nodeText.matchLen(regex, 0) == nodeText.len:
+              #     matches = false
+              #     break
 
-              of "eq?":
-                # @todo: second arg can be capture aswell
-                let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                if nodeText != operand.`type`:
-                  matches = false
-                  break
+              # of "eq?":
+              #   # @todo: second arg can be capture aswell
+              #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+              #   if nodeText != operand.`type`:
+              #     matches = false
+              #     break
 
-              of "not-eq?":
-                # @todo: second arg can be capture aswell
-                let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                if nodeText == operand.`type`:
-                  matches = false
-                  break
+              # of "not-eq?":
+              #   # @todo: second arg can be capture aswell
+              #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+              #   if nodeText == operand.`type`:
+              #     matches = false
+              #     break
 
               # of "any-of?":
               #   # todo
@@ -603,13 +620,13 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
     Point.high
 
   let underline = if self.errorDepth > 0:
-    StyledChunkUnderline(color: "error").some
+    StyledChunkUnderline(color: self.errorColor).some
   elif self.warnDepth > 0:
-    StyledChunkUnderline(color: "warning").some
+    StyledChunkUnderline(color: self.warningColor).some
   elif self.infoDepth > 0:
-    StyledChunkUnderline(color: "info").some
+    StyledChunkUnderline(color: self.infoColor).some
   elif self.hintDepth > 0:
-    StyledChunkUnderline(color: "hint").some
+    StyledChunkUnderline(color: self.hintColor).some
   else:
     StyledChunkUnderline.none
 

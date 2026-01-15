@@ -1,5 +1,5 @@
 import std/[options, json, tables]
-import misc/[custom_logger, custom_async, util, custom_unicode, jsonex]
+import misc/[custom_logger, custom_async, util, custom_unicode, jsonex, arena, array_view]
 import vfs, wasm_engine
 
 from scripting_api import Cursor, Selection, byteIndexToCursor
@@ -80,20 +80,20 @@ type TSNode* = object
   impl: ts.TSNode
 
 type TSQueryCapture* = object
-  name*: string
+  name*: cstring
   node*: TSNode
 
-type TSQueryMatch* = ref object
+type TSQueryMatch* = object
   pattern*: int
-  captures*: seq[TSQueryCapture]
+  captures*: ArrayView[TSQueryCapture]
 
 type TSPredicateResultOperand* = object
-  name*: string
-  `type`*: string
+  name*: cstring
+  `type`*: cstring
 
 type TSPredicateResult* = object
-  operator*: string
-  operands*: seq[TSPredicateResultOperand]
+  operator*: cstring
+  operands*: ArrayView[TSPredicateResultOperand]
 
 type TSPoint* = object
   row*: int
@@ -304,11 +304,23 @@ proc getCaptureName*(query: TSQuery, index: uint32): string =
   defer: assert result.len == length.int
   return $str
 
+proc getCaptureNameC*(query: TSQuery, index: uint32): cstring =
+  var length: uint32
+  var str = ts.tsQueryCaptureNameForId(query.impl, index, addr length)
+  defer: assert result.len == length.int
+  return str
+
 proc getStringValue*(query: TSQuery, index: uint32): string =
   var length: uint32
   var str = ts.tsQueryStringValueForId(query.impl, index, addr length)
   defer: assert result.len == length.int
   return $str
+
+proc getStringValueC*(query: TSQuery, index: uint32): cstring =
+  var length: uint32
+  var str = ts.tsQueryStringValueForId(query.impl, index, addr length)
+  defer: assert result.len == length.int
+  return str
 
 proc nextMatch(cursor: ptr ts.TSQueryCursor, query: TSQuery): Option[ts.TSQueryMatch] =
   result = ts.TSQueryMatch.none
@@ -349,9 +361,7 @@ template withTreeCursor*(node: untyped, cursor: untyped, body: untyped): untyped
 
 var scratchQueryCursor: ptr ts.TSQueryCursor = nil
 
-proc matches*(self: TSQuery, node: TSNode, rang: TSRange): seq[TSQueryMatch] =
-  result = @[]
-
+iterator matches*(self: TSQuery, node: TSNode, rang: TSRange, arena: var Arena): TSQueryMatch =
   if scratchQueryCursor.isNil:
     scratchQueryCursor = ts.tsQueryCursorNew()
   let cursor = scratchQueryCursor
@@ -361,34 +371,34 @@ proc matches*(self: TSQuery, node: TSNode, rang: TSRange): seq[TSQueryMatch] =
 
   var match = cursor.nextMatch(self)
   while match.isSome:
-    var m = TSQueryMatch(pattern: match.get.patternIndex.int)
+    var m = TSQueryMatch(
+      pattern: match.get.patternIndex.int,
+      captures: arena.allocEmptyArray(match.get.capture_count.int, TSQueryCapture),
+    )
     let capturesRaw = cast[ptr array[100000, ts.TSQueryCapture]](match.get.captures)
     for k in 0..<match.get.capture_count.int:
-      m.captures.add(TSQueryCapture(name: self.getCaptureName(capturesRaw[k].index), node: TSNode(impl: capturesRaw[k].node)))
+      if m.captures.len == m.captures.cap:
+        continue
+      m.captures.add(TSQueryCapture(name: self.getCaptureNameC(capturesRaw[k].index), node: TSNode(impl: capturesRaw[k].node)))
 
-    result.add m
+    yield m
     match = cursor.nextMatch(self)
 
-  for m in result:
-    for c in m.captures:
-      assert not c.node.impl.id.isNil
-      assert not c.node.impl.tree.isNil
-
-proc predicatesForPattern*(self: TSQuery, patternIndex: int): seq[TSPredicateResult] =
+proc predicatesForPattern*(self: TSQuery, patternIndex: int, arena: var Arena): ArrayView[TSPredicateResult] =
   var predicatesLength: uint32 = 0
   let predicatesPtr = ts.tsQueryPredicatesForPattern(self.impl, patternIndex.uint32, addr predicatesLength)
   let predicatesRaw = cast[ptr array[100000, ts.TSQueryPredicateStep]](predicatesPtr)
 
-  result = @[]
-
   var argIndex = 0
-  var predicateName: string = ""
-  var predicateArgs: seq[string] = @[]
+  var predicateName: cstring = "".cstring
+  var predicateArgs: ArrayView[cstring] = arena.allocEmptyArray(20, cstring)
+
+  result = arena.allocEmptyArray(predicatesLength.int, TSPredicateResult)
 
   for k in 0..<predicatesLength:
     case predicatesRaw[k].`type`:
     of ts.TSQueryPredicateStepTypeString:
-      let value = self.getStringValue(predicatesRaw[k].valueId)
+      let value = self.getStringValueC(predicatesRaw[k].valueId)
       if argIndex == 0:
         predicateName = value
       else:
@@ -396,12 +406,12 @@ proc predicatesForPattern*(self: TSQuery, patternIndex: int): seq[TSPredicateRes
       argIndex += 1
 
     of ts.TSQueryPredicateStepTypeCapture:
-      predicateArgs.add self.getCaptureName(predicatesRaw[k].valueId)
+      predicateArgs.add self.getCaptureNameC(predicatesRaw[k].valueId)
       argIndex += 1
 
     of ts.TSQueryPredicateStepTypeDone:
       if predicateArgs.len mod 2 == 0:
-        var predicateOperands: seq[TSPredicateResultOperand] = @[]
+        var predicateOperands = arena.allocEmptyArray(predicateArgs.len div 2, TSPredicateResultOperand)
         for i in 0..<(predicateArgs.len div 2):
           predicateOperands.add TSPredicateResultOperand(name: predicateArgs[i * 2], `type`: predicateArgs[i * 2 + 1])
         result.add (TSPredicateResult(operator: predicateName, operands: predicateOperands))
@@ -715,12 +725,12 @@ proc enableTreesitterMemoryTracking*() =
 
 iterator query*(query: TSQuery, tree: TSTree, selection: Selection): seq[tuple[node: TSNode, capture: string]] =
   let range = tsRange(tsPoint(selection.first.line, selection.first.column), tsPoint(selection.last.line, selection.last.column))
-  var matches: seq[TSQueryMatch] = query.matches(tree.root, range)
+  var arena = initArena()
 
   var requiresSort = false
 
-  for match in matches:
-    let predicates = query.predicatesForPattern(match.pattern)
+  for match in query.matches(tree.root, range, arena):
+    let predicates = query.predicatesForPattern(match.pattern, arena)
     var captures = newSeqOfCap[tuple[node: TSNode, capture: string]](match.captures.len)
     for capture in match.captures:
       let node = capture.node
@@ -788,5 +798,5 @@ iterator query*(query: TSQuery, tree: TSTree, selection: Selection): seq[tuple[n
       if not matches:
         continue
 
-      captures.add (node, capture.name)
+      captures.add (node, $capture.name)
     yield captures

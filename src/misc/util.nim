@@ -354,6 +354,13 @@ func find*[T](arr: openArray[T], val: T, start: int = 0): int =
     if arr[i] == val:
       return i
 
+func rfind*[T](arr: openArray[T], val: T, start: Natural = 0, last = -1): int =
+  let last = if last == -1: arr.high else: last
+  for i in countdown(last, start):
+    if val == arr[i]:
+      return i
+  return -1
+
 func startsWith*[T](s, prefix: openArray[T]): bool =
   let prefixLen = prefix.len
   let sLen = s.len

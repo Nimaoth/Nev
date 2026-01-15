@@ -362,11 +362,7 @@ proc getTypeface*(self: GuiPlatform, flags: UINodeFlags): Typeface =
     return self.getTypeface(self.fontBold)
   return self.getTypeface(self.fontRegular)
 
-method getFontInfo*(self: GuiPlatform, fontSize: float, flags: UINodeFlags): FontInfo {.gcsafe, raises: [].} =
-  let key = (flags, fontSize.float32)
-  if key in self.fontInfoCache:
-    return self.fontInfoCache[key]
-
+proc getFontInfo2(self: GuiPlatform, fontSize: float, flags: UINodeFlags): ptr FontInfo {.gcsafe, raises: [].} =
   let typeface = self.getTypeface(flags)
   let fontScale = fontSize / typeface.scale
   let lineHeight = round((typeface.ascent - typeface.descent + typeface.lineGap) * fontScale)
@@ -378,7 +374,8 @@ method getFontInfo*(self: GuiPlatform, fontSize: float, flags: UINodeFlags): Fon
   proc advance (rune: Rune): float =
     typeface.getAdvance(rune)
 
-  result = FontInfo(
+  let key = (flags, fontSize.float32)
+  self.fontInfoCache[key] = FontInfo(
     ascent: typeface.ascent,
     lineHeight: lineHeight,
     lineGap: typeface.lineGap,
@@ -386,7 +383,14 @@ method getFontInfo*(self: GuiPlatform, fontSize: float, flags: UINodeFlags): Fon
     # kerningAdjustment: kerningAdjustment,
     advance: advance,
   )
-  self.fontInfoCache[key] = result
+  self.fontInfoCache[key].addr
+
+method getFontInfo*(self: GuiPlatform, fontSize: float, flags: UINodeFlags): ptr FontInfo {.gcsafe, raises: [].} =
+  let key = (flags, fontSize.float32)
+  if key in self.fontInfoCache:
+    return self.fontInfoCache[key].addr
+
+  return self.getFontInfo2(fontSize, flags)
 
 method size*(self: GuiPlatform): Vec2 =
   try:

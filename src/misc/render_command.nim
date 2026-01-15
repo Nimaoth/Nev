@@ -241,7 +241,7 @@ iterator decodeRenderCommands*(self: RenderCommands): RenderCommand =
   for c in decoder.decodeRenderCommands():
     yield c
 
-proc typeset*(arrangement: var Arrangement, text: openArray[char], font: FontInfo) {.raises: [].} =
+proc typeset*(arrangement: var Arrangement, text: openArray[char], font: ptr FontInfo) {.raises: [].} =
   ## Lays out the character glyphs and returns the arrangement.
   ## Optional parameters:
 
@@ -265,7 +265,7 @@ proc typeset*(arrangement: var Arrangement, text: openArray[char], font: FontInf
 
     lastRune = rune
 
-proc typeset*(self: var RenderCommands, text: openArray[char], font: FontInfo): int =
+proc typeset*(self: var RenderCommands, text: openArray[char], font: ptr FontInfo): int =
   var a: RenderCommandArrangement
   a.runes.a = self.arrangement.runes.len
   a.positions.a = self.arrangement.positions.len

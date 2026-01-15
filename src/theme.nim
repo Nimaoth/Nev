@@ -68,6 +68,14 @@ proc getCascading[T](table: var Table[string, T], key: string, default: T): T =
     return table.getCascading(key[0..<index], default)
   return default
 
+proc getCascading[T](table: var Table[string, T], key: openArray[char], default: T): T =
+  table.withValue2(key, val):
+    return val
+  let index = key.rfind('.')
+  if index != -1:
+    return table.getCascading(key[0..<index], default)
+  return default
+
 proc color*(theme: Theme, name: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   return theme.colors.getCascading(name, default.color)
 
@@ -76,6 +84,16 @@ proc color*(theme: Theme, names: seq[string], default: Color = Color(r: 0, g: 0,
     theme.colors.withValue(name, val):
       return val[]
   return default.color
+
+proc tokenColor*(theme: Theme, name: cstring, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+  let len = name.len
+  if name.toOpenArray(0, len - 1).startsWith("#"):
+    try:
+      # todo: avoid allocation
+      return ($name).parseHtmlHex
+    except InvalidColor:
+      return default
+  return theme.tokenColors.getCascading(name.toOpenArray(0, len - 1), Style()).foreground.get default.color
 
 proc tokenColor*(theme: Theme, name: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   if name.startsWith("#"):
@@ -111,6 +129,10 @@ proc tokenBackgroundColor*(theme: Theme, name: string, default: Color = Color(r:
 proc tokenFontStyle*(theme: Theme, name: string): set[FontStyle] =
   return (theme.tokenColors.getCascading(name, Style(fontStyle: {}))).fontStyle
 
+proc tokenFontStyle*(theme: Theme, name: cstring): set[FontStyle] =
+  let len = name.len
+  return (theme.tokenColors.getCascading(name.toOpenArray(0, len - 1), Style(fontStyle: {}))).fontStyle
+
 proc tokenFontStyle*(theme: Theme, names: seq[string]): set[FontStyle] =
   for name in names:
     theme.tokenColors.withValue(name, style):
@@ -119,6 +141,10 @@ proc tokenFontStyle*(theme: Theme, names: seq[string]): set[FontStyle] =
 
 proc tokenFontScale*(theme: Theme, name: string): float =
   return theme.tokenColors.getCascading(name, Style(fontScale: 1.0)).fontScale
+
+proc tokenFontScale*(theme: Theme, name: cstring): float =
+  let len = name.len
+  return theme.tokenColors.getCascading(name.toOpenArray(0, len - 1), Style(fontScale: 1.0)).fontScale
 
 proc anyColor*(theme: Theme, color: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   return if color.startsWith "#":
