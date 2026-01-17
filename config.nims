@@ -5,12 +5,15 @@
 switch("path", "$nim")
 switch("path", "scripting")
 switch("path", "src")
+switch("path", "modules")
 
 switch("d", "mingw")
 switch("mm", "orc")
 switch("d", "useMalloc")
 switch("tlsEmulation", "off")
 
+switch("d", "nevModuleName=nev")
+switch("d", "mallocExport")
 
 # performance
 switch("panics", "on")
@@ -109,6 +112,15 @@ patchFile("stdlib", "jsonutils", "src/misc/myjsonutils")
 patchFile("stdlib", "tables", "patches/tables") # Patch tables.nim to remove exceptions
 patchFile("chronos", "asyncengine", "patches/asyncengine") # Patch this to enable 0 timeout poll
 patchFile("npeg", "codegen", "patches/codegen") # Patch this for proper gcsafety
+
+# Patch these things to make global variables dynlib and remove usages of c_malloc, c_free etc
+patchFile("stdlib", "typedthreads", "patches/typedthreads")
+patchFile("stdlib", "threadimpl", "patches/threadimpl")
+patchFile("stdlib", "orc", "patches/orc")
+patchFile("stdlib", "threadpool", "patches/threadpool")
+patchFile("stdlib", "alloc", "patches/alloc")
+patchFile("stdlib", "malloc", "patches/malloc")
+patchFile("malebolgia", "malebolgia", "patches/malebolgia")
 
 # switches for debugging
 # switch("d", "wasm3EnableStrace2")

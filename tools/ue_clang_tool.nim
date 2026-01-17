@@ -23,7 +23,7 @@ proc shouldIgnore(path: string): bool =
     return true
   return false
 
-type ModuleInfo = object
+type ModuleInfo2 = object
   path: string
   name: string
   apiDefine: string

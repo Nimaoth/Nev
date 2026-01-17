@@ -5177,6 +5177,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.startBlinkCursorTask()
 
   self.editors.registerEditor(self)
+  self.eventBus.emit(&"editor/{self.id}/registered", $self.id)
 
   self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
   self.onModsChangedHandle = self.platform.onModifiersChanged.subscribe proc(change: tuple[old: Modifiers, new: Modifiers]) =

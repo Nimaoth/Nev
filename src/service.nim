@@ -3,6 +3,8 @@ import misc/[util, custom_logger, custom_async]
 
 const builtinServices = CacheSeq"builtinServices"
 
+include dynlib_export
+
 {.push gcsafe.}
 {.push raises: [].}
 
@@ -27,7 +29,7 @@ type
 
 var gServices*: Services
 
-proc getServices*(): Services {.gcsafe.} =
+proc getServices*(): Services {.gcsafe, apprtl.} =
   {.gcsafe.}:
     return gServices
 
@@ -57,7 +59,7 @@ proc tick*(self: Services) =
   for s in self.running.values:
     s.tick()
 
-proc getService*(self: Services, name: string, state: Option[ServiceState] = ServiceState.none): Option[Service] =
+proc getService*(self: Services, name: string, state: Option[ServiceState] = ServiceState.none): Option[Service] {.apprtl.} =
   if state.get(Running) == Running:
     self.running.withValue(name, service):
       return service[].some
@@ -91,7 +93,7 @@ proc initService(self: Services, name: string) {.async.} =
     log lvlError, &"Failed to initialize service '{name}'"
     service.state = Failed
 
-proc addService*(self: Services, name: string, service: Service, dependencies: seq[string] = @[]) =
+proc addService*(self: Services, name: string, service: Service, dependencies: seq[string] = @[]) {.apprtl.} =
   # log lvlInfo, &"addService {name}, dependencies: {dependencies}"
   service.services = self
   self.registered[name] = service

@@ -1,5 +1,5 @@
 import std/[os, options, unicode, strutils, streams, atomics, sequtils, pathnorm, tables]
-import nimsumtree/[rope, static_array]
+import nimsumtree/[rope, static_array, arc]
 import malebolgia
 import misc/[custom_async, custom_logger, util, timer, regex, id]
 import vfs
@@ -24,6 +24,11 @@ type
     files*: seq[string]
 
   VFSLocal* = ref object of VFS
+    watcher: Watcher
+    updateRate: int
+    cache: Table[string, CachedFile]
+
+  VFSLocal2* = object
     watcher: Watcher
     updateRate: int
     cache: Table[string, CachedFile]
@@ -62,6 +67,15 @@ proc process(self: VFSLocal) {.async.} =
     await sleepAsync(self.updateRate.milliseconds)
     try:
       process(self.watcher)
+    except Exception as e:
+      log lvlError, &"Failed to process file watcher: {e.msg}"
+
+proc process(self: Arc[VFS2]) {.async.} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  while true:
+    await sleepAsync(local.updateRate.milliseconds)
+    try:
+      process(local.watcher)
     except Exception as e:
       log lvlError, &"Failed to process file watcher: {e.msg}"
 
@@ -590,7 +604,6 @@ iterator walkDirCustom(dir: string, relative = false, checkDir = false, skipSpec
 
 proc scanDirectoryImpl(ignore: ptr Globs, res: ptr Directory) {.gcsafe, raises: [].} =
   try:
-    # echo "scan '", res.name, "'"
     var m = createMaster()
     for kind, fileName in walkDirCustom(res.path, relative = true):
       if ignore[].ignorePath(res.path.toOpenArray(), fileName):
@@ -620,3 +633,115 @@ proc scanDirectory*(path: string, ignore: ptr Globs): Directory =
   result.path = path
   scanDirectoryImpl(ignore, result.addr)
 
+
+proc vfsLocalName*(self: Arc[VFS2]): string = &"VFSLocal({self.get.prefix})"
+
+proc vfsLocalRead*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.gcsafe, async: (raises: [IOError]).} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  if not path.isAbsolute:
+    raise newException(IOError, &"Path not absolute '{path}'")
+  if local.cache.contains(path):
+    let fut = local.cache[path].fut
+    local.cache.del(path)
+    try:
+      return await fut
+    except:
+      raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
+
+  if not fileExists(path):
+    raise newException(FileNotFoundError, &"Not found '{path}'")
+
+  try:
+    # logScope lvlInfo, &"[loadFile] '{path}'"
+    var data = ""
+    var invalidUtf8Error = false
+    let ok = await spawnAsync(loadFileThread, (path, data.addr, invalidUtf8Error.addr, flags))
+    if not ok:
+      if invalidUtf8Error:
+        raise newException(InvalidUtf8Error, data)
+      else:
+        raise newException(IOError, data)
+
+    return data.move
+  except:
+    raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
+
+proc vfsLocalReadRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+
+proc vfsLocalWrite*(self: Arc[VFS2], path: string, content: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+
+proc vfsLocalWrite*(self: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+
+proc vfsLocalDelete*(self: Arc[VFS2], path: string): Future[bool] {.gcsafe, async: (raises: []).} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+
+proc vfsLocalCreateDir*(self: Arc[VFS2], path: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+
+proc vfsLocalGetFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.gcsafe, async: (raises: []).} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+
+proc vfsLocalGetFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.gcsafe, async: (raises: []).} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+
+proc vfsLocalSetFileAttributes*(self: Arc[VFS2], path: string, attributes: FileAttributes): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+
+proc vfsLocalGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+
+proc vfsLocalGetVFS*(self: Arc[VFS2], path: openArray[char], maxDepth: int = int.high): tuple[vfs: Arc[VFS2], relativePath: string] =
+  return (self, path.join())
+
+proc vfsLocalCopyFile*(self: Arc[VFS2], src: string, dest: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+
+proc vfsLocalNormalize*(self: Arc[VFS2], path: string): string {.gcsafe, raises: [].} =
+  # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  return path.normalizePath.normalizeNativePath
+
+proc vfsLocalWatch*(self: Arc[VFS2], path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id {.gcsafe, raises: [].} =
+  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  log lvlInfo, &"Register watcher for local file system at '{path}'"
+  try:
+    proc cbWrapper(events: seq[PathEvent]) {.gcsafe, raises: [].} = cb(events.deduplicate(isSorted = true))
+    register(local.watcher, path, cbWrapper)
+    # todo
+    return newId()
+  except OSError as e:
+    log lvlError, &"Failed to register file watcher for '{path}': {e.msg}"
+    return idNone()
+
+proc vfsLocalFindFiles*(self: Arc[VFS2], root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.async: (raises: []).} =
+  discard
+
+proc newVFSLocal*(): Arc[VFS2] =
+  let local = create(VFSLocal2)
+  result = Arc[VFS2].new()
+  result.getMutUnsafe.impl = local
+  result.getMutUnsafe.nameImpl = vfsLocalName
+  result.getMutUnsafe.readImpl = vfsLocalRead
+  result.getMutUnsafe.readRopeImpl = vfsLocalReadRope
+  result.getMutUnsafe.writeImpl = vfsLocalWrite
+  result.getMutUnsafe.writeRopeImpl = vfsLocalWrite
+  result.getMutUnsafe.deleteImpl = vfsLocalDelete
+  result.getMutUnsafe.createDirImpl = vfsLocalCreateDir
+  result.getMutUnsafe.getFileKindImpl = vfsLocalGetFileKind
+  result.getMutUnsafe.getFileAttributesImpl = vfsLocalGetFileAttributes
+  result.getMutUnsafe.setFileAttributesImpl = vfsLocalSetFileAttributes
+  result.getMutUnsafe.getDirectoryListingImpl = vfsLocalGetDirectoryListing
+  # result.getMutUnsafe.getVFSImpl = vfsLocalGetVFS
+  result.getMutUnsafe.copyFileImpl = vfsLocalCopyFile
+
+  result.getMutUnsafe.normalizeImpl = vfsLocalNormalize
+  result.getMutUnsafe.watchImpl = vfsLocalWatch
+  # result.getMutUnsafe.unwatchImpl = vfsLocalUnwatch
+  # result.getMutUnsafe.findFilesImpl = vfsLocalFindFiles
+
+  local.watcher = initWatcher()
+  local.updateRate = 200
+
+  asyncSpawn result.process()

@@ -275,7 +275,8 @@ import plugin_service
 import selector_popup, layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, toast, terminal_service
 import language_server_paths
 import language_server_regex
-import language_server_ctags
+# import language_server_ctags
+import language_server_dynamic
 import scripting/expose
 import config_provider, event_service
 import vcs/vcs_api
@@ -458,6 +459,44 @@ plat.vfs = gServices.getService(VFSService).get.vfs
 plat.init(gAppOptions)
 gServices.getService(PlatformService).get.setPlatform(plat)
 gServices.waitForServices()
+
+when defined(useDynlib):
+  import std/dynlib
+  proc loadModule(name: string) =
+    try:
+      let path = &"modules\\{name}.dll"
+      log lvlDebug, &"loadLib '{path}'"
+      let lib = loadLib(path)
+      if lib == nil:
+        raise newException(OSError, &"Failed to load library '{path}'")
+      let funcName = &"init_module_{name}"
+      let init = cast[proc() {.cdecl.}](lib.symAddr(funcName.cstring))
+      if init == nil:
+        raise newException(OSError, &"Failed to find '{funcName}'")
+
+      log lvlDebug, &"Init module '{name}'"
+      init()
+    except CatchableError as e:
+      log lvlError, &"Failed to load module '{name}': {e.msg}"
+
+  try:
+    log lvlInfo, "Load dynamic modules"
+    for (kind, path) in walkDir("modules", relative=false):
+      case kind
+      of pcFile:
+        if path.endsWith("dll"):
+          loadModule(path.splitFile.name)
+      else:
+        discard
+
+    debugf"Finished loading modules"
+  except OSError as e:
+    log lvlError, &"Failed to load modules: {e.msg}"
+
+else:
+  import module_imports
+  log lvlInfo, "Load static modules"
+  initModules()
 
 proc main() =
   let app = newApp(backend.get, plat, gServices, gAppOptions)
