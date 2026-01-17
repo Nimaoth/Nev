@@ -710,12 +710,11 @@ proc drawChunk(chunk: DisplayChunk, state: var LineDrawerState, commands: var Re
       charsRange: charBoundsStart...(charBoundsStart + indices.selectionRects.len),
       renderCommandIndex: commands.commands.len,
     )
-    if state.charBounds.len + commands.arrangement.selectionRects[indices.selectionRects].len <= state.charBounds.cap:
-      state.charBounds.add commands.arrangement.selectionRects[indices.selectionRects]
+    if state.charBounds.len + indices.selectionRects.b - indices.selectionRects.a + 1 <= state.charBounds.cap:
+      state.charBounds.add commands.arrangement.selectionRects.toOpenArray(indices.selectionRects.a, indices.selectionRects.b)
 
     let (underlineColor, underlineFlags) = if chunk.styledChunk.underline.getSome(underline):
-      let underlineColor = state.builder.theme.tokenColor(underline.color, textColor)
-      (underlineColor, &{TextUndercurl})
+      (underline.color, &{TextUndercurl})
     else:
       (color(1, 1, 1), 0.UINodeFlags)
 

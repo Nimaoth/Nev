@@ -1,5 +1,5 @@
-import std/[options, strutils, tables, os, random]
-import nimsumtree/rope
+import std/[options, strutils, tables, os, random, strformat]
+import nimsumtree/[rope, arc]
 import misc/[custom_async, util, custom_logger, cancellation_token, regex, id]
 import fsnotify
 
@@ -54,26 +54,42 @@ type
   VFSWatchHandle* = object
     path*: string
     vfs: VFS
+    vfs2: Arc[VFS2]
     id: Id
 
   FindFilesOptions* = object
     maxDepth*: int = int.high
     maxResults*: int = int.high
 
-proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string]
-proc read*(self: VFS, path: string, flags: set[ReadFlag] = {}): Future[string] {.async: (raises: [IOError]).}
-proc readRope*(self: VFS, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).}
-proc write*(self: VFS, path: string, content: string): Future[void] {.async: (raises: [IOError]).}
-proc write*(self: VFS, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).}
-proc delete*(self: VFS, path: string): Future[bool] {.async: (raises: []).}
-proc createDir*(self: VFS, path: string): Future[void] {.async: (raises: [IOError]).}
-proc getFileKind*(self: VFS, path: string): Future[Option[FileKind]] {.async: (raises: []).}
-proc getFileAttributes*(self: VFS, path: string): Future[Option[FileAttributes]] {.async: (raises: []).}
-proc setFileAttributes*(self: VFS, path: string, attributes: FileAttributes): Future[void] {.async: (raises: [IOError]).}
-proc normalize*(self: VFS, path: string): string
-proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.async: (raises: []).}
-proc copyFile*(self: VFS, src: string, dest: string): Future[void] {.async: (raises: [IOError]).}
-proc findFiles*(self: VFS, root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.async: (raises: []).}
+  VFSDynamic* = ref object of VFS
+    vfs: Arc[VFS2]
+
+  VFS2* = object
+    impl*: pointer
+    mounts*: seq[tuple[prefix: string, vfs: Arc[VFS2]]]  ## Seq because I assume the amount of entries will be very small.
+    parent*: Option[Arc[VFS2]]
+    prefix*: string
+    nameImpl*: proc(self: Arc[VFS2]): string {.nimcall, gcsafe, raises: [].}
+    normalizeImpl*: proc(self: Arc[VFS2], path: string): string {.nimcall, gcsafe, raises: [].}
+    readImpl*: proc(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.nimcall, async: (raises: [IOError]).}
+    readRopeImpl*: proc(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.nimcall, async: (raises: [IOError]).}
+    writeImpl*: proc(self: Arc[VFS2], path: string, content: string): Future[void] {.nimcall, async: (raises: [IOError]).}
+    writeRopeImpl*: proc(self: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.nimcall, async: (raises: [IOError]).}
+    deleteImpl*: proc(self: Arc[VFS2], path: string): Future[bool] {.nimcall, async: (raises: []).}
+    createDirImpl*: proc(self: Arc[VFS2], path: string): Future[void] {.nimcall, async: (raises: [IOError]).}
+    getFileKindImpl*: proc(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.nimcall, async: (raises: []).}
+    getFileAttributesImpl*: proc(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.nimcall, async: (raises: []).}
+    setFileAttributesImpl*: proc(self: Arc[VFS2], path: string, attributes: FileAttributes): Future[void] {.nimcall, async: (raises: [IOError]).}
+    watchImpl*: proc(self: Arc[VFS2], path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id {.nimcall, gcsafe, raises: []}
+    unwatchImpl*: proc(self: Arc[VFS2], id: Id) {.nimcall, gcsafe, raises: [].}
+    getVFSImpl*: proc(self: Arc[VFS2], path: openArray[char], maxDepth: int = int.high): tuple[vfs: Arc[VFS2], relativePath: string] {.nimcall, gcsafe, raises: [].}
+    getDirectoryListingImpl*: proc(self: Arc[VFS2], path: string): Future[DirectoryListing] {.nimcall, async: (raises: []).}
+    copyFileImpl*: proc(self: Arc[VFS2], src: string, dest: string): Future[void] {.nimcall, async: (raises: [IOError]).}
+    findFilesImpl*: proc(self: Arc[VFS2], root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.nimcall, async: (raises: []).}
+
+  VFSLink2* = object
+    target*: Arc[VFS2]
+    targetPrefix*: string
 
 proc isVfsPath*(path: string): bool =
   let index = path.find("://")
@@ -132,7 +148,7 @@ proc parentDirectory*(path: string): string =
 
   return path[0..<index]
 
-proc `//`*(a: string, b: string): string =
+proc `//`*(a: string, b: string): string {.gcsafe, raises: [].} =
   # defer:
   #   echo &"'{a}' // '{b}' -> '{result}'"
   if a.endsWith("://"):
@@ -153,6 +169,245 @@ proc `//`*(a: string, b: string): string =
   else:
     result.add("/")
     result.add(b)
+
+proc nameImpl*(self: Arc[VFS2]): string {.gcsafe, raises: [].} =
+  if self.get.nameImpl != nil:
+    self.get.nameImpl(self)
+  else:
+    &"VFS({self.get.prefix})"
+
+proc normalizeImpl*(self: Arc[VFS2], path: string): string {.gcsafe, raises: [].} =
+  if self.get.normalizeImpl != nil:
+    self.get.normalizeImpl(self, path)
+  else:
+    path
+
+proc readImpl*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.async: (raises: [IOError]).} =
+  if self.get.readImpl != nil:
+    self.get.readImpl(self, path, flags).await
+  else:
+    ""
+
+proc readRopeImpl*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).} =
+  if self.get.readRopeImpl != nil:
+    self.get.readRopeImpl(self, path, rope).await
+
+proc writeImpl*(self: Arc[VFS2], path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
+  if self.get.writeImpl != nil:
+    self.get.writeImpl(self, path, content).await
+
+proc writeImpl*(self: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).} =
+  if self.get.writeRopeImpl != nil:
+    self.get.writeRopeImpl(self, path, content).await
+
+proc deleteImpl*(self: Arc[VFS2], path: string): Future[bool] {.async: (raises: []).} =
+  if self.get.deleteImpl != nil:
+    self.get.deleteImpl(self, path).await
+  else:
+    false
+
+proc createDirImpl*(self: Arc[VFS2], path: string): Future[void] {.async: (raises: [IOError]).} =
+  if self.get.createDirImpl != nil:
+    self.get.createDirImpl(self, path).await
+
+proc getFileKindImpl*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.async: (raises: []).} =
+  if self.get.getFileKindImpl != nil:
+    self.get.getFileKindImpl(self, path).await
+  else:
+    FileKind.none
+
+proc getFileAttributesImpl*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.async: (raises: []).} =
+  if self.get.getFileAttributesImpl != nil:
+    self.get.getFileAttributesImpl(self, path).await
+  else:
+    FileAttributes.none
+
+proc setFileAttributesImpl*(self: Arc[VFS2], path: string, attributes: FileAttributes): Future[void] {.async: (raises: [IOError]).} =
+  if self.get.setFileAttributesImpl != nil:
+    self.get.setFileAttributesImpl(self, path, attributes).await
+
+proc watchImpl*(self: Arc[VFS2], path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id {.gcsafe, raises: []} =
+  if self.get.watchImpl != nil:
+    self.get.watchImpl(self, path, cb)
+  else:
+    idNone()
+
+proc unwatchImpl*(self: Arc[VFS2], id: Id) {.gcsafe, raises: [].} =
+  if self.get.unwatchImpl != nil:
+    self.get.unwatchImpl(self, id)
+
+proc getVFSImpl*(self: Arc[VFS2], path: openArray[char], maxDepth: int = int.high): tuple[vfs: Arc[VFS2], relativePath: string] {.gcsafe, raises: [].} =
+  if self.get.getVFSImpl != nil:
+    self.get.getVFSImpl(self, path, maxDepth)
+  else:
+    (self, path.join())
+
+proc getDirectoryListingImpl*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.async: (raises: []).} =
+  if self.get.getDirectoryListingImpl != nil:
+    self.get.getDirectoryListingImpl(self, path).await
+  else:
+    DirectoryListing()
+
+proc copyFileImpl*(self: Arc[VFS2], src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =
+  if self.get.copyFileImpl != nil:
+    self.get.copyFileImpl(self, src, dest).await
+
+proc findFilesImpl*(self: Arc[VFS2], root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.async: (raises: []).} =
+  if self.get.findFilesImpl != nil:
+    self.get.findFilesImpl(self, root, filenameRegex, maxResults, options).await
+  else:
+    @[]
+
+proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string]
+proc read*(self: VFS, path: string, flags: set[ReadFlag] = {}): Future[string] {.async: (raises: [IOError]).}
+proc readRope*(self: VFS, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).}
+proc write*(self: VFS, path: string, content: string): Future[void] {.async: (raises: [IOError]).}
+proc write*(self: VFS, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).}
+proc delete*(self: VFS, path: string): Future[bool] {.async: (raises: []).}
+proc createDir*(self: VFS, path: string): Future[void] {.async: (raises: [IOError]).}
+proc getFileKind*(self: VFS, path: string): Future[Option[FileKind]] {.async: (raises: []).}
+proc getFileAttributes*(self: VFS, path: string): Future[Option[FileAttributes]] {.async: (raises: []).}
+proc setFileAttributes*(self: VFS, path: string, attributes: FileAttributes): Future[void] {.async: (raises: [IOError]).}
+proc normalize*(self: VFS, path: string): string
+proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.async: (raises: []).}
+proc copyFile*(self: VFS, src: string, dest: string): Future[void] {.async: (raises: [IOError]).}
+proc findFiles*(self: VFS, root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.async: (raises: []).}
+
+proc vfsName*(self: Arc[VFS2]): string = &"VFS({self.get.prefix})"
+
+proc vfsRead*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.gcsafe, async: (raises: [IOError]).} =
+  return ""
+
+proc vfsReadRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  discard
+
+proc vfsWrite*(self: Arc[VFS2], path: string, content: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  discard
+
+proc vfsWrite*(self: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  discard
+
+proc vfsDelete*(self: Arc[VFS2], path: string): Future[bool] {.gcsafe, async: (raises: []).} =
+  return false
+
+proc vfsCreateDir*(self: Arc[VFS2], path: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  discard
+
+proc vfsGetFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.gcsafe, async: (raises: []).} =
+  return FileKind.none
+
+proc vfsGetFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.gcsafe, async: (raises: []).} =
+  return FileAttributes.none
+
+proc vfsSetFileAttributes*(self: Arc[VFS2], path: string, attributes: FileAttributes): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  discard
+
+proc vfsGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).} =
+  return DirectoryListing()
+
+proc vfsGetVFS*(self: Arc[VFS2], path: openArray[char], maxDepth: int = int.high): tuple[vfs: Arc[VFS2], relativePath: string] =
+  return (self, path.join())
+
+proc vfsCopyFile*(self: Arc[VFS2], src: string, dest: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  discard
+
+proc newVFS*(): Arc[VFS2] =
+  result = Arc[VFS2].new()
+  result.getMutUnsafe.impl = nil
+  result.getMutUnsafe.nameImpl = vfsName
+  result.getMutUnsafe.readImpl = vfsRead
+  result.getMutUnsafe.readRopeImpl = vfsReadRope
+  result.getMutUnsafe.writeImpl = vfsWrite
+  result.getMutUnsafe.writeImpl = vfsWrite
+  result.getMutUnsafe.deleteImpl = vfsDelete
+  result.getMutUnsafe.createDirImpl = vfsCreateDir
+  result.getMutUnsafe.getFileKindImpl = vfsGetFileKind
+  result.getMutUnsafe.getFileAttributesImpl = vfsGetFileAttributes
+  result.getMutUnsafe.setFileAttributesImpl = vfsSetFileAttributes
+  result.getMutUnsafe.getDirectoryListingImpl = vfsGetDirectoryListing
+  result.getMutUnsafe.getVFSImpl = vfsGetVFS
+  result.getMutUnsafe.copyFileImpl = vfsCopyFile
+
+proc vfsLinkName*(self: Arc[VFS2]): string =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  return &"Arc[VFS2]({self.get.prefix}, {link.target.nameImpl}/{link.targetPrefix})"
+
+proc vfsLinkRead*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.gcsafe, async: (raises: [IOError]).} =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  return link.target.readImpl(link.targetPrefix // path, flags).await
+
+proc vfsLinkReadRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  link.target.readRopeImpl(link.targetPrefix // path, rope).await
+
+proc vfsLinkWrite*(self: Arc[VFS2], path: string, content: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  link.target.writeImpl(link.targetPrefix // path, content).await
+
+proc vfsLinkWrite*(self: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  link.target.writeImpl(link.targetPrefix // path, content.move).await
+
+proc vfsLinkDelete*(self: Arc[VFS2], path: string): Future[bool] {.gcsafe, async: (raises: []).} =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  return link.target.deleteImpl(link.targetPrefix // path).await
+
+proc vfsLinkCreateDir*(self: Arc[VFS2], path: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  link.target.createDirImpl(link.targetPrefix // path).await
+
+proc vfsLinkGetFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.gcsafe, async: (raises: []).} =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  return link.target.getFileKindImpl(path).await
+
+proc vfsLinkGetFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.gcsafe, async: (raises: []).} =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  return link.target.getFileAttributesImpl(path).await
+
+proc vfsLinkSetFileAttributes*(self: Arc[VFS2], path: string, attributes: FileAttributes): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  link.target.setFileAttributesImpl(path, attributes).await
+
+proc vfsLinkGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).} =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  return link.target.getDirectoryListingImpl(link.targetPrefix // path).await
+
+proc getVFS*(self: Arc[VFS2], path: openArray[char], maxDepth: int = int.high): tuple[vfs: Arc[VFS2], relativePath: string]
+
+proc vfsLinkGetVFS*(self: Arc[VFS2], path: openArray[char], maxDepth: int = int.high): tuple[vfs: Arc[VFS2], relativePath: string] =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  when debugLogVfs:
+    debugf"[{sgcsafe, elf.name}] '{self.prefix}' getVFSImpl({path.join()}) -> ({link.target.nameImpl}, {link.target.prefix}), '{link.targetPrefix // path.join()}'"
+
+  if maxDepth == 0:
+    return (self, path.join())
+
+  return link.target.getVFS(link.targetPrefix // path.join(), maxDepth - 1)
+
+proc vfsLinkCopyFile*(self: Arc[VFS2], src: string, dest: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let link = cast[ptr VFSLink2](self.getMutUnsafe.impl)
+  link.target.copyFileImpl(src, dest).await
+
+proc newVFSLink*(target: Arc[VFS2], prefix: string): Arc[VFS2] =
+  let link = create(VFSLink2)
+  link.target = target
+  link.targetPrefix = prefix
+
+  result = Arc[VFS2].new()
+  result.getMutUnsafe.impl = link
+  result.getMutUnsafe.nameImpl = vfsLinkName
+  result.getMutUnsafe.readImpl = vfsLinkRead
+  result.getMutUnsafe.readRopeImpl = vfsLinkReadRope
+  result.getMutUnsafe.writeImpl = vfsLinkWrite
+  result.getMutUnsafe.writeImpl = vfsLinkWrite
+  result.getMutUnsafe.deleteImpl = vfsLinkDelete
+  result.getMutUnsafe.createDirImpl = vfsLinkCreateDir
+  result.getMutUnsafe.getFileKindImpl = vfsLinkGetFileKind
+  result.getMutUnsafe.getFileAttributesImpl = vfsLinkGetFileAttributes
+  result.getMutUnsafe.setFileAttributesImpl = vfsLinkSetFileAttributes
+  result.getMutUnsafe.getDirectoryListingImpl = vfsLinkGetDirectoryListing
+  result.getMutUnsafe.getVFSImpl = vfsLinkGetVFS
+  result.getMutUnsafe.copyFileImpl = vfsLinkCopyFile
 
 proc newInMemoryVFS*(): VFSInMemory = VFSInMemory(files: initTable[string, VFSInMemoryItem]())
 
@@ -391,6 +646,120 @@ method copyFileImpl*(self: VFSInMemory, src: string, dest: string): Future[void]
   else:
     raise newException(IOError, &"Failed to copy non-existing file '{src}' to '{dest}'")
 
+method name*(self: VFSDynamic): string {.gcsafe, raises: [].} = self.vfs.nameImpl()
+method normalize*(self: VFSDynamic, path: string): string {.gcsafe, raises: [].} = self.vfs.normalizeImpl(path)
+method read*(self: VFSDynamic, path: string, flags: set[ReadFlag]): Future[string] {.raises: [IOError].} = self.vfs.readImpl(path, flags)
+method readRope*(self: VFSDynamic, path: string, rope: ptr Rope): Future[void] {.raises: [IOError].} = self.vfs.readRopeImpl(path, rope)
+method write*(self: VFSDynamic, path: string, content: string): Future[void] {.raises: [IOError].} = self.vfs.writeImpl(path, content)
+method write*(self: VFSDynamic, path: string, content: sink RopeSlice[int]): Future[void] {.raises: [IOError].} = self.vfs.writeImpl(path, content)
+method delete*(self: VFSDynamic, path: string): Future[bool] {.raises: [].} = self.vfs.deleteImpl(path)
+method createDir*(self: VFSDynamic, path: string): Future[void] {.raises: [IOError].} = self.vfs.createDirImpl(path)
+method getFileKind*(self: VFSDynamic, path: string): Future[Option[FileKind]] {.raises: [].} = self.vfs.getFileKindImpl(path)
+method getFileAttributes*(self: VFSDynamic, path: string): Future[Option[FileAttributes]] {.raises: [].} = self.vfs.getFileAttributesImpl(path)
+method setFileAttributes*(self: VFSDynamic, path: string, attributes: FileAttributes): Future[void] {.raises: [IOError].} = self.vfs.setFileAttributesImpl(path, attributes)
+method watch*(self: VFSDynamic, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id {.gcsafe, raises: []} = self.vfs.watchImpl(path, cb)
+method unwatch*(self: VFSDynamic, id: Id) {.gcsafe, raises: [].} = self.vfs.unwatchImpl(id)
+method getVFS*(self: VFSDynamic, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] {.gcsafe, raises: [].} = (let (vfs, p) = self.vfs.getVFSImpl(path, maxDepth); (VFSDynamic(vfs: vfs), p))
+method getDirectoryListing*(self: VFSDynamic, path: string): Future[DirectoryListing] {.raises: [].} = self.vfs.getDirectoryListingImpl(path)
+method copyFile*(self: VFSDynamic, src: string, dest: string): Future[void] {.raises: [IOError].} = self.vfs.copyFileImpl(src, dest)
+method findFiles*(self: VFSDynamic, root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.raises: [].} = self.vfs.findFilesImpl(root, filenameRegex, maxResults, options)
+
+proc getVFS*(self: Arc[VFS2], path: openArray[char], maxDepth: int = int.high): tuple[vfs: Arc[VFS2], relativePath: string] =
+  if maxDepth == 0:
+    return (self, path.join())
+
+  for i in countdown(self.get.mounts.high, 0):
+    template pref(): untyped = self.get.mounts[i].prefix
+
+    if path.startsWith(pref.toOpenArray()) and (pref.len == 0 or path.len == pref.len or pref.endsWith(['/']) or path[pref.len] == '/'):
+      var prefixLen = pref.len
+      if pref.len > 0 and not pref.endsWith(['/']) and path.len > pref.len:
+        inc prefixLen
+
+      return self.get.mounts[i].vfs.getVFS(path[prefixLen..^1], maxDepth - 1)
+
+  result = self.getVFSImpl(path, maxDepth)
+  if result.vfs.isNil:
+    result = (self, path.join(""))
+
+proc localize*(self: Arc[VFS2], path: string): string =
+  return self.getVFS(path).relativePath.normalizeNativePath
+
+proc normalize*(self: Arc[VFS2], path: string): string =
+  var (vfs, path) = self.getVFS(path)
+  path = vfs.normalizeImpl(path)
+  while vfs.get.parent.getSome(parent):
+    path = vfs.get.prefix // path
+    vfs = parent
+
+  return path.normalizeNativePath
+
+proc read*(self: Arc[VFS2], path: string, flags: set[ReadFlag] = {}): Future[string] {.raises: [IOError].} =
+  let (vfs, path) = self.getVFS(path)
+  return vfs.readImpl(path, flags)
+
+proc readRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.raises: [IOError].} =
+  let (vfs, path) = self.getVFS(path)
+  vfs.readRopeImpl(path, rope)
+
+proc write*(self: Arc[VFS2], path: string, content: string): Future[void] {.raises: [IOError].} =
+  let (vfs, path) = self.getVFS(path)
+  vfs.writeImpl(path, content)
+
+proc write*(self: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.raises: [IOError].} =
+  let (vfs, path) = self.getVFS(path)
+  vfs.writeImpl(path, content.move)
+
+proc delete*(self: Arc[VFS2], path: string): Future[bool] {.raises: [].} =
+  let (vfs, path) = self.getVFS(path)
+  vfs.deleteImpl(path)
+
+proc createDir*(self: Arc[VFS2], path: string): Future[void] {.raises: [IOError].} =
+  let (vfs, path) = self.getVFS(path)
+  vfs.createDirImpl(path)
+
+proc getFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.raises: [].} =
+  let (vfs, path) = self.getVFS(path)
+  return vfs.getFileKindImpl(path)
+
+proc getFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.raises: [].} =
+  let (vfs, path) = self.getVFS(path)
+  return vfs.getFileAttributesImpl(path)
+
+proc setFileAttributes*(self: Arc[VFS2], path: string, attributes: FileAttributes): Future[void] {.raises: [IOError].} =
+  let (vfs, path) = self.getVFS(path)
+  vfs.setFileAttributesImpl(path, attributes)
+
+proc watch*(self: Arc[VFS2], path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): VFSWatchHandle =
+  let (vfs, path) = self.getVFS(path)
+  return VFSWatchHandle(vfs2: vfs, id: vfs.watchImpl(path, cb), path: path)
+
+proc unmount*(self: Arc[VFS2], prefix: string) =
+  # todo: make this thread safe
+  log lvlInfo, &"{self.nameImpl}: unmount '{prefix}'"
+  for i in 0..self.getMutUnsafe.mounts.high:
+    if self.getMutUnsafe.mounts[i].prefix == prefix:
+      self.getMutUnsafe.mounts[i].vfs.getMutUnsafe.prefix = ""
+      self.getMutUnsafe.mounts[i].vfs.getMutUnsafe.parent = Arc[VFS2].none
+      self.getMutUnsafe.mounts.removeShift(i)
+      return
+
+proc mount*(self: Arc[VFS2], prefix: string, vfs: Arc[VFS2]) =
+  # todo: make this thread safe
+  assert vfs.get.parent.isNone
+  log lvlInfo, &"{self.nameImpl}: mount {vfs.nameImpl} under '{prefix}'"
+  for i in 0..self.getMutUnsafe.mounts.high:
+    if self.getMutUnsafe.mounts[i].prefix == prefix:
+      self.getMutUnsafe.mounts[i].vfs.getMutUnsafe.parent = Arc[VFS2].none
+      self.getMutUnsafe.mounts[i].vfs.getMutUnsafe.prefix = ""
+      vfs.getMutUnsafe.parent = self.some
+      vfs.getMutUnsafe.prefix = prefix
+      self.getMutUnsafe.mounts[i] = (prefix, vfs)
+      return
+  vfs.getMutUnsafe.parent = self.some
+  vfs.getMutUnsafe.prefix = prefix
+  self.getMutUnsafe.mounts.add (prefix, vfs)
+
 proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] =
   # when debugLogVfs:
   #   echo &"getVFS {self.name} '{path.join()}'"
@@ -417,12 +786,6 @@ proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[
   result = self.getVFSImpl(path, maxDepth) # todo: maxDepth - 1?
   if result.vfs.isNil:
     result = (self, path.join(""))
-
-proc fullPrefix*(self: VFS): string =
-  var vfs = self
-  while vfs.parent.getSome(parent):
-    result = vfs.prefix // result
-    vfs = parent
 
 proc localize*(self: VFS, path: string): string =
   return self.getVFS(path).relativePath.normalizeNativePath
@@ -492,8 +855,12 @@ proc isBound*(self: var VFSWatchHandle): bool =
 proc unwatch*(self: var VFSWatchHandle) =
   if self.id == idNone():
     return
-  assert self.vfs != nil
-  self.vfs.unwatchImpl(self.id)
+  if self.vfs != nil:
+    self.vfs.unwatchImpl(self.id)
+  elif not self.vfs2.isNil:
+    self.vfs2.unwatchImpl(self.id)
+  else:
+    assert false, "Trying to unwatch unbound VFS watch"
   self.vfs = nil
   self.id = idNone()
 

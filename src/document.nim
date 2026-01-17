@@ -1,6 +1,10 @@
 import std/hashes
 import misc/[util]
-import vfs
+import vfs, component
+
+export component
+
+include dynlib_export
 
 type DocumentId* = distinct uint64
 
@@ -8,7 +12,7 @@ proc `==`*(a, b: DocumentId): bool {.borrow.}
 proc hash*(vr: DocumentId): Hash {.borrow.}
 proc `$`*(vr: DocumentId): string {.borrow.}
 
-type Document* = ref object of RootObj
+type Document* = ref object of ComponentOwner
   id*: DocumentId
   appFile*: bool                        ## Whether this is an application file (e.g. stored in local storage on the browser)
   isBackedByFile*: bool = false
@@ -20,14 +24,19 @@ type Document* = ref object of RootObj
   vfs*: VFS
   usage*: string
 
-method `$`*(document: Document): string {.base, gcsafe, raises: [].} = return ""
-method save*(self: Document, filename: string = "", app: bool = false) {.base, gcsafe, raises: [].} = discard
-method load*(self: Document, filename: string = "") {.base, gcsafe, raises: [].} = discard
-method deinit*(self: Document) {.base, gcsafe, raises: [].} = discard
-method getStatisticsString*(self: Document): string {.base, gcsafe, raises: [].} = discard
+proc documentLocalizedPath*(self: Document): string {.apprtl, gcsafe, raises: [].}
 
-proc normalizedPath*(self: Document): string {.gcsafe, raises: [].} =
-  return self.vfs.normalize(self.filename)
+when implModule:
+  method `$`*(document: Document): string {.base, gcsafe, raises: [].} = return ""
+  method save*(self: Document, filename: string = "", app: bool = false) {.base, gcsafe, raises: [].} = discard
+  method load*(self: Document, filename: string = "") {.base, gcsafe, raises: [].} = discard
+  method deinit*(self: Document) {.base, gcsafe, raises: [].} = discard
+  method getStatisticsString*(self: Document): string {.base, gcsafe, raises: [].} = discard
 
-proc localizedPath*(self: Document): string {.gcsafe, raises: [].} =
-  return self.vfs.localize(self.filename)
+  proc normalizedPath*(self: Document): string {.gcsafe, raises: [].} =
+    return self.vfs.normalize(self.filename)
+
+  proc localizedPath*(self: Document): string {.gcsafe, raises: [].} =
+    return self.vfs.localize(self.filename)
+
+  proc documentLocalizedPath*(self: Document): string {.gcsafe, raises: [].} = self.localizedPath

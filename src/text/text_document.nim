@@ -9,6 +9,13 @@ import document, document_editor, custom_treesitter, indent, config_provider, se
 import syntax_map
 import pkg/[chroma, results]
 import vcs/vcs, layout, event_service
+import language_server_component, config_component, move_database
+import display_map
+
+include dynlib_export
+
+when not implModule:
+  include text_document_api
 
 import diff
 
@@ -191,6 +198,7 @@ type
     workspace: Workspace
     editors: DocumentEditorService
     eventBus: EventService
+    moveDatabase: MoveDatabase
 
     nextLineIdCounter: int32 = 0
 
@@ -249,6 +257,10 @@ type
 
     settings*: TextSettings
     fileWatchHandle: VFSWatchHandle
+
+    moveFallbacks: MoveFunction
+
+    currentDisplayMap: DisplayMap
 
   DiagnosticsData* = object
     languageServer*: LanguageServer
@@ -461,6 +473,8 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
     if not self.requiresLoad:
       self.reloadTreesitterLanguage()
     self.onLanguageChanged.invoke (self,)
+    if self.getLanguageServerComponent().getSome(comp):
+      comp.setLanguageId(languageId)
 
 func contentString*(self: TextDocument): string =
   if self.rope.tree.isNil:
@@ -678,6 +692,12 @@ func contentString*(self: TextDocument, selection: Selection, inclusiveEnd: bool
 func contentString*(self: TextDocument, selection: TSRange): string =
   return self.contentString selection.toSelection
 
+func contentString*(self: Document, selection: Selection, inclusiveEnd: bool = false): string {.rtlImpl.} =
+  self.TextDocument.contentString(selection, inclusiveEnd)
+
+proc textDocumentContentString*(self: Document, selection: Range[Point], inclusiveEnd: bool = false): string {.rtlImpl.} =
+  return self.TextDocument.contentString(selection.toSelection, inclusiveEnd)
+
 func charAt*(self: TextDocument, cursor: Cursor): char =
   if cursor.line < 0 or cursor.line > self.numLines - 1:
     return 0.char
@@ -710,14 +730,6 @@ proc lspRangeToSelection*(self: TextDocument, r: lsp_types.Range): Selection =
     (r.start.line, r.start.character.RuneIndex),
     (r.`end`.line, r.`end`.character.RuneIndex))
   return self.runeSelectionToSelection(runeSelection)
-
-proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Selection] =
-  if self.errorQuery.isNil or self.tsTree.isNil:
-    return
-
-  for match in self.errorQuery.matches(self.tsTree.root, tsRange(tsPoint(selection.first.line, 0), tsPoint(selection.last.line, 0))):
-    for capture in match.captures:
-      result.add capture.node.getRange.toSelection
 
 proc isAtExpressionStartBasic*(self: TextDocument, location: Cursor): bool =
   let r = self.runeAt(location)
@@ -830,6 +842,54 @@ proc tsQuery*(self: TextDocument, name: string): Future[Option[TSQuery]] {.async
 proc reloadTreesitterLanguage*(self: TextDocument) =
   asyncSpawn self.loadTreesitterLanguage()
 
+proc displayMap(self: TextDocument): DisplayMap =
+  if self.currentDisplayMap == nil:
+    self.currentDisplayMap = DisplayMap.new()
+    self.currentDisplayMap.setBuffer(self.buffer.snapshot.clone())
+  elif self.currentDisplayMap.buffer.version != self.buffer.version:
+    debugf"Update display map to current {self.currentDisplayMap.buffer.version} -> {self.buffer.version}"
+    self.currentDisplayMap.setBuffer(self.buffer.snapshot.clone())
+  return self.currentDisplayMap
+
+proc applyMoveFallback(self: TextDocument, move: string, selections: openArray[Selection], count: int, largs: openArray[LispVal], env: Env): seq[Selection] =
+
+  try:
+    case move
+    of "ts-text-object", "ts":
+      let capture = if largs.len > 0:
+        largs[0].toJson.jsonTo(string)
+      else:
+        ""
+      let captureMove = if largs.len > 1:
+        largs[1]
+      else:
+        parseLisp("(combine)")
+
+      if self.textObjectsQuery != nil and not self.tsTree.isNil:
+        for s in selections:
+          for captures in self.textObjectsQuery.query(self.tsTree, s):
+            var captureSelections = newSeqOfCap[Selection](captures.len)
+            if self.moveDatabase.debugMoves:
+              echo &"move 'ts' {move}: {captures.len} captures"
+            for (node, nodeCapture) in captures:
+              if capture == "" or capture == nodeCapture:
+                var sel = node.getRange().toSelection
+                captureSelections.add sel
+                if self.moveDatabase.debugMoves:
+                  echo &"    {sel}"
+
+            let captureSelectionsTransformed = self.moveDatabase.applyMove(self.displayMap, captureMove, captureSelections, env, self.moveFallbacks)
+
+            result.add captureSelectionsTransformed
+
+    else:
+      log lvlError, &"Unknown move '{move}'"
+      return @selections
+
+  except CatchableError as e:
+    log lvlError, &"Failed to apply move '{move}': {e.msg}"
+    return @selections
+
 proc newTextDocument*(
     services: Services,
     filename: string = "",
@@ -856,6 +916,7 @@ proc newTextDocument*(
   self.vfs = services.getService(VFSService).get.vfs
   self.editors = services.getService(DocumentEditorService).get
   self.eventBus = self.services.getService(EventService).get
+  self.moveDatabase = self.services.getService(MoveDatabase).get
   self.createLanguageServer = createLanguageServer
   self.buffer = initBuffer(content = "", remoteId = getNextBufferId())
   self.filename = self.vfs.normalize(filename)
@@ -877,6 +938,15 @@ proc newTextDocument*(
   self.content = content
   if languageServer.isSome:
     discard self.addLanguageServer(languageServer.get)
+
+  self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =
+    self.applyMoveFallback(move, selections, count, args, env)
+
+  self.addComponent(newConfigComponent(self.config))
+
+  let lsComponent = newLanguageServerComponent(self.languageId, self.languageServerList)
+  discard lsComponent.onLanguageServerAttached.subscribe proc(arg: auto) {.gcsafe, raises: [].} = self.onLanguageServerAttached.invoke((self, arg[1]))
+  self.addComponent(lsComponent)
 
 method deinit*(self: TextDocument) =
   # debugf"[deinit] Destroying text document '{self.filename}'"
@@ -1570,6 +1640,9 @@ proc getLanguageWordBoundary*(self: TextDocument, cursor: Cursor): Selection =
     else:
       break
 
+proc getLanguageWordBoundary*(self: Document, cursor: Cursor): Selection {.rtlImpl.} =
+  self.TextDocument.getLanguageWordBoundary(cursor)
+
 proc findWordBoundary*(self: TextDocument, cursor: Cursor): Selection =
   # todo: use RopeCursor
   let line = self.getLine(cursor.line)
@@ -1920,3 +1993,38 @@ proc getImportedFiles*(self: TextDocument): Future[Option[seq[string]]] {.async.
         res.add self.contentString(sel, false)
 
   return res.some
+
+proc getImportedFiles*(self: Document): Future[Option[seq[string]]] {.rtlImpl.} =
+  return self.TextDocument.getImportedFiles()
+
+proc textDocumentApplyMove*(self: Document, selections: openArray[Range[Point]], move: string, count: int = 0, includeEol: bool = true, wrap: bool = true, options: JsonNode = nil): seq[Range[Point]] {.rtlImpl.} =
+  let self = self.TextDocument
+  var env = Env()
+  env["screen-lines"] = newNumber(100)
+  env["target-column"] = newNumber(0)
+  env["count"] = newNumber(count)
+  env["include-eol"] = newBool(includeEol)
+  env["wrap"] = newBool(wrap)
+  env["ts?"] = newBool(not self.tsTree.isNil)
+  env["ts.to?"] = newBool(self.textObjectsQuery != nil and not self.tsTree.isNil)
+  defer:
+    env.clear()
+
+  proc readOptions(env: var Env, options: JsonNode) =
+    if options.kind == JObject:
+      for (key, val) in options.fields.pairs:
+        try:
+          env[key] = val.jsonTo(LispVal)
+        except CatchableError as e:
+          log lvlError, "Failed to convert option " & key & " = " & $val & " to lisp value: " & e.msg
+    else:
+      log lvlError, "Invalid move options, expected object: " & $options
+
+  if options != nil:
+    if options.kind == JArray:
+      for o in options.elems:
+        env.readOptions(o)
+    else:
+      env.readOptions(options)
+
+  return self.moveDatabase.applyMove(self.displayMap, move, selections.mapIt(it.toSelection), self.moveFallbacks, env).mapIt(it.toRange)

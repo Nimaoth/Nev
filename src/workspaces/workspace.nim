@@ -5,6 +5,8 @@ import vfs, vfs_service, vfs_local, service, compilation_config
 import finder/finder
 import nimsumtree/static_array
 
+include dynlib_export
+
 {.push gcsafe.}
 {.push raises: [].}
 
@@ -39,291 +41,292 @@ type
     isCacheUpdateInProgress: bool = false
     vfs*: VFS
 
-func serviceName*(_: typedesc[Workspace]): string = "Workspace"
+when implModule:
+  func serviceName*(_: typedesc[Workspace]): string = "Workspace"
 
-addBuiltinService(Workspace, VFSService)
+  addBuiltinService(Workspace, VFSService)
 
-method init*(self: Workspace): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  log lvlInfo, &"Workspace.init"
-  self.vfs = self.services.getService(VFSService).get.vfs
+  method init*(self: Workspace): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+    log lvlInfo, &"Workspace.init"
+    self.vfs = self.services.getService(VFSService).get.vfs
 
-  return ok()
+    return ok()
 
-proc ignorePath*(workspace: Workspace, path: string): bool =
-  if workspace.ignore.excludePath(path) or workspace.ignore.excludePath(path.extractFilename):
-    if workspace.ignore.includePath(path) or workspace.ignore.includePath(path.extractFilename):
-      return false
+  proc ignorePath*(workspace: Workspace, path: string): bool =
+    if workspace.ignore.excludePath(path) or workspace.ignore.excludePath(path.extractFilename):
+      if workspace.ignore.includePath(path) or workspace.ignore.includePath(path.extractFilename):
+        return false
 
-    return true
-  return false
+      return true
+    return false
 
-proc settings*(self: Workspace): JsonNode =
-  try:
-    result = newJObject()
-    result["path"] = newJString(self.path.absolutePath)
-    result["additionalPaths"] = %self.additionalPaths
-  except ValueError, OSError:
-    discard
+  proc settings*(self: Workspace): JsonNode =
+    try:
+      result = newJObject()
+      result["path"] = newJString(self.path.absolutePath)
+      result["additionalPaths"] = %self.additionalPaths
+    except ValueError, OSError:
+      discard
 
-proc clearDirectoryCache*(self: Workspace) = discard
+  proc clearDirectoryCache*(self: Workspace) = discard
 
-proc collectFiles(dir: vfs_local.Directory, files: var openArray[FinderItem], startIndex: int) =
-  for i, fileName in dir.files:
-    var path = dir.path & "/" & fileName
-    files[startIndex + i] = FinderItem(
-      displayName: fileName,
-      details: @[dir.path],
-      data: path.ensureMove,
-    )
+  proc collectFiles(dir: vfs_local.Directory, files: var openArray[FinderItem], startIndex: int) =
+    for i, fileName in dir.files:
+      var path = dir.path & "/" & fileName
+      files[startIndex + i] = FinderItem(
+        displayName: fileName,
+        details: @[dir.path],
+        data: path.ensureMove,
+      )
 
-  var startIndex = startIndex + dir.files.len
-  for c in dir.children:
-    c.collectFiles(files, startIndex)
-    startIndex += c.totalFiles
+    var startIndex = startIndex + dir.files.len
+    for c in dir.children:
+      c.collectFiles(files, startIndex)
+      startIndex += c.totalFiles
 
-proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
-    tuple[files: ItemList, time: float] =
-  try:
-    let t = startTimer()
+  proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
+      tuple[files: ItemList, time: float] =
+    try:
+      let t = startTimer()
 
-    var m = createMaster()
-    var dirs = newSeq[vfs_local.Directory](args.roots.len)
-    m.awaitAll:
-      for i in 0..args.roots.high:
-        m.spawn scanDirectory(args.roots[i], args.ignore.addr) -> dirs[i]
+      var m = createMaster()
+      var dirs = newSeq[vfs_local.Directory](args.roots.len)
+      m.awaitAll:
+        for i in 0..args.roots.high:
+          m.spawn scanDirectory(args.roots[i], args.ignore.addr) -> dirs[i]
 
-    var totalFiles = 0
-    for d in dirs:
-      totalFiles += d.totalFiles
-    var files = newSeq[FinderItem](totalFiles)
-    var startIndex = 0
-    for d in dirs:
-      d.collectFiles(files, startIndex)
-      startIndex += d.totalFiles
+      var totalFiles = 0
+      for d in dirs:
+        totalFiles += d.totalFiles
+      var files = newSeq[FinderItem](totalFiles)
+      var startIndex = 0
+      for d in dirs:
+        d.collectFiles(files, startIndex)
+        startIndex += d.totalFiles
 
-    result.files = newItemList(files.ensureMove)
-    result.time = t.elapsed.ms
-  except:
-    discard
+      result.files = newItemList(files.ensureMove)
+      result.time = t.elapsed.ms
+    except:
+      discard
 
-proc recomputeFileCacheAsync(self: Workspace): Future[void] {.async.} =
-  if self.isCacheUpdateInProgress:
-    return
-  self.isCacheUpdateInProgress = true
-  defer:
-    self.isCacheUpdateInProgress = false
+  proc recomputeFileCacheAsync(self: Workspace): Future[void] {.async.} =
+    if self.isCacheUpdateInProgress:
+      return
+    self.isCacheUpdateInProgress = true
+    defer:
+      self.isCacheUpdateInProgress = false
 
-  log lvlInfo, "[recomputeFileCacheAsync] Start"
-  let args = (@[self.path] & self.additionalPaths, self.ignore)
-  try:
-    let res = spawnAsync(collectFilesThread, args).await
-    log lvlInfo, fmt"[recomputeFileCacheAsync] Found {res.files.len} files in {res.time}ms"
+    log lvlInfo, "[recomputeFileCacheAsync] Start"
+    let args = (@[self.path] & self.additionalPaths, self.ignore)
+    try:
+      let res = spawnAsync(collectFilesThread, args).await
+      log lvlInfo, fmt"[recomputeFileCacheAsync] Found {res.files.len} files in {res.time}ms"
 
-    self.cachedFiles = res.files.some
-    self.onCachedFilesUpdated.invoke()
-  except CancelledError:
-    discard
+      self.cachedFiles = res.files.some
+      self.onCachedFilesUpdated.invoke()
+    except CancelledError:
+      discard
 
-proc recomputeFileCache*(self: Workspace) =
-  logScope lvlInfo, &"recomputeFileCache"
-  asyncSpawn self.recomputeFileCacheAsync()
+  proc recomputeFileCache*(self: Workspace) =
+    logScope lvlInfo, &"recomputeFileCache"
+    asyncSpawn self.recomputeFileCacheAsync()
 
 
-proc getWorkspacePath*(self: Workspace): string =
-  try:
-    self.path.absolutePath
-  except ValueError, OSError:
-    return ""
+  proc getWorkspacePath*(self: Workspace): string =
+    try:
+      self.path.absolutePath
+    except ValueError, OSError:
+      return ""
 
-proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResults: int, customArgs: seq[string]):
-    Future[seq[SearchResult]] {.async: (raises: []).} =
-  try:
-    let args = @["--line-number", "--column", "--heading"] & customArgs & @[query, root]
-    let output = runProcessAsync("rg", args, maxLines=maxResults).await
+  proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResults: int, customArgs: seq[string]):
+      Future[seq[SearchResult]] {.async: (raises: []).} =
+    try:
+      let args = @["--line-number", "--column", "--heading"] & customArgs & @[query, root]
+      let output = runProcessAsync("rg", args, maxLines=maxResults).await
+      var res: seq[SearchResult]
+
+      var currentFile = ""
+      for line in output:
+        if currentFile == "":
+          if line.isAbsolute:
+            currentFile = line.normalizePathUnix
+          else:
+            currentFile = root // line
+          continue
+
+        if line == "":
+          currentFile = ""
+          continue
+
+        var separatorIndex1 = line.find(':')
+        if separatorIndex1 == -1:
+          continue
+
+        let lineNumber = line[0..<separatorIndex1].parseInt.catch(0)
+
+        let separatorIndex2 = line.find(':', separatorIndex1 + 1)
+        if separatorIndex2 == -1:
+          continue
+
+        let column = line[(separatorIndex1 + 1)..<separatorIndex2].parseInt.catch(0)
+        let text = line[(separatorIndex2 + 1)..^1]
+        res.add SearchResult(path: currentFile, line: lineNumber, column: column, text: text)
+
+        if res.len == maxResults:
+          break
+
+      return res
+    except CatchableError:
+      return @[]
+
+  proc searchWorkspace*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
+    var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
+    for path in paths:
+      futs.add self.searchWorkspaceFolder(query, path, maxResults, customArgs)
+
     var res: seq[SearchResult]
+    for fut in futs:
+      res.add fut.await
 
-    var currentFile = ""
-    for line in output:
-      if currentFile == "":
-        if line.isAbsolute:
-          currentFile = line.normalizePathUnix
-        else:
-          currentFile = root // line
-        continue
-
-      if line == "":
-        currentFile = ""
-        continue
-
-      var separatorIndex1 = line.find(':')
-      if separatorIndex1 == -1:
-        continue
-
-      let lineNumber = line[0..<separatorIndex1].parseInt.catch(0)
-
-      let separatorIndex2 = line.find(':', separatorIndex1 + 1)
-      if separatorIndex2 == -1:
-        continue
-
-      let column = line[(separatorIndex1 + 1)..<separatorIndex2].parseInt.catch(0)
-      let text = line[(separatorIndex2 + 1)..^1]
-      res.add SearchResult(path: currentFile, line: lineNumber, column: column, text: text)
-
-      if res.len == maxResults:
+      if res.len >= maxResults:
         break
 
     return res
-  except CatchableError:
-    return @[]
 
-proc searchWorkspace*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
-  var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
-  for path in paths:
-    futs.add self.searchWorkspaceFolder(query, path, maxResults, customArgs)
-
-  var res: seq[SearchResult]
-  for fut in futs:
-    res.add fut.await
-
-    if res.len >= maxResults:
-      break
-
-  return res
-
-proc searchWorkspace*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
-  var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
-  futs.add self.searchWorkspaceFolder(query, self.path, maxResults, customArgs)
-  for path in self.additionalPaths:
-    futs.add self.searchWorkspaceFolder(query, path, maxResults, customArgs)
-
-  var res: seq[SearchResult]
-  for fut in futs:
-    res.add fut.await
-
-    if res.len >= maxResults:
-      break
-
-  return res
-
-proc getAbsolutePath*(self: Workspace, path: string): string =
-  if path.isAbsolute:
-    return path.normalizeNativePath
-  else:
-    self.getWorkspacePath() // path
-
-proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string] =
-  try:
-    if absolutePath.startsWith(self.path):
-      return absolutePath.relativePath(self.path, '/').some
-
+  proc searchWorkspace*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
+    var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
+    futs.add self.searchWorkspaceFolder(query, self.path, maxResults, customArgs)
     for path in self.additionalPaths:
-      if absolutePath.startsWith(path):
-        return absolutePath.relativePath(path, '/').some
+      futs.add self.searchWorkspaceFolder(query, path, maxResults, customArgs)
 
-    return string.none
-  except:
-    return string.none
+    var res: seq[SearchResult]
+    for fut in futs:
+      res.add fut.await
 
-proc getRelativePathAndWorkspaceSync*(self: Workspace, absolutePath: string): Option[tuple[root, path: string]] =
-  try:
-    if absolutePath.startsWith(self.path):
-      return ("ws0://", absolutePath.relativePath(self.path, '/')).some
+      if res.len >= maxResults:
+        break
 
-    for i, path in self.additionalPaths:
-      if absolutePath.startsWith(path):
-        return (&"ws{i + 1}://", absolutePath.relativePath(path, '/')).some
-  except:
-    discard
+    return res
 
-proc getRelativePath*(self: Workspace, absolutePath: string): Future[Option[string]] {.async.} =
-  return self.getRelativePathSync(absolutePath)
+  proc getAbsolutePath*(self: Workspace, path: string): string =
+    if path.isAbsolute:
+      return path.normalizeNativePath
+    else:
+      self.getWorkspacePath() // path
 
-{.pop.} # raises: []
-{.pop.} # gcsafe
+  proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string] =
+    try:
+      if absolutePath.startsWith(self.path):
+        return absolutePath.relativePath(self.path, '/').some
 
-proc loadIgnoreFile(self: Workspace, path: string): Option[Globs] =
-  try:
-    let globLines = readFile(self.getAbsolutePath(path))
-    return globLines.parseGlobs.some
-  except:
-    return Globs.none
+      for path in self.additionalPaths:
+        if absolutePath.startsWith(path):
+          return absolutePath.relativePath(path, '/').some
 
-proc loadDefaultIgnoreFile*(self: Workspace) =
-  if self.loadIgnoreFile(&".{appName}-ignore").getSome(ignore):
-    self.ignore = ignore
-    log lvlInfo, &"Using ignore file '.{appName}-ignore' for workspace {self.name}"
-  elif self.loadIgnoreFile(".gitignore").getSome(ignore):
-    self.ignore = ignore
-    log lvlInfo, &"Using ignore file '.gitignore' for workspace {self.name}"
-  else:
-    log lvlInfo, &"No ignore file for workspace {self.name}"
+      return string.none
+    except:
+      return string.none
 
-  # todo: make this configurable
-  self.ignore.original.add ".git"
+  proc getRelativePathAndWorkspaceSync*(self: Workspace, absolutePath: string): Option[tuple[root, path: string]] =
+    try:
+      if absolutePath.startsWith(self.path):
+        return ("ws0://", absolutePath.relativePath(self.path, '/')).some
 
-proc info*(self: Workspace): WorkspaceInfo =
-  let additionalPaths = self.additionalPaths.mapIt((it.absolutePath, it.some))
-  return WorkspaceInfo(name: self.path, folders: @[(self.path.absolutePath, self.path.some)] & additionalPaths)
+      for i, path in self.additionalPaths:
+        if absolutePath.startsWith(path):
+          return (&"ws{i + 1}://", absolutePath.relativePath(path, '/')).some
+    except:
+      discard
 
-proc removeWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) =
-  let idx = if path == self.path:
-    -1
-  else:
-    let idx = self.additionalPaths.find(path)
-    if idx == -1:
-      log lvlError, &"Can't remove unknown workspace folder '{path}'"
+  proc getRelativePath*(self: Workspace, absolutePath: string): Future[Option[string]] {.async.} =
+    return self.getRelativePathSync(absolutePath)
+
+  {.pop.} # raises: []
+  {.pop.} # gcsafe
+
+  proc loadIgnoreFile(self: Workspace, path: string): Option[Globs] =
+    try:
+      let globLines = readFile(self.getAbsolutePath(path))
+      return globLines.parseGlobs.some
+    except:
+      return Globs.none
+
+  proc loadDefaultIgnoreFile*(self: Workspace) =
+    if self.loadIgnoreFile(&".{appName}-ignore").getSome(ignore):
+      self.ignore = ignore
+      log lvlInfo, &"Using ignore file '.{appName}-ignore' for workspace {self.name}"
+    elif self.loadIgnoreFile(".gitignore").getSome(ignore):
+      self.ignore = ignore
+      log lvlInfo, &"Using ignore file '.gitignore' for workspace {self.name}"
+    else:
+      log lvlInfo, &"No ignore file for workspace {self.name}"
+
+    # todo: make this configurable
+    self.ignore.original.add ".git"
+
+  proc info*(self: Workspace): WorkspaceInfo =
+    let additionalPaths = self.additionalPaths.mapIt((it.absolutePath, it.some))
+    return WorkspaceInfo(name: self.path, folders: @[(self.path.absolutePath, self.path.some)] & additionalPaths)
+
+  proc removeWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) =
+    let idx = if path == self.path:
+      -1
+    else:
+      let idx = self.additionalPaths.find(path)
+      if idx == -1:
+        log lvlError, &"Can't remove unknown workspace folder '{path}'"
+        return
+      idx
+
+    if idx != -1:
+      self.additionalPaths.removeShift(idx)
+    elif self.additionalPaths.len > 0:
+      self.path = self.additionalPaths[0]
+      self.additionalPaths.removeShift(0)
+    else:
+      log lvlError, &"Can't remove last workspace folder '{path}'"
       return
-    idx
 
-  if idx != -1:
-    self.additionalPaths.removeShift(idx)
-  elif self.additionalPaths.len > 0:
-    self.path = self.additionalPaths[0]
-    self.additionalPaths.removeShift(0)
-  else:
-    log lvlError, &"Can't remove last workspace folder '{path}'"
-    return
+    let (wsVfs, _) = self.vfs.getVFS("ws://")
+    self.vfs.unmount(&"ws{self.additionalPaths.len + 1}://")
+    wsVfs.unmount(&"{self.additionalPaths.len + 1}")
 
-  let (wsVfs, _) = self.vfs.getVFS("ws://")
-  self.vfs.unmount(&"ws{self.additionalPaths.len + 1}://")
-  wsVfs.unmount(&"{self.additionalPaths.len + 1}")
+    # rebuild vfs
+    for i, path in @[self.path] & self.additionalPaths:
+      self.vfs.mount(&"ws{i}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+      wsVfs.mount($i, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
 
-  # rebuild vfs
-  for i, path in @[self.path] & self.additionalPaths:
-    self.vfs.mount(&"ws{i}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
-    wsVfs.mount($i, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+    self.onWorkspaceFolderRemoved.invoke(path)
 
-  self.onWorkspaceFolderRemoved.invoke(path)
+    if recomputeFileCache:
+      self.recomputeFileCache()
 
-  if recomputeFileCache:
-    self.recomputeFileCache()
+  proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) =
+    if self.path.len == 0:
+      self.path = path
+      self.loadDefaultIgnoreFile()
+    else:
+      self.additionalPaths.add path
 
-proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) =
-  if self.path.len == 0:
-    self.path = path
-    self.loadDefaultIgnoreFile()
-  else:
-    self.additionalPaths.add path
+    self.vfs.mount(&"ws{self.additionalPaths.len}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
 
-  self.vfs.mount(&"ws{self.additionalPaths.len}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+    let (wsVfs, _) = self.vfs.getVFS("ws://")
+    wsVfs.mount($self.additionalPaths.len, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
 
-  let (wsVfs, _) = self.vfs.getVFS("ws://")
-  wsVfs.mount($self.additionalPaths.len, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+    self.onWorkspaceFolderAdded.invoke(path)
+    if recomputeFileCache:
+      self.recomputeFileCache()
 
-  self.onWorkspaceFolderAdded.invoke(path)
-  if recomputeFileCache:
-    self.recomputeFileCache()
-
-proc restore*(self: Workspace, settings: JsonNode) =
-  try:
-    let path = settings["path"].getStr
-    let additionalPaths = settings["additionalPaths"].elems.mapIt(it.getStr)
-    self.addWorkspaceFolder(path, recomputeFileCache = false)
-    for path in additionalPaths:
+  proc restore*(self: Workspace, settings: JsonNode) =
+    try:
+      let path = settings["path"].getStr
+      let additionalPaths = settings["additionalPaths"].elems.mapIt(it.getStr)
       self.addWorkspaceFolder(path, recomputeFileCache = false)
+      for path in additionalPaths:
+        self.addWorkspaceFolder(path, recomputeFileCache = false)
 
-    self.name = fmt"Local:{path}"
-    self.recomputeFileCache()
+      self.name = fmt"Local:{path}"
+      self.recomputeFileCache()
 
-  except CatchableError as e:
-    log lvlError, &"Failed to restore workspace from settings: {e.msg}\n{settings.pretty}"
+    except CatchableError as e:
+      log lvlError, &"Failed to restore workspace from settings: {e.msg}\n{settings.pretty}"

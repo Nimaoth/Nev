@@ -1,9 +1,11 @@
 import std/[json, tables, options, sets, hashes]
 import vmath, bumpy
 import misc/[event, custom_logger, id, custom_async, util, array_set, generational_seq]
+
+include dynlib_export
+
 import platform/[platform]
-import scripting/expose
-import document, events, input, service, platform_service, dispatch_tables, config_provider
+import document, service, config_provider
 
 from scripting_api import EditorId
 
@@ -11,10 +13,6 @@ from scripting_api import EditorId
 {.push raises: [].}
 
 logCategory "document-editor"
-
-declareSettings EditorSettings, "editor":
-  ## Any editor with this set to true will be stored in the session and restored on startup.
-  declare saveInSession, bool, true
 
 type
   EditorIdNew* = distinct uint64
@@ -29,7 +27,6 @@ type
     active: bool
     onActiveChanged*: Event[DocumentEditor]
     config*: ConfigStore
-    editorSettings*: EditorSettings
 
   DocumentFactory* = ref object of RootObj
   DocumentEditorFactory* = ref object of RootObj
@@ -56,19 +53,6 @@ proc `$`*(vr: EditorIdNew): string {.borrow.}
 
 func serviceName*(_: typedesc[DocumentEditorService]): string = "DocumentEditorService"
 
-addBuiltinService(DocumentEditorService)
-
-method init*(self: DocumentEditorService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  log lvlInfo, &"DocumentEditorService.init"
-  self.pinnedEditors = initHashSet[EditorIdNew]()
-  return ok()
-
-method canOpenFile*(self: DocumentFactory, path: string): bool {.base, gcsafe, raises: [].} = discard
-method createDocument*(self: DocumentFactory, services: Services, path: string, load: bool): Document {.base, gcsafe, raises: [].} = discard
-
-method canEditDocument*(self: DocumentEditorFactory, document: Document): bool {.base, gcsafe, raises: [].} = discard
-method createEditor*(self: DocumentEditorFactory, services: Services, document: Document): DocumentEditor {.base, gcsafe, raises: [].} = discard
-
 func id*(self: DocumentEditor): EditorIdNew = self.id
 
 proc init*(self: DocumentEditor) =
@@ -89,230 +73,261 @@ proc markDirty*(self: DocumentEditor, notify: bool = true) =
 proc resetDirty*(self: DocumentEditor) =
   self.mDirty = false
 
-method handleActivate*(self: DocumentEditor) {.base, gcsafe, raises: [].} = discard
-method handleDeactivate*(self: DocumentEditor) {.base, gcsafe, raises: [].} = discard
-
-method getNamespace*(self: DocumentEditor): string {.base, gcsafe, raises: [].} = discard
-
-proc `active=`*(self: DocumentEditor, newActive: bool) =
-  let changed = if newActive != self.active:
-    self.markDirty()
-    true
-  else:
-    false
-
-  self.active = newActive
-  if changed:
-    if self.active:
-      self.handleActivate()
-    else:
-      self.handleDeactivate()
-    self.onActiveChanged.invoke(self)
-    assert self.active == newActive
-
 func active*(self: DocumentEditor): bool = self.active
 
-method deinit*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
-  discard
+proc getEditorDocument*(self: DocumentEditor): Document {.apprtl.}
+proc getDocument*(self: DocumentEditorService, id: DocumentId): Option[Document] {.apprtl.}
+proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] {.apprtl.}
+proc getDocumentByPath*(self: DocumentEditorService, path: string, usage = ""): Option[Document] {.apprtl.}
 
-method canEdit*(self: DocumentEditor, document: Document): bool {.base, gcsafe, raises: [].} =
-  return false
+when implModule:
+  import events
+  import scripting/expose
+  import input, platform_service, dispatch_tables
+  addBuiltinService(DocumentEditorService)
 
-method getDocument*(self: DocumentEditor): Document {.base, gcsafe, raises: [].} = discard
+  declareSettings EditorSettings, "editor":
+    ## Any editor with this set to true will be stored in the session and restored on startup.
+    declare saveInSession, bool, true
 
-method handleAction*(self: DocumentEditor, action: string, arg: string, record: bool = true): Option[JsonNode] {.base, gcsafe, raises: [].} = discard
+  method handleActivate*(self: DocumentEditor) {.base, gcsafe, raises: [].} = discard
+  method handleDeactivate*(self: DocumentEditor) {.base, gcsafe, raises: [].} = discard
 
-method getEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.base, gcsafe, raises: [].} =
-  return @[]
+  method getNamespace*(self: DocumentEditor): string {.base, gcsafe, raises: [].} = discard
 
-method handleDocumentChanged*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
-  discard
+  method init*(self: DocumentEditorService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+    log lvlInfo, &"DocumentEditorService.init"
+    self.pinnedEditors = initHashSet[EditorIdNew]()
+    return ok()
 
-method unregister*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
-  discard
+  method canOpenFile*(self: DocumentFactory, path: string): bool {.base, gcsafe, raises: [].} = discard
+  method createDocument*(self: DocumentFactory, services: Services, path: string, load: bool): Document {.base, gcsafe, raises: [].} = discard
 
-method handleScroll*(self: DocumentEditor, scroll: Vec2, mousePosWindow: Vec2) {.base, gcsafe, raises: [].} =
-  discard
+  method canEditDocument*(self: DocumentEditorFactory, document: Document): bool {.base, gcsafe, raises: [].} = discard
+  method createEditor*(self: DocumentEditorFactory, services: Services, document: Document): DocumentEditor {.base, gcsafe, raises: [].} = discard
 
-method handleMousePress*(self: DocumentEditor, button: MouseButton, mousePosWindow: Vec2, modifiers: Modifiers) {.base, gcsafe, raises: [].} =
-  discard
+  method deinit*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
+    discard
 
-method handleMouseRelease*(self: DocumentEditor, button: MouseButton, mousePosWindow: Vec2) {.base, gcsafe, raises: [].} =
-  discard
+  method canEdit*(self: DocumentEditor, document: Document): bool {.base, gcsafe, raises: [].} =
+    return false
 
-method handleMouseMove*(self: DocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) {.base, gcsafe, raises: [].} =
-  discard
+  method getDocument*(self: DocumentEditor): Document {.base, gcsafe, raises: [].} = discard
 
-method getStateJson*(self: DocumentEditor): JsonNode {.base, gcsafe, raises: [].} =
-  return newJObject()
+  method handleAction*(self: DocumentEditor, action: string, arg: string, record: bool = true): Option[JsonNode] {.base, gcsafe, raises: [].} = discard
 
-method restoreStateJson*(self: DocumentEditor, state: JsonNode) {.base, gcsafe, raises: [].} =
-  discard
+  method getEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.base, gcsafe, raises: [].} =
+    return @[]
 
-method getStatisticsString*(self: DocumentEditor): string {.base, gcsafe, raises: [].} = discard
+  method handleDocumentChanged*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
+    discard
 
-proc addDocumentFactory*(self: DocumentEditorService, factory: DocumentFactory) =
-  self.documentFactories.add(factory)
+  method unregister*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
+    discard
 
-proc addDocumentEditorFactory*(self: DocumentEditorService, factory: DocumentEditorFactory) =
-  self.editorFactories.add(factory)
+  method handleScroll*(self: DocumentEditor, scroll: Vec2, mousePosWindow: Vec2) {.base, gcsafe, raises: [].} =
+    discard
 
-proc registerDocument*(self: DocumentEditorService, document: Document) =
-  document.id = self.documents.add(document)
+  method handleMousePress*(self: DocumentEditor, button: MouseButton, mousePosWindow: Vec2, modifiers: Modifiers) {.base, gcsafe, raises: [].} =
+    discard
 
-proc unregisterDocument*(self: DocumentEditorService, document: Document) =
-  self.documents.del(document.id)
+  method handleMouseRelease*(self: DocumentEditor, button: MouseButton, mousePosWindow: Vec2) {.base, gcsafe, raises: [].} =
+    discard
 
-proc registerEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
-  editor.id = self.allEditors.add(editor)
-  self.editors[editor.id] = editor
-  self.onEditorRegistered.invoke editor
+  method handleMouseMove*(self: DocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) {.base, gcsafe, raises: [].} =
+    discard
 
-proc unregisterEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
-  self.allEditors.del(editor.id)
+  method getStateJson*(self: DocumentEditor): JsonNode {.base, gcsafe, raises: [].} =
+    return newJObject()
 
-  self.editors.del(editor.id)
-  self.onEditorDeregistered.invoke editor
+  method restoreStateJson*(self: DocumentEditor, state: JsonNode) {.base, gcsafe, raises: [].} =
+    discard
 
-proc getAllDocuments*(self: DocumentEditorService): seq[Document] =
-  for it in self.editors.values:
-    result.incl it.getDocument
+  method getStatisticsString*(self: DocumentEditor): string {.base, gcsafe, raises: [].} = discard
 
-proc getDocument*(self: DocumentEditorService, path: string, usage = ""): Option[Document] =
-  for document in self.documents:
-    if document.filename != "" and document.filename == path and document.usage == usage:
-      return document.some
+  proc `active=`*(self: DocumentEditor, newActive: bool) =
+    let changed = if newActive != self.active:
+      self.markDirty()
+      true
+    else:
+      false
 
-  return Document.none
+    self.active = newActive
+    if changed:
+      if self.active:
+        self.handleActivate()
+      else:
+        self.handleDeactivate()
+      self.onActiveChanged.invoke(self)
+      assert self.active == newActive
 
-proc getDocument*(self: DocumentEditorService, id: DocumentId): Option[Document] =
-  return self.documents.tryGet(id)
+  proc getEditorDocument*(self: DocumentEditor): Document = self.getDocument()
 
-proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] =
-  return self.allEditors.tryGet(id)
+  proc addDocumentFactory*(self: DocumentEditorService, factory: DocumentFactory) =
+    self.documentFactories.add(factory)
 
-proc getEditorsForDocument*(self: DocumentEditorService, document: Document): seq[DocumentEditor] =
-  for editor in self.allEditors:
-    if editor.getDocument() == document:
-      result.add editor
+  proc addDocumentEditorFactory*(self: DocumentEditorService, factory: DocumentEditorFactory) =
+    self.editorFactories.add(factory)
 
-proc getEditors*(self: DocumentEditorService, path: string): seq[DocumentEditor] =
-  for editor in self.allEditors:
-    if editor.getDocument() != nil and editor.getDocument().filename == path:
-      result.add editor
+  proc registerDocument*(self: DocumentEditorService, document: Document) =
+    document.id = self.documents.add(document)
 
-proc getEditorForId*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] =
-  self.editors.withValue(id, editor):
-    return editor[].some
+  proc unregisterDocument*(self: DocumentEditorService, document: Document) =
+    self.documents.del(document.id)
 
-  return DocumentEditor.none
+  proc registerEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
+    editor.id = self.allEditors.add(editor)
+    self.editors[editor.id] = editor
+    self.onEditorRegistered.invoke editor
 
-proc openDocument*(self: DocumentEditorService, path: string, load = true): Option[Document] =
-  try:
-    log lvlInfo, &"Open new document '{path}'"
+  proc unregisterEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
+    self.allEditors.del(editor.id)
 
-    var document: Document = nil
-    for factory in self.documentFactories:
-      if factory.canOpenFile(path):
-        document = factory.createDocument(self.services, path, load)
-        break
+    self.editors.del(editor.id)
+    self.onEditorDeregistered.invoke editor
 
-    if document == nil:
-      log lvlError, &"Failed to create document for '{path}'"
-      return Document.none
-    return document.some
+  proc getAllDocuments*(self: DocumentEditorService): seq[Document] =
+    for it in self.editors.values:
+      result.incl it.getDocument
 
-  except CatchableError:
-    log(lvlError, fmt"[openDocument] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+  proc getDocument*(self: DocumentEditorService, path: string, usage = ""): Option[Document] =
+    for document in self.documents:
+      if document.filename != "" and document.filename == path and document.usage == usage:
+        return document.some
+
     return Document.none
 
-proc getOrOpenDocument*(self: DocumentEditorService, path: string, load = true): Option[Document] =
-  result = self.getDocument(path)
-  if result.isSome:
-    return
+  proc getDocumentByPath*(self: DocumentEditorService, path: string, usage = ""): Option[Document] =
+    return self.getDocument(path, usage)
 
-  return self.openDocument(path, load)
+  proc getDocument*(self: DocumentEditorService, id: DocumentId): Option[Document] =
+    return self.documents.tryGet(id)
 
-proc getPlatform*(self: DocumentEditorService): Platform =
-  if self.platform == nil:
-    if self.services.getService(PlatformService).getSome(platformService):
-      self.platform = platformService.platform
+  proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] =
+    return self.allEditors.tryGet(id)
 
-  return self.platform
+  proc getEditorsForDocument*(self: DocumentEditorService, document: Document): seq[DocumentEditor] =
+    for editor in self.allEditors:
+      if editor.getDocument() == document:
+        result.add editor
 
-proc createEditorForDocument*(self: DocumentEditorService, document: Document): Option[DocumentEditor] =
-  for factory in self.editorFactories:
-    if factory.canEditDocument(document):
-      result = factory.createEditor(self.services, document).some
-      break
+  proc getEditors*(self: DocumentEditorService, path: string): seq[DocumentEditor] =
+    for editor in self.allEditors:
+      if editor.getDocument() != nil and editor.getDocument().filename == path:
+        result.add editor
 
-  if result.isNone:
-    log lvlError, &"Failed to create editor for document '{document.filename}'"
-    return
+  proc getEditorForId*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] =
+    self.editors.withValue(id, editor):
+      return editor[].some
 
-  discard result.get.onMarkedDirty.subscribe proc() =
-    let platform = self.getPlatform()
-    if platform.isNotNil:
-      platform.requestRender()
+    return DocumentEditor.none
 
-proc tryCloseDocument*(self: DocumentEditorService, document: Document) =
-  # log lvlInfo, fmt"tryCloseDocument: '{document.filename}'"
+  proc openDocument*(self: DocumentEditorService, path: string, load = true): Option[Document] =
+    try:
+      log lvlInfo, &"Open new document '{path}'"
 
-  if document in self.pinnedDocuments:
-    # log lvlInfo, &"Document '{document.filename}' is pinned, don't close"
-    return
+      var document: Document = nil
+      for factory in self.documentFactories:
+        if factory.canOpenFile(path):
+          document = factory.createDocument(self.services, path, load)
+          break
 
-  var hasAnotherEditor = false
-  for id, editor in self.editors.pairs:
-    if editor.getDocument() == document:
-      hasAnotherEditor = true
-      break
+      if document == nil:
+        log lvlError, &"Failed to create document for '{path}'"
+        return Document.none
+      return document.some
 
-  if not hasAnotherEditor:
-    document.deinit()
+    except CatchableError:
+      log(lvlError, fmt"[openDocument] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+      return Document.none
 
-proc closeEditor*(self: DocumentEditorService, editor: DocumentEditor) =
-  let document = editor.getDocument()
-  log lvlInfo, fmt"closeEditor: '{editor.getDocument().filename}'"
+  proc getOrOpenDocument*(self: DocumentEditorService, path: string, load = true): Option[Document] =
+    result = self.getDocument(path)
+    if result.isSome:
+      return
 
-  if editor.id in self.pinnedEditors:
-    log lvlWarn, &"Can't close editor {editor.id} for '{editor.getDocument().filename}' because it's pinned"
-    return
+    return self.openDocument(path, load)
 
-  editor.deinit()
+  proc getPlatform*(self: DocumentEditorService): Platform =
+    if self.platform == nil:
+      if self.services.getService(PlatformService).getSome(platformService):
+        self.platform = platformService.platform
 
-  self.tryCloseDocument(document)
+    return self.platform
 
-###########################################################################
+  proc createEditorForDocument*(self: DocumentEditorService, document: Document): Option[DocumentEditor] =
+    for factory in self.editorFactories:
+      if factory.canEditDocument(document):
+        result = factory.createEditor(self.services, document).some
+        break
 
-proc getDocumentEditorService(): Option[DocumentEditorService] =
-  {.gcsafe.}:
-    if gServices.isNil: return DocumentEditorService.none
-    return gServices.getService(DocumentEditorService)
+    if result.isNone:
+      log lvlError, &"Failed to create editor for document '{document.filename}'"
+      return
 
-static:
-  addInjector(DocumentEditorService, getDocumentEditorService)
+    discard result.get.onMarkedDirty.subscribe proc() =
+      let platform = self.getPlatform()
+      if platform.isNotNil:
+        platform.requestRender()
 
-proc getAllEditors*(self: DocumentEditorService): seq[EditorId] {.expose("editors").} =
-  for id in self.editors.keys:
-    result.add id.EditorId
+  proc tryCloseDocument*(self: DocumentEditorService, document: Document) =
+    # log lvlInfo, fmt"tryCloseDocument: '{document.filename}'"
 
-proc getExistingEditor*(self: DocumentEditorService, path: string): Option[EditorId] {.expose("editors").} =
-  ## Returns an existing editor for the given file if one exists,
-  ## or none otherwise.
-  defer:
-    log lvlInfo, &"getExistingEditor {path} -> {result}"
+    if document in self.pinnedDocuments:
+      # log lvlInfo, &"Document '{document.filename}' is pinned, don't close"
+      return
 
-  if path.len == 0:
+    var hasAnotherEditor = false
+    for id, editor in self.editors.pairs:
+      if editor.getDocument() == document:
+        hasAnotherEditor = true
+        break
+
+    if not hasAnotherEditor:
+      document.deinit()
+
+  proc closeEditor*(self: DocumentEditorService, editor: DocumentEditor) =
+    let document = editor.getDocument()
+    log lvlInfo, fmt"closeEditor: '{editor.getDocument().filename}'"
+
+    if editor.id in self.pinnedEditors:
+      log lvlWarn, &"Can't close editor {editor.id} for '{editor.getDocument().filename}' because it's pinned"
+      return
+
+    editor.deinit()
+
+    self.tryCloseDocument(document)
+
+  ###########################################################################
+
+  proc getDocumentEditorService(): Option[DocumentEditorService] =
+    {.gcsafe.}:
+      if gServices.isNil: return DocumentEditorService.none
+      return gServices.getService(DocumentEditorService)
+
+  static:
+    addInjector(DocumentEditorService, getDocumentEditorService)
+
+  proc getAllEditors*(self: DocumentEditorService): seq[EditorId] {.expose("editors").} =
+    for id in self.editors.keys:
+      result.add id.EditorId
+
+  proc getExistingEditor*(self: DocumentEditorService, path: string): Option[EditorId] {.expose("editors").} =
+    ## Returns an existing editor for the given file if one exists,
+    ## or none otherwise.
+    defer:
+      log lvlInfo, &"getExistingEditor {path} -> {result}"
+
+    if path.len == 0:
+      return EditorId.none
+
+    for id, editor in self.editors.pairs:
+      if editor.getDocument() == nil:
+        continue
+      if editor.getDocument().filename != path:
+        continue
+      return id.EditorId.some
+
     return EditorId.none
 
-  for id, editor in self.editors.pairs:
-    if editor.getDocument() == nil:
-      continue
-    if editor.getDocument().filename != path:
-      continue
-    return id.EditorId.some
-
-  return EditorId.none
-
-addGlobalDispatchTable "editors", genDispatchTable("editors")
+  addGlobalDispatchTable "editors", genDispatchTable("editors")

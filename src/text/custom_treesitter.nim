@@ -221,8 +221,9 @@ proc parseCallback*(self: TSParser, oldTree: TSTree, text: GetTextCallback): TST
   let tree = self.impl.tsParserParse(oldTreeImpl, input)
   return TSTree(impl: tree)
 
-when not declared(c_malloc):
-  proc c_malloc(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>", used.}
+when defined(mallocImport):
+  proc c_free(p: pointer): void {.importc: "host_free", header: "<stdlib.h>", used.}
+else:
   proc c_free(p: pointer): void {.importc: "free", header: "<stdlib.h>", used.}
 
 func toTsPoint*(cursor: Cursor, line: openArray[char]): ts.TSPoint = ts.TSPoint(row: cursor.line.uint32, column: line.runeIndex(cursor.column).uint32)

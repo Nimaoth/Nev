@@ -30,6 +30,8 @@ export
 const
   MaxEventsCount* = 64
 
+include dynlib_export
+
 when defined(windows):
   import std/[sets, hashes]
 elif defined(macosx) or defined(freebsd) or defined(netbsd) or
@@ -57,7 +59,7 @@ type
     opened*: uint64
     closed*: uint64
 
-  PDispatcherBase = ref object of RootRef
+  PDispatcherBase = ptr object of RootRef
     timers*: HeapQueue[TimerCallback]
     callbacks*: Deque[AsyncCallback]
     idlers*: Deque[AsyncCallback]
@@ -164,10 +166,11 @@ func toException*(v: OSErrorCode): ref OSError = newOSError(v)
 
 when defined(nimdoc):
   type
-    PDispatcher* = ref object of PDispatcherBase
+    PDispatcher* = ptr object of PDispatcherBase
     AsyncFD* = distinct cint
 
-  var gDisp {.threadvar.}: PDispatcher
+  when implModule:
+    var gDisp {.threadvar.}: PDispatcher
 
   proc newDispatcher*(): PDispatcher = discard
   proc poll*() = discard
@@ -210,7 +213,7 @@ elif defined(windows):
     DispatcherFlag* = enum
       SignalHandlerInstalled
 
-    PDispatcher* = ref object of PDispatcherBase
+    PDispatcher* = ptr object of PDispatcherBase
       ioPort: HANDLE
       handles: HashSet[AsyncFD]
       connectEx*: WSAPROC_CONNECTEX
@@ -309,31 +312,36 @@ elif defined(windows):
     if closeFd(sock) != 0:
       raiseOsDefect(osLastError(), "initAPI(): Unable to close control socket")
 
-  proc newDispatcher*(): PDispatcher =
-    ## Creates a new Dispatcher instance.
-    let port = createIoCompletionPort(osdefs.INVALID_HANDLE_VALUE,
-                                      HANDLE(0), 0, 1)
-    if port == osdefs.INVALID_HANDLE_VALUE:
-      raiseOsDefect(osLastError(), "newDispatcher(): Unable to create " &
-                                   "IOCP port")
-    var res = PDispatcher(
-      ioPort: port,
-      handles: initHashSet[AsyncFD](),
-      timers: initHeapQueue[TimerCallback](),
-      callbacks: initDeque[AsyncCallback](64),
-      idlers: initDeque[AsyncCallback](),
-      ticks: initDeque[AsyncCallback](),
-      trackers: initTable[string, TrackerBase](),
-      counters: initTable[string, TrackerCounter]()
-    )
-    res.callbacks.addLast(SentinelCallback)
-    initAPI(res)
-    res
+  when implModule:
+    var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
-  var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
+    proc newDispatcher*(): PDispatcher {.apprtl.} =
+      ## Creates a new Dispatcher instance.
+      let port = createIoCompletionPort(osdefs.INVALID_HANDLE_VALUE,
+                                        HANDLE(0), 0, 1)
+      if port == osdefs.INVALID_HANDLE_VALUE:
+        raiseOsDefect(osLastError(), "newDispatcher(): Unable to create " & "IOCP port")
 
-  proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe, raises: [].}
-  proc getThreadDispatcher*(): PDispatcher {.gcsafe, raises: [].}
+      var res: PDispatcher
+      type Dispatcher = typeof(res[])
+      res = create(Dispatcher)
+      res[] = Dispatcher(
+        ioPort: port,
+        handles: initHashSet[AsyncFD](),
+        timers: initHeapQueue[TimerCallback](),
+        callbacks: initDeque[AsyncCallback](64),
+        idlers: initDeque[AsyncCallback](),
+        ticks: initDeque[AsyncCallback](),
+        trackers: initTable[string, TrackerBase](),
+        counters: initTable[string, TrackerCounter]()
+      )
+      # echo "create thread dispatcher ", cast[int](res)
+      res.callbacks.addLast(SentinelCallback)
+      initAPI(res)
+      res
+
+  proc setThreadDispatcher*(disp: PDispatcher) {.apprtl, gcsafe, raises: [].}
+  proc getThreadDispatcher*(): PDispatcher {.apprtl, gcsafe, raises: [].}
 
   proc getIoHandler*(disp: PDispatcher): HANDLE =
     ## Returns the underlying IO Completion Port handle (Windows) or selector
@@ -717,7 +725,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       reader*: AsyncCallback
       writer*: AsyncCallback
 
-    PDispatcher* = ref object of PDispatcherBase
+    PDispatcher* = ptr object of PDispatcherBase
       selector: Selector[SelectorData]
       keys: seq[ReadyKey]
 
@@ -730,7 +738,10 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
   proc initAPI(disp: PDispatcher) =
     discard
 
-  proc newDispatcher*(): PDispatcher =
+  when implModule:
+    var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
+
+  proc newDispatcher*(): PDispatcher {.apprtl.} =
     ## Create new dispatcher.
     let selector =
       block:
@@ -739,7 +750,10 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
                                       "Could not initialize selector")
         res.get()
 
-    var res = PDispatcher(
+    var res: PDispatcher
+    type Dispatcher = typeof(res[])
+    res = create(Dispatcher)
+    res[] = Dispatcher(
       selector: selector,
       timers: initHeapQueue[TimerCallback](),
       callbacks: initDeque[AsyncCallback](chronosEventsCount),
@@ -752,10 +766,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     initAPI(res)
     res
 
-  var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
-
-  proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe, raises: [].}
-  proc getThreadDispatcher*(): PDispatcher {.gcsafe, raises: [].}
+  proc setThreadDispatcher*(disp: PDispatcher) {.apprtl, gcsafe, raises: [].}
+  proc getThreadDispatcher*(): PDispatcher {.apprtl, gcsafe, raises: [].}
 
   proc getIoHandler*(disp: PDispatcher): Selector[SelectorData] =
     ## Returns system specific OS queue.
@@ -1070,24 +1082,26 @@ else:
   proc initAPI() = discard
   proc globalInit() = discard
 
-proc setThreadDispatcher*(disp: PDispatcher) =
-  ## Set current thread's dispatcher instance to ``disp``.
-  if not(gDisp.isNil()):
-    doAssert gDisp.callbacks.len == 0
-  gDisp = disp
+when implModule:
+  proc setThreadDispatcher*(disp: PDispatcher) =
+    ## Set current thread's dispatcher instance to ``disp``.
+    if not(gDisp.isNil()):
+      doAssert gDisp.callbacks.len == 0
+    gDisp = disp
 
-proc getThreadDispatcher*(): PDispatcher =
-  ## Returns current thread's dispatcher instance.
-  if gDisp.isNil():
-    setThreadDispatcher(newDispatcher())
-  gDisp
+  proc getThreadDispatcher*(): PDispatcher =
+    ## Returns current thread's dispatcher instance.
+    if gDisp.isNil():
+      setThreadDispatcher(newDispatcher())
+    # echo "get thread dispatcher ", cast[int](gDisp)
+    gDisp
 
 proc setGlobalDispatcher*(disp: PDispatcher) {.
-      gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
+      apprtl, gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
   setThreadDispatcher(disp)
 
 proc getGlobalDispatcher*(): PDispatcher {.
-      gcsafe, deprecated: "Use getThreadDispatcher() instead".} =
+      apprtl, gcsafe, deprecated: "Use getThreadDispatcher() instead".} =
   getThreadDispatcher()
 
 proc setTimer*(at: Moment, cb: CallbackFunc,
@@ -1142,13 +1156,12 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
   removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
-proc callSoon*(acb: AsyncCallback) =
+proc callSoon*(acb: AsyncCallback) {.apprtl.} =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
   getThreadDispatcher().callbacks.addLast(acb)
 
-proc callSoon*(cbproc: CallbackFunc, data: pointer) {.
-     gcsafe.} =
+proc callSoon*(cbproc: CallbackFunc, data: pointer) {.gcsafe.} =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
   doAssert(not isNil(cbproc))
@@ -1262,6 +1275,6 @@ when chronosFutureTracking:
     ## completed, cancelled or failed).
     futureList.count
 
-when not defined(nimdoc):
+when not defined(nimdoc) and implModule:
   # Perform global per-module initialization.
   globalInit()

@@ -4,7 +4,6 @@ import misc/[custom_logger, custom_async, util, rope_utils, event, rope_regex, m
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
 import document_editor, service, vfs_service, vfs, config_provider, event_service
-import workspaces/workspace
 import text/[text_document, text_editor]
 
 logCategory "language-server-ctags"
@@ -39,7 +38,6 @@ type
     eventBus: EventService
     vfs: VFS
     commandHistory*: seq[string]
-    workspace: Workspace
 
     importMap: Table[string, HashSet[string]]    # Map from import name to file paths
     files: Table[string, CTagsSymbols]  # Code file path to parsed ctags
@@ -60,7 +58,6 @@ proc newLanguageServerCTags(services: Services): LanguageServerCTags =
   server.documents = services.getService(DocumentEditorService).get
   server.vfs = services.getService(VFSService).get.vfs
   server.config = services.getService(ConfigService).get.runtime
-  server.workspace = services.getService(Workspace).get
   server.eventBus = services.getService(EventService).get
   server.refetchWorkspaceSymbolsOnQueryChange = false
   server.capabilities.completionProvider = lsp_types.CompletionOptions().some
