@@ -53,6 +53,11 @@ clear
 *.wasm
 *.map
 plugins/pong
+local-nimble.nim
+build.json
+test_module.nim
+test_module2.nim
+test_module3
 
 deps
 deps/winim
