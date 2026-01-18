@@ -1,9 +1,7 @@
-import std/[json, options, os, strutils, sequtils, unicode]
-import malebolgia
-import misc/[custom_async, id, util, regex, custom_logger, event, timer, async_process]
-import vfs, vfs_service, vfs_local, service, compilation_config
+import std/[options]
+import misc/[custom_async, id, util, regex, custom_logger, event]
+import vfs, vfs_service, service
 import finder/finder
-import nimsumtree/static_array
 
 include dynlib_export
 
@@ -41,8 +39,23 @@ type
     isCacheUpdateInProgress: bool = false
     vfs*: VFS
 
+func serviceName*(_: typedesc[Workspace]): string = "Workspace"
+
+# DLL API
+proc workspaceSearchPaths*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.apprtl, gcsafe, raises: [].}
+proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.apprtl, gcsafe, raises: [].}
+
+# Nice wrappers
+
+proc search*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.inline.} = workspaceSearchPaths(self, paths, query, maxResults, customArgs)
+proc search*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.inline.} = workspaceSearch(self, query, maxResults, customArgs)
+
+# Implementation
 when implModule:
-  func serviceName*(_: typedesc[Workspace]): string = "Workspace"
+  import std/[json, options, os, strutils, sequtils]
+  import malebolgia
+  import misc/[custom_async, util, regex, custom_logger, event, timer, async_process]
+  import vfs, vfs_service, vfs_local, service, compilation_config
 
   addBuiltinService(Workspace, VFSService)
 
@@ -207,6 +220,12 @@ when implModule:
         break
 
     return res
+
+  proc workspaceSearchPaths*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.gcsafe, raises: [].} =
+    searchWorkspace(self, paths, query, maxResults, customArgs)
+
+  proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.gcsafe, raises: [].} =
+    searchWorkspace(self, query, maxResults, customArgs)
 
   proc getAbsolutePath*(self: Workspace, path: string): string =
     if path.isAbsolute:

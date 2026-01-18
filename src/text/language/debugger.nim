@@ -3,7 +3,7 @@ import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, eve
 import scripting/[expose]
 import dap_client, dispatch_tables, config_provider, service, selector_popup_builder, events, view, session, document_editor, layout, platform_service
 import text/text_editor
-import text/language/[language_server_base, lsp_types]
+import text/language/[language_server_base]
 import platform/platform
 import finder/[previewer, finder, data_previewer]
 import workspaces/workspace, plugin_service, vfs, vfs_service

@@ -1,5 +1,5 @@
 import std/[options, json]
-import misc/[custom_async, custom_logger, event, response]
+import misc/[custom_async, custom_logger, event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
 from lsp_types as lsp_types import CompletionItem, WorkspaceEdit, ServerCapabilities
@@ -95,7 +95,8 @@ proc toCursor*(position: lsp_types.Position): Cursor = (position.line, position.
 proc toSelection*(`range`: lsp_types.Range): Selection = (`range`.start.toCursor, `range`.`end`.toCursor)
 
 when implModule:
-  import document, document_editor, service
+  import misc/[response]
+  import document, service
   import workspaces/workspace
   import config_provider
 

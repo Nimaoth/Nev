@@ -469,6 +469,7 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
     self.onLanguageChanged.invoke (self,)
     if self.getLanguageServerComponent().getSome(comp):
       comp.setLanguageId(languageId)
+    self.textComponent.languageId = languageId
 
 func contentString*(self: TextDocument): string =
   if self.rope.tree.isNil:

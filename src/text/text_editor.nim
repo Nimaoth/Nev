@@ -3076,8 +3076,6 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
 
     else:
       return self.document.applyMoveFallback(move, selections, count, largs, env)
-      log lvlError, &"Unknown move '{move}'"
-      return @selections
 
   except CatchableError as e:
     log lvlError, &"Failed to apply move '{move}': {e.msg}"

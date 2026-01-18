@@ -2,14 +2,14 @@ import std/[options, tables, strutils, os, strformat]
 import misc/[custom_logger, custom_async, util, response, rope_utils, event, regex, rope_regex, myjsonutils]
 import text/language/[language_server_base, lsp_types]
 import nimsumtree/[arc, rope]
-import service, event_service, language_server_dynamic, document_editor, document, config_provider, vfs, vfs_service
+import service, event_service, language_server_dynamic, document_editor, config_provider, vfs, vfs_service
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
 when implModule:
-  import language_server_component, config_component, move_component, text_component, treesitter_component
+  import language_server_component, config_component, text_component
   logCategory "language-server-paths"
 
   const pathRegex = """(?=.*[/\\])(?:(?:\w+:\/\/)?(?:[a-zA-Z]:(/|\\{1,2})|(/|\\{1,2})|)(?:[^\\/\s\"'>\[\]:(),]+(/|\\{1,2}))*([^\\/\s\"'>\[\]:(),]+(?:\.\w+)?)?)"""
@@ -29,7 +29,7 @@ when implModule:
 
   proc pathsGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerPaths
-    # echo &"getDefinition '{filename}', {location}"
+    # log lvlDebug, &"getDefinition '{filename}', {location}"
     var definitions = newSeq[Definition]()
     if self.documents.getDocumentByPath(filename).getSome(doc):
       let config = doc.getConfigComponent().getOr:
@@ -89,7 +89,7 @@ when implModule:
 
   proc pathsGetCompletions*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
     let self = self.LanguageServerPaths
-    # echo &"LanguageServerDynamic.getCompletions '{filename}', {location}"
+    # log lvlDebug, &"LanguageServerDynamic.getCompletions '{filename}', {location}"
 
     var completions = newSeq[CompletionItem]()
 
@@ -172,7 +172,7 @@ when implModule:
     return CompletionList(items: completions).success
 
   proc newLanguageServerPaths(services: Services): LanguageServerPaths =
-    var result = new LanguageServerPaths
+    result = new LanguageServerPaths
     result.name = "paths"
     result.services = services
     result.documents = services.getService(DocumentEditorService).get
@@ -195,7 +195,7 @@ when implModule:
   proc init_module_language_server_paths*() {.cdecl, exportc, dynlib.} =
     let services = getServices()
     if services == nil:
-      echo &"Failed to initialize init_module_language_server_paths: no services found"
+      log lvlWarn, &"Failed to initialize init_module_language_server_paths: no services found"
       return
 
     var ls = newLanguageServerPaths(services)

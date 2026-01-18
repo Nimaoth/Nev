@@ -1,4 +1,4 @@
-import std/[tables, hashes, options]
+import std/[options]
 import misc/event
 import component
 import text/language/[language_server_base]

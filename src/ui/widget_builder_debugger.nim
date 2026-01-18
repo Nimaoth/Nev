@@ -3,14 +3,11 @@ import vmath, bumpy, chroma
 import misc/[util, custom_logger, timer, array_set]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
-import platform_service
 import ui/[widget_builders_base, widget_library]
 import theme, view
 import text/text_editor
-import service
 import text/language/debugger
 import text/language/dap_client
-import config_provider
 
 import ui/node
 

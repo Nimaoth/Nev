@@ -79,8 +79,6 @@ deinitLock(l)
 import std/private/[threadtypes]
 export Thread
 
-import system/ansi_c
-
 when defined(nimPreviewSlimSystem):
   import std/assertions
 

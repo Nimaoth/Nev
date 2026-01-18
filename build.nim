@@ -1,4 +1,4 @@
-import std/[parseopt, options, macros, strutils, os, strformat, dirs, sequtils, unicode, osproc, times, tables, json, jsonutils, threadpool, sets]
+import std/[parseopt, options, strutils, os, strformat, dirs, sequtils, unicode, osproc, times, tables, json, jsonutils, threadpool, sets]
 import src/misc/timer
 
 var optParser = initOptParser("")
@@ -212,7 +212,7 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
           inc numBuilt
         else:
           inc numFailed
-          echo &"=========================================== Build output for {cmds[i].module} ================================"
+        echo &"=========================================== Build output for {cmds[i].module} ================================"
         echo output
         cmds.del(i)
 

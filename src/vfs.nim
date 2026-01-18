@@ -61,9 +61,6 @@ type
     maxDepth*: int = int.high
     maxResults*: int = int.high
 
-  VFSDynamic* = ref object of VFS
-    vfs: Arc[VFS2]
-
   VFS2* = object
     impl*: pointer
     mounts*: seq[tuple[prefix: string, vfs: Arc[VFS2]]]  ## Seq because I assume the amount of entries will be very small.
@@ -645,24 +642,6 @@ method copyFileImpl*(self: VFSInMemory, src: string, dest: string): Future[void]
     self.files[dest] = self.files[src]
   else:
     raise newException(IOError, &"Failed to copy non-existing file '{src}' to '{dest}'")
-
-method name*(self: VFSDynamic): string {.gcsafe, raises: [].} = self.vfs.nameImpl()
-method normalize*(self: VFSDynamic, path: string): string {.gcsafe, raises: [].} = self.vfs.normalizeImpl(path)
-method read*(self: VFSDynamic, path: string, flags: set[ReadFlag]): Future[string] {.raises: [IOError].} = self.vfs.readImpl(path, flags)
-method readRope*(self: VFSDynamic, path: string, rope: ptr Rope): Future[void] {.raises: [IOError].} = self.vfs.readRopeImpl(path, rope)
-method write*(self: VFSDynamic, path: string, content: string): Future[void] {.raises: [IOError].} = self.vfs.writeImpl(path, content)
-method write*(self: VFSDynamic, path: string, content: sink RopeSlice[int]): Future[void] {.raises: [IOError].} = self.vfs.writeImpl(path, content)
-method delete*(self: VFSDynamic, path: string): Future[bool] {.raises: [].} = self.vfs.deleteImpl(path)
-method createDir*(self: VFSDynamic, path: string): Future[void] {.raises: [IOError].} = self.vfs.createDirImpl(path)
-method getFileKind*(self: VFSDynamic, path: string): Future[Option[FileKind]] {.raises: [].} = self.vfs.getFileKindImpl(path)
-method getFileAttributes*(self: VFSDynamic, path: string): Future[Option[FileAttributes]] {.raises: [].} = self.vfs.getFileAttributesImpl(path)
-method setFileAttributes*(self: VFSDynamic, path: string, attributes: FileAttributes): Future[void] {.raises: [IOError].} = self.vfs.setFileAttributesImpl(path, attributes)
-method watch*(self: VFSDynamic, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id {.gcsafe, raises: []} = self.vfs.watchImpl(path, cb)
-method unwatch*(self: VFSDynamic, id: Id) {.gcsafe, raises: [].} = self.vfs.unwatchImpl(id)
-method getVFS*(self: VFSDynamic, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] {.gcsafe, raises: [].} = (let (vfs, p) = self.vfs.getVFSImpl(path, maxDepth); (VFSDynamic(vfs: vfs), p))
-method getDirectoryListing*(self: VFSDynamic, path: string): Future[DirectoryListing] {.raises: [].} = self.vfs.getDirectoryListingImpl(path)
-method copyFile*(self: VFSDynamic, src: string, dest: string): Future[void] {.raises: [IOError].} = self.vfs.copyFileImpl(src, dest)
-method findFiles*(self: VFSDynamic, root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.raises: [].} = self.vfs.findFilesImpl(root, filenameRegex, maxResults, options)
 
 proc getVFS*(self: Arc[VFS2], path: openArray[char], maxDepth: int = int.high): tuple[vfs: Arc[VFS2], relativePath: string] =
   if maxDepth == 0:

@@ -24,7 +24,6 @@ when implModule:
   import scripting/expose
   import dispatch_tables, vfs_config, config_provider, app_options
   import fsnotify
-  import nimsumtree/[arc]
 
   logCategory "vfs-service"
   addBuiltinService(VFSService, ConfigService)

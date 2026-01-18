@@ -18,7 +18,7 @@
 include "system/inclrtl"
 
 import
-  std/[strutils, os, strtabs, streams, cpuinfo, streamwrapper,
+  std/[os, strtabs, streams, cpuinfo, streamwrapper,
   private/since]
 
 export quoteShell, quoteShellWindows, quoteShellPosix

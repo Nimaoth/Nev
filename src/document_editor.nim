@@ -1,13 +1,11 @@
-import std/[json, tables, options, sets, hashes]
-import vmath, bumpy
-import misc/[event, custom_logger, id, custom_async, util, array_set, generational_seq]
+import std/[tables, options, sets, hashes]
+import bumpy
+import misc/[event, custom_logger, id, custom_async, util, generational_seq]
 
 include dynlib_export
 
 import platform/[platform]
 import document, service, config_provider
-
-from scripting_api import EditorId
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -81,9 +79,14 @@ proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEd
 proc getDocumentByPath*(self: DocumentEditorService, path: string, usage = ""): Option[Document] {.apprtl.}
 
 when implModule:
+  import std/[json]
+  import misc/[array_set]
+  import vmath
   import events
   import scripting/expose
   import input, platform_service, dispatch_tables
+  from scripting_api import EditorId
+
   addBuiltinService(DocumentEditorService)
 
   declareSettings EditorSettings, "editor":

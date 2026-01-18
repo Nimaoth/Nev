@@ -122,8 +122,11 @@ var gLogger {.threadvar.}: CustomLogger
 proc logger*(): CustomLogger {.apprtl, gcsafe, raises: [].}
 
 when implModule:
-  gLogger = newCustomLogger()
-  proc logger*(): CustomLogger = ({.gcsafe.}: gLogger)
+  proc logger*(): CustomLogger =
+    {.gcsafe.}:
+      if gLogger == nil:
+        gLogger = newCustomLogger()
+      return gLogger
 
 proc flush*(logger: logging.Logger) =
   if logger of FileLogger:

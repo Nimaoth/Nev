@@ -1,6 +1,5 @@
 import std/[options, tables]
 import misc/[custom_async]
-import nimsumtree/[rope]
 import component
 import text/treesitter_types
 
@@ -29,8 +28,8 @@ proc query*(self: TreesitterComponent, name: string): Future[Option[TSQuery]] = 
 
 # Implementation
 when implModule:
-  import std/[strformat, sequtils]
-  import misc/[util, myjsonutils, custom_logger, rope_utils, arena]
+  import std/[strformat]
+  import misc/[util, custom_logger]
   import text/custom_treesitter
   import vfs
 

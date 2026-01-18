@@ -1,6 +1,6 @@
 import std/[strutils, sugar, sequtils]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger, fuzzy_matching, disposable_ref]
+import misc/[util, custom_logger, disposable_ref]
 import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_library]

@@ -1,5 +1,5 @@
-import std/[options, json]
-import nimsumtree/[arc, rope]
+import std/[options]
+import nimsumtree/[rope]
 import component
 
 export component
@@ -7,6 +7,7 @@ export component
 include dynlib_export
 
 type TextComponent* = ref object of Component
+  languageId*: string
 
 # DLL API
 var TextComponentId* {.apprtl.}: ComponentTypeId
@@ -37,8 +38,7 @@ proc content*(self: TextComponent, selection: Range[Point], inclusiveEnd: bool =
 
 # Implementation
 when implModule:
-  import std/[strformat, tables, sequtils]
-  import misc/[util, myjsonutils, custom_logger, rope_utils]
+  import misc/[util, custom_logger]
   import nimsumtree/[buffer, clock]
 
   logCategory "text-component"

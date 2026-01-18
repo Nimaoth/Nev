@@ -38,7 +38,7 @@ proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.us
         if fileLogger != nil:
           logging.log(fileLogger, level, args)
         # setLastModificationTime(logFileName, getTime())
-      except Exception:
+      except:
         discard
       {.pop.}
 
