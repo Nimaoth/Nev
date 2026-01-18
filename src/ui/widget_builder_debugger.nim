@@ -1,6 +1,6 @@
 import std/[strformat, options, tables, sets, strutils, algorithm]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger, timer, array_set]
+import misc/[util, custom_logger, array_set]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
 import ui/[widget_builders_base, widget_library]
@@ -15,8 +15,6 @@ import ui/node
 {.used.}
 
 logCategory "widget_builder_debugger"
-
-var uiUserId = newId()
 
 proc createStackTrace*(self: StacktraceView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
   let currentThread = debugger.currentThread().getOr:
@@ -76,8 +74,6 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
   let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let changedColor = builder.theme.color("diffEditor.insertedTextBackground", color(0.8, 0.8, 0.8))
   let selectionColor = builder.theme.color("list.activeSelectionBackground", color(0.8, 0.8, 0.8))
-  let borderColor = builder.theme.color("panel.border", color(0, 0, 0))
-  let threads {.cursor.} = debugger.getThreads()
   let textColorHighlight = builder.theme.color("editor.foreground.highlight", color(0.9, 0.8, 0.8))
   let typeColor = builder.theme.tokenColor("type", color(0.9, 0.8, 0.8))
   let valueColor = builder.theme.tokenColor("string", color(0.9, 0.8, 0.8))
@@ -168,7 +164,7 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
         var maxX = 0.float
         var maxY = 0.float
         var minY = float.high
-        var selectedVariableMultilineValue: string = ""
+        # var selectedVariableMultilineValue: string = ""
 
         proc drawVariable(indent: float, y: float, varRef: VariablesReference, name: string, typ: Option[string], value: string, valueChanged: bool, isSelected: bool, isFiltered: bool) =
           let collapsed = self.isCollapsed(ids & varRef)
@@ -180,7 +176,6 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
           if hasChildren and childrenCached and debugger.variables[ids & varRef].timestamp != debugger.timestamp:
             upToDate = false
 
-          let typeText = typ.mapIt(": " & it).get("")
           var collapsedText = if hasChildren and showChildren:
             "-"
           elif hasChildren and not showChildren:
@@ -203,7 +198,6 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
             selectedY = y.some
             fillRect(rect(indent, y, width, builder.textHeight), selectionColor)
 
-          var highlightIndices = newSeq[int]()
           var highlightIndex = -1
           if isFiltered:
             highlightIndex = name.find(self.variablesFilter)
@@ -331,7 +325,6 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
             yDown += builder.textHeight
             cursorDown = self.moveNext(debugger, cursorDown.get)
 
-        var t = startTimer()
         drawVariables()
         self.baseIndex = variablesCursor
         if selectedY.isNone:
@@ -366,9 +359,6 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
 
         currentNode.markDirty(builder)
 
-        let ms = t.elapsed.ms
-        # debugf"draw variables took {ms}, bounds: {rect(0, minY, maxX, maxY - minY)}"
-
 method createUI*(self: StacktraceView, builder: UINodeBuilder): seq[OverlayFunction] =
   let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   if getDebugger().getSome(debugger):
@@ -400,7 +390,6 @@ method createUI*(self: ThreadsView, builder: UINodeBuilder): seq[OverlayFunction
 method createUI*(self: VariablesView, builder: UINodeBuilder): seq[OverlayFunction] =
   let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let textColorHighlight = builder.theme.color("editor.foreground.highlight", color(0.9, 0.8, 0.8))
-  let selectionColor = builder.theme.color("list.activeSelectionBackground", color(0.8, 0.8, 0.8)).withAlpha(1)
   if getDebugger().getSome(debugger):
     self.renderView(builder,
       proc(): seq[OverlayFunction] =

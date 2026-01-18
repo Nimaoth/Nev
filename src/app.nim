@@ -189,12 +189,6 @@ proc setLocationList(self: App, list: seq[FinderItem], previewer: Option[Preview
   self.finderItems = list
   self.previewer = previewer.toDisposableRef
 
-proc setLocationList(self: App, list: seq[FinderItem],
-    previewer: sink Option[DisposableRef[Previewer]] = DisposableRef[Previewer].none) =
-  self.currentLocationListIndex = 0
-  self.finderItems = list
-  self.previewer = previewer.move
-
 proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: []).} =
   if not force and self.themes.theme.isNotNil and self.themes.theme.path == path:
     return
@@ -3102,7 +3096,7 @@ proc all*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
   if args.kind == JArray:
     try:
       for command in args.elems:
-        let (command, args, ok) = command.toJsonEx.parseCommand()
+        let (command, args, _) = command.toJsonEx.parseCommand()
         if command.len > 0:
           discard self.commands.executeCommand(command & " " & args)
     except CatchableError:

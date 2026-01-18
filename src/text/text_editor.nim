@@ -1750,40 +1750,6 @@ proc getParentNodeSelection(self: TextDocumentEditor, selection: Selection, incl
   result = node.getRange.toSelection
   result = self.includeSelectionEnd(result, includeAfter)
 
-proc getNextNamedSiblingNodeSelection(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Option[Selection] =
-  if self.document.tsTree.isNil:
-    return Selection.none
-
-  let tree = self.document.tsTree
-  var node = tree.root.descendantForRange(selection.tsRange)
-  while node != tree.root:
-    if node.nextNamed.getSome(nextNode):
-      return self.includeSelectionEnd(nextNode.getRange.toSelection, includeAfter).some
-
-    node = node.parent
-    let r = self.includeSelectionEnd(node.getRange.toSelection, includeAfter)
-    if r != selection:
-      break
-
-  return Selection.none
-
-proc getNextSiblingNodeSelection(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Option[Selection] =
-  if self.document.tsTree.isNil:
-    return Selection.none
-
-  let tree = self.document.tsTree
-  var node = tree.root.descendantForRange(selection.tsRange)
-  while node != tree.root:
-    if node.next.getSome(nextNode):
-      return self.includeSelectionEnd(nextNode.getRange.toSelection, includeAfter).some
-
-    node = node.parent
-    let r = self.includeSelectionEnd(node.getRange.toSelection, includeAfter)
-    if r != selection:
-      break
-
-  return Selection.none
-
 proc getParentNodeSelections(self: TextDocumentEditor, selections: Selections, includeAfter: bool = true): Selections =
   return selections.mapIt(self.getParentNodeSelection(it, includeAfter))
 
@@ -3901,8 +3867,6 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   editSelections.add cursorEditSelections
   insertTexts.add cursorInsertTexts
 
-  let numOriginalEdits = editSelections.len
-
   # Create anchors for additional edits before applying the completion so we can later apply the additional
   # edits at the correct location
   var additionalEditSelections = newSeq[Selection]()
@@ -5136,7 +5100,6 @@ proc createTextEditorInstance(): TextDocumentEditor =
 
 proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEditor =
   var self = createTextEditorInstance()
-  let s {.cursor.} = self
   self.services = services
   self.platform = self.services.getService(PlatformService).get.platform
   self.configService = services.getService(ConfigService).get

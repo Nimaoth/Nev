@@ -467,8 +467,6 @@ iterator query*(query: TSQuery, tree: TSTree, selection: Selection): seq[tuple[n
   let range = tsRange(tsPoint(selection.first.line, selection.first.column), tsPoint(selection.last.line, selection.last.column))
   var arena = initArena()
 
-  var requiresSort = false
-
   for match in query.matches(tree.root, range, arena):
     let predicates = query.predicatesForPattern(match.pattern, arena)
     var captures = newSeqOfCap[tuple[node: TSNode, capture: string]](match.captures.len)

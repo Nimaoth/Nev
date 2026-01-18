@@ -27,9 +27,7 @@ proc get*(self: ConfigComponent, key: string, T: typedesc, defaultValue: T): T =
         if value.kind == JNull:
           return defaultValue
         return value.jsonTo(T)
-    except Exception as e:
-      let t = $T
-      let p = value.pretty
+    except Exception:
       return defaultValue
   else:
     return defaultValue

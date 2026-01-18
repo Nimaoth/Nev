@@ -454,10 +454,8 @@ when defined(windows):
     halfMask = 0x3FF
 
     UNI_SUR_HIGH_START = 0xD800
-    UNI_SUR_HIGH_END = 0xDBFF
     UNI_SUR_LOW_START = 0xDC00
     UNI_SUR_LOW_END = 0xDFFF
-    UNI_REPL = 0xFFFD
 
   proc skipFindData(f: winlean.WIN32_FIND_DATA): bool {.inline.} =
     # Note - takes advantage of null delimiter in the cstring
@@ -485,47 +483,6 @@ when defined(windows):
         inc d
         yield cast[Utf16Char](uint16((ch and halfMask) + UNI_SUR_LOW_START))
       inc d
-
-    template ones(n: untyped): untyped = ((1 shl n)-1)
-    iterator `$`(w: WideCString, estimate: int, replacement: int = 0xFFFD): char =
-      var i = 0
-      while w[i].int16 != 0'i16:
-        var ch = ord(w[i])
-        inc i
-        if ch >= UNI_SUR_HIGH_START and ch <= UNI_SUR_HIGH_END:
-          # If the 16 bits following the high surrogate are in the source buffer...
-          let ch2 = ord(w[i])
-
-          # If it's a low surrogate, convert to UTF32:
-          if ch2 >= UNI_SUR_LOW_START and ch2 <= UNI_SUR_LOW_END:
-            ch = (((ch and halfMask) shl halfShift) + (ch2 and halfMask)) + halfBase
-            inc i
-          else:
-            #invalid UTF-16
-            ch = replacement
-        elif ch >= UNI_SUR_LOW_START and ch <= UNI_SUR_LOW_END:
-          #invalid UTF-16
-          ch = replacement
-
-        if ch < 0x80:
-          yield chr(ch)
-        elif ch < 0x800:
-          yield chr((ch shr 6) or 0xc0)
-          yield chr((ch and 0x3f) or 0x80)
-        elif ch < 0x10000:
-          yield chr((ch shr 12) or 0xe0)
-          yield chr(((ch shr 6) and 0x3f) or 0x80)
-          yield chr((ch and 0x3f) or 0x80)
-        elif ch <= 0x10FFFF:
-          yield chr((ch shr 18) or 0xf0)
-          yield chr(((ch shr 12) and 0x3f) or 0x80)
-          yield chr(((ch shr 6) and 0x3f) or 0x80)
-          yield chr((ch and 0x3f) or 0x80)
-        else:
-          # replacement char(in case user give very large number):
-          yield chr(0xFFFD shr 12 or 0b1110_0000)
-          yield chr(0xFFFD shr 6 and ones(6) or 0b10_0000_00)
-          yield chr(0xFFFD and ones(6) or 0b10_0000_00)
 else:
   import std/posix
   import std/private/oscommon
@@ -666,32 +623,41 @@ proc vfsLocalRead*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
+{.push, hint[XCannotRaiseY]: off.}
 proc vfsLocalReadRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).} =
-  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  discard
 
 proc vfsLocalWrite*(self: Arc[VFS2], path: string, content: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
-  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  discard
 
 proc vfsLocalWrite*(self: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.gcsafe, async: (raises: [IOError]).} =
-  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  discard
 
 proc vfsLocalDelete*(self: Arc[VFS2], path: string): Future[bool] {.gcsafe, async: (raises: []).} =
-  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  discard
 
 proc vfsLocalCreateDir*(self: Arc[VFS2], path: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
-  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  discard
 
 proc vfsLocalGetFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.gcsafe, async: (raises: []).} =
-  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  discard
 
 proc vfsLocalGetFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.gcsafe, async: (raises: []).} =
-  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  discard
 
 proc vfsLocalSetFileAttributes*(self: Arc[VFS2], path: string, attributes: FileAttributes): Future[void] {.gcsafe, async: (raises: [IOError]).} =
-  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  discard
+{.pop.}
 
 proc vfsLocalGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).} =
-  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
   if path.len == 0:
     when defined(windows):
       var chars: array[1024, char]
@@ -726,7 +692,8 @@ proc vfsLocalGetVFS*(self: Arc[VFS2], path: openArray[char], maxDepth: int = int
   return (self, path.join())
 
 proc vfsLocalCopyFile*(self: Arc[VFS2], src: string, dest: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
-  let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  discard
 
 proc vfsLocalNormalize*(self: Arc[VFS2], path: string): string {.gcsafe, raises: [].} =
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)

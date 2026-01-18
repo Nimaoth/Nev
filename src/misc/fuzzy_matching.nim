@@ -64,7 +64,6 @@ proc matchFuzzyDiff*(pattern, str: openArray[char], matches: var seq[int], recor
 
   var
     scoreState = StartMatch
-    unmatchedLeadingCharCount = 0
     consecutiveMatchCount = 0
     strIndex = 0
     patIndex = 0

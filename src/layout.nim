@@ -233,7 +233,6 @@ proc updateLayoutTree(self: LayoutService) =
       else:
         let view = createLayout(value.toJson, createView = createView)
         if view != nil:
-          let l = view.saveLayout(initHashSet[Id]())
           if view of Layout:
             self.layouts[key] = view.Layout
           else:

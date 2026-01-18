@@ -564,13 +564,6 @@ proc randomColor(node: UINode, a: float32): Color =
   result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
   result.a = a
 
-proc toRgbaFast(c: colortypes.Color): ColorRGBA {.inline.} =
-  ## Convert Color to ColorRGBA
-  result.r = (c.r * 255 + 0.5).uint8
-  result.g = (c.g * 255 + 0.5).uint8
-  result.b = (c.b * 255 + 0.5).uint8
-  result.a = (c.a * 255 + 0.5).uint8
-
 proc updateTextures(self: GuiPlatform) =
   var texturesToUpload = takeTexturesToUpload()
   var texturesToDelete = takeTexturesToDelete()

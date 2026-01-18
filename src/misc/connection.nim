@@ -33,10 +33,7 @@ method recv*(connection: ConnectionAsyncProcess, length: int): Future[string] =
 method send*(connection: ConnectionAsyncProcess, data: string): Future[void] =
   connection.process.send(data)
 
-proc asyncVoid() {.async.} =
-  discard
-
-proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
+proc logProcessDebugOutput*(process: AsyncProcess) {.async.} =
   try:
     while process.isAlive:
       let line = await process.recvErrorLine
@@ -110,7 +107,7 @@ method send*(connection: ConnectionAsyncSocket, data: string): Future[void] {.as
 
   connection.handleClose()
   if data.len > 0:
-    let written = await connection.transport.write(data[0].addr, data.len)
+    discard await connection.transport.write(data[0].addr, data.len)
 
 proc newAsyncSocketConnection*(host: string, port: Port): Future[ConnectionAsyncSocket] {.async.} =
   log lvlInfo, fmt"Creating async socket connection at {host}:{port.int}"

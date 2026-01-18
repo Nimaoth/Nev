@@ -55,7 +55,6 @@ method setQuery*(self: DataSource, query: string) {.base, gcsafe, raises: [].} =
 proc cmp*(a, b: FinderItem): int = cmp(a.score, b.score)
 proc `<`*(a, b: FinderItem): bool = a.score < b.score
 
-var itemListPool = newSeq[ItemList]()
 proc newItemList*(len: int): ItemList {.gcsafe, raises: [].} =
   return ItemList(data: Arc[ItemListData].new(ItemListData(items: newSeq[FinderItem](len))))
 
@@ -101,9 +100,6 @@ template items*(list: ItemList): openArray[FinderItem] =
 func sort(list: var ItemList, cmp: proc (x, y: FinderItem): int {.closure.},
            order = SortOrder.Descending) {.effectsOf: cmp.} =
   list.data.getMutUnsafe.items.sort(cmp, order)
-
-proc sort(list: var ItemList, order = SortOrder.Descending) =
-  list.data.getMutUnsafe.items.sort(order)
 
 proc deinit*(finder: Finder) {.gcsafe, raises: [].} =
   if finder.source.isNotNil:

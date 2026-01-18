@@ -1,4 +1,4 @@
-import std/[strformat, strutils, os, sets, tables, options, sequtils, json]
+import std/[strformat, strutils, os, sets, tables, options, json]
 import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_process, event, response, rope_utils, arena, array_view]
 import text/language/[language_server_base, lsp_types]
 import nimsumtree/[arc, rope]
@@ -129,8 +129,6 @@ when implModule:
     let self = self.LanguageServerCTags
     var res = ""
     if self.documents.getDocumentByPath(filename).getSome(doc):
-      let config = doc.getConfigComponent().getOr:
-        return
       let moves = doc.getMoveComponent().getOr:
         return
       let text = doc.getTextComponent().getOr:
@@ -205,7 +203,6 @@ when implModule:
   proc ctagsGetCompletions*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
     let self = self.LanguageServerCTags
 
-    var t2 = startTimer()
     var t = startTimer()
     var total: int = 0
     for file in self.files.values:
@@ -435,7 +432,6 @@ when implModule:
     try:
       if path notin self.ctags:
         discard self.vfs.watch(path, proc(events: seq[PathEvent]) =
-          let changedFiles = events.mapIt(it.name.normalizeNativePath)
           if self.ctags[path].updateTask != nil:
             self.ctags[path].updateTask.reschedule()
         )

@@ -524,7 +524,7 @@ proc drawLineNumber(renderCommands: var RenderCommands, builder: UINodeBuilder, 
       drawText(lineNumberText, rect(offset.x + lineNumberX, offset.y, width, builder.textHeight), textColor, 0.UINodeFlags)
 
 proc toUINodeFlags(fontStyle: set[FontStyle]): UINodeFlags =
-  var result = 0.UINodeFlags
+  result = 0.UINodeFlags
   if Italic in fontStyle:
     result.incl TextItalic
   if Bold in fontStyle:
@@ -540,7 +540,6 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   let cursorSpeed: float = self.uiSettings.cursorTrailSpeed.get()
   let cursorTrail: int = self.uiSettings.cursorTrailLength.get()
   let isThickCursor = self.isThickCursor
-  let debugBounds = self.config.get("debug.log-chunk-bounds", false)
 
   buildCommands(renderCommands):
     self.cursorHistories.setLen(self.selections.len)
@@ -921,7 +920,6 @@ proc drawDiffBackgrounds(state: var LineDrawerState, backgroundCommands: var Ren
 
 proc fixupRenderCommandsAndChunkBounds(state: var LineDrawerState, i: int, commands: var RenderCommands, lineBounds: Rect) =
   var line = state.chunkBoundsPerLine[i].addr
-  let center = not line.dontCenter
   ## Offset chunk bounds and chunk render commands according to line bounds
   for chunk in line.chunks.mitems:
     chunk.bounds.y = lineBounds.y
@@ -1126,17 +1124,10 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   if sizeToContentY:
     currentNode.h = parentHeight
 
-  let enableSmoothScrolling = self.uiSettings.smoothScroll.get()
-  let snapBehaviour = self.nextSnapBehaviour.get(self.defaultSnapBehaviour)
-  let scrollSnapDistance: float = parentHeight * self.uiSettings.smoothScrollSnapThreshold.get()
-  let scrollSnapDistanceX: float = parentWidth * self.uiSettings.smoothScrollSnapThreshold.get()
-  let smoothScrollSpeed: float = self.uiSettings.smoothScrollSpeed.get()
-
   self.scrollOffset.y = clamp(self.scrollOffset.y, (1.0 - self.numDisplayLines.float) * builder.textHeight, parentHeight - builder.textHeight)
   self.scrollOffset.x = clamp(self.scrollOffset.x, -float.high, 0)
 
   let inclusive = self.config.get("text.inclusive-selection", false)
-  let drawChunks = self.debugSettings.drawTextChunks.get()
 
   let isThickCursor = self.isThickCursor
 
@@ -1539,7 +1530,6 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
             builder.panel(&{SizeToContentX, SizeToContentY, DrawText, FillBackground},
               pivot = vec2(1, 0), textColor = textColor, text = text, backgroundColor = headerColor)
 
-        let lineNumberWidth = self.lineNumberWidth()
         builder.panel(sizeFlags + &{FillBackground, MaskContent}, backgroundColor = backgroundColor):
           var selectionsNode: UINode
           builder.panel(&{UINodeFlag.FillX, FillY}, tag = "selections"):

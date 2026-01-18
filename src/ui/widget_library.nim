@@ -323,7 +323,6 @@ proc renderView*(self: View, builder: UINodeBuilder,
     body: proc(): seq[OverlayFunction] {.gcsafe, raises: [].},
     header: proc(): seq[OverlayFunction] {.gcsafe, raises: [].}): seq[OverlayFunction] =
   let services = ({.gcsafe.}: gServices)
-  let dirty = self.dirty
   self.resetDirty()
 
   let config = services.getServiceChecked(ConfigService).runtime
@@ -331,7 +330,6 @@ proc renderView*(self: View, builder: UINodeBuilder,
 
   let transparentBackground = config.get("ui.background.transparent", false)
   let inactiveBrightnessChange = uiSettings.background.inactiveBrightnessChange.get()
-  let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
   var backgroundColor = if self.active: builder.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
 
   if transparentBackground:

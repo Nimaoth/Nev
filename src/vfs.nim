@@ -673,19 +673,19 @@ proc normalize*(self: Arc[VFS2], path: string): string =
 
   return path.normalizeNativePath
 
-proc read*(self: Arc[VFS2], path: string, flags: set[ReadFlag] = {}): Future[string] {.raises: [IOError].} =
+proc read*(self: Arc[VFS2], path: string, flags: set[ReadFlag] = {}): Future[string] {.raises: [].} =
   let (vfs, path) = self.getVFS(path)
   return vfs.readImpl(path, flags)
 
-proc readRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.raises: [IOError].} =
+proc readRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.raises: [].} =
   let (vfs, path) = self.getVFS(path)
   vfs.readRopeImpl(path, rope)
 
-proc write*(self: Arc[VFS2], path: string, content: string): Future[void] {.raises: [IOError].} =
+proc write*(self: Arc[VFS2], path: string, content: string): Future[void] {.raises: [].} =
   let (vfs, path) = self.getVFS(path)
   vfs.writeImpl(path, content)
 
-proc write*(self: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.raises: [IOError].} =
+proc write*(self: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.raises: [].} =
   let (vfs, path) = self.getVFS(path)
   vfs.writeImpl(path, content.move)
 
@@ -693,7 +693,7 @@ proc delete*(self: Arc[VFS2], path: string): Future[bool] {.raises: [].} =
   let (vfs, path) = self.getVFS(path)
   vfs.deleteImpl(path)
 
-proc createDir*(self: Arc[VFS2], path: string): Future[void] {.raises: [IOError].} =
+proc createDir*(self: Arc[VFS2], path: string): Future[void] {.raises: [].} =
   let (vfs, path) = self.getVFS(path)
   vfs.createDirImpl(path)
 
@@ -705,7 +705,7 @@ proc getFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttrib
   let (vfs, path) = self.getVFS(path)
   return vfs.getFileAttributesImpl(path)
 
-proc setFileAttributes*(self: Arc[VFS2], path: string, attributes: FileAttributes): Future[void] {.raises: [IOError].} =
+proc setFileAttributes*(self: Arc[VFS2], path: string, attributes: FileAttributes): Future[void] {.raises: [].} =
   let (vfs, path) = self.getVFS(path)
   vfs.setFileAttributesImpl(path, attributes)
 

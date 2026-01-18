@@ -189,7 +189,7 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
 
     try:
       let dependencies = m.dependencies.join(",")
-      let cmd = &"nim c -o:modules/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependencies} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:none --lineDir:off -d:mallocImport {m.path}"
+      let cmd = &"nim c --colors:on --hints:off -o:modules/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependencies} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:none --lineDir:off -d:mallocImport {m.path}"
       if parallel:
         let v = runCmdAsync(cmd)
         if v != nil:

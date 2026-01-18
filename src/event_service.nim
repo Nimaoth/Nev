@@ -24,7 +24,7 @@ proc stopListen*(self: EventService, id: Id, pattern: string = "") {.inline.} = 
 proc emit*(self: EventService, event: string, data: string) {.inline.} = eventServiceEmit(self, event, data)
 
 when implModule:
-  import misc/[custom_logger, custom_async, util, regex, id]
+  import misc/[custom_logger, custom_async, util, regex]
 
   logCategory "ebus"
   addBuiltinService(EventService)

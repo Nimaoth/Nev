@@ -52,10 +52,10 @@ proc search*(self: Workspace, query: string, maxResults: int, customArgs: seq[st
 
 # Implementation
 when implModule:
-  import std/[json, options, os, strutils, sequtils]
+  import std/[json, os, strutils, sequtils]
   import malebolgia
-  import misc/[custom_async, util, regex, custom_logger, event, timer, async_process]
-  import vfs, vfs_service, vfs_local, service, compilation_config
+  import misc/[timer, async_process]
+  import vfs_local, compilation_config
 
   addBuiltinService(Workspace, VFSService)
 
