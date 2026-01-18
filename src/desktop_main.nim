@@ -204,11 +204,11 @@ assert backend.isSome
 
 if not disableLogging: ## Enable loggers
   if backend.get == Terminal or logToFile or defined(forceLogToFile):
-    logger.enableFileLogger()
+    logger().enableFileLogger()
 
   when defined(allowConsoleLogger):
     if backend.get != Terminal and logToConsole:
-      logger.enableConsoleLogger()
+      logger().enableConsoleLogger()
 
 import misc/[timer, custom_async]
 import platform/[platform]
@@ -395,7 +395,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions) =
     app.firstRenderDone = true
 
     {.gcsafe.}:
-      logger.flush()
+      logger().flush()
 
     let pollTimer = startTimer()
     gAsyncFrameTimer = startTimer()
@@ -448,7 +448,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions) =
     # log(lvlDebug, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
 
     {.gcsafe.}:
-      logger.flush()
+      logger().flush()
 
 import service, text/language/language_server_lsp
 gServices = Services()

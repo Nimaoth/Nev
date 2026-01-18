@@ -3,6 +3,8 @@ from logging import nil
 import util, timer
 export strformat
 
+include dynlib_export
+
 {.used.}
 {.push raises: [].}
 
@@ -115,7 +117,13 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
 
   {.pop.}
 
-var logger* = newCustomLogger()
+var gLogger {.threadvar.}: CustomLogger
+
+proc logger*(): CustomLogger {.apprtl, gcsafe, raises: [].}
+
+when implModule:
+  gLogger = newCustomLogger()
+  proc logger*(): CustomLogger = ({.gcsafe.}: gLogger)
 
 proc flush*(logger: logging.Logger) =
   if logger of FileLogger:
@@ -137,7 +145,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
       {.push warning[BareExcept]:off.}
       try:
         {.gcsafe.}:
-          logging.log(level, args)
+          logger().log(level, args)
       except Exception:
         discard
       {.pop.}
@@ -156,7 +164,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
       {.push warning[BareExcept]:off.}
       try:
         {.gcsafe.}:
-          logging.log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
+          logger().log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
       except Exception:
         discard
       {.pop.}
@@ -166,10 +174,10 @@ template logCategory*(category: static string, noDebug = false): untyped =
     {.gcsafe.}:
       {.push warning[BareExcept]:off.}
       try:
-        logging.log(level, "[" & category & "] " & txt)
+        logger().log(level, "[" & category & "] " & txt)
       except Exception:
         discard
-      inc logger.indentLevel
+      inc logger().indentLevel
       {.pop.}
     let timer = startTimer()
     defer:
@@ -179,10 +187,10 @@ template logCategory*(category: static string, noDebug = false): untyped =
         let split = elapsedMs.splitDecimal
         let elapsedMsInt = split.intpart.int
         let elapsedUsInt = (split.floatpart * 1000).int
-        dec logger.indentLevel
-        assert logger.indentLevel >= 0, "Indent level going < 0 for " & $level & " [" & category & "] " & txt
+        dec logger().indentLevel
+        assert logger().indentLevel >= 0, "Indent level going < 0 for " & $level & " [" & category & "] " & txt
         try:
-          logging.log(level, "[" & category & "] " & txt & " finished. (" & $elapsedMs & ", " & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
+          logger().log(level, "[" & category & "] " & txt & " finished. (" & $elapsedMs & ", " & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
         except Exception:
           discard
       {.pop.}

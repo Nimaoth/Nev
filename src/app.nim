@@ -831,7 +831,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     gAppInterface = self.asAppInterface
     self.platform = platform
 
-    logger.addLogger AppLogger(app: self, fmtStr: "")
+    logger().addLogger AppLogger(app: self, fmtStr: "")
 
   log lvlInfo, fmt"Creating App with backend {backend} and options {options}"
 
@@ -1305,7 +1305,7 @@ proc logs*(self: App, slot: string = "", focus: bool = true, scrollToBottom: boo
 
 proc toggleConsoleLogger*(self: App) {.expose("editor").} =
   {.gcsafe.}:
-    logger.toggleConsoleLogger()
+    logger().toggleConsoleLogger()
 
 proc closeUnusedDocuments*(self: App) =
   for document in self.editors.documents:
