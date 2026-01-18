@@ -179,7 +179,7 @@ when implModule:
   import misc/[timer]
   import scripting/expose
   import platform/platform
-  import service, platform_service, dispatch_tables
+  import platform_service, dispatch_tables
   from scripting_api import LineNumbers
 
   var settingGroupDescriptions {.compileTime.} = initTable[string, SettingGroupDescription]()

@@ -11,9 +11,6 @@ var file {.threadvar.}: syncio.File
 var logFileName {.threadvar.}: string
 var fileLogger {.threadvar.}: logging.FileLogger
 
-let mainThreadId = getThreadId()
-template isMainThread(): untyped = getThreadId() == mainThreadId
-
 proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.used, gcsafe, raises: [].} =
   var args = args
   if includeCategory:

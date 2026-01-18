@@ -420,10 +420,7 @@ proc cloneInstance*(instance: ptr InstanceData): Arc[InstanceDataImpl] =
     log lvlError, "Failed to create module instance: " & err.msg
     return
 
-  let errors = collectExports(instanceData.getMut.funcs, instanceData.get.instance, ctx)
-  # if errors.len > 0:
-  #   for e in errors:
-  #     log lvlWarn, e
+  discard collectExports(instanceData.getMut.funcs, instanceData.get.instance, ctx)
 
   return instanceData
 
@@ -1074,7 +1071,7 @@ proc vfsReadSync*(instance: ptr InstanceData, path: sink string, readFlags: Read
         return
       let f = readFile(path)
       return results.ok(f)
-    except IOError as e:
+    except IOError:
       result.err(VfsError.NotFound)
       return
 

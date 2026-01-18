@@ -343,7 +343,6 @@ proc diff*[T](a, b: openArray[T], eq: proc(a, b: T): bool {.gcsafe, raises: [].}
   var downVector = newSeq[int](max * 2 + 2)
   var upVector = newSeq[int](max * 2 + 2)
 
-  var cancel: Atomic[bool]
   lcs(dataA, 0, a.len, dataB, 0, b.len, downVector, upVector, nil, false)
 
   var indexA = 0

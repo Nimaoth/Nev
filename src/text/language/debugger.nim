@@ -68,7 +68,7 @@ type
 
     # Data setup in the editor and sent to the server
     breakpoints: Table[string, seq[BreakpointInfo]]
-    documentCallbacks: Table[string, tuple[document: TextDocument, id: Id]]
+    documentCallbacks: Table[string, tuple[document: TextDocument, onSavedId: Id, onTextChangedId: Id]]
 
     # Cached data from server
     timestamp*: int = 1
@@ -362,20 +362,20 @@ method init*(self: Debugger): Future[Result[void, ref CatchableError]] {.async: 
   discard self.editors.onEditorRegistered.subscribe (e: DocumentEditor) {.gcsafe, raises: [].} =>
     self.handleEditorRegistered(e)
 
-  self.layout.addViewFactory "debugger.threads", proc(config: JsonNode): View {.raises: [ValueError].} =
+  self.layout.addViewFactory "debugger.threads", proc(config: JsonNode): View {.raises: [].} =
     return ThreadsView()
 
-  self.layout.addViewFactory "debugger.stacktrace", proc(config: JsonNode): View {.raises: [ValueError].} =
+  self.layout.addViewFactory "debugger.stacktrace", proc(config: JsonNode): View {.raises: [].} =
     return StacktraceView()
 
-  self.layout.addViewFactory "debugger.variables", proc(config: JsonNode): View {.raises: [ValueError].} =
+  self.layout.addViewFactory "debugger.variables", proc(config: JsonNode): View {.raises: [].} =
     let view = self.createVariablesView()
     return view
 
-  self.layout.addViewFactory "debugger.output", proc(config: JsonNode): View {.raises: [ValueError].} =
+  self.layout.addViewFactory "debugger.output", proc(config: JsonNode): View {.raises: [].} =
     return OutputView()
 
-  self.layout.addViewFactory "debugger.toolbar", proc(config: JsonNode): View {.raises: [ValueError].} =
+  self.layout.addViewFactory "debugger.toolbar", proc(config: JsonNode): View {.raises: [].} =
     return ToolbarView()
 
   proc save(): JsonNode =
@@ -860,7 +860,6 @@ proc movePrev*(self: VariablesView, debugger: Debugger, cursor: VariableCursor):
 
     if index > 0:
       dec cursor.path[cursor.path.high].index
-      let l = cursor
       cursor = self.lastChild(debugger, cursor)
       return cursor.some
 
@@ -1205,7 +1204,7 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
         debugf"connected"
         return connection.Connection.some
       except CatchableError as e:
-        log lvlError, &"Failed to connect to debug adapter localhost:{port}"
+        log lvlError, &"Failed to connect to debug adapter localhost:{port}: {e.msg}"
         return Connection.none
 
     else:
@@ -1218,7 +1217,7 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
       try:
         return newAsyncSocketConnection(host, port.Port).await.Connection.some
       except CatchableError as e:
-        log lvlError, &"Failed to connect to debug adapter {host}:{port}"
+        log lvlError, &"Failed to connect to debug adapter {host}:{port}: {e.msg}"
         return Connection.none
 
     # let host = config.tryGet("host", string, "127.0.0.1".newJexString):
@@ -1672,7 +1671,7 @@ proc listenToDocumentChanges*(self: Debugger, document: TextDocument) =
       self.flushBreakpointsForFileDelayed(document.filename, 1000)
     let id2 = document.textChanged.subscribe proc(doc: TextDocument) =
       self.updateBreakpointsForFile(document.filename)
-    self.documentCallbacks[document.filename] = (document, id)
+    self.documentCallbacks[document.filename] = (document, id, id2)
 
 proc toggleBreakpointAt*(self: Debugger, editorId: EditorId, line: int) {.expose("debugger").} =
   ## Line is 0-based
@@ -2037,7 +2036,6 @@ proc findVariable(self: VariablesView, debugger: Debugger, filter: string, vr: V
         self.filteredCursors.add cursor2
         debugger.platform.requestRender()
 
-      let key2 = (thread.get.id, frame.get.id, v.variablesReference)
       await self.findVariable(debugger, filter, v.variablesReference, cursor2, filterVersion)
 
 proc findVariable(self: VariablesView, filter: string) {.async.} =

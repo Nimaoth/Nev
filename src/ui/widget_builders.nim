@@ -3,7 +3,6 @@ import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils]
 import ui/node
 import platform/platform
-import ui/[widget_builders_base]
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
   widget_builder_debugger, widget_builder_terminal, widget_library]
 import document_editor, theme, compilation_config, view, layout, config_provider, command_service, toast
@@ -25,37 +24,13 @@ type BorderFlags = object
   top: bool
   bottom: bool
 
-proc all(_: typedesc[BorderFlags]): BorderFlags = BorderFlags(left: true, right: true, top: true, bottom: true)
 proc none(_: typedesc[BorderFlags]): BorderFlags = BorderFlags()
 
 var borderFlagStack = newSeq[BorderFlags]()
 
-proc currentBorderFlags(): BorderFlags {.gcsafe.} =
-  {.gcsafe.}:
-    return borderFlagStack.last
-
-proc pushBorderFlags(flags: BorderFlags) {.gcsafe.} =
-  {.gcsafe.}:
-    borderFlagStack.add(flags)
-
-proc popBorderFlags() {.gcsafe.} =
-  {.gcsafe.}:
-    discard borderFlagStack.pop()
-
 proc resetBorderFlags() {.gcsafe.} =
   {.gcsafe.}:
     borderFlagStack = @[BorderFlags.none()]
-
-proc toBorder(flags: BorderFlags, width: float): UIBorder =
-  result = UIBorder.default
-  if flags.left:
-    result.left = width
-  if flags.right:
-    result.right = width
-  if flags.top:
-    result.top = width
-  if flags.bottom:
-    result.bottom = width
 
 method createUI*(self: EditorView, builder: UINodeBuilder): seq[OverlayFunction] =
   self.resetDirty()

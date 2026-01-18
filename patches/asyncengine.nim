@@ -255,12 +255,13 @@ elif defined(windows):
              DWORD(sizeof(GUID)), addr fun, DWORD(sizeof(pointer)),
              addr(bytesRet), nil, nil) == 0
 
-  proc globalInit() =
-    var wsa = WSAData()
-    let res = wsaStartup(0x0202'u16, addr wsa)
-    if res != 0:
-      raiseOsDefect(osLastError(),
-                    "globalInit(): Unable to initialize Windows Sockets API")
+  when implModule:
+    proc globalInit() =
+      var wsa = WSAData()
+      let res = wsaStartup(0x0202'u16, addr wsa)
+      if res != 0:
+        raiseOsDefect(osLastError(),
+                      "globalInit(): Unable to initialize Windows Sockets API")
 
   proc initAPI(loop: PDispatcher) =
     var funcPointer: pointer = nil

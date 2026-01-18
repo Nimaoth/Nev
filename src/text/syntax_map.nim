@@ -506,7 +506,7 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
         let predicates = self.highlighter.get.query.predicatesForPattern(match.pattern, self.arena)
         for capture in match.captures:
           let node = capture.node
-          let byteRange = node.startByte...node.endByte
+          # let byteRange = node.startByte...node.endByte
           let nodeRange = node.startPoint.toCursor.toPoint...node.endPoint.toCursor.toPoint
           if nodeRange.b <= currentChunk.point or nodeRange.a >= currentChunk.endPoint:
             continue

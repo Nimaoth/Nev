@@ -38,7 +38,8 @@ proc addBucket(arena: var Arena, bucketSize: int) =
     capacity: bucketSize,
     len: 0,
   )
-  # echo "allocate bucket ", arena.buckets.len, " with size ", bucketSize, " -> ", cast[int](arena.buckets[arena.buckets.high].data)
+  # if arena.buckets.len > 1:
+  #   echo "allocate bucket ", arena.buckets.len, " with size ", bucketSize, " -> ", cast[int](arena.buckets[arena.buckets.high].data)
 
 proc alloc*(arena: var Arena, size: int, alignment: int): pointer =
   ## Allocate memory on top of the stack.
@@ -135,19 +136,12 @@ proc checkpoint*(arena: var Arena): uint64 =
 
 proc restoreCheckpoint*(arena: var Arena, p: uint64) =
   ## Restore the arena to the saved position. Frees overallocated memory.
-  # if arena.buckets.len > 0:
-    # echo "mem_stack_restore 1: ", cast[ptr (array[4, int], array[12, char])](arena.buckets[0].data)[]
-  let oldLen = if arena.buckets.len > 0: arena.buckets[arena.buckets.high].len else: 0
-  let oldBucketsLen = arena.buckets.len
-
   let bucketsLen = (p shr 32).int
   let len = (p and 0xFFFFFFFF.uint64).int
   while arena.buckets.len > bucketsLen and arena.buckets.len > 1:
-    # echo "free bucket ", arena.buckets.len - 1, " with size ", arena.buckets[buckets.high].capacity
     deallocShared(arena.buckets[arena.buckets.high].data)
     discard arena.buckets.pop()
 
-  # echo &"mem_stack_restore {oldBucketsLen}, {oldLen} -> {bucketsLen}, {len}"
   if arena.buckets.len > 0:
     arena.buckets[arena.buckets.high].len = len
     assert arena.buckets[arena.buckets.high].len <= arena.buckets[arena.buckets.high].capacity

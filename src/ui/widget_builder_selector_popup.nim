@@ -21,7 +21,6 @@ proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBui
     seq[OverlayFunction] =
 
   let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  let highlightColor = app.themes.theme.color("editor.foreground.highlight", textColor.lighten(0.18))
   let name = item.displayName
   let matchIndices = self.getCompletionMatches(i, self.getSearchString(), name, finderFuzzyMatchConfig)
 

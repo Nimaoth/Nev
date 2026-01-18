@@ -117,11 +117,10 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
 
   {.pop.}
 
-var gLogger {.threadvar.}: CustomLogger
-
 proc logger*(): CustomLogger {.apprtl, gcsafe, raises: [].}
 
 when implModule:
+  var gLogger {.threadvar.}: CustomLogger
   proc logger*(): CustomLogger =
     {.gcsafe.}:
       if gLogger == nil:
