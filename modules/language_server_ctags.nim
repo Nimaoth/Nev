@@ -409,11 +409,11 @@ when implModule:
           except:
             discard
 
-      echo &"Loaded {total} symbols for {seenFiles.len} files from '{path}'"
+      log lvlInfo, &"Loaded {total} symbols for {seenFiles.len} files from '{path}'"
       self.ctags[path].files = seenFiles
 
     except CatchableError as e:
-      echo &"Failed to read ctags file '{path}': {e.msg}"
+      log lvlWarn, &"Failed to read ctags file '{path}': {e.msg}"
 
   proc loadCTags(self: LanguageServerCTags, path: string) {.async.} =
     # asm "int3"
@@ -425,12 +425,11 @@ when implModule:
       let args = @["-f", "-", "-p", self.vfs.localize(path)]
       let ctagsGeneratorPath = self.config.get(&"lang.{languageId}.lsp.ctags.generator", "ctags")
       let ctagsGeneratorPathLocal = self.vfs.localize(ctagsGeneratorPath)
-      echo &"{ctagsGeneratorPath} -> {ctagsGeneratorPathLocal}"
       let output = runProcessAsyncOutput(ctagsGeneratorPathLocal, args, maxLines=100000).await.output
       self.ctags[path] = CTagsFile(path: path)
       await self.loadCTags(path, output)
     except CatchableError as e:
-      echo &"Failed to load ctags from file using command: '{path}': {e.msg}"
+      log lvlWarn, &"Failed to load ctags from file using command: '{path}': {e.msg}"
 
   proc updateCTagFile(self: LanguageServerCTags, path: string) {.async.} =
     try:
@@ -446,7 +445,7 @@ when implModule:
 
       await self.loadCTags(path)
     except CatchableError as e:
-      log lvlError, &"Failed to update ctag file '{path}': {e.msg}"
+      log lvlWarn, &"Failed to update ctag file '{path}': {e.msg}"
 
   proc updateCTagFiles(self: LanguageServerCTags) {.async.} =
     try:
@@ -456,12 +455,12 @@ when implModule:
           continue
         asyncSpawn self.updateCTagFile(path)
     except CatchableError as e:
-      log lvlError, &"Failed to update ctag files: {e.msg}"
+      log lvlWarn, &"Failed to update ctag files: {e.msg}"
 
   proc init_module_language_server_ctags*() {.cdecl, exportc, dynlib.} =
     let services = getServices()
     if services == nil:
-      echo &"Failed to initialize init_module_language_server_ctags: no services found"
+      log lvlWarn, &"Failed to initialize init_module_language_server_ctags: no services found"
       return
 
     var ls: LanguageServerCTags = newLanguageServerCTags(services)
@@ -477,7 +476,7 @@ when implModule:
             if comp.hasLanguageServer(ls):
               asyncSpawn ls.loadCTagsCommand(comp.languageId, doc.filename)
       except CatchableError as e:
-        log lvlError, &"Error: {e.msg}"
+        log lvlWarn, &"Error: {e.msg}"
     events.get.listen(newId(), "document/*/saved", handleDocumentSaved)
 
     proc handleEditorRegistered(event, payload: string) {.gcsafe, raises: [].} =
@@ -496,7 +495,7 @@ when implModule:
           if language in languages or "*" in languages:
             discard lsps.addLanguageServer(ls)
       except CatchableError as e:
-        log lvlError, &"Error: {e.msg}"
+        log lvlWarn, &"Error: {e.msg}"
     events.get.listen(newId(), "editor/*/registered", handleEditorRegistered)
 
     discard ls.config.onConfigChanged.subscribe proc(key: string) =
