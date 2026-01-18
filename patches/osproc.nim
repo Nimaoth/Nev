@@ -912,6 +912,7 @@ when defined(windows) and not defined(useNimRtl):
       result = x > 0
 
 elif not defined(useNimRtl):
+  import std/[strutils]
   const
     readIdx = 0
     writeIdx = 1
