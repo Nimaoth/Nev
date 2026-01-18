@@ -24,8 +24,7 @@ proc stopListen*(self: EventService, id: Id, pattern: string = "") {.inline.} = 
 proc emit*(self: EventService, event: string, data: string) {.inline.} = eventServiceEmit(self, event, data)
 
 when implModule:
-  import std/[strutils, sugar, sequtils]
-  import misc/[custom_logger, custom_async, util, regex, myjsonutils, id]
+  import misc/[custom_logger, custom_async, util, regex, id]
 
   logCategory "ebus"
   addBuiltinService(EventService)

@@ -24,7 +24,7 @@ proc applyMove*(self: MoveComponent, selection: Range[Point], move: string, coun
 
 # Implementation
 when implModule:
-  import std/[strformat, tables, sequtils]
+  import std/[tables, sequtils]
   import misc/[util, myjsonutils, custom_logger, rope_utils]
   import move_database, service
   import text/display_map

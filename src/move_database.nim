@@ -1,7 +1,7 @@
 import std/[strutils, sequtils, sugar, strformat, tables, json]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as sca import nil
-import misc/[util, custom_logger, custom_unicode, rope_utils, custom_async, myjsonutils, timer]
+import misc/[util, custom_logger, custom_unicode, rope_utils, custom_async, myjsonutils]
 import service
 import text/[wrap_map, display_map]
 import nimsumtree/[rope]

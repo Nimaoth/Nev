@@ -1,5 +1,3 @@
-import std/[strformat, strutils, os]
-
 const nevModuleName {.strdefine.}: string = ""
 const implModule = nevModuleName == "nev"
 

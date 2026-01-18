@@ -104,11 +104,13 @@ proc send*[T](achan: AsyncChannel[Option[T]], data: T) {.async.} =
 
 proc send*[T](achan: AsyncChannel[T], data: sink T) {.async.} =
   bind milliseconds
+  {.push warning[BareExcept]:off.}
   try:
     while not achan.closed and not achan.chan.getMutUnsafe.channel.trySend(data.move):
       await sleepAsync 10.milliseconds
   except Exception:
     discard
+  {.pop.}
 
 proc recv*[T](achan: AsyncChannel[T]): Future[Option[T]] {.async.} =
   bind milliseconds

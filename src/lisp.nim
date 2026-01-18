@@ -754,11 +754,11 @@ type
 
 proc bsAtEnd(s: Stream): bool =
   var s = BufferStream(s)
-  return s.pos >= s.data.len
+  return s.pos >= s.len
 
 proc bsSetPosition(s: Stream, pos: int) =
   var s = BufferStream(s)
-  s.pos = clamp(pos, 0, s.data.len)
+  s.pos = clamp(pos, 0, s.len)
 
 proc bsGetPosition(s: Stream): int =
   var s = BufferStream(s)
@@ -771,7 +771,7 @@ proc bsReadDataStr(s: Stream, buffer: var string, slice: Slice[int]): int =
   else:
     when declared(prepareMutation):
       prepareMutation(buffer) # buffer might potentially be a CoW literal with ARC
-  result = min(slice.b + 1 - slice.a, s.data.len - s.pos)
+  result = min(slice.b + 1 - slice.a, s.len - s.pos)
   if result > 0:
     copyMem(unsafeAddr buffer[slice.a], addr s.data[s.pos], result)
     inc(s.pos, result)
@@ -780,7 +780,7 @@ proc bsReadDataStr(s: Stream, buffer: var string, slice: Slice[int]): int =
 
 proc bsReadData(s: Stream, buffer: pointer, bufLen: int): int =
   var s = BufferStream(s)
-  result = min(bufLen, s.data.len - s.pos)
+  result = min(bufLen, s.len - s.pos)
   if result > 0:
     copyMem(buffer, addr(s.data[s.pos]), result)
     inc(s.pos, result)
@@ -789,7 +789,7 @@ proc bsReadData(s: Stream, buffer: pointer, bufLen: int): int =
 
 proc bsPeekData(s: Stream, buffer: pointer, bufLen: int): int =
   var s = BufferStream(s)
-  result = min(bufLen, s.data.len - s.pos)
+  result = min(bufLen, s.len - s.pos)
   if result > 0:
     copyMem(buffer, addr(s.data[s.pos]), result)
   else:

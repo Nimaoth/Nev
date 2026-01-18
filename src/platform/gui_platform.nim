@@ -3,7 +3,7 @@ import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts
 import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer, generational_seq]
 import ui/node
 import platform
-import input, monitors, lrucache, theme, compilation_config, vfs, app_options
+import input, monitors, lrucache, compilation_config, vfs, app_options
 
 export platform
 

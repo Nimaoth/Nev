@@ -1,4 +1,4 @@
-import std/[strformat, json, jsonutils, strutils, options, random, math, sequtils]
+import std/[options]
 import pixie, chroma
 import results
 import misc/[util, render_command]

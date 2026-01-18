@@ -1,4 +1,4 @@
-import std/[tables, hashes, options, json]
+import std/[tables, options, json]
 import misc/[jsonex, myjsonutils]
 import component
 export component

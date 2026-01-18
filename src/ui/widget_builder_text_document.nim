@@ -1,6 +1,6 @@
-import std/[strformat, tables, strutils, math, options, json, sugar, sequtils, algorithm]
+import std/[strformat, tables, strutils, math, options, json, algorithm]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer, generational_seq, binary_encoder, render_command, arena, array_view]
+import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer, generational_seq, render_command, arena, array_view]
 import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform

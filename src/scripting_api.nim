@@ -1,5 +1,8 @@
 import std/[algorithm, sequtils, sugar, strutils, options]
-import misc/[custom_unicode, myjsonutils]
+import misc/[custom_unicode]
+{.push warning[UnusedImport]:off.}
+import misc/myjsonutils
+{.pop.}
 
 when defined(nimscript):
   type

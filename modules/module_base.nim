@@ -1,4 +1,4 @@
-import std/[strformat, strutils, os]
+import std/[strutils, os]
 
 const nevModuleName {.strdefine.}: string = ""
 const nevDeps {.strdefine.}: string = ""
@@ -19,6 +19,7 @@ when defined(useDynlib):
     # We are compiling the file importing the declarations
     {.pragma: rtl, importc, dynlib: "modules/" & currentModuleName & ".dll", cdecl.}
   else:
+    import std/[strformat]
     {.error: &"{currentModuleName} is not defined as dependency for {nevModuleName}".}
 else:
   # We are linking statically

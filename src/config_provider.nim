@@ -1,5 +1,5 @@
-import std/[json, options, strutils, tables, macros, genasts, sets, typetraits, strformat, algorithm, macrocache]
-import misc/[util, event, custom_async, custom_logger, myjsonutils, jsonex, id, timer, custom_unicode]
+import std/[json, options, tables, macros, genasts, sets, typetraits, strformat]
+import misc/[util, event, custom_async, custom_logger, myjsonutils, jsonex, id, custom_unicode]
 import service
 
 include dynlib_export
@@ -90,6 +90,29 @@ proc toJsonExHook*[T](a: Setting[T]): JsonNodeEx {.raises: [].} =
 proc fromJsonExHook*(t: var RegexSetting, jsonNode: JsonNodeEx) =
   t = RegexSetting(impl: jsonNode)
 
+proc decodeRegex*(value: JsonNodeEx, default: string = ""): string =
+  if value.kind == JString:
+    return value.str
+  elif value.kind == JArray:
+    var r = ""
+    for t in value.elems:
+      if t.kind != JString:
+        log lvlError, &"Invalid regex value: {value}, expected string, got {t}"
+        continue
+      if r.len > 0:
+        r.add "|"
+      r.add t.str
+
+    return r
+  elif value.kind == JNull:
+    return default
+  else:
+    log lvlError, &"Invalid regex value: {value}, expected string | array[string]"
+    return default
+
+proc decodeRegex*(value: RegexSetting, default: string = ""): string =
+  return value.impl.decodeRegex(default)
+
 proc extendJson*(a: var JsonNodeEx, b: JsonNodeEx) =
   if not b.extend:
     a = b
@@ -152,6 +175,8 @@ proc get*[T](self: ConfigStore, key: string, defaultValue: T): T {.inline.} =
   self.get(key, T, defaultValue)
 
 when implModule:
+  import std/[algorithm, macrocache, strutils]
+  import misc/[timer]
   import scripting/expose
   import platform/platform
   import service, platform_service, dispatch_tables
@@ -753,29 +778,6 @@ when implModule:
         return parentRes
 
     return res
-
-  proc decodeRegex*(value: JsonNodeEx, default: string = ""): string =
-    if value.kind == JString:
-      return value.str
-    elif value.kind == JArray:
-      var r = ""
-      for t in value.elems:
-        if t.kind != JString:
-          log lvlError, &"Invalid regex value: {value}, expected string, got {t}"
-          continue
-        if r.len > 0:
-          r.add "|"
-        r.add t.str
-
-      return r
-    elif value.kind == JNull:
-      return default
-    else:
-      log lvlError, &"Invalid regex value: {value}, expected string | array[string]"
-      return default
-
-  proc decodeRegex*(value: RegexSetting, default: string = ""): string =
-    return value.impl.decodeRegex(default)
 
   proc getRegexValue*(self: ConfigStore, path: string, default: string = ""): string =
     let value = self.get(path, JsonNodeEx, nil)

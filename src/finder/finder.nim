@@ -229,7 +229,7 @@ proc filterAndSortItemsThread(args: FilterAndSortArgs): FilterAndSortResult {.gc
 
     result.totalTime = result.scoreTime + result.sortTime
 
-  except:
+  except CatchableError:
     discard
 
 proc filterAndSortItems(self: Finder, items: sink ItemList): Future[void] {.async.} =

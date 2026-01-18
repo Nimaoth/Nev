@@ -178,7 +178,6 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
 
 import text/[text_editor, text_document]
-import text/language/debugger
 when enableAst:
   import ast/[model_document]
 import selector_popup
