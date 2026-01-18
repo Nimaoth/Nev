@@ -732,7 +732,7 @@ proc vfsLocalNormalize*(self: Arc[VFS2], path: string): string {.gcsafe, raises:
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
   return path.normalizePath.normalizeNativePath
 
-proc vfsLocalWatch*(self: Arc[VFS2], path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id {.gcsafe, raises: [].} =
+proc vfsLocalWatch*(self: Arc[VFS2], path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): id.Id {.gcsafe, raises: [].} =
   let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
   log lvlInfo, &"Register watcher for local file system at '{path}'"
   try:
