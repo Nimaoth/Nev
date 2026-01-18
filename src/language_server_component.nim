@@ -15,11 +15,13 @@ type LanguageServerComponent* = ref object of Component
 var LanguageServerComponentId* {.apprtl.}: ComponentTypeId
 
 proc languageServerComponentAddLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool {.apprtl, gcsafe, raises: [].}
+proc languageServerComponentRemoveLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool {.apprtl, gcsafe, raises: [].}
 proc languageServerComponentHasLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool {.apprtl, gcsafe, raises: [].}
 proc getLanguageServerComponent*(self: ComponentOwner): Option[LanguageServerComponent] {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
 proc addLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool = languageServerComponentAddLanguageServer(self, languageServer)
+proc removeLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool = languageServerComponentRemoveLanguageServer(self, languageServer)
 
 proc hasLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool = languageServerComponentHasLanguageServer(self, languageServer)
 
@@ -39,6 +41,13 @@ when implModule:
     if not self.languageServerList.addLanguageServer(languageServer):
       return false
     self.onLanguageServerAttached.invoke (self.LanguageServerComponent, languageServer)
+    return true
+
+  proc languageServerComponentRemoveLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool =
+    let self = self.LanguageServerComponentImpl
+    if not self.languageServerList.removeLanguageServer(languageServer):
+      return false
+    self.onLanguageServerDetached.invoke (self.LanguageServerComponent, languageServer)
     return true
 
   proc languageServerComponentHasLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool =

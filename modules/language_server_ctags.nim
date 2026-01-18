@@ -1,9 +1,9 @@
 import std/[strformat, strutils, os, sets, tables, options, sequtils, json]
-import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_process, event, response, rope_utils]
+import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_process, event, response, rope_utils, arena, array_view]
 import text/language/[language_server_base, lsp_types]
 import nimsumtree/[arc, rope]
 import service, event_service, language_server_dynamic, document_editor, document, config_provider, vfs, vfs_service
-import text/text_document_api
+import text/[treesitter_type_conv]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
 const currentSourcePath2 = currentSourcePath()
@@ -46,11 +46,8 @@ type
     fileToCTags: Table[string, string] # Code file path to ctags file path
     workspaceSymbols: seq[Symbol]
 
-  LanguageServerCTagsService* = ref object of Service
-    languageServer: LanguageServerCTags
-
 when implModule:
-  import language_server_component, config_component
+  import language_server_component, config_component, move_component, text_component, treesitter_component
 
   proc c_malloc*(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>".}
   proc c_calloc*(nmemb, size: csize_t): pointer {.importc: "calloc", header: "<stdlib.h>".}
@@ -65,12 +62,17 @@ when implModule:
   logCategory "language_server_ctags"
 
   proc getDefinitions(self: LanguageServerCTags, doc: Document, location: Cursor): Future[seq[Definition]] {.async.} =
-    let s = doc.getLanguageWordBoundary(location)
-    let text = doc.contentString(s)
+    let moves = doc.getMoveComponent().getOr:
+      return @[]
+    let text = doc.getTextComponent().getOr:
+      return @[]
+
+    let s = moves.applyMove(location.toSelection.toRange, "language-word")
+    let wordText = text.content(s)
     var res: seq[Definition]
     for file in self.files.values:
       for def in file.symbols:
-        if (def.name.len > 0 and def.name == text) or (def.name == text):
+        if (def.name.len > 0 and def.name == wordText) or (def.name == wordText):
           res.add Definition(
             location: def.location,
             filename: if def.filename.len > 0: def.filename else: $def.filename)
@@ -129,9 +131,13 @@ when implModule:
     if self.documents.getDocumentByPath(filename).getSome(doc):
       let config = doc.getConfigComponent().getOr:
         return
+      let moves = doc.getMoveComponent().getOr:
+        return
+      let text = doc.getTextComponent().getOr:
+        return
 
-      let s = doc.getLanguageWordBoundary(location)
-      let funcText = doc.contentString(s)
+      let s = moves.applyMove(location.toSelection.toRange, "language-word")
+      let funcText = text.content(s)
 
       for file in self.files.values:
         for def in file.definitions:
@@ -151,12 +157,17 @@ when implModule:
     if self.documents.getDocumentByPath(filename).getSome(doc):
       let config = doc.getConfigComponent().getOr:
         return
+      let moves = doc.getMoveComponent().getOr:
+        return
+      let text = doc.getTextComponent().getOr:
+        return
+
 
       let move = config.get("lsp.ctags.callee-move", "(ts 'call.func') (last) (inclusive)")
-      let s = doc.applyMove(@[location.toSelection.toRange], move)
+      let s = moves.applyMove(@[location.toSelection.toRange], move)
       if s.len == 0:
         return
-      let funcText = doc.contentString(s[0])
+      let funcText = text.content(s[0])
 
       for file in self.files.values:
         for def in file.definitions:
@@ -169,6 +180,27 @@ when implModule:
     return @[lsp_types.SignatureHelpResponse(
       signatures: res,
     )].success
+
+  proc getImportedFiles*(treesitter: TreesitterComponent, text: TextComponent): Future[Option[seq[string]]] {.async.} =
+    result = seq[string].none
+    if treesitter.currentTree.isNil:
+      return
+
+    let query = await treesitter.query("imports")
+    if query.isNone or treesitter.currentTree.isNil:
+      return
+
+    let endPoint = text.content.endPoint
+    var arena = initArena()
+
+    var res = newSeq[string]()
+    for match in query.get.matches(treesitter.currentTree.root, tsRange(tsPoint(0, 0), tsPoint(endPoint.row.int, endPoint.column.int)), arena):
+      for capture in match.captures:
+        var sel = capture.node.getRange().toRange
+        if capture.name == "import":
+          res.add text.content(sel, false)
+
+    return res.some
 
   proc ctagsGetCompletions*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
     let self = self.LanguageServerCTags
@@ -190,12 +222,19 @@ when implModule:
     var completionText = ""
     var importedFiles = seq[string].none
     if self.documents.getDocumentByPath(filename).getSome(doc):
-      let s = doc.getLanguageWordBoundary(location)
+      let moves = doc.getMoveComponent().getOr:
+        return
+      let text = doc.getTextComponent().getOr:
+        return
+      let ts = doc.getTreesitterComponent().getOr:
+        return
+
+      let s = moves.applyMove(location.toSelection.toRange, "language-word")
       let config = doc.getConfigComponent().getOr:
         return
 
-      completionText = doc.contentString(s)
-      let tsImportedFiles = await doc.getImportedFiles()
+      completionText = text.content(s)
+      let tsImportedFiles = await getImportedFiles(ts, text)
       if tsImportedFiles.isSome:
         importedFiles = tsImportedFiles
         try:
