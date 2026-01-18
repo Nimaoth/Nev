@@ -10,7 +10,9 @@ from scripting_api import Cursor, Selection, byteIndexToCursor
 logCategory "treesitter"
 
 import std/dynlib
-import treesitter/api as ts
+from treesitter/api as ts import nil
+import treesitter_types
+export treesitter_types
 
 import compilation_config
 
@@ -61,80 +63,7 @@ when useBuiltinTreesitterLanguage("json"):
 when useBuiltinTreesitterLanguage("markdown"):
   import treesitter_markdown/treesitter_markdown/markdown
 
-type TSQuery* = ref object
-  impl: ptr ts.TSQuery
-
-type TSLanguage* = ref object
-  languageId: string
-  impl: ptr ts.TSLanguage
-  queries: Table[string, Option[TSQuery]]
-  queryFutures: Table[string, Future[Option[TSQuery]]]
-
-type TSParser* = object
-  impl: ptr ts.TSParser
-
-type TsTree* = object
-  impl: ptr ts.TSTree
-
-type TSNode* = object
-  impl: ts.TSNode
-
-type TSQueryCapture* = object
-  name*: cstring
-  node*: TSNode
-
-type TSQueryMatch* = object
-  pattern*: int
-  captures*: ArrayView[TSQueryCapture]
-
-type TSPredicateResultOperand* = object
-  name*: cstring
-  `type`*: cstring
-
-type TSPredicateResult* = object
-  operator*: cstring
-  operands*: ArrayView[TSPredicateResultOperand]
-
-type TSPoint* = object
-  row*: int
-  column*: int
-
-type TSRange* = object of RootObj
-  first*: TSPoint
-  last*: TSPoint
-
-type TSInputEdit* = object
-  startIndex*: int
-  oldEndIndex*: int
-  newEndIndex*: int
-  startPosition*: TSPoint
-  oldEndPosition*: TSPoint
-  newEndPosition*: TSPoint
-
 type TSLanguageCtor = proc(): ptr ts.TSLanguage {.stdcall.}
-
-type TSTreeCursor* = ts.TSTreeCursor
-
-func `=destroy`(t: TsTree) {.raises: [].} = discard
-
-func setLanguage*(self: TSParser, language: TSLanguage): bool =
-  return ts.tsParserSetLanguage(self.impl, language.impl)
-
-func isNil*(self: TSParser): bool = self.impl.isNil
-func isNil*(self: TSTree): bool = self.impl.isNil
-
-proc clone*(self: TSTree): TSTree =
-  assert not self.isNil
-  return TSTree(impl: ts.tsTreeCopy(self.impl))
-
-proc delete*(self: var TSTree) =
-  if self.impl != nil:
-    ts.tsTreeDelete(self.impl)
-  self.impl = nil
-
-proc delete*(self: sink TSTree) =
-  if self.impl != nil:
-    ts.tsTreeDelete(self.impl)
 
 proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true, logSourceOnError = true):
     Future[Option[TSQuery]] {.async.} =
@@ -147,7 +76,7 @@ proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true, lo
   var errorOffset: uint32 = 0
   var queryError: ts.TSQueryError = ts.TSQueryErrorNone
   # todo: can we call tsQueryNew in a separate thread?
-  let query = TSQuery(impl: self.impl.tsQueryNew(source.cstring, source.len.uint32, addr errorOffset, addr queryError))
+  let query = TSQuery(impl: ts.tsQueryNew(self.impl, source.cstring, source.len.uint32, addr errorOffset, addr queryError))
 
   if queryError != ts.TSQueryErrorNone:
     if logSourceOnError:
@@ -191,7 +120,7 @@ proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree
     tree.impl
   else:
     nil
-  let tree = self.impl.tsParserParseString(oldTreePtr, text.cstring, text.len.uint32)
+  let tree = ts.tsParserParseString(self.impl, oldTreePtr, text.cstring, text.len.uint32)
   return TSTree(impl: tree)
 
 type GetTextCallback* = proc(index: int, position: Cursor): (ptr char, int)
@@ -203,10 +132,10 @@ proc getTextRangeTreesitter(payload: pointer; byteIndex: uint32; position: ts.TS
   return cast[cstring](p)
 
 proc parseCallback*(self: TSParser, oldTree: TSTree, text: GetTextCallback): TSTree =
-  let input = TSInput(
+  let input = ts.TSInput(
     payload: text.addr,
-    # read: cast[typeof(TSInput().read)](getTextRangeTreesitter),
-    encoding: TSInputEncoding.TSInputEncodingUTF8
+    # read: cast[typeof(ts.TSInput().read)](getTextRangeTreesitter),
+    encoding: ts.TSInputEncoding.TSInputEncodingUTF8
   )
 
   # Ugly hack, but on windows it complains about incompatible function pointer type because nim maps cstring to "char*"
@@ -218,207 +147,25 @@ proc parseCallback*(self: TSParser, oldTree: TSTree, text: GetTextCallback): TST
   else:
     nil
 
-  let tree = self.impl.tsParserParse(oldTreeImpl, input)
+  let tree = ts.tsParserParse(self.impl, oldTreeImpl, input)
   return TSTree(impl: tree)
 
-when defined(mallocImport):
-  proc c_free(p: pointer): void {.importc: "host_free", header: "<stdlib.h>", used.}
-else:
-  proc c_free(p: pointer): void {.importc: "free", header: "<stdlib.h>", used.}
-
 func toTsPoint*(cursor: Cursor, line: openArray[char]): ts.TSPoint = ts.TSPoint(row: cursor.line.uint32, column: line.runeIndex(cursor.column).uint32)
-func toTsPoint*(point: TSPoint): ts.TSPoint = ts.TSPoint(row: point.row.uint32, column: point.column.uint32)
-proc len*(node: TSNode): int = node.impl.tsNodeChildCount().int
-proc high*(node: TSNode): int = node.len - 1
-proc low*(node: TSNode): int = 0
-proc startByte*(node: TSNode): int = node.impl.tsNodeStartByte.int
-proc endByte*(node: TSNode): int = node.impl.tsNodeEndByte.int
-proc startPoint*(node: TSNode): TSPoint =
-  let point = node.impl.tsNodeStartPoint
-  return TSPoint(row: point.row.int, column: point.column.int)
-proc endPoint*(node: TSNode): TSPoint =
-  let point = node.impl.tsNodeEndPoint
-  return TSPoint(row: point.row.int, column: point.column.int)
-proc getRange*(node: TSNode): TSRange = TSRange(first: node.startPoint, last: node.endPoint)
-
-proc root*(tree: TSTree): TSNode = TSNode(impl: tree.impl.tsTreeRootNode)
-proc edit*(self: TSTree, edit: TSInputEdit): TSTree =
-  var tsEdit = ts.TSInputEdit(
-    startByte: edit.startIndex.uint32,
-    oldEndByte: edit.oldEndIndex.uint32,
-    newEndByte: edit.newEndIndex.uint32,
-    startPoint: edit.startPosition.toTsPoint,
-    oldEndPoint: edit.oldEndPosition.toTsPoint,
-    newEndPoint: edit.newEndPosition.toTsPoint,
-  )
-  self.impl.tsTreeEdit(addr tsEdit)
-  return self
-
-proc execute*(cursor: ptr ts.TSQueryCursor, query: TSQuery, node: TSNode) = cursor.tsQueryCursorExec(query.impl, node.impl)
-proc prev*(node: TSNode): Option[TSNode] =
-  let other = node.impl.tsNodePrevSibling
-  if not other.tsNodeIsNull:
-    result = TSNode(impl: other).some
-proc next*(node: TSNode): Option[TSNode] =
-  let other = node.impl.tsNodeNextSibling
-  if not other.tsNodeIsNull:
-    result = TSNode(impl: other).some
-proc prevNamed*(node: TSNode): Option[TSNode] =
-  let other = node.impl.tsNodePrevNamedSibling
-  if not other.tsNodeIsNull:
-    result = TSNode(impl: other).some
-proc nextNamed*(node: TSNode): Option[TSNode] =
-  let other = node.impl.tsNodeNextNamedSibling
-  if not other.tsNodeIsNull:
-    result = TSNode(impl: other).some
-
-proc `[]`*(node: TSNode, index: int): TSNode = TSNode(impl: node.impl.tsNodeChild(index.uint32))
-proc descendantForRange*(node: TSNode, rang: TSRange): TSNode = TSNode(impl: ts.tsNodeDescendantForPointRange(node.impl, rang.first.toTsPoint, rang.last.toTsPoint))
-proc parent*(node: TSNode): TSNode = TSNode(impl: node.impl.tsNodeParent())
-proc `==`*(a: TSNode, b: TSNode): bool = a.impl.tsNodeEq(b.impl)
-proc nodeType*(node: TSNode): string = $tsNodeType(node.impl)
-proc symbol*(node: TSNode): ts.TSSymbol = tsNodeSymbol(node.impl)
-proc isNull*(node: TSNode): bool = tsNodeIsNull(node.impl)
-proc isNamed*(node: TSNode): bool = tsNodeIsNamed(node.impl)
-# proc path*(node: TSNode): seq[int] =
-#   var n = node
-
-proc currentNode*(cursor: var ts.TSTreeCursor): TSNode = TSNode(impl: tsTreeCursorCurrentNode(addr cursor))
-proc reset*(cursor: var ts.TSTreeCursor, node: TSNode) = tsTreeCursorReset(addr cursor, node.impl)
-proc gotoParent*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoParent(addr cursor)
-proc gotoPreviousSibling*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoPreviousSibling(addr cursor)
-proc gotoNextSibling*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoNextSibling(addr cursor)
-proc gotoFirstChild*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoFirstChild(addr cursor)
-proc gotoLastChild*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoLastChild(addr cursor)
-proc gotoDescendant*(cursor: var ts.TSTreeCursor, index: Natural): bool = tsTreeCursorGotoDescendant(addr cursor, index.uint32)
-proc currentDescendantIndex*(cursor: var ts.TSTreeCursor): int = tsTreeCursorCurrentDescendantIndex(addr cursor).int
-proc currentDepth*(cursor: var ts.TSTreeCursor): int = tsTreeCursorCurrentDepth(addr cursor).int
-proc currentFieldName*(cursor: var ts.TSTreeCursor): cstring = tsTreeCursorCurrentFieldName(addr cursor)
-proc currentFieldId*(cursor: var ts.TSTreeCursor): ts.TSFieldId = tsTreeCursorCurrentFieldId(addr cursor)
-
-proc setPointRange*(cursor: ptr ts.TSQueryCursor, rang: TSRange) =
-  discard cursor.tsQueryCursorSetPointRange(rang.first.toTsPoint, rang.last.toTsPoint)
-
-proc getCaptureName*(query: TSQuery, index: uint32): string =
-  var length: uint32
-  var str = ts.tsQueryCaptureNameForId(query.impl, index, addr length)
-  defer: assert result.len == length.int
-  return $str
-
-proc getCaptureNameC*(query: TSQuery, index: uint32): cstring =
-  var length: uint32
-  var str = ts.tsQueryCaptureNameForId(query.impl, index, addr length)
-  defer: assert result.len == length.int
-  return str
-
-proc getStringValue*(query: TSQuery, index: uint32): string =
-  var length: uint32
-  var str = ts.tsQueryStringValueForId(query.impl, index, addr length)
-  defer: assert result.len == length.int
-  return $str
-
-proc getStringValueC*(query: TSQuery, index: uint32): cstring =
-  var length: uint32
-  var str = ts.tsQueryStringValueForId(query.impl, index, addr length)
-  defer: assert result.len == length.int
-  return str
-
-proc nextMatch(cursor: ptr ts.TSQueryCursor, query: TSQuery): Option[ts.TSQueryMatch] =
-  result = ts.TSQueryMatch.none
-  var match: ts.TSQueryMatch
-  if cursor.tsQueryCursorNextMatch(addr match):
-    when defined(vcc):
-      {.emit: ["Result->has = NIM_TRUE; Result->val = ", match, ";"].}
-    else:
-      result = match.some
-
-proc nextCapture*(cursor: ptr ts.TSQueryCursor): Option[tuple[match: ts.TSQueryMatch, captureIndex: int]] =
-  var match: ts.TSQueryMatch
-  var index: uint32
-  if cursor.tsQueryCursorNextCapture(addr match, addr index):
-    result = (match, index.int).some
-
-proc `$`*(node: ts.TSNode): string =
-  # debugf"$node: {node.context}, {(cast[uint64](node.id)):x}, {(cast[uint64](node.tree)):x}"
-  let c_str = node.tsNodeString()
-  defer: c_str.c_free
-  result = $c_str
-
 template withQueryCursor*(cursor: untyped, body: untyped): untyped =
-  bind tsQueryCursorNew
-  bind tsQueryCursorDelete
+  bind ts.tsQueryCursorNew
+  bind ts.tsQueryCursorDelete
   block:
     let cursor = ts.tsQueryCursorNew()
     defer: ts.tsQueryCursorDelete(cursor)
     body
 
 template withTreeCursor*(node: untyped, cursor: untyped, body: untyped): untyped =
-  bind tsTreeCursorNew
-  bind tsTreeCursorDelete
+  bind ts.tsTreeCursorNew
+  bind ts.tsTreeCursorDelete
   block:
     var cursor = ts.tsTreeCursorNew(node.impl)
     defer: ts.tsTreeCursorDelete(cursor.addr)
     body
-
-var scratchQueryCursor: ptr ts.TSQueryCursor = nil
-
-iterator matches*(self: TSQuery, node: TSNode, rang: TSRange, arena: var Arena): TSQueryMatch =
-  if scratchQueryCursor.isNil:
-    scratchQueryCursor = ts.tsQueryCursorNew()
-  let cursor = scratchQueryCursor
-
-  cursor.setPointRange rang
-  cursor.execute(self, node)
-
-  var match = cursor.nextMatch(self)
-  while match.isSome:
-    var m = TSQueryMatch(
-      pattern: match.get.patternIndex.int,
-      captures: arena.allocEmptyArray(match.get.capture_count.int, TSQueryCapture),
-    )
-    let capturesRaw = cast[ptr array[100000, ts.TSQueryCapture]](match.get.captures)
-    for k in 0..<match.get.capture_count.int:
-      if m.captures.len == m.captures.cap:
-        continue
-      m.captures.add(TSQueryCapture(name: self.getCaptureNameC(capturesRaw[k].index), node: TSNode(impl: capturesRaw[k].node)))
-
-    yield m
-    match = cursor.nextMatch(self)
-
-proc predicatesForPattern*(self: TSQuery, patternIndex: int, arena: var Arena): ArrayView[TSPredicateResult] =
-  var predicatesLength: uint32 = 0
-  let predicatesPtr = ts.tsQueryPredicatesForPattern(self.impl, patternIndex.uint32, addr predicatesLength)
-  let predicatesRaw = cast[ptr array[100000, ts.TSQueryPredicateStep]](predicatesPtr)
-
-  var argIndex = 0
-  var predicateName: cstring = "".cstring
-  var predicateArgs: ArrayView[cstring] = arena.allocEmptyArray(20, cstring)
-
-  result = arena.allocEmptyArray(predicatesLength.int, TSPredicateResult)
-
-  for k in 0..<predicatesLength:
-    case predicatesRaw[k].`type`:
-    of ts.TSQueryPredicateStepTypeString:
-      let value = self.getStringValueC(predicatesRaw[k].valueId)
-      if argIndex == 0:
-        predicateName = value
-      else:
-        predicateArgs.add value
-      argIndex += 1
-
-    of ts.TSQueryPredicateStepTypeCapture:
-      predicateArgs.add self.getCaptureNameC(predicatesRaw[k].valueId)
-      argIndex += 1
-
-    of ts.TSQueryPredicateStepTypeDone:
-      if predicateArgs.len mod 2 == 0:
-        var predicateOperands = arena.allocEmptyArray(predicateArgs.len div 2, TSPredicateResultOperand)
-        for i in 0..<(predicateArgs.len div 2):
-          predicateOperands.add TSPredicateResultOperand(name: predicateArgs[i * 2], `type`: predicateArgs[i * 2 + 1])
-        result.add (TSPredicateResult(operator: predicateName, operands: predicateOperands))
-      predicateName = ""
-      predicateArgs.setLen 0
-      argIndex = 0
 
 # Available on all targets
 
@@ -426,15 +173,15 @@ import std/[os, strutils]
 var treesitterDllCache = initTable[string, LibHandle]()
 
 var engine = getGlobalWasmEngine()
-var wasmStore: ptr TSWasmStore = nil
+var wasmStore: ptr ts.TSWasmStore = nil
 
 import std/macros
 
-proc getLanguageWasmStore(): ptr TSWasmStore =
+proc getLanguageWasmStore(): ptr ts.TSWasmStore =
   if wasmStore == nil:
-    var err: TSWasmError
-    wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](engine), err.addr)
-    if err.kind != TSWasmErrorKindNone:
+    var err: ts.TSWasmError
+    wasmStore = ts.tsWasmStoreNew(cast[ptr ts.TSWasmEngine](engine), err.addr)
+    if err.kind != ts.TSWasmErrorKindNone:
       log lvlError, &"Failed to create wasm store: {err}"
       return nil
 
@@ -488,17 +235,17 @@ proc loadLanguageDynamically*(vfs: VFS, languageId: string, pathOverride: Option
 
         logScope lvlInfo, &"Create wasm language from module for {languageId}"
 
-        # proc loadLanguageThread(args: (ptr WasmStoreT, cstring, cstring, uint32, ptr TSWasmError)): ptr ts.TSLanguage {.thread.} =
-        #   tsWasmStoreLoadLanguage(args[0], args[1], args[2], args[3], args[4])
+        # proc loadLanguageThread(args: (ptr WasmStoreT, cstring, cstring, uint32, ptr ts.TSWasmError)): ptr ts.TSLanguage {.thread.} =
+        #   ts.tsWasmStoreLoadLanguage(args[0], args[1], args[2], args[3], args[4])
 
-        var err: TSWasmError
+        var err: ts.TSWasmError
         let language = block:
           # todo: load in separate thread
           # let res = await spawnAsync(loadLanguageThread, (wasmStore, ctorSymbolName.cstring, wasmBytes.cstring, wasmBytes.len.uint32, err.addr))
           # res
-          tsWasmStoreLoadLanguage(wasmStore, ctorSymbolName.cstring, wasmBytes.cstring, wasmBytes.len.uint32, err.addr)
+          ts.tsWasmStoreLoadLanguage(wasmStore, ctorSymbolName.cstring, wasmBytes.cstring, wasmBytes.len.uint32, err.addr)
 
-        if err.kind != TSWasmErrorKindNone:
+        if err.kind != ts.TSWasmErrorKindNone:
           log lvlError, &"Failed to create wasm language: {err}"
           continue
 
@@ -611,10 +358,10 @@ proc getTreesitterLanguage*(vfs: VFS, languageId: string, pathOverride: Option[s
     return language
 
 proc createTsParser*(): TSParser =
-  let wasmStore: ptr TSWasmStore = if engine != nil:
-    var err: TSWasmError
-    let wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](engine), err.addr)
-    if err.kind != TSWasmErrorKindNone:
+  let wasmStore: ptr ts.TSWasmStore = if engine != nil:
+    var err: ts.TSWasmError
+    let wasmStore = ts.tsWasmStoreNew(cast[ptr ts.TSWasmEngine](engine), err.addr)
+    if err.kind != ts.TSWasmErrorKindNone:
       log lvlError, &"Failed to create wasm store: {err}"
     wasmStore
 
@@ -628,7 +375,7 @@ proc createTsParser*(): TSParser =
 
   if wasmStore != nil:
     log lvlInfo, &"Use wasm store"
-    parser.tsParserSetWasmStore(wasmStore)
+    ts.tsParserSetWasmStore(parser, wasmStore)
 
   return TSParser(impl: parser)
 
@@ -649,16 +396,8 @@ template withParser*(p: untyped, body: untyped): untyped =
     block:
       body
 
-proc deinit*(self: TSParser) =
-  self.impl.tsParserDelete()
-
-proc deinit*(self: TSQuery) =
-  self.impl.tsQueryDelete()
-
 proc tsPoint*(line: int, column: RuneIndex, text: openArray[char]): TSPoint = TSPoint(row: line, column: text.runeOffset(column))
-proc tsPoint*(line: int, column: int): TSPoint = TSPoint(row: line, column: column)
 proc tsPoint*(cursor: Cursor): TSPoint = TSPoint(row: cursor.line, column: cursor.column)
-proc tsRange*(first: TSPoint, last: TSPoint): TSRange = TSRange(first: first, last: last)
 proc tsRange*(selection: scripting_api.Selection): TSRange = TSRange(first: tsPoint(selection.first), last: tsPoint(selection.last))
 proc toCursor*(point: TSPoint): Cursor = (point.row, point.column)
 proc toSelection*(rang: TSRange): scripting_api.Selection = (rang.first.toCursor, rang.last.toCursor)
@@ -722,7 +461,7 @@ proc tsFree(a1: pointer) {.stdcall.} =
   deallocShared(original)
 
 proc enableTreesitterMemoryTracking*() =
-  tsSetAllocator(tsMalloc, tsCalloc, tsRealloc, tsFree)
+  ts.tsSetAllocator(tsMalloc, tsCalloc, tsRealloc, tsFree)
 
 iterator query*(query: TSQuery, tree: TSTree, selection: Selection): seq[tuple[node: TSNode, capture: string]] =
   let range = tsRange(tsPoint(selection.first.line, selection.first.column), tsPoint(selection.last.line, selection.last.column))

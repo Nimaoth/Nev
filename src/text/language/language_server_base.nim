@@ -89,6 +89,11 @@ type Diagnostic* = object
   removed*: bool = false
   codeActionRequested*: bool = false
 
+proc toLspPosition*(cursor: Cursor): lsp_types.Position = lsp_types.Position(line: cursor.line, character: cursor.column)
+proc toLspRange*(selection: Selection): lsp_types.Range = lsp_types.Range(start: selection.first.toLspPosition, `end`: selection.last.toLspPosition)
+proc toCursor*(position: lsp_types.Position): Cursor = (position.line, position.character)
+proc toSelection*(`range`: lsp_types.Range): Selection = (`range`.start.toCursor, `range`.`end`.toCursor)
+
 when implModule:
   import document, document_editor, service
   import workspaces/workspace
@@ -131,8 +136,3 @@ when implModule:
   method getCodeActions*(self: LanguageServer, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.base, gcsafe, raises: [].} = lsp_types.CodeActionResponse.default.success.toFuture
   method rename*(self: LanguageServer, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.base, gcsafe, raises: [].} = newSeq[lsp_types.WorkspaceEdit]().success.toFuture
   method executeCommand*(self: LanguageServer, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.base, gcsafe, raises: [].} = errorResponse[JsonNode](0, "Command not found: " & command).toFuture
-
-  proc toLspPosition*(cursor: Cursor): lsp_types.Position = lsp_types.Position(line: cursor.line, character: cursor.column)
-  proc toLspRange*(selection: Selection): lsp_types.Range = lsp_types.Range(start: selection.first.toLspPosition, `end`: selection.last.toLspPosition)
-  proc toCursor*(position: lsp_types.Position): Cursor = (position.line, position.character)
-  proc toSelection*(`range`: lsp_types.Range): Selection = (`range`.start.toCursor, `range`.`end`.toCursor)

@@ -273,7 +273,6 @@ import text/text_editor
 import text/language/debugger
 import plugin_service
 import selector_popup, layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, toast, terminal_service
-import language_server_paths
 import language_server_regex
 # import language_server_ctags
 import language_server_dynamic

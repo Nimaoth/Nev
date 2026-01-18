@@ -692,6 +692,35 @@ proc vfsLocalSetFileAttributes*(self: Arc[VFS2], path: string, attributes: FileA
 
 proc vfsLocalGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).} =
   let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
+  if path.len == 0:
+    when defined(windows):
+      var chars: array[1024, char]
+      let len = GetLogicalDriveStringsA(cast[winlean.DWORD](chars.len), cast[LPSTR](chars[0].addr)).int
+      if len == 0:
+        result.folders.add "C:"
+      else:
+        var index = 0
+        while true:
+          let nextIndex = chars.toOpenArray(0, chars.high).find('\0', index)
+          if nextIndex == index or nextIndex == -1 or index >= chars.len:
+            break
+
+          let colonIndex = chars.find(':', index)
+          if colonIndex != -1:
+            result.folders.add chars[index..colonIndex].join("")
+
+          index = nextIndex + 1
+
+    else:
+      result.fillDirectoryListing("/", relative = false)
+
+  else:
+    when defined(posix):
+      if path == "/":
+        result.fillDirectoryListing("/", relative = false)
+        return
+
+    result.fillDirectoryListing(path)
 
 proc vfsLocalGetVFS*(self: Arc[VFS2], path: openArray[char], maxDepth: int = int.high): tuple[vfs: Arc[VFS2], relativePath: string] =
   return (self, path.join())

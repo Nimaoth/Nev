@@ -760,6 +760,19 @@ proc mount*(self: Arc[VFS2], prefix: string, vfs: Arc[VFS2]) =
   vfs.getMutUnsafe.prefix = prefix
   self.getMutUnsafe.mounts.add (prefix, vfs)
 
+proc getDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.async: (raises: []).} =
+  let (vfs, relativePath) = self.getVFS(path)
+  if vfs == self:
+    result = await self.getDirectoryListingImpl(relativePath)
+  else:
+    result = await vfs.getDirectoryListing(relativePath)
+
+  if path.len == 0:
+    for m in self.get.mounts:
+      if m.prefix == path:
+        continue
+      result.folders.add m.prefix
+
 proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] =
   # when debugLogVfs:
   #   echo &"getVFS {self.name} '{path.join()}'"

@@ -9,13 +9,10 @@ import document, document_editor, custom_treesitter, indent, config_provider, se
 import syntax_map
 import pkg/[chroma, results]
 import vcs/vcs, layout, event_service
-import language_server_component, config_component, move_database
+import language_server_component, config_component, move_database, move_component, text_component, treesitter_component
 import display_map
 
 include dynlib_export
-
-when not implModule:
-  include text_document_api
 
 import diff
 
@@ -192,7 +189,9 @@ type
 
   TextDocument* = ref object of Document
     isInitialized: bool
-    buffer*: Buffer
+    textComponent*: TextComponentImpl
+    treesitterComponent*: TreesitterComponentImpl
+    lsComponent*: LanguageServerComponent
     mLanguageId: string
     services: Services
     workspace: Workspace
@@ -235,14 +234,6 @@ type
 
     nextCheckpoints: seq[string]
 
-    currentContentFailedToParse: bool
-    tsLanguage: TSLanguage
-    currentTree: TSTree
-    highlightQuery*: TSQuery
-    textObjectsQuery*: TSQuery
-    errorQuery: TSQuery
-    tsQueries*: Table[string, Option[TSQuery]]
-
     languageServerList*: LanguageServerList
 
     diagnosticsPerLS*: seq[DiagnosticsData] ## Diagnostics per language server
@@ -281,9 +272,10 @@ proc recordSnapshotForDiagnostics(self: TextDocument)
 proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
 proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.}
 proc enableAutoReload*(self: TextDocument, enabled: bool)
-proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool
-proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool
+proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageServer)
+proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageServer)
 
+func buffer*(self: TextDocument): var Buffer = self.textComponent.buffer
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
 
 proc isReady*(self: TextDocument): bool =
@@ -393,6 +385,8 @@ proc parseTreesitterThread(parser: ptr TSParser, oldTree: TSTree, text: sink Rop
 
   return newTree
 
+proc tsLanguage(self: TextDocument): lent TSLanguage = self.treesitterComponent.tsLanguage
+
 proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
   self.isParsingAsync = true
   defer:
@@ -400,11 +394,11 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
 
   if self.tsLanguage.isNotNil:
     withParser parser:
-      self.applyTreesitterChanges(self.currentTree, self.changes)
+      self.applyTreesitterChanges(self.treesitterComponent.currentTree, self.changes)
       self.changesAsync.setLen(0)
 
       while true:
-        if self.currentContentFailedToParse:
+        if self.treesitterComponent.currentContentFailedToParse:
           # We already tried to parse the current content and it failed, don't try again
           return
 
@@ -414,8 +408,8 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
         var oldLanguage = self.tsLanguage
         let oldBufferId = self.buffer.remoteId
         let oldVersion = self.buffer.version
-        let oldTree: TSTree = if self.currentTree.isNotNil:
-          self.currentTree.clone()
+        let oldTree: TSTree = if self.treesitterComponent.currentTree.isNotNil:
+          self.treesitterComponent.currentTree.clone()
         else:
           TSTree()
 
@@ -430,7 +424,7 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
         let newTree = ^flowVar
 
         oldTree.delete()
-        self.currentTree.delete()
+        self.treesitterComponent.currentTree.delete()
 
         if self.buffer.remoteId != oldBufferId or self.tsLanguage != oldLanguage:
           newTree.delete()
@@ -438,8 +432,8 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
           self.changesAsync.setLen(0)
           continue
 
-        self.currentTree = newTree
-        self.currentContentFailedToParse = self.currentTree.isNil
+        self.treesitterComponent.currentTree = newTree
+        self.treesitterComponent.currentContentFailedToParse = self.treesitterComponent.currentTree.isNil
         self.notifyRequestRerender()
 
         if self.buffer.version == oldVersion:
@@ -447,8 +441,8 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
           assert self.changesAsync.len == 0
           return
 
-        self.currentContentFailedToParse = false
-        self.applyTreesitterChanges(self.currentTree, self.changesAsync)
+        self.treesitterComponent.currentContentFailedToParse = false
+        self.applyTreesitterChanges(self.treesitterComponent.currentTree, self.changesAsync)
         self.changes.setLen(0)
 
 proc reparseTreesitter*(self: TextDocument) =
@@ -458,10 +452,10 @@ proc reparseTreesitter*(self: TextDocument) =
   asyncSpawn self.reparseTreesitterAsync()
 
 proc tsTree*(self: TextDocument): TsTree =
-  if self.changes.len > 0 or self.currentTree.isNil:
-    self.applyTreesitterChanges(self.currentTree, self.changes)
+  if self.changes.len > 0 or self.treesitterComponent.currentTree.isNil:
+    self.applyTreesitterChanges(self.treesitterComponent.currentTree, self.changes)
     self.reparseTreesitter()
-  return self.currentTree
+  return self.treesitterComponent.currentTree
 
 proc languageId*(self: TextDocument): string =
   self.mLanguageId
@@ -482,19 +476,14 @@ func contentString*(self: TextDocument): string =
     return ""
   return $self.rope
 
-var nextBufferId = 1.BufferId
-proc getNextBufferId(): BufferId =
-  result = nextBufferId
-  inc nextBufferId
-
 proc `content=`*(self: TextDocument, value: sink Rope) =
   self.revision.inc
   self.undoableRevision.inc
 
-  self.buffer = initBuffer(self.buffer.timestamp.replicaId, content = value, remoteId = getNextBufferId())
+  self.textComponent.initBuffer(self.buffer.timestamp.replicaId, content = value, remoteId = getNextBufferId())
 
-  self.currentContentFailedToParse = false
-  self.currentTree.delete()
+  self.treesitterComponent.currentContentFailedToParse = false
+  self.treesitterComponent.currentTree.delete()
   self.changes.setLen(0)
   self.changesAsync.setLen(0)
 
@@ -510,7 +499,7 @@ proc `content=`*(self: TextDocument, value: sink string) =
   let invalidUtf8Index = value.validateUtf8
   if invalidUtf8Index >= 0:
     log lvlWarn, &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
-    self.buffer = initBuffer(content = &"Invalid utf-8 byte at {invalidUtf8Index}", remoteId = getNextBufferId())
+    self.textComponent.initBuffer(content = &"Invalid utf-8 byte at {invalidUtf8Index}", remoteId = getNextBufferId())
 
   else:
     var index = 0
@@ -519,10 +508,10 @@ proc `content=`*(self: TextDocument, value: sink string) =
       log lvlInfo, &"[content=] Skipping utf8 bom"
       index = 3
 
-    self.buffer = initBuffer(content = value[index..^1], remoteId = getNextBufferId())
+    self.textComponent.initBuffer(content = value[index..^1], remoteId = getNextBufferId())
 
-  self.currentContentFailedToParse = false
-  self.currentTree.delete()
+  self.treesitterComponent.currentContentFailedToParse = false
+  self.treesitterComponent.currentTree.delete()
   self.changes.setLen(0)
   self.changesAsync.setLen(0)
 
@@ -613,7 +602,7 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
   if oldSelections.len > 0:
     self.undoSelections[op.timestamp] = @oldSelections
   self.redoSelections[op.timestamp] = result.mapIt(it.last.toSelection)
-  self.currentContentFailedToParse = false
+  self.treesitterComponent.currentContentFailedToParse = false
 
   if notify:
     self.notifyTextChanged()
@@ -647,7 +636,7 @@ proc replaceAll*(self: TextDocument, value: sink string) =
 
 proc rebuildBuffer*(self: TextDocument, replicaId: ReplicaId, bufferId: BufferId, content: string) =
   self.content = content
-  self.buffer = initBuffer(replicaId, content, bufferId)
+  self.textComponent.initBuffer(replicaId, content, bufferId)
 
   self.notifyRequestRerender()
 
@@ -691,12 +680,6 @@ func contentString*(self: TextDocument, selection: Selection, inclusiveEnd: bool
 
 func contentString*(self: TextDocument, selection: TSRange): string =
   return self.contentString selection.toSelection
-
-func contentString*(self: Document, selection: Selection, inclusiveEnd: bool = false): string {.rtlImpl.} =
-  self.TextDocument.contentString(selection, inclusiveEnd)
-
-proc textDocumentContentString*(self: Document, selection: Range[Point], inclusiveEnd: bool = false): string {.rtlImpl.} =
-  return self.TextDocument.contentString(selection.toSelection, inclusiveEnd)
 
 func charAt*(self: TextDocument, cursor: Cursor): char =
   if cursor.line < 0 or cursor.line > self.numLines - 1:
@@ -755,13 +738,7 @@ proc isAtExpressionStart*(self: TextDocument, location: Cursor): bool =
 proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   # logScope lvlInfo, &"loadTreesitterLanguage '{self.filename}'"
 
-  self.tsQueries.clear()
-  self.highlightQuery = nil
-  self.textObjectsQuery = nil
-  self.errorQuery = nil
-  self.currentContentFailedToParse = false
-  self.tsLanguage = nil
-  self.currentTree.delete()
+  self.treesitterComponent.clear()
 
   if self.languageId == "":
     return
@@ -778,9 +755,9 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     return
 
   # log lvlInfo, &"loadTreesitterLanguage {prevLanguageId}: Loaded language, apply"
-  self.currentContentFailedToParse = false
-  self.tsLanguage = language.get
-  self.currentTree.delete()
+  self.treesitterComponent.currentContentFailedToParse = false
+  self.treesitterComponent.tsLanguage = language.get
+  self.treesitterComponent.currentTree.delete()
 
   # todo: this awaits, check if still current request afterwards
   # todo: allow specifying queries in home and workspace config
@@ -790,7 +767,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     if prevLanguageId != self.languageId:
       return
 
-    self.highlightQuery = highlightQuery.get
+    self.treesitterComponent.highlightQuery = highlightQuery.get
 
   let textObjectsQueryPath = &"app://languages/{treesitterLanguageName}/queries/textobjects.scm"
   let textObjectsQuery = language.get.queryFile(self.vfs, "textobjects", textObjectsQueryPath).await
@@ -798,7 +775,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     if prevLanguageId != self.languageId:
       return
 
-    self.textObjectsQuery = textObjectsQuery.get
+    self.treesitterComponent.textObjectsQuery = textObjectsQuery.get
 
   if not self.isInitialized:
     return
@@ -808,11 +785,11 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   if errorQuery.isSome:
     if prevLanguageId != self.languageId:
       return
-    self.errorQuery = errorQuery.get
+    self.treesitterComponent.errorQuery = errorQuery.get
   else:
     errorQuery = language.get.query("error", "(ERROR) @error").await
     if errorQuery.isSome:
-      self.errorQuery = errorQuery.get
+      self.treesitterComponent.errorQuery = errorQuery.get
 
   if not self.isInitialized:
     return
@@ -823,7 +800,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   self.notifyRequestRerender()
 
 proc tsQuery*(self: TextDocument, name: string): Future[Option[TSQuery]] {.async.} =
-  self.tsQueries.withValue(name, q):
+  self.treesitterComponent.tsQueries.withValue(name, q):
     return q[]
 
   if self.tsLanguage.isNil:
@@ -836,7 +813,7 @@ proc tsQuery*(self: TextDocument, name: string): Future[Option[TSQuery]] {.async
   if prevLanguageId != self.languageId:
     return TSQuery.none
 
-  self.tsQueries[name] = query
+  self.treesitterComponent.tsQueries[name] = query
   return query
 
 proc reloadTreesitterLanguage*(self: TextDocument) =
@@ -851,10 +828,14 @@ proc displayMap(self: TextDocument): DisplayMap =
     self.currentDisplayMap.setBuffer(self.buffer.snapshot.clone())
   return self.currentDisplayMap
 
-proc applyMoveFallback(self: TextDocument, move: string, selections: openArray[Selection], count: int, largs: openArray[LispVal], env: Env): seq[Selection] =
+proc getLanguageWordBoundary*(self: TextDocument, cursor: Cursor): Selection
+
+proc applyMoveFallback*(self: TextDocument, move: string, selections: openArray[Selection], count: int, largs: openArray[LispVal], env: Env): seq[Selection] =
 
   try:
     case move
+    of "language-word":
+      return selections.mapIt(self.getLanguageWordBoundary(it.last))
     of "ts-text-object", "ts":
       let capture = if largs.len > 0:
         largs[0].toJson.jsonTo(string)
@@ -865,9 +846,9 @@ proc applyMoveFallback(self: TextDocument, move: string, selections: openArray[S
       else:
         parseLisp("(combine)")
 
-      if self.textObjectsQuery != nil and not self.tsTree.isNil:
+      if self.treesitterComponent.textObjectsQuery != nil and not self.tsTree.isNil:
         for s in selections:
-          for captures in self.textObjectsQuery.query(self.tsTree, s):
+          for captures in self.treesitterComponent.textObjectsQuery.query(self.tsTree, s):
             var captureSelections = newSeqOfCap[Selection](captures.len)
             if self.moveDatabase.debugMoves:
               echo &"move 'ts' {move}: {captures.len} captures"
@@ -908,7 +889,6 @@ proc newTextDocument*(
 
   var self = result
   self.isInitialized = true
-  self.currentTree = TSTree()
   self.appFile = app
   self.workspace = services.getService(Workspace).get
   self.services = services
@@ -918,16 +898,22 @@ proc newTextDocument*(
   self.eventBus = self.services.getService(EventService).get
   self.moveDatabase = self.services.getService(MoveDatabase).get
   self.createLanguageServer = createLanguageServer
-  self.buffer = initBuffer(content = "", remoteId = getNextBufferId())
   self.filename = self.vfs.normalize(filename)
   self.isBackedByFile = load
   self.requiresLoad = load
+
+  self.textComponent = newTextComponent()
+  self.addComponent(self.textComponent)
+
+  self.treesitterComponent = newTreesitterComponent(self.vfs)
+  self.addComponent(self.treesitterComponent)
 
   self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}")
   self.settings = TextSettings.new(self.config)
   self.languageServerList = newLanguageServerList(self.config)
 
-  self.editors.registerDocument(self)
+  self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =
+    self.applyMoveFallback(move, selections, count, args, env)
 
   if language.getSome(language):
     self.languageId = language
@@ -935,18 +921,22 @@ proc newTextDocument*(
     getLanguageForFile(self.config, filename).applyIt:
       self.languageId = it
 
-  self.content = content
-  if languageServer.isSome:
-    discard self.addLanguageServer(languageServer.get)
-
-  self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =
-    self.applyMoveFallback(move, selections, count, args, env)
-
   self.addComponent(newConfigComponent(self.config))
+  self.addComponent(newMoveComponent(self.services, self.displayMap, self.moveFallbacks))
 
-  let lsComponent = newLanguageServerComponent(self.languageId, self.languageServerList)
-  discard lsComponent.onLanguageServerAttached.subscribe proc(arg: auto) {.gcsafe, raises: [].} = self.onLanguageServerAttached.invoke((self, arg[1]))
-  self.addComponent(lsComponent)
+  self.lsComponent = newLanguageServerComponent(self.languageId, self.languageServerList)
+  discard self.lsComponent.onLanguageServerAttached.subscribe proc(arg: auto) {.gcsafe, raises: [].} =
+    self.handleLanguageServerAttached(arg[1])
+  discard self.lsComponent.onLanguageServerDetached.subscribe proc(arg: auto) {.gcsafe, raises: [].} =
+    self.handleLanguageServerDetached(arg[1])
+  self.addComponent(self.lsComponent)
+
+  self.content = content
+
+  if languageServer.isSome:
+    discard self.lsComponent.addLanguageServer(languageServer.get)
+
+  self.editors.registerDocument(self)
 
 method deinit*(self: TextDocument) =
   # debugf"[deinit] Destroying text document '{self.filename}'"
@@ -957,12 +947,7 @@ method deinit*(self: TextDocument) =
 
   self.fileWatchHandle.unwatch()
 
-  if self.currentTree.isNotNil:
-    self.currentTree.delete()
-  self.highlightQuery = nil
-  self.textObjectsQuery = nil
-  self.errorQuery = nil
-  self.tsQueries.clear()
+  self.treesitterComponent.clear()
 
   if self.languageServerList.isNotNil:
     self.languageServerList.disconnect(self)
@@ -1459,9 +1444,12 @@ proc handleDiagnosticsReceived(self: TextDocument, languageServer: LanguageServe
   self.setCurrentDiagnostics(languageServer, diagnostics.diagnostics, snapshot)
 
 proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
-  # log lvlInfo, &"Attach language server '{languageServer.name}' to '{self.filename}'"
-  if not self.languageServerList.addLanguageServer(languageServer):
-    return false
+  self.lsComponent.addLanguageServer(languageServer)
+
+proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
+  self.lsComponent.removeLanguageServer(languageServer)
+
+proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageServer) =
   languageServer.connect(self)
 
   # todo: only do that if language server supports sending diagnostics
@@ -1475,18 +1463,12 @@ proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer): boo
     self.completionTriggerCharacters.incl ls.getCompletionTriggerChars()
   self.onLanguageServerAttached.invoke (self, languageServer)
 
-  return true
-
-proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
+proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageServer) =
   if languageServer.name in self.onDiagnosticsHandles:
     languageServer.onDiagnostics.unsubscribe(self.onDiagnosticsHandles[languageServer.name][1])
     self.onDiagnosticsHandles.del(languageServer.name)
 
-  if self.languageServerList.removeLanguageServer(languageServer):
-    log lvlWarn, &"Detach language server '{languageServer.name}' from '{self.filename}'"
-    self.onLanguageServerDetached.invoke (self, languageServer)
-    return true
-  return false
+  self.onLanguageServerDetached.invoke (self, languageServer)
 
 proc hasLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
   self.languageServerList.languageServers.find(languageServer) != -1
@@ -1639,9 +1621,6 @@ proc getLanguageWordBoundary*(self: TextDocument, cursor: Cursor): Selection =
       result.last.column = c.position.column.int
     else:
       break
-
-proc getLanguageWordBoundary*(self: Document, cursor: Cursor): Selection {.rtlImpl.} =
-  self.TextDocument.getLanguageWordBoundary(cursor)
 
 proc findWordBoundary*(self: TextDocument, cursor: Cursor): Selection =
   # todo: use RopeCursor
@@ -1954,8 +1933,8 @@ proc getDeclarationsInRange*(self: TextDocument, visibleRange: Selection): seq[t
   if self.requiresLoad or self.isLoadingAsync:
     return
 
-  if self.textObjectsQuery != nil and not self.tsTree.isNil:
-    for captures in self.textObjectsQuery.query(self.tsTree, visibleRange):
+  if self.treesitterComponent.textObjectsQuery != nil and not self.tsTree.isNil:
+    for captures in self.treesitterComponent.textObjectsQuery.query(self.tsTree, visibleRange):
       var isDecl = false
       var declRange: Selection
       var nameRange: Selection
@@ -1993,38 +1972,3 @@ proc getImportedFiles*(self: TextDocument): Future[Option[seq[string]]] {.async.
         res.add self.contentString(sel, false)
 
   return res.some
-
-proc getImportedFiles*(self: Document): Future[Option[seq[string]]] {.rtlImpl.} =
-  return self.TextDocument.getImportedFiles()
-
-proc textDocumentApplyMove*(self: Document, selections: openArray[Range[Point]], move: string, count: int = 0, includeEol: bool = true, wrap: bool = true, options: JsonNode = nil): seq[Range[Point]] {.rtlImpl.} =
-  let self = self.TextDocument
-  var env = Env()
-  env["screen-lines"] = newNumber(100)
-  env["target-column"] = newNumber(0)
-  env["count"] = newNumber(count)
-  env["include-eol"] = newBool(includeEol)
-  env["wrap"] = newBool(wrap)
-  env["ts?"] = newBool(not self.tsTree.isNil)
-  env["ts.to?"] = newBool(self.textObjectsQuery != nil and not self.tsTree.isNil)
-  defer:
-    env.clear()
-
-  proc readOptions(env: var Env, options: JsonNode) =
-    if options.kind == JObject:
-      for (key, val) in options.fields.pairs:
-        try:
-          env[key] = val.jsonTo(LispVal)
-        except CatchableError as e:
-          log lvlError, "Failed to convert option " & key & " = " & $val & " to lisp value: " & e.msg
-    else:
-      log lvlError, "Invalid move options, expected object: " & $options
-
-  if options != nil:
-    if options.kind == JArray:
-      for o in options.elems:
-        env.readOptions(o)
-    else:
-      env.readOptions(options)
-
-  return self.moveDatabase.applyMove(self.displayMap, move, selections.mapIt(it.toSelection), self.moveFallbacks, env).mapIt(it.toRange)

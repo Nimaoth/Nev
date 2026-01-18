@@ -34,6 +34,8 @@ when implModule:
       self.initializeImpl(owner)
 
   proc componentOwnerAddComponent*(self: ComponentOwner, component: Component) =
+    assert component.typeId.int != 0
+    assert component.typeId notin self.componentsByType
     self.components.add(component)
     self.componentsByType[component.typeId] = component
     componentInitialize(component, self)

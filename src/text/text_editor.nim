@@ -20,7 +20,7 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 import lisp
 import view
-import scroll_box
+import scroll_box, treesitter_component
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
@@ -3057,9 +3057,9 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
       else:
         parseLisp("(combine)")
 
-      if self.document.textObjectsQuery != nil and not self.document.tsTree.isNil:
+      if self.document.treesitterComponent.textObjectsQuery != nil and not self.document.tsTree.isNil:
         for s in selections:
-          for captures in self.document.textObjectsQuery.query(self.document.tsTree, s):
+          for captures in self.document.treesitterComponent.textObjectsQuery.query(self.document.tsTree, s):
             var captureSelections = newSeqOfCap[Selection](captures.len)
             if self.moveDatabase.debugMoves:
               echo &"move 'ts' {move}: {captures.len} captures"
@@ -3075,6 +3075,7 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
             result.add captureSelectionsTransformed
 
     else:
+      return self.document.applyMoveFallback(move, selections, count, largs, env)
       log lvlError, &"Unknown move '{move}'"
       return @selections
 
@@ -3091,7 +3092,7 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
   env["include-eol"] = newBool(includeEol)
   env["wrap"] = newBool(wrap)
   env["ts?"] = newBool(not self.document.tsTree.isNil)
-  env["ts.to?"] = newBool(self.document.textObjectsQuery != nil and not self.document.tsTree.isNil)
+  env["ts.to?"] = newBool(self.document.treesitterComponent.textObjectsQuery != nil and not self.document.tsTree.isNil)
   defer:
     env.clear()
 
