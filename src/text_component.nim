@@ -11,7 +11,7 @@ type TextComponent* = ref object of Component
 # DLL API
 var TextComponentId* {.apprtl.}: ComponentTypeId
 
-proc textComponentContent*(self: TextComponent): Rope {.apprtl.}
+proc textComponentContent*(self: TextComponent): Rope {.apprtl, gcsafe, raises: [].}
 proc getTextComponent*(self: ComponentOwner): Option[TextComponent] {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers

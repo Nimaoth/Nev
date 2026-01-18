@@ -11,7 +11,7 @@ type MoveComponent* = ref object of Component
 # DLL API
 var MoveComponentId* {.apprtl.}: ComponentTypeId
 
-proc moveComponentApplyMove*(self: MoveComponent, selections: openArray[Range[Point]], move: string, count: int = 0, includeEol: bool = true, wrap: bool = true, options: JsonNode = nil): seq[Range[Point]] {.apprtl.}
+proc moveComponentApplyMove*(self: MoveComponent, selections: openArray[Range[Point]], move: string, count: int = 0, includeEol: bool = true, wrap: bool = true, options: JsonNode = nil): seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
 proc getMoveComponent*(self: ComponentOwner): Option[MoveComponent] {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
