@@ -9,7 +9,7 @@ import app, document_editor, theme, config_provider, layout
 import text/language/[lsp_types]
 import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]
 import view
-import scroll_box
+import scroll_box, treesitter_component
 
 import ui/node
 
@@ -1161,8 +1161,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
   proc createIter(): DisplayChunkIterator =
     var highlighter = Highlighter.none
-    if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
-      highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
+    if self.document.tsTree.isNotNil and self.document.treesitterComponent.highlightQuery.isNotNil and highlight:
+      highlighter = Highlighter(query: self.document.treesitterComponent.highlightQuery, tree: self.document.tsTree).some
     var res = self.displayMap.iter(highlighter, builder.theme)
     res.styledChunks.diagnosticEndPoints = self.document.diagnosticEndPoints # todo: don't copy everything here
     if indentGuide:
@@ -1172,8 +1172,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
   proc createDiffIter(): DisplayChunkIterator =
     var highlighter = Highlighter.none
-    if self.diffDocument.tsTree.isNotNil and self.diffDocument.highlightQuery.isNotNil and highlight:
-      highlighter = Highlighter(query: self.diffDocument.highlightQuery, tree: self.diffDocument.tsTree).some
+    if self.diffDocument.tsTree.isNotNil and self.diffDocument.treesitterComponent.highlightQuery.isNotNil and highlight:
+      highlighter = Highlighter(query: self.diffDocument.treesitterComponent.highlightQuery, tree: self.diffDocument.tsTree).some
     var res = self.diffDisplayMap.iter(highlighter, builder.theme)
     return res
 
