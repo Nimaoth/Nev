@@ -1,5 +1,6 @@
 import std/[options]
-import nimsumtree/[rope]
+import nimsumtree/[rope, buffer]
+import misc/[event]
 import component
 
 export component
@@ -7,12 +8,13 @@ export component
 include dynlib_export
 
 type TextComponent* = ref object of Component
-  languageId*: string
+  onEdit*: Event[Patch[Point]]
 
 # DLL API
 var TextComponentId* {.apprtl.}: ComponentTypeId
 
 proc textComponentContent*(self: TextComponent): Rope {.apprtl, gcsafe, raises: [].}
+proc textComponentBuffer*(self: TextComponent): lent Buffer {.apprtl, gcsafe, raises: [].}
 proc getTextComponent*(self: ComponentOwner): Option[TextComponent] {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
@@ -39,7 +41,7 @@ proc content*(self: TextComponent, selection: Range[Point], inclusiveEnd: bool =
 # Implementation
 when implModule:
   import misc/[util, custom_logger]
-  import nimsumtree/[buffer, clock]
+  import nimsumtree/[clock]
 
   logCategory "text-component"
 
@@ -62,8 +64,13 @@ when implModule:
   proc textComponentContent*(self: TextComponent): Rope =
     return self.TextComponentImpl.buffer.visibleText
 
+  proc textComponentBuffer*(self: TextComponent): lent Buffer =
+    return self.TextComponentImpl.buffer
+
   proc initBuffer*(self: TextComponent, replicaId: ReplicaId = 0.ReplicaId, content: string = "", remoteId: BufferId = 1.BufferId) =
     self.TextComponentImpl.buffer = initBuffer(replicaId, content, remoteId)
 
   proc initBuffer*(self: TextComponent, replicaId: ReplicaId, content: sink Rope, remoteId: BufferId = 1.BufferId) =
     self.TextComponentImpl.buffer = initBuffer(replicaId, content, remoteId)
+
+proc buffer*(self: TextComponent): lent Buffer {.inline.} = self.textComponentBuffer()

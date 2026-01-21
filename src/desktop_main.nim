@@ -448,7 +448,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions) =
     {.gcsafe.}:
       logger().flush()
 
-import service, text/language/language_server_lsp
+import service
 gServices = Services()
 gServices.addBuiltinServices()
 
@@ -457,8 +457,10 @@ plat.init(gAppOptions)
 gServices.getService(PlatformService).get.setPlatform(plat)
 gServices.waitForServices()
 
+
 when defined(useDynlib):
   import std/dynlib
+  var modules: seq[(string, LibHandle)] = @[]
   proc loadModule(name: string) =
     try:
       let path = &"modules\\{name}.dll"
@@ -466,6 +468,7 @@ when defined(useDynlib):
       let lib = loadLib(path)
       if lib == nil:
         raise newException(OSError, &"Failed to load library '{path}'")
+      modules.add (name, lib)
       let funcName = &"init_module_{name}"
       let init = cast[proc() {.cdecl.}](lib.symAddr(funcName.cstring))
       if init == nil:
@@ -507,8 +510,15 @@ proc main() =
     log lvlInfo, "Shutting down platform"
     plat.deinit()
 
-    log lvlInfo, "Deinit language servers"
-    deinitLanguageServers()
+    when defined(useDynlib):
+      for (name, lib) in modules:
+        let funcName = &"shutdown_module_{name}"
+        let shutdown = cast[proc() {.cdecl.}](lib.symAddr(funcName.cstring))
+        if shutdown != nil:
+          log lvlDebug, &"Shutdown module '{name}'"
+          shutdown()
+    else:
+      shutdownModules()
 
     # Give language server threads some time to deinit properly before force quitting.
     sleep(100)

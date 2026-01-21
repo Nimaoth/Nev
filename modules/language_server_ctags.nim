@@ -47,7 +47,7 @@ type
     workspaceSymbols: seq[Symbol]
 
 when implModule:
-  import language_server_component, config_component, move_component, text_component, treesitter_component
+  import language_server_component, config_component, move_component, text_component, treesitter_component, language_component
 
   proc c_malloc*(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>".}
   proc c_calloc*(nmemb, size: csize_t): pointer {.importc: "calloc", header: "<stdlib.h>".}
@@ -468,9 +468,11 @@ when implModule:
       try:
         let id = payload.parseInt.DocumentId
         if documents.getDocument(id).getSome(doc):
+          let language = doc.getLanguageComponent().getOr:
+            return
           if doc.getLanguageServerComponent().getSome(comp):
             if comp.hasLanguageServer(ls):
-              asyncSpawn ls.loadCTagsCommand(comp.languageId, doc.filename)
+              asyncSpawn ls.loadCTagsCommand(language.languageId, doc.filename)
       except CatchableError as e:
         log lvlWarn, &"Error: {e.msg}"
     events.get.listen(newId(), "document/*/saved", handleDocumentSaved)
@@ -484,11 +486,11 @@ when implModule:
             return
           let lsps = doc.getLanguageServerComponent().getOr:
             return
+          let language = doc.getLanguageComponent().getOr:
+            return
 
           let languages = config.get("lsp.ctags.languages", newSeq[string]())
-          let language = lsps.languageId
-
-          if language in languages or "*" in languages:
+          if language.languageId in languages or "*" in languages:
             discard lsps.addLanguageServer(ls)
       except CatchableError as e:
         log lvlWarn, &"Error: {e.msg}"
