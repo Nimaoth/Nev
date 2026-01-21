@@ -1,8 +1,9 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts]
 import misc/[custom_logger, util, myjsonutils, custom_async, response]
+import text/language/[language_server_base, lsp_types]
 import scripting/expose
 from workspaces/workspace as ws import nil
-import lsp_types, dispatch_tables, vfs
+import dispatch_tables, vfs
 from std/logging import nil
 import channel
 
@@ -988,7 +989,7 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
   # debugf"[getCompletions] {filename}:{line}:{column}: no completions found"
   return errorResponse[CompletionList](-1, fmt"[getCompletions] {filename}:{line}:{column}: no completions found")
 
-proc getCodeActions*(client: LSPClient, filename: string, selection: ((int, int), (int, int)), diagnostics: seq[Diagnostic]): Future[Response[CodeActionResponse]] {.async.} =
+proc getCodeActions*(client: LSPClient, filename: string, selection: ((int, int), (int, int)), diagnostics: seq[lsp_types.Diagnostic]): Future[Response[CodeActionResponse]] {.async.} =
   # debugf"[getCodeActions] {filename.absolutePath}:{selection}"
 
   let params = %*{
@@ -1205,6 +1206,6 @@ proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
   asyncSpawn client.handleRequests()
 
   while not client.exit:
-    poll(10)
+    poll(5)
 
   client.deinitThread()

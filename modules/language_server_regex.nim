@@ -10,7 +10,7 @@ const currentSourcePath2 = currentSourcePath()
 include module_base
 
 when implModule:
-  import language_server_component, config_component, move_component, text_component
+  import language_server_component, config_component, move_component, text_component, language_component
   logCategory "language_server_regex"
 
   type
@@ -30,6 +30,8 @@ when implModule:
       return @[]
     let config = doc.getConfigComponent().getOr:
       return @[]
+    let language = doc.getLanguageComponent().getOr:
+      return
 
     let s = moves.applyMove(location.toSelection.toRange, "language-word")
     let wordText = text.content(s)
@@ -45,7 +47,7 @@ when implModule:
     var customArgs = @["--only-matching"]
     customArgs.add config.get("text.ripgrep.extra-args", seq[string])
     if config.get("text.ripgrep.pass-type", true):
-      let fileType = config.get("text.ripgrep.file-type", text.languageId)
+      let fileType = config.get("text.ripgrep.file-type", language.languageId)
       customArgs.add ["--type", fileType]
 
     let searchResults = await self.workspace.search(searchString, 100, customArgs)
@@ -128,6 +130,8 @@ when implModule:
         return @[]
       let config = doc.getConfigComponent().getOr:
         return @[]
+      let language = doc.getLanguageComponent().getOr:
+        return @[]
 
       let regexTemplate = config.get(&"text.search-regexes.symbols", newJexNull())
       if regexTemplate == nil or regexTemplate.kind == JNull:
@@ -159,7 +163,7 @@ when implModule:
       var customArgs: seq[string] = @[]
       customArgs.add config.get("text.ripgrep.extra-args", seq[string])
       if config.get("text.ripgrep.pass-type", true):
-        let fileType = config.get("text.ripgrep.file-type", text.languageId)
+        let fileType = config.get("text.ripgrep.file-type", language.languageId)
         customArgs.add ["--type", fileType]
 
       let maxResults = 50_000 # doc.settings.searchWorkspaceRegexMaxResults.get() # todo
@@ -221,11 +225,11 @@ when implModule:
             return
           let lsps = doc.getLanguageServerComponent().getOr:
             return
+          let language = doc.getLanguageComponent().getOr:
+            return
 
           let languages = config.get("lsp.regex.languages", newSeq[string]())
-          let language = lsps.languageId
-
-          if language in languages or "*" in languages:
+          if language.languageId in languages or "*" in languages:
             discard lsps.addLanguageServer(ls)
       except CatchableError as e:
         log lvlError, &"Error: {e.msg}"

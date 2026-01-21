@@ -7,7 +7,6 @@ export component
 include dynlib_export
 
 type LanguageServerComponent* = ref object of Component
-  languageId*: string
   onLanguageServerAttached*: Event[tuple[component: LanguageServerComponent, languageServer: LanguageServer]]
   onLanguageServerDetached*: Event[tuple[component: LanguageServerComponent, languageServer: LanguageServer]]
 
@@ -54,12 +53,8 @@ when implModule:
     let self = self.LanguageServerComponentImpl
     return self.languageServerList.languageServers.find(languageServer) != -1
 
-  proc setLanguageId*(self: LanguageServerComponent, languageId: string) =
-    echo &"Set language id {languageId}"
-    self.languageId = languageId
-
   proc getLanguageServerComponent*(self: ComponentOwner): Option[LanguageServerComponent] {.gcsafe, raises: [].} =
     return self.getComponent(LanguageServerComponentId).mapIt(it.LanguageServerComponent)
 
-  proc newLanguageServerComponent*(languageId: string, languageServer: LanguageServerList): LanguageServerComponent =
-    return LanguageServerComponentImpl(typeId: LanguageServerComponentId, languageId: languageId, languageServerList: languageServer)
+  proc newLanguageServerComponent*(languageServer: LanguageServerList): LanguageServerComponent =
+    return LanguageServerComponentImpl(typeId: LanguageServerComponentId, languageServerList: languageServer)

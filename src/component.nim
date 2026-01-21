@@ -14,6 +14,7 @@ type
     componentsByType*: Table[ComponentTypeId, Component]
 
   Component* = ref object of RootObj
+    mOwner {.cursor.}: ComponentOwner
     typeId*: ComponentTypeId
     initializeImpl*: proc(owner: ComponentOwner) {.gcsafe, raises: [].}
 
@@ -26,10 +27,13 @@ proc componentOwnerGetComponent*(self: ComponentOwner, typeId: ComponentTypeId):
 # Nice wrappers
 proc addComponent*(self: ComponentOwner, component: Component) = componentOwnerAddComponent(self, component)
 proc getComponent*(self: ComponentOwner, typeId: ComponentTypeId): Option[Component] = componentOwnerGetComponent(self, typeId)
+proc owner*(self: Component): ComponentOwner {.inline.} = self.mOwner
+
 
 # Implementation
 when implModule:
   proc componentInitialize*(self: Component, owner: ComponentOwner) =
+    self.mOwner = owner
     if self.initializeImpl != nil:
       self.initializeImpl(owner)
 

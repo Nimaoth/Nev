@@ -9,7 +9,7 @@ const currentSourcePath2 = currentSourcePath()
 include module_base
 
 when implModule:
-  import language_server_component, config_component, text_component
+  import language_server_component, config_component, text_component, language_component
   logCategory "language-server-paths"
 
   const pathRegex = """(?=.*[/\\])(?:(?:\w+:\/\/)?(?:[a-zA-Z]:(/|\\{1,2})|(/|\\{1,2})|)(?:[^\\/\s\"'>\[\]:(),]+(/|\\{1,2}))*([^\\/\s\"'>\[\]:(),]+(?:\.\w+)?)?)"""
@@ -212,11 +212,11 @@ when implModule:
             return
           let lsps = doc.getLanguageServerComponent().getOr:
             return
+          let language = doc.getLanguageComponent().getOr:
+            return
 
           let languages = config.get("lsp.paths.languages", newSeq[string]())
-          let language = lsps.languageId
-
-          if language in languages or "*" in languages:
+          if language.languageId in languages or "*" in languages:
             discard lsps.addLanguageServer(ls)
       except CatchableError as e:
         log lvlError, &"Error: {e.msg}"

@@ -229,13 +229,15 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
   try:
     var imports = ""
     var inits = "proc initModules*() =\n"
+    var deinits = "proc shutdownModules*() =\n"
     for (name, m) in modules.pairs:
       let path = m.path.replace("\\", "/")
       imports.add &"import \"../{path}\"\n"
       inits.add &"  init_module_{name}()\n"
+      deinits.add &"  when declared(shutdown_module_{name}): shutdown_module_{name}()\n"
 
     if not dry:
-      writeFile("src/module_imports.nim", &"{imports}\n{inits}")
+      writeFile("src/module_imports.nim", &"{imports}\n{inits}\n{deinits}")
   except CatchableError as e:
     echo &"Failed to write module_imports.nim: {e.msg}"
 

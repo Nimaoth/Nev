@@ -1,4 +1,4 @@
-import std/[options]
+import std/[options, sequtils, os]
 import misc/[custom_async, id, util, regex, custom_logger, event]
 import vfs, vfs_service, service
 import finder/finder
@@ -50,9 +50,22 @@ proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArg
 proc search*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.inline.} = workspaceSearchPaths(self, paths, query, maxResults, customArgs)
 proc search*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.inline.} = workspaceSearch(self, query, maxResults, customArgs)
 
+proc info*(self: Workspace): WorkspaceInfo =
+  try:
+    let additionalPaths = self.additionalPaths.mapIt((it.absolutePath, it.some))
+    return WorkspaceInfo(name: self.path, folders: @[(self.path.absolutePath, self.path.some)] & additionalPaths)
+  except ValueError, OSError:
+    return WorkspaceInfo()
+
+proc getWorkspacePath*(self: Workspace): string =
+  try:
+    self.path.absolutePath
+  except ValueError, OSError:
+    return ""
+
 # Implementation
 when implModule:
-  import std/[json, os, strutils, sequtils]
+  import std/[json, strutils]
   import malebolgia
   import misc/[timer, async_process]
   import vfs_local, compilation_config
@@ -144,12 +157,6 @@ when implModule:
     logScope lvlInfo, &"recomputeFileCache"
     asyncSpawn self.recomputeFileCacheAsync()
 
-
-  proc getWorkspacePath*(self: Workspace): string =
-    try:
-      self.path.absolutePath
-    except ValueError, OSError:
-      return ""
 
   proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResults: int, customArgs: seq[string]):
       Future[seq[SearchResult]] {.async: (raises: []).} =
@@ -282,10 +289,6 @@ when implModule:
 
     # todo: make this configurable
     self.ignore.original.add ".git"
-
-  proc info*(self: Workspace): WorkspaceInfo =
-    let additionalPaths = self.additionalPaths.mapIt((it.absolutePath, it.some))
-    return WorkspaceInfo(name: self.path, folders: @[(self.path.absolutePath, self.path.some)] & additionalPaths)
 
   proc removeWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) =
     let idx = if path == self.path:

@@ -9,7 +9,7 @@ import document, document_editor, custom_treesitter, indent, config_provider, se
 import syntax_map
 import pkg/[chroma, results]
 import vcs/vcs, layout, event_service
-import language_server_component, config_component, move_database, move_component, text_component, treesitter_component
+import language_server_component, config_component, move_database, move_component, text_component, treesitter_component, language_component
 import display_map
 
 include dynlib_export
@@ -188,11 +188,10 @@ type
     newEndPoint: Point
 
   TextDocument* = ref object of Document
-    isInitialized: bool
+    languageComponent*: LanguageComponent
     textComponent*: TextComponentImpl
     treesitterComponent*: TreesitterComponentImpl
     lsComponent*: LanguageServerComponent
-    mLanguageId: string
     services: Services
     workspace: Workspace
     editors: DocumentEditorService
@@ -201,7 +200,6 @@ type
 
     nextLineIdCounter: int32 = 0
 
-    isLoadingAsync*: bool = false
     isParsingAsync*: bool = false
 
     singleLine*: bool = false
@@ -458,18 +456,16 @@ proc tsTree*(self: TextDocument): TsTree =
   return self.treesitterComponent.currentTree
 
 proc languageId*(self: TextDocument): string =
-  self.mLanguageId
+  self.languageComponent.languageId
 
 proc `languageId=`*(self: TextDocument, languageId: string) =
-  if self.mLanguageId != languageId:
-    self.mLanguageId = languageId
-    self.config.setParent(self.configService.getLanguageStore(self.mLanguageId))
-    if not self.requiresLoad:
-      self.reloadTreesitterLanguage()
-    self.onLanguageChanged.invoke (self,)
-    if self.getLanguageServerComponent().getSome(comp):
-      comp.setLanguageId(languageId)
-    self.textComponent.languageId = languageId
+  self.languageComponent.setLanguageId(languageId)
+
+proc handleLanguageChanged*(self: TextDocument) =
+  self.config.setParent(self.configService.getLanguageStore(self.languageId))
+  if not self.requiresLoad:
+    self.reloadTreesitterLanguage()
+  self.onLanguageChanged.invoke (self,)
 
 func contentString*(self: TextDocument): string =
   if self.rope.tree.isNil:
@@ -599,6 +595,11 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
 
   self.onOperation.invoke (self, op)
   self.onEdit.invoke (self, edits)
+
+  var patch = Patch[Point]()
+  for e in edits:
+    patch.edits.add initEdit(e.old.toRange, e.new.toRange)
+  self.textComponent.onEdit.invoke patch
 
   if oldSelections.len > 0:
     self.undoSelections[op.timestamp] = @oldSelections
@@ -903,6 +904,11 @@ proc newTextDocument*(
   self.isBackedByFile = load
   self.requiresLoad = load
 
+  self.languageComponent = newLanguageComponent()
+  self.addComponent(self.languageComponent)
+  discard self.languageComponent.onLanguageChanged.subscribe proc (c: LanguageComponent) =
+    c.owner.TextDocument.handleLanguageChanged()
+
   self.textComponent = newTextComponent()
   self.addComponent(self.textComponent)
 
@@ -925,7 +931,7 @@ proc newTextDocument*(
   self.addComponent(newConfigComponent(self.config))
   self.addComponent(newMoveComponent(self.services, self.displayMap, self.moveFallbacks))
 
-  self.lsComponent = newLanguageServerComponent(self.languageId, self.languageServerList)
+  self.lsComponent = newLanguageServerComponent(self.languageServerList)
   discard self.lsComponent.onLanguageServerAttached.subscribe proc(arg: auto) {.gcsafe, raises: [].} =
     self.handleLanguageServerAttached(arg[1])
   discard self.lsComponent.onLanguageServerDetached.subscribe proc(arg: auto) {.gcsafe, raises: [].} =
@@ -1173,6 +1179,7 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
   self.lastSavedRevision = self.undoableRevision
   self.isLoadingAsync = false
   self.onLoaded.invoke (self, changedRegions)
+  self.onDocumentLoaded.invoke self
   self.eventBus.emit(&"document/{self.id}/loaded", $self.id)
 
 proc setReadOnly*(self: TextDocument, readOnly: bool) =
@@ -1236,6 +1243,7 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
   self.autoDetectIndentStyle()
   let changedRegions = @[((0, 0), (self.rope.endPoint.toCursor))]
   self.onLoaded.invoke (self, changedRegions)
+  self.onDocumentLoaded.invoke self
   self.eventBus.emit(&"document/{self.id}/loaded", $self.id)
 
 method load*(self: TextDocument, filename: string = "") =
@@ -1701,6 +1709,7 @@ proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
   var cn = self.rope.cursorT(Point)
 
   var edits = newSeqOfCap[tuple[old, new: Selection]](patch.edits.len)
+  var pointPatch = Patch[Point]()
 
   for edit in patch.edits:
     co.seekForward(edit.old.a.int)
@@ -1718,11 +1727,13 @@ proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
     let endPosOld = co.position
     let endPosNew = cn.position
     edits.add ((startPosOld, endPosOld).toSelection, (startPosNew, endPosNew).toSelection)
+    pointPatch.edits.add initEdit(startPosOld...endPosOld, startPosNew...endPosNew)
 
     if not self.tsLanguage.isNil:
       self.addTreesitterChange(edit.new.a.int, edit.new.a.int + edit.old.len.int, edit.new.b.int, startPosOld, endPosOld, endPosNew)
 
   self.onEdit.invoke (self, edits)
+  self.textComponent.onEdit.invoke pointPatch
 
 proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   result = seq[Selection].none
