@@ -272,7 +272,7 @@ when enableAst:
 import text/text_editor
 import text/language/debugger
 import plugin_service
-import selector_popup, layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, toast, terminal_service
+import selector_popup, layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, toast
 import language_server_dynamic
 import scripting/expose
 import config_provider, event_service
@@ -471,11 +471,9 @@ when defined(useDynlib):
       modules.add (name, lib)
       let funcName = &"init_module_{name}"
       let init = cast[proc() {.cdecl.}](lib.symAddr(funcName.cstring))
-      if init == nil:
-        raise newException(OSError, &"Failed to find '{funcName}'")
-
-      log lvlDebug, &"Init module '{name}'"
-      init()
+      if init != nil:
+        log lvlDebug, &"Init module '{name}'"
+        init()
     except CatchableError as e:
       log lvlError, &"Failed to load module '{name}': {e.msg}"
 

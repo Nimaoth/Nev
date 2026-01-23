@@ -33,7 +33,7 @@ when implModule:
       vfs: VFS
       localVfs: VFS
 
-    LanguageServerLspService* = ref object of Service
+    LanguageServerLspService* = ref object of DynamicService
       documents: DocumentEditorService
       workspace: Workspace
       config: ConfigService
@@ -850,9 +850,6 @@ when implModule:
     except:
       log lvlError, &"Failed to create language server '{name}': {getCurrentExceptionMsg()}"
       return LanguageServerLSP.none
-
-  method init*(self: LanguageServerLspService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-    discard
 
   proc init_module_language_server_lsp*() {.cdecl, exportc, dynlib.} =
     log lvlWarn, &"init_module_language_server_lsp"

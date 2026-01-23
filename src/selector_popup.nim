@@ -74,12 +74,6 @@ proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] {.gcsafe, raises:
 proc handleItemsUpdated*(self: SelectorPopup) {.gcsafe, raises: [].}
 proc pop*(self: SelectorPopup) {.gcsafe, raises: [].}
 
-implTrait ISelectorPopup, SelectorPopup:
-  getSearchString(string, SelectorPopup)
-  closed(bool, SelectorPopup)
-  getSelectedItem(Option[FinderItem], SelectorPopup)
-  pop(void, SelectorPopup)
-
 proc closed*(self: SelectorPopup): bool =
   return self.textEditor.isNil
 
@@ -503,3 +497,9 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
       popup.finder.setQuery(popup.getSearchString())
 
   return popup
+
+proc asISelectorPopup*(self: SelectorPopup): ISelectorPopup =
+  result.getSearchString = proc(): string {.gcsafe, raises: [].} = self.getSearchString()
+  result.closed = proc(): bool {.gcsafe, raises: [].} = self.closed()
+  result.getSelectedItem = proc(): Option[FinderItem] {.gcsafe, raises: [].} = self.getSelectedItem()
+  result.pop = proc() {.gcsafe, raises: [].} = self.pop()

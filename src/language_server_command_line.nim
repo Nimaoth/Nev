@@ -11,7 +11,7 @@ logCategory "language-server-command-line"
 type
   LanguageServerCommandLine* = ref object of LanguageServer
     services: Services
-    commands: CommandService
+    commands: CommandServiceImpl
     documents: DocumentEditorService
     events: EventHandlerService
     files: Table[string, string]
@@ -25,7 +25,7 @@ proc newLanguageServerCommandLine(services: Services): LanguageServerCommandLine
   var server = new LanguageServerCommandLine
   server.name = "command-line"
   server.services = services
-  server.commands = services.getService(CommandService).get
+  server.commands = services.getService(CommandServiceImpl).get
   server.events = services.getService(EventHandlerService).get
   server.documents = services.getService(DocumentEditorService).get
   server.capabilities.completionProvider = lsp_types.CompletionOptions().some

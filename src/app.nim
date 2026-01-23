@@ -96,7 +96,7 @@ type
     plugins*: PluginService
     registers: Registers
     vfsService*: VFSService
-    commands*: CommandService
+    commands*: CommandServiceImpl
     toast*: ToastService
     themes*: ThemeService
 
@@ -114,7 +114,7 @@ type
     inputHistory*: string
     clearInputHistoryTask: DelayedTask
 
-    layout*: LayoutService
+    layout*: LayoutServiceImpl
 
     loadedFontSize: float
     loadedLineDistance: float
@@ -848,7 +848,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.generalSettings = GeneralSettings.new(self.config.runtime)
   self.debugSettings = DebugSettings.new(self.config.runtime)
 
-  self.layout = services.getService(LayoutService).get
+  self.layout = services.getService(LayoutServiceImpl).get
   self.editors = services.getService(DocumentEditorService).get
   self.session = services.getService(SessionService).get
   self.events = services.getService(EventHandlerService).get
@@ -856,7 +856,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.registers = services.getService(Registers).get
   self.vfsService = services.getService(VFSService).get
   self.workspace = services.getService(Workspace).get
-  self.commands = services.getService(CommandService).get
+  self.commands = services.getService(CommandServiceImpl).get
   self.toast = services.getService(ToastService).get
   self.themes = services.getService(ThemeService).get
   self.vfs = self.vfsService.vfs
@@ -891,7 +891,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.commands.languageServerCommandLine = self.services.getService(LanguageServerCommandLineService).get.languageServer
   let commandLineTextDocument = newTextDocument(self.services, "ed://.command-line", language="command-line".some, load=false)
-  self.commands.commandLineEditor = newTextEditor(commandLineTextDocument, self.services)
+  self.commands.mCommandLineEditor = newTextEditor(commandLineTextDocument, self.services)
   self.commands.commandLineEditor.renderHeader = false
   self.commands.commandLineEditor.TextDocumentEditor.usage = "command-line"
   self.commands.commandLineEditor.TextDocumentEditor.disableScrolling = true

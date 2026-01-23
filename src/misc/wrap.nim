@@ -7,7 +7,7 @@ export macro_utils
 type
   JsonCallError* = object of CatchableError
 
-proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
+proc createJsonWrapper*(def: NimNode, newName: NimNode, public: bool = true, closure: bool = false): NimNode =
   # defer:
   #   echo "======================================================================= createJsonWrapper for "
   #   echo def.repr
@@ -82,12 +82,28 @@ proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
     quote do:
       return `callScriptFuncFromJson`.toJson
 
-  result = genAst(functionName = newName, functionNameStr = newName.repr, call, argName = jsonArg):
-    proc functionName*(argName: JsonNode): JsonNode {.nimcall, used, raises: [JsonCallError].} =
-      try:
-        call
-      except CatchableError as e:
-        raise newException(JsonCallError, "Failed to call json wrapped function " & functionNameStr & ": " & e.msg, e)
+  if public:
+    result = genAst(functionName = newName, functionNameStr = newName.repr, call, argName = jsonArg):
+      proc functionName*(argName: JsonNode): JsonNode {.nimcall, used, raises: [JsonCallError].} =
+        try:
+          call
+        except CatchableError as e:
+          raise newException(JsonCallError, "Failed to call json wrapped function " & functionNameStr & ": " & e.msg, e)
+  elif closure:
+    result = genAst(functionName = newName, functionNameStr = newName.repr, call, argName = jsonArg):
+      proc functionName(argName: JsonNode): JsonNode {.closure, used, raises: [JsonCallError].} =
+        try:
+          call
+        except CatchableError as e:
+          raise newException(JsonCallError, "Failed to call json wrapped function " & functionNameStr & ": " & e.msg, e)
+  else:
+    result = genAst(functionName = newName, functionNameStr = newName.repr, call, argName = jsonArg):
+      proc functionName(argName: JsonNode): JsonNode {.nimcall, used, raises: [JsonCallError].} =
+        try:
+          call
+        except CatchableError as e:
+          raise newException(JsonCallError, "Failed to call json wrapped function " & functionNameStr & ": " & e.msg, e)
+
 
 proc serializeArgumentsToJson*(def: NimNode, targetUiae: NimNode): (NimNode, NimNode) =
   let argsName = genSym(nskVar)

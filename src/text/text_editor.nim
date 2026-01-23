@@ -258,7 +258,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   eventBus: EventService
   vfsService: VFSService
   vfs*: VFS
-  commands*: CommandService
+  commands*: CommandServiceImpl
   configService*: ConfigService
   configChanged: bool = false
 
@@ -5113,7 +5113,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.moveDatabase = self.services.getService(MoveDatabase).get
   self.eventBus = self.services.getService(EventService).get
   self.vfs = self.services.getService(VFSService).get.vfs
-  self.commands = self.services.getService(CommandService).get
+  self.commands = self.services.getService(CommandServiceImpl).get
   self.displayMap = DisplayMap.new()
   self.diffDisplayMap = DisplayMap.new()
   discard self.displayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
