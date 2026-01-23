@@ -2,11 +2,11 @@ import std/[json, tables, options]
 import misc/[traits, myjsonutils]
 import finder/[finder, previewer]
 
-traitRef ISelectorPopup:
-  method getSearchString*(self: ISelectorPopup): string {.base, gcsafe, raises: [].}
-  method closed*(self: ISelectorPopup): bool {.base, gcsafe, raises: [].}
-  method getSelectedItem*(self: ISelectorPopup): Option[FinderItem] {.base, gcsafe, raises: [].}
-  method pop*(self: ISelectorPopup) {.base, gcsafe, raises: [].}
+type ISelectorPopup* = object
+  getSearchString*: proc(): string {.gcsafe, raises: [].}
+  closed*: proc(): bool {.gcsafe, raises: [].}
+  getSelectedItem*: proc(): Option[FinderItem] {.gcsafe, raises: [].}
+  pop*: proc() {.gcsafe, raises: [].}
 
 type
   SelectorPopupBuilder* = object

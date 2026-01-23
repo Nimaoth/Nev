@@ -8,7 +8,8 @@ import view
 import render_view as rv
 import platform/platform, platform_service
 import config_provider, command_service, command_service_api, compilation_config
-import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database, popup, event_service, session
+import plugin_service, document_editor, vfs, vfs_service, channel, register, move_database, popup, event_service, session
+import "../../modules/terminal"/terminal
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 import lisp
 import vmath
@@ -49,7 +50,7 @@ type
   HostContext* = ref object
     services: Services
     platform: Platform
-    commands*: CommandService
+    commands*: CommandServiceImpl
     registers*: Registers
     terminals*: TerminalService
     editors*: DocumentEditorService
@@ -206,7 +207,7 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
   self.host.services = services
   self.host.platform = services.getService(PlatformService).get.platform
-  self.host.commands = services.getService(CommandService).get
+  self.host.commands = services.getService(CommandServiceImpl).get
   self.host.registers = services.getService(Registers).get
   self.host.terminals = services.getService(TerminalService).get
   self.host.editors = services.getService(DocumentEditorService).get

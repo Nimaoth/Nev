@@ -33,6 +33,7 @@ static:
   addInjector(CommandService, getCommandService)
 
 proc commandLine*(self: CommandService, initialValue: string = "", prefix: string = "") {.expose("commands").} =
+  let self = self.CommandServiceImpl
   let editor = self.commandLineEditor.TextDocumentEditor
   editor.document.content = initialValue
   if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
@@ -58,6 +59,7 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   self.requestRender()
 
 proc exitCommandLine*(self: CommandService) {.expose("commands").} =
+  let self = self.CommandServiceImpl
   let editor = self.commandLineEditor.TextDocumentEditor
   editor.document.content = ""
   editor.hideCompletions()
@@ -78,6 +80,7 @@ proc exitCommandLine*(self: CommandService) {.expose("commands").} =
 
 proc commandLineResult*(self: CommandService, value: string, showInCommandLine: bool = false,
     appendAndShowInFile: bool = false, filename: string = "ed://.shell-command-results") {.expose("commands").} =
+  let self = self.CommandServiceImpl
   let editor = self.commandLineEditor.TextDocumentEditor
   if showInCommandLine:
     editor.document.content = value
@@ -109,6 +112,7 @@ proc commandLineResult*(self: CommandService, value: string, showInCommandLine: 
       discard layout.openFile(filename)
 
 proc clearCommandLineResults*(self: CommandService) {.expose("commands").} =
+  let self = self.CommandServiceImpl
   let editor = self.commandLineEditor.TextDocumentEditor
   self.shellCommandOutput = Rope.new("")
   asyncSpawn editor.vfs.write("ed://.shell-command-results", self.shellCommandOutput)
@@ -116,6 +120,7 @@ proc clearCommandLineResults*(self: CommandService) {.expose("commands").} =
 commandLineImpl = commandLine
 
 proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
+  let self = self.CommandServiceImpl
   defer:
     self.requestRender()
     self.commandHandler = nil
@@ -158,6 +163,7 @@ proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
   return true
 
 proc selectPreviousCommandInHistory*(self: CommandService) {.expose("commands").} =
+  let self = self.CommandServiceImpl
   let editor = self.commandLineEditor.TextDocumentEditor
   if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
     self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
@@ -179,6 +185,7 @@ proc selectPreviousCommandInHistory*(self: CommandService) {.expose("commands").
   self.requestRender()
 
 proc selectNextCommandInHistory*(self: CommandService) {.expose("commands").} =
+  let self = self.CommandServiceImpl
   let editor = self.commandLineEditor.TextDocumentEditor
   if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
     self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
@@ -200,6 +207,7 @@ proc selectNextCommandInHistory*(self: CommandService) {.expose("commands").} =
   self.requestRender()
 
 proc runProcessAndShowResultAsync(self: CommandService, command: string, options: RunShellCommandOptions) {.async.} =
+  let self = self.CommandServiceImpl
   log lvlInfo, &"Run shell command '{command}'"
   try:
     type ShellOptions = object
@@ -258,6 +266,7 @@ proc runShellCommand*(self: CommandService, options: RunShellCommandOptions = Ru
   ## `options.prompt`              - Text to show as prompt in the command line. Default: `> `
   ## `options.filename`            - Path of the file where the output is appended. Default: `ed://.shell-command-results`
 
+  let self = self.CommandServiceImpl
   log lvlInfo, &"runShellCommand '{options}'"
 
   self.commandLine(options.initialValue, prefix = options.prompt)
@@ -267,6 +276,7 @@ proc runShellCommand*(self: CommandService, options: RunShellCommandOptions = Ru
       asyncSpawn weakSelf.runProcessAndShowResultAsync(command, options)
 
 proc replayCommands*(self: CommandService, register: string) {.expose("commands").} =
+  let self = self.CommandServiceImpl
   if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
     log lvlError, fmt"No commands recorded in register '{register}'"
     return

@@ -4,10 +4,10 @@ import misc/[custom_logger, rect_utils]
 import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
-  widget_builder_debugger, widget_builder_terminal, widget_library]
+  widget_builder_debugger, widget_library]
 import document_editor, theme, compilation_config, view, layout, config_provider, command_service, toast
 import text/text_editor
-import render_view
+import render_view, dynamic_view
 from scripting_api import nil
 
 when enableAst:
@@ -31,6 +31,13 @@ var borderFlagStack = newSeq[BorderFlags]()
 proc resetBorderFlags() {.gcsafe.} =
   {.gcsafe.}:
     borderFlagStack = @[BorderFlags.none()]
+
+method createUI*(self: DynamicView, builder: UINodeBuilder): seq[OverlayFunction] =
+  if self.render != nil:
+    return self.render(builder)
+  else:
+    self.resetDirty()
+  return @[]
 
 method createUI*(self: EditorView, builder: UINodeBuilder): seq[OverlayFunction] =
   self.resetDirty()

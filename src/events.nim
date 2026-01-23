@@ -1,11 +1,7 @@
-import std/[tables, sequtils, strutils, sugar, unicode, json]
-import misc/[custom_logger, util, custom_async]
-import scripting/expose
-import input, service, dispatch_tables, config_provider
+import std/[tables, json]
+import input, service, config_provider
 
-logCategory "events"
-
-var debugEventHandlers = false
+include dynlib_export
 
 type
   EventResponse* = enum
@@ -60,77 +56,14 @@ type
     settings: ConfigStore
 
 func serviceName*(_: typedesc[EventHandlerService]): string = "EventHandlerService"
-addBuiltinService(EventHandlerService, ConfigService)
 
-method init*(self: EventHandlerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  self.commandInfos = CommandInfos()
-  self.settings = self.services.getService(ConfigService).get.runtime
-  return ok()
+# DLL API
+proc eventsGetEventHandlerConfig(self: EventHandlerService, context: string): EventHandlerConfig {.apprtl, gcsafe, raises: [].}
+proc eventsBuildDFA(config: EventHandlerConfig): CommandDFA {.apprtl, gcsafe, raises: [].}
 
-func newEventHandlerConfig(context: string, settings: ConfigStore, parent: EventHandlerConfig = nil): EventHandlerConfig =
-  new result
-  result.parent = parent
-  result.context = context
-  result.settings = settings
-
-proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Table[string, string]], includeMain: bool = true) =
-  if config.parent.isNotNil:
-    config.parent.combineCommands(commands, includeMain = false)
-
-  for (subGraphName, bindings) in config.commands.mpairs:
-    if subGraphName == "":
-      if includeMain:
-        var temp = initTable[string, string]()
-        for (keys, commandInfo) in bindings.mpairs:
-          temp[keys] = commandInfo.command
-        commands[subGraphName] = temp
-    else:
-      if not commands.contains(subGraphName):
-        commands[subGraphName] = initTable[string, string]()
-
-      commands.withValue(subGraphName, val):
-        for (keys, commandInfo) in bindings.mpairs:
-          val[][keys] = commandInfo.command
-
-proc buildDFA*(config: EventHandlerConfig): CommandDFA {.gcsafe, raises: [].} =
-  var commands = initTable[string, Table[string, string]]()
-  config.combineCommands(commands)
-  result = buildDFA(commands, config.keyDefinitions)
-
-  let keyDefinitions = collect(initTable):
-    for name, defs in config.keyDefinitions:
-      let inputs = collect(newSeq):
-        for def in defs:
-          let (keys, _, _, _, _) = parseNextInput(def.toRunes, 0)
-          for key in keys:
-            (key.inputCodes.a, key.mods)
-      {name: inputs}
-
-  config.stateToDescription.clear()
-
-  #
-  for name, inputs in keyDefinitions:
-    for leader in inputs:
-      for (keys, desc) in config.descriptions.pairs:
-        var states: seq[CommandState]
-        for (inputCode, mods, _) in parseInputs(keys, {name: @[leader]}.toTable):
-          states = result.stepAll(states, inputCode.a, mods)
-
-        for s in states:
-          config.stateToDescription[s.current] = desc
-
-proc maxRevision*(config: EventHandlerConfig): int =
-  result = config.revision
-  if config.parent.isNotNil:
-    result = max(result, config.parent.maxRevision)
-
-proc dfa*(handler: EventHandler): CommandDFA =
-  let configRevision = handler.config.maxRevision
-  if handler.revision < configRevision:
-    handler.dfaInternal = handler.config.buildDFA()
-    # fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
-    handler.revision = configRevision
-  return handler.dfaInternal
+# Nice wrappers
+proc getEventHandlerConfig*(self: EventHandlerService, context: string): EventHandlerConfig {.inline.} = eventsGetEventHandlerConfig(self, context)
+proc buildDFA*(config: EventHandlerConfig): CommandDFA {.inline.} = eventsBuildDFA(config)
 
 proc handleInputs*(config: EventHandlerConfig): bool =
   return config.settings.get("input." & config.context & ".handle-inputs", false)
@@ -150,90 +83,453 @@ proc consumeAllInput*(config: EventHandlerConfig): bool =
 proc inputHandlerAction*(config: EventHandlerConfig): string =
   return config.settings.get("input." & config.context & ".input-handler-command", "")
 
-proc addCommand*(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default) =
-  if not config.commands.contains(context):
-    config.commands[context] = initTable[string, Command]()
-  config.commands[context][keys] = Command(command: action, source: source)
-  config.revision += 1
+# Implementation
+when implModule:
+  import std/[sequtils, strutils, sugar, unicode]
+  import misc/[custom_logger, util, custom_async]
+  import scripting/expose
+  import dispatch_tables
 
-proc addCommandDescription*(config: EventHandlerConfig, keys: string, description: string) =
-  config.descriptions[keys] = description
-  config.revision += 1
+  logCategory "events"
 
-proc removeCommand*(config: EventHandlerConfig, keys: string) =
-  config.commands.del(keys)
-  config.revision += 1
+  var debugEventHandlers = false
 
-proc clearCommands*(config: EventHandlerConfig) =
-  config.commands.clear
-  config.revision += 1
+  addBuiltinService(EventHandlerService, ConfigService)
 
-proc setKeyDefinitions*(config: EventHandlerConfig, name: string, keys: openArray[string]) =
-  config.keyDefinitions.mgetOrPut(name, @[]) = @keys
-  config.revision += 1
+  method init*(self: EventHandlerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+    self.commandInfos = CommandInfos()
+    self.settings = self.services.getService(ConfigService).get.runtime
+    return ok()
 
-proc setKeyDefinitions*(config: EventHandlerConfig, definitions: Table[string, seq[string]]) =
-  config.keyDefinitions = definitions
-  config.revision += 1
+  func newEventHandlerConfig(context: string, settings: ConfigStore, parent: EventHandlerConfig = nil): EventHandlerConfig =
+    new result
+    result.parent = parent
+    result.context = context
+    result.settings = settings
 
-proc getNextPossibleInputs*(handler: EventHandler): auto =
-  handler.dfa.getNextPossibleInputs(handler.states)
+  proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Table[string, string]], includeMain: bool = true) =
+    if config.parent.isNotNil:
+      config.parent.combineCommands(commands, includeMain = false)
 
-template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): untyped =
-  block:
-    var handler = EventHandler()
-    handler.states = @[]
-    handler.config = inConfig
-    handler.dfaInternal = inConfig.buildDFA()
-    # fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
+    for (subGraphName, bindings) in config.commands.mpairs:
+      if subGraphName == "":
+        if includeMain:
+          var temp = initTable[string, string]()
+          for (keys, commandInfo) in bindings.mpairs:
+            temp[keys] = commandInfo.command
+          commands[subGraphName] = temp
+      else:
+        if not commands.contains(subGraphName):
+          commands[subGraphName] = initTable[string, string]()
 
-    template onAction(actionBody: untyped): untyped {.used.} =
-      handler.handleAction = proc(action: string, arg: string): EventResponse {.gcsafe, raises: [].} =
-        if handler.config.handleActions:
-          let action {.inject, used.} = action
-          let arg {.inject, used.} = arg
-          let response = actionBody
-          if handler.config.consumeAllActions:
+        commands.withValue(subGraphName, val):
+          for (keys, commandInfo) in bindings.mpairs:
+            val[][keys] = commandInfo.command
+
+  proc eventsBuildDFA(config: EventHandlerConfig): CommandDFA {.gcsafe, raises: [].} =
+    var commands = initTable[string, Table[string, string]]()
+    config.combineCommands(commands)
+    result = buildDFA(commands, config.keyDefinitions)
+
+    let keyDefinitions = collect(initTable):
+      for name, defs in config.keyDefinitions:
+        let inputs = collect(newSeq):
+          for def in defs:
+            let (keys, _, _, _, _) = parseNextInput(def.toRunes, 0)
+            for key in keys:
+              (key.inputCodes.a, key.mods)
+        {name: inputs}
+
+    config.stateToDescription.clear()
+
+    #
+    for name, inputs in keyDefinitions:
+      for leader in inputs:
+        for (keys, desc) in config.descriptions.pairs:
+          var states: seq[CommandState]
+          for (inputCode, mods, _) in parseInputs(keys, {name: @[leader]}.toTable):
+            states = result.stepAll(states, inputCode.a, mods)
+
+          for s in states:
+            config.stateToDescription[s.current] = desc
+
+  proc maxRevision*(config: EventHandlerConfig): int =
+    result = config.revision
+    if config.parent.isNotNil:
+      result = max(result, config.parent.maxRevision)
+
+  proc dfa*(handler: EventHandler): CommandDFA =
+    let configRevision = handler.config.maxRevision
+    if handler.revision < configRevision:
+      handler.dfaInternal = handler.config.buildDFA()
+      # fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
+      handler.revision = configRevision
+    return handler.dfaInternal
+
+  proc addCommand*(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default) =
+    if not config.commands.contains(context):
+      config.commands[context] = initTable[string, Command]()
+    config.commands[context][keys] = Command(command: action, source: source)
+    config.revision += 1
+
+  proc addCommandDescription*(config: EventHandlerConfig, keys: string, description: string) =
+    config.descriptions[keys] = description
+    config.revision += 1
+
+  proc removeCommand*(config: EventHandlerConfig, keys: string) =
+    config.commands.del(keys)
+    config.revision += 1
+
+  proc clearCommands*(config: EventHandlerConfig) =
+    config.commands.clear
+    config.revision += 1
+
+  proc setKeyDefinitions*(config: EventHandlerConfig, name: string, keys: openArray[string]) =
+    config.keyDefinitions.mgetOrPut(name, @[]) = @keys
+    config.revision += 1
+
+  proc setKeyDefinitions*(config: EventHandlerConfig, definitions: Table[string, seq[string]]) =
+    config.keyDefinitions = definitions
+    config.revision += 1
+
+  proc getNextPossibleInputs*(handler: EventHandler): auto =
+    handler.dfa.getNextPossibleInputs(handler.states)
+
+  template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): untyped =
+    block:
+      var handler = EventHandler()
+      handler.states = @[]
+      handler.config = inConfig
+      handler.dfaInternal = inConfig.buildDFA()
+      # fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
+
+      template onAction(actionBody: untyped): untyped {.used.} =
+        handler.handleAction = proc(action: string, arg: string): EventResponse {.gcsafe, raises: [].} =
+          if handler.config.handleActions:
+            let action {.inject, used.} = action
+            let arg {.inject, used.} = arg
+            let response = actionBody
+            if handler.config.consumeAllActions:
+              return Handled
+            return response
+          elif handler.config.consumeAllActions:
             return Handled
-          return response
-        elif handler.config.consumeAllActions:
-          return Handled
-        else:
-          return Ignored
-
-    template onInput(inputBody: untyped): untyped {.used.} =
-      handler.handleInput = proc(input: string): EventResponse {.gcsafe, raises: [].} =
-        if handler.config.handleInputs:
-          let inputHandlerAction = handler.config.inputHandlerAction()
-          if inputHandlerAction != "":
-            return handler.handleAction(inputHandlerAction, $newJString(input))
           else:
-            let input {.inject, used.} = input
-            return inputBody
-        else:
-          return Ignored
+            return Ignored
 
-    template onProgress(progressBody: untyped): untyped {.used.} =
-      handler.handleProgress = proc(i: int64) {.gcsafe, raises: [].} =
-        let input {.inject, used.} = i
-        progressBody
+      template onInput(inputBody: untyped): untyped {.used.} =
+        handler.handleInput = proc(input: string): EventResponse {.gcsafe, raises: [].} =
+          if handler.config.handleInputs:
+            let inputHandlerAction = handler.config.inputHandlerAction()
+            if inputHandlerAction != "":
+              return handler.handleAction(inputHandlerAction, $newJString(input))
+            else:
+              let input {.inject, used.} = input
+              return inputBody
+          else:
+            return Ignored
 
-    template onCanceled(canceledBody: untyped): untyped {.used.} =
-      handler.handleCanceled = proc(i: int64) {.gcsafe, raises: [].} =
-        let input {.inject, used.} = i
-        canceledBody
-
-    template onKey(onKeyBody: untyped): untyped {.used.} =
-      handler.handleKey = proc(i: int64, m: Modifiers): EventResponse {.gcsafe, raises: [].} =
-        if handler.config.handleKeys:
+      template onProgress(progressBody: untyped): untyped {.used.} =
+        handler.handleProgress = proc(i: int64) {.gcsafe, raises: [].} =
           let input {.inject, used.} = i
-          let mods {.inject, used.} = m
-          return onKeyBody
-        else:
-          return Ignored
+          progressBody
 
-    handlerBody
-    handler
+      template onCanceled(canceledBody: untyped): untyped {.used.} =
+        handler.handleCanceled = proc(i: int64) {.gcsafe, raises: [].} =
+          let input {.inject, used.} = i
+          canceledBody
+
+      template onKey(onKeyBody: untyped): untyped {.used.} =
+        handler.handleKey = proc(i: int64, m: Modifiers): EventResponse {.gcsafe, raises: [].} =
+          if handler.config.handleKeys:
+            let input {.inject, used.} = i
+            let mods {.inject, used.} = m
+            return onKeyBody
+          else:
+            return Ignored
+
+      handlerBody
+      handler
+
+  proc resetHandler*(handler: EventHandler) =
+    handler.states = @[]
+
+  proc resetHandlers*(handlers: seq[EventHandler]) =
+    for handler in handlers:
+      handler.resetHandler()
+
+  proc inProgress*(states: openArray[CommandState]): bool =
+    for s in states:
+      if s.current != 0:
+        return true
+    return false
+
+  proc inProgress*(handler: EventHandler): bool = handler.states.inProgress
+  proc states*(handler: EventHandler): auto = handler.states
+
+  proc anyInProgress*(handlers: openArray[EventHandler]): bool =
+    for h in handlers:
+      if h.states.inProgress:
+        return true
+    return false
+
+  proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool, allowHandlingEvent: bool, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]]): EventResponse {.gcsafe.} =
+    if input != 0:
+      # debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}, handleInput: {handleUnknownAsInput}"
+
+      # only handle if no modifier or only shift is pressed, because if any other modifiers are pressed
+      # (ctrl, alt, win) then it doesn't produce input
+      let prevStates = handler.states
+      let newStates = handler.dfa.stepAll(handler.states, input, modifiers)
+      if not newStates.inProgress and Release in modifiers:
+        return Ignored
+      handler.states = newStates
+
+      if debugEventHandlers:
+        debugf"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}, {handleUnknownAsInput}, {allowHandlingEvent}\n  {prevStates}\n  -> {handler.states}, inProgress: {handler.inProgress}, anyTerminal: {handler.states.anyIt(handler.dfa.isTerminal(it.current))}"
+        # debugf"handleEvent {handler.config.context} {(inputToString(input, modifiers))}"
+
+      if not handler.inProgress:
+        if input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and allowHandlingEvent:
+          # if we have delayed inputs we're allowed to handle the current event as input
+          if delayedInputs.len > 0:
+            if debugEventHandlers:
+              debugf"flush delayed inputs"
+            for (handler, input, modifiers) in delayedInputs:
+              discard handler.handleInput(inputToString(input, {}))
+            delayedInputs.setLen(0)
+
+            if handler.handleInput(inputToString(input, {})) == Handled:
+              return Handled
+
+          elif handleUnknownAsInput:
+            if handler.handleInput(inputToString(input, {})) == Handled:
+              return Handled
+
+        elif handler.handleKey != nil:
+          if handler.handleKey(input, modifiers) == Handled:
+            return Handled
+
+        handler.resetHandler()
+        if not prevStates.inProgress:
+          return Ignored
+        else:
+          # undefined input in state n
+          if not handler.handleCanceled.isNil:
+            handler.handleCanceled(input)
+          return Canceled
+
+      elif handler.states.anyIt(handler.dfa.isTerminal(it.current)):
+        if handler.states.len != 1:
+          return Failed
+
+        let (action, arg) = handler.dfa.getAction(handler.states[0])
+        let currentState = handler.states[0].current
+        let nextState = handler.dfa.getDefaultState(currentState)
+
+        if nextState != 0:
+          handler.states = @[CommandState(
+            current: nextState,
+            functionIndices: handler.dfa.getFunctionIndices(nextState),
+            captures: handler.states[0].captures, # todo
+          )]
+        else:
+          handler.resetHandler()
+
+        if allowHandlingEvent:
+          let res = handler.handleAction(action, arg)
+          case res
+          of Failed: return Failed
+          of Ignored: return Ignored
+          of Canceled: return Canceled
+          of Progress: return Progress
+          of Handled:
+            if handler.inProgress:
+              return Progress
+            else:
+              return Handled
+        else:
+          handler.resetHandler()
+          return Canceled
+
+      else:
+        if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and handler.config.handleInputs:
+          if debugEventHandlers:
+            debugf"delay input {inputToString(input, modifiers)}"
+          delayedInputs.add (handler, input, modifiers)
+
+        if not handler.handleProgress.isNil:
+          handler.handleProgress(input)
+        return Progress
+
+    else:
+      return Failed
+
+  proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]]): EventResponse {.gcsafe.} =
+    let anyInProgress = handlers.anyInProgress
+
+    if debugEventHandlers:
+      debugf"handleEvent {inputToString(input, modifiers)}: {handlers.mapIt(it.config.context)}"
+
+    var anyProgressed = false
+    var anyFailed = false
+    var allowHandlingUnknownAsInput = not anyInProgress
+    var anyInProgressAbove = false
+    # Go through handlers in reverse
+    for i in 0..<handlers.len:
+      let handlerIndex = handlers.len - i - 1
+      var handler = handlers[handlerIndex]
+      let response = if (anyInProgress and handler.inProgress) or (not anyInProgress and not handler.inProgress):
+        handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput, not anyInProgressAbove, delayedInputs)
+      else:
+        Ignored
+
+      if debugEventHandlers:
+        debugf"-> {response}"
+
+      case response
+      of Handled:
+        allowHandlingUnknownAsInput = false
+        for k, h in handlers:
+          # Don't reset the current handler
+          if k != handlerIndex:
+            var h = h
+            h.resetHandler()
+
+        return Handled
+      of Progress:
+        allowHandlingUnknownAsInput = false
+        anyProgressed = true
+        anyInProgressAbove = true
+
+      of Failed, Canceled:
+        # Process remaining handlers
+        anyFailed = true
+        discard
+
+      of Ignored:
+        # Process remaining handlers
+        discard
+
+      if handler.config.consumeAllInput:
+        # Don't process remaining handlers
+        break
+
+    if anyProgressed:
+      result = Progress
+    elif anyFailed:
+      result = Failed
+    else:
+      result = Ignored
+
+  proc commands*(config {.byref.}: EventHandlerConfig): lent Table[string, Table[string, Command]] =
+    config.commands
+
+  proc config*(handler: EventHandler): EventHandlerConfig = handler.config
+
+  proc invalidate*(self: CommandInfos) =
+    self.built = false
+    self.commandToKeys.clear()
+
+  proc rebuild*(self: CommandInfos, eventHandlerConfigs {.byref.}: Table[string, EventHandlerConfig]) =
+    if self.built:
+      return
+
+    self.built = true
+    self.commandToKeys.clear()
+    for (context, c) in eventHandlerConfigs.pairs:
+      if not c.commands.contains(""):
+        continue
+      for (keys, commandInfo) in c.commands[""].pairs:
+        let (action, _) = commandInfo.command.parseAction
+        self.commandToKeys.mgetOrPut(action, @[]).add(CommandKeyInfo(
+          keys: keys,
+          command: commandInfo.command,
+          context: context,
+          source: commandInfo.source,
+        ))
+
+  proc getInfos*(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] =
+    if self.commandToKeys.contains(command):
+      return self.commandToKeys[command].some
+
+  proc wasBuilt*(self: CommandInfos): bool = self.built
+
+  proc eventsGetEventHandlerConfig(self: EventHandlerService, context: string): EventHandlerConfig =
+    if not self.eventHandlerConfigs.contains(context):
+      let parentConfig = if context != "":
+        let index = context.rfind(".")
+        if index >= 0:
+          self.getEventHandlerConfig(context[0..<index])
+        else:
+          self.getEventHandlerConfig("")
+      else:
+        nil
+
+      self.eventHandlerConfigs[context] = newEventHandlerConfig(context, self.settings, parentConfig)
+      self.eventHandlerConfigs[context].setKeyDefinitions(self.keyDefinitions)
+
+    return self.eventHandlerConfigs[context].catch(EventHandlerConfig())
+
+  proc invalidateCommandToKeysMap*(self: EventHandlerService) =
+    self.commandInfos.invalidate()
+
+  proc rebuildCommandToKeysMap*(self: EventHandlerService) =
+    self.commandInfos.rebuild(self.eventHandlerConfigs)
+
+  ###########################################################################
+
+  proc getEventHandlerService(): Option[EventHandlerService] =
+    {.gcsafe.}:
+      if gServices.isNil: return EventHandlerService.none
+      return gServices.getService(EventHandlerService)
+
+  static:
+    addInjector(EventHandlerService, getEventHandlerService)
+
+  proc addKeyDefinitions*(self: EventHandlerService, name: string, keys: seq[string]) {.expose("events").} =
+    self.keyDefinitions.mgetOrPut(name, @[]).add(keys)
+    for config in self.eventHandlerConfigs.values:
+      config.setKeyDefinitions(self.keyDefinitions)
+
+  proc setKeyDefinitions*(self: EventHandlerService, name: string, keys: seq[string]) {.expose("events").} =
+    self.keyDefinitions.mgetOrPut(name, @[]) = keys
+    for config in self.eventHandlerConfigs.values:
+      config.setKeyDefinitions(self.keyDefinitions)
+
+  proc setLeader*(self: EventHandlerService, leader: string) {.expose("events").} =
+    self.setKeyDefinitions("LEADER", @[leader])
+
+  proc setLeaders*(self: EventHandlerService, leaders: seq[string]) {.expose("events").} =
+    self.setKeyDefinitions("LEADER", leaders)
+
+  proc addLeader*(self: EventHandlerService, leader: string) {.expose("events").} =
+    self.addKeyDefinitions("LEADER", @[leader])
+
+  proc addLeaders*(self: EventHandlerService, leaders: seq[string]) {.expose("events").} =
+    self.addKeyDefinitions("LEADER", leaders)
+
+  proc clearCommands*(self: EventHandlerService, context: string) {.expose("events").} =
+    log(lvlInfo, fmt"Clearing keybindings for {context}")
+    self.getEventHandlerConfig(context).clearCommands()
+    self.invalidateCommandToKeysMap()
+
+  proc removeCommand*(self: EventHandlerService, context: string, keys: string) {.expose("events").} =
+    # log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
+    self.getEventHandlerConfig(context).removeCommand(keys)
+    self.invalidateCommandToKeysMap()
+
+  proc addCommandDescription*(self: EventHandlerService, context: string, keys: string, description: string = "") {.expose("events").} =
+    let context = if context.endsWith("."):
+      context[0..^2]
+    else:
+      context
+
+    # log lvlDebug, &"Adding command description to '{context}': '{keys}' -> '{description}'"
+
+    self.getEventHandlerConfig(context).addCommandDescription(keys, description)
+
+  addGlobalDispatchTable "events", genDispatchTable("events")
 
 template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, handlerBody: untyped): untyped =
   block:
@@ -291,283 +587,3 @@ template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, hand
 
     handlerBody
     target = handler
-
-proc resetHandler*(handler: EventHandler) =
-  handler.states = @[]
-
-proc resetHandlers*(handlers: seq[EventHandler]) =
-  for handler in handlers:
-    handler.resetHandler()
-
-proc inProgress*(states: openArray[CommandState]): bool =
-  for s in states:
-    if s.current != 0:
-      return true
-  return false
-
-proc inProgress*(handler: EventHandler): bool = handler.states.inProgress
-proc states*(handler: EventHandler): auto = handler.states
-
-proc anyInProgress*(handlers: openArray[EventHandler]): bool =
-  for h in handlers:
-    if h.states.inProgress:
-      return true
-  return false
-
-proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool, allowHandlingEvent: bool, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]]): EventResponse {.gcsafe.} =
-  if input != 0:
-    # debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}, handleInput: {handleUnknownAsInput}"
-
-    # only handle if no modifier or only shift is pressed, because if any other modifiers are pressed
-    # (ctrl, alt, win) then it doesn't produce input
-    let prevStates = handler.states
-    let newStates = handler.dfa.stepAll(handler.states, input, modifiers)
-    if not newStates.inProgress and Release in modifiers:
-      return Ignored
-    handler.states = newStates
-
-    if debugEventHandlers:
-      debugf"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}, {handleUnknownAsInput}, {allowHandlingEvent}\n  {prevStates}\n  -> {handler.states}, inProgress: {handler.inProgress}, anyTerminal: {handler.states.anyIt(handler.dfa.isTerminal(it.current))}"
-      # debugf"handleEvent {handler.config.context} {(inputToString(input, modifiers))}"
-
-    if not handler.inProgress:
-      if input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and allowHandlingEvent:
-        # if we have delayed inputs we're allowed to handle the current event as input
-        if delayedInputs.len > 0:
-          if debugEventHandlers:
-            debugf"flush delayed inputs"
-          for (handler, input, modifiers) in delayedInputs:
-            discard handler.handleInput(inputToString(input, {}))
-          delayedInputs.setLen(0)
-
-          if handler.handleInput(inputToString(input, {})) == Handled:
-            return Handled
-
-        elif handleUnknownAsInput:
-          if handler.handleInput(inputToString(input, {})) == Handled:
-            return Handled
-
-      elif handler.handleKey != nil:
-        if handler.handleKey(input, modifiers) == Handled:
-          return Handled
-
-      handler.resetHandler()
-      if not prevStates.inProgress:
-        return Ignored
-      else:
-        # undefined input in state n
-        if not handler.handleCanceled.isNil:
-          handler.handleCanceled(input)
-        return Canceled
-
-    elif handler.states.anyIt(handler.dfa.isTerminal(it.current)):
-      if handler.states.len != 1:
-        return Failed
-
-      let (action, arg) = handler.dfa.getAction(handler.states[0])
-      let currentState = handler.states[0].current
-      let nextState = handler.dfa.getDefaultState(currentState)
-
-      if nextState != 0:
-        handler.states = @[CommandState(
-          current: nextState,
-          functionIndices: handler.dfa.getFunctionIndices(nextState),
-          captures: handler.states[0].captures, # todo
-        )]
-      else:
-        handler.resetHandler()
-
-      if allowHandlingEvent:
-        let res = handler.handleAction(action, arg)
-        case res
-        of Failed: return Failed
-        of Ignored: return Ignored
-        of Canceled: return Canceled
-        of Progress: return Progress
-        of Handled:
-          if handler.inProgress:
-            return Progress
-          else:
-            return Handled
-      else:
-        handler.resetHandler()
-        return Canceled
-
-    else:
-      if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and handler.config.handleInputs:
-        if debugEventHandlers:
-          debugf"delay input {inputToString(input, modifiers)}"
-        delayedInputs.add (handler, input, modifiers)
-
-      if not handler.handleProgress.isNil:
-        handler.handleProgress(input)
-      return Progress
-
-  else:
-    return Failed
-
-proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]]): EventResponse {.gcsafe.} =
-  let anyInProgress = handlers.anyInProgress
-
-  if debugEventHandlers:
-    debugf"handleEvent {inputToString(input, modifiers)}: {handlers.mapIt(it.config.context)}"
-
-  var anyProgressed = false
-  var anyFailed = false
-  var allowHandlingUnknownAsInput = not anyInProgress
-  var anyInProgressAbove = false
-  # Go through handlers in reverse
-  for i in 0..<handlers.len:
-    let handlerIndex = handlers.len - i - 1
-    var handler = handlers[handlerIndex]
-    let response = if (anyInProgress and handler.inProgress) or (not anyInProgress and not handler.inProgress):
-      handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput, not anyInProgressAbove, delayedInputs)
-    else:
-      Ignored
-
-    if debugEventHandlers:
-      debugf"-> {response}"
-
-    case response
-    of Handled:
-      allowHandlingUnknownAsInput = false
-      for k, h in handlers:
-        # Don't reset the current handler
-        if k != handlerIndex:
-          var h = h
-          h.resetHandler()
-
-      return Handled
-    of Progress:
-      allowHandlingUnknownAsInput = false
-      anyProgressed = true
-      anyInProgressAbove = true
-
-    of Failed, Canceled:
-      # Process remaining handlers
-      anyFailed = true
-      discard
-
-    of Ignored:
-      # Process remaining handlers
-      discard
-
-    if handler.config.consumeAllInput:
-      # Don't process remaining handlers
-      break
-
-  if anyProgressed:
-    result = Progress
-  elif anyFailed:
-    result = Failed
-  else:
-    result = Ignored
-
-proc commands*(config {.byref.}: EventHandlerConfig): lent Table[string, Table[string, Command]] =
-  config.commands
-
-proc config*(handler: EventHandler): EventHandlerConfig = handler.config
-
-proc invalidate*(self: CommandInfos) =
-  self.built = false
-  self.commandToKeys.clear()
-
-proc rebuild*(self: CommandInfos, eventHandlerConfigs {.byref.}: Table[string, EventHandlerConfig]) =
-  if self.built:
-    return
-
-  self.built = true
-  self.commandToKeys.clear()
-  for (context, c) in eventHandlerConfigs.pairs:
-    if not c.commands.contains(""):
-      continue
-    for (keys, commandInfo) in c.commands[""].pairs:
-      let (action, _) = commandInfo.command.parseAction
-      self.commandToKeys.mgetOrPut(action, @[]).add(CommandKeyInfo(
-        keys: keys,
-        command: commandInfo.command,
-        context: context,
-        source: commandInfo.source,
-      ))
-
-proc getInfos*(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] =
-  if self.commandToKeys.contains(command):
-    return self.commandToKeys[command].some
-
-proc wasBuilt*(self: CommandInfos): bool = self.built
-
-proc getEventHandlerConfig*(self: EventHandlerService, context: string): EventHandlerConfig =
-  if not self.eventHandlerConfigs.contains(context):
-    let parentConfig = if context != "":
-      let index = context.rfind(".")
-      if index >= 0:
-        self.getEventHandlerConfig(context[0..<index])
-      else:
-        self.getEventHandlerConfig("")
-    else:
-      nil
-
-    self.eventHandlerConfigs[context] = newEventHandlerConfig(context, self.settings, parentConfig)
-    self.eventHandlerConfigs[context].setKeyDefinitions(self.keyDefinitions)
-
-  return self.eventHandlerConfigs[context].catch(EventHandlerConfig())
-
-proc invalidateCommandToKeysMap*(self: EventHandlerService) =
-  self.commandInfos.invalidate()
-
-proc rebuildCommandToKeysMap*(self: EventHandlerService) =
-  self.commandInfos.rebuild(self.eventHandlerConfigs)
-
-###########################################################################
-
-proc getEventHandlerService(): Option[EventHandlerService] =
-  {.gcsafe.}:
-    if gServices.isNil: return EventHandlerService.none
-    return gServices.getService(EventHandlerService)
-
-static:
-  addInjector(EventHandlerService, getEventHandlerService)
-
-proc addKeyDefinitions*(self: EventHandlerService, name: string, keys: seq[string]) {.expose("events").} =
-  self.keyDefinitions.mgetOrPut(name, @[]).add(keys)
-  for config in self.eventHandlerConfigs.values:
-    config.setKeyDefinitions(self.keyDefinitions)
-
-proc setKeyDefinitions*(self: EventHandlerService, name: string, keys: seq[string]) {.expose("events").} =
-  self.keyDefinitions.mgetOrPut(name, @[]) = keys
-  for config in self.eventHandlerConfigs.values:
-    config.setKeyDefinitions(self.keyDefinitions)
-
-proc setLeader*(self: EventHandlerService, leader: string) {.expose("events").} =
-  self.setKeyDefinitions("LEADER", @[leader])
-
-proc setLeaders*(self: EventHandlerService, leaders: seq[string]) {.expose("events").} =
-  self.setKeyDefinitions("LEADER", leaders)
-
-proc addLeader*(self: EventHandlerService, leader: string) {.expose("events").} =
-  self.addKeyDefinitions("LEADER", @[leader])
-
-proc addLeaders*(self: EventHandlerService, leaders: seq[string]) {.expose("events").} =
-  self.addKeyDefinitions("LEADER", leaders)
-
-proc clearCommands*(self: EventHandlerService, context: string) {.expose("events").} =
-  log(lvlInfo, fmt"Clearing keybindings for {context}")
-  self.getEventHandlerConfig(context).clearCommands()
-  self.invalidateCommandToKeysMap()
-
-proc removeCommand*(self: EventHandlerService, context: string, keys: string) {.expose("events").} =
-  # log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
-  self.getEventHandlerConfig(context).removeCommand(keys)
-  self.invalidateCommandToKeysMap()
-
-proc addCommandDescription*(self: EventHandlerService, context: string, keys: string, description: string = "") {.expose("events").} =
-  let context = if context.endsWith("."):
-    context[0..^2]
-  else:
-    context
-
-  # log lvlDebug, &"Adding command description to '{context}': '{keys}' -> '{description}'"
-
-  self.getEventHandlerConfig(context).addCommandDescription(keys, description)
-
-addGlobalDispatchTable "events", genDispatchTable("events")

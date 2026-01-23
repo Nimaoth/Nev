@@ -19,7 +19,7 @@ when defined(useDynlib):
   else:
     const nevDeps {.strdefine.}: string = ""
     const nevDepsA = nevDeps.split(",")
-    if nevDepsA.contains(currentModuleName):
+    when nevModuleName == "nev" or nevDepsA.contains(currentModuleName):
       # We are compiling the file importing the declarations
       {.pragma: rtl, importc, dynlib: "modules/" & currentModuleName & ".dll", cdecl.}
     else:

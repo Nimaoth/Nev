@@ -65,57 +65,60 @@ func formatTime(t: float64): string =
     return &"{int(t / 1000)}s {(t mod 1000.0):>6.2f} ms"
   return &"{t:6.3f} ms"
 
-method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`]) =
-  {.push warning[BareExcept]:off.}
-  let time = self.timer.elapsed.ms
-  let msgIndented = self.indentString & logging.substituteLog("", level, args)
-  let fmtStr = &"[{formatTime(time)}] " & self.fmtStr
-  let msg = logging.substituteLog(fmtStr, level, msgIndented)
+proc myLog(self: CustomLogger, level: logging.Level, args: varargs[string, `$`]) {.apprtl, gcsafe, raises: [].}
 
-  for l in self.otherLoggers:
-    try:
-      {.gcsafe.}:
-        logging.log(l, level, msg)
-    except Exception:
-      continue
+when implModule:
+  proc myLog(self: CustomLogger, level: logging.Level, args: varargs[string, `$`]) =
+    {.push warning[BareExcept]:off.}
+    let time = self.timer.elapsed.ms
+    let msgIndented = self.indentString & logging.substituteLog("", level, args)
+    let fmtStr = &"[{formatTime(time)}] " & self.fmtStr
+    let msg = logging.substituteLog(fmtStr, level, msgIndented)
 
-  if self.fileLogger.getSome(l):
-    try:
-      {.gcsafe.}:
-        logging.log(l, level, msg)
-    except Exception:
-      discard
-
-  if self.consoleLogger.getSome(l):
-    if isTerminal:
-      let color = case level
-      of logging.lvlDebug: rgb(100, 100, 200)
-      of logging.lvlInfo: rgb(200, 200, 200)
-      of logging.lvlNotice: rgb(200, 255, 255)
-      of logging.lvlWarn: rgb(200, 200, 100)
-      of logging.lvlError: rgb(255, 150, 150)
-      of logging.lvlFatal: rgb(255, 0, 0)
-      else: rgb(255, 255, 255)
+    for l in self.otherLoggers:
       try:
         {.gcsafe.}:
-          stdout.write(ansiForegroundColorCode(color))
-      except IOError:
-        discard
+          logging.log(l, level, msg)
+      except Exception:
+        continue
 
-    try:
-      {.gcsafe.}:
-        logging.log(l, level, msg)
-    except Exception:
-      discard
-
-    if isTerminal:
+    if self.fileLogger.getSome(l):
       try:
         {.gcsafe.}:
-          stdout.write(ansiForegroundColorCode(rgb(255, 255, 255)))
-      except IOError:
+          logging.log(l, level, msg)
+      except Exception:
         discard
 
-  {.pop.}
+    if self.consoleLogger.getSome(l):
+      if isTerminal:
+        let color = case level
+        of logging.lvlDebug: rgb(100, 100, 200)
+        of logging.lvlInfo: rgb(200, 200, 200)
+        of logging.lvlNotice: rgb(200, 255, 255)
+        of logging.lvlWarn: rgb(200, 200, 100)
+        of logging.lvlError: rgb(255, 150, 150)
+        of logging.lvlFatal: rgb(255, 0, 0)
+        else: rgb(255, 255, 255)
+        try:
+          {.gcsafe.}:
+            stdout.write(ansiForegroundColorCode(color))
+        except IOError:
+          discard
+
+      try:
+        {.gcsafe.}:
+          logging.log(l, level, msg)
+      except Exception:
+        discard
+
+      if isTerminal:
+        try:
+          {.gcsafe.}:
+            stdout.write(ansiForegroundColorCode(rgb(255, 255, 255)))
+        except IOError:
+          discard
+
+    {.pop.}
 
 proc logger*(): CustomLogger {.apprtl, gcsafe, raises: [].}
 
@@ -147,7 +150,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
       {.push warning[BareExcept]:off.}
       try:
         {.gcsafe.}:
-          logger().log(level, args)
+          logger().myLog(level, args)
       except Exception:
         discard
       {.pop.}
@@ -166,7 +169,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
       {.push warning[BareExcept]:off.}
       try:
         {.gcsafe.}:
-          logger().log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
+          logger().myLog(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
       except Exception:
         discard
       {.pop.}
@@ -176,7 +179,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
     {.gcsafe.}:
       {.push warning[BareExcept]:off.}
       try:
-        logger().log(level, "[" & category & "] " & txt)
+        logger().myLog(level, "[" & category & "] " & txt)
       except Exception:
         discard
       inc logger().indentLevel
@@ -192,7 +195,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
         dec logger().indentLevel
         assert logger().indentLevel >= 0, "Indent level going < 0 for " & $level & " [" & category & "] " & txt
         try:
-          logger().log(level, "[" & category & "] " & txt & " finished. (" & $elapsedMs & ", " & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
+          logger().myLog(level, "[" & category & "] " & txt & " finished. (" & $elapsedMs & ", " & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
         except Exception:
           discard
       {.pop.}

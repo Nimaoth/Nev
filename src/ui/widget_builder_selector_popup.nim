@@ -207,7 +207,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
 
         if showPreview:
           builder.panel(0.UINodeFlags, x = bounds.w * (1 - previewScale),
-              w = bounds.w * previewScale, h = bounds.h):
+              w = bounds.w * previewScale, h = bounds.h, tag = "preview"):
 
             self.previewEditor.active = self.focusPreview
 

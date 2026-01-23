@@ -68,7 +68,7 @@ type
     counters*: Table[string, TrackerCounter]
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
-  raiseAssert "Sentinel callback MUST not be scheduled"
+  echo "Sentinel callback MUST not be scheduled"
 
 const
   SentinelCallback = AsyncCallback(function: sentinelCallbackImpl,

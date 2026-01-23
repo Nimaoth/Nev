@@ -27,6 +27,11 @@ type
     dependencies: Table[string, seq[string]]
     pending: Table[string, Future[Option[Service]]]
 
+  DynamicService* = ref object of Service
+    initImpl*: proc(self: Service): Future[Result[void, ref CatchableError]] {.gcsafe, async: (raises: []).}
+    deinitImpl*: proc(self: Service) {.gcsafe, raises: [].}
+    tickImpl*: proc(self: Service) {.gcsafe, raises: [].}
+
 var gServices*: Services
 
 proc getServices*(): Services {.gcsafe, apprtl.} =
@@ -36,6 +41,19 @@ proc getServices*(): Services {.gcsafe, apprtl.} =
 method init*(self: Service): Future[Result[void, ref CatchableError]] {.base, async: (raises: []).} = discard
 method deinit*(self: Service) {.base.} = discard
 method tick*(self: Service) {.base.} = discard
+
+method init*(self: DynamicService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  if self.initImpl != nil:
+    return await self.initImpl(self)
+  ok()
+
+method deinit*(self: DynamicService) =
+  if self.deinitImpl != nil:
+    self.deinitImpl(self)
+
+method tick*(self: DynamicService) =
+  if self.tickImpl != nil:
+    self.tickImpl(self)
 
 proc waitForServices*(self: Services) =
   while true:

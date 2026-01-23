@@ -620,4 +620,5 @@ proc sync*() =
     # the time we establish that some are not "ready" and the time we wait for a
     # "signal(gSomeReady)" from inside "slave()" that can never come.
 
-setup()
+when not defined(mallocImport):
+  setup()
