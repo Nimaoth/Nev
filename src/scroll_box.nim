@@ -11,6 +11,7 @@ type
     pivot*: float = 0
     offset*: float
     scrollIntoView: bool = false
+    snapIntoView: bool = false
     scrollCenter: bool = false
 
     enableScrolling*: bool = true
@@ -125,7 +126,19 @@ proc postItemRendered(sv: var ScrollBox, itemSize: Option[Vec2]): bool =
       let pivotOffset = -sv.pivot * itemSize.get.y
       sv.pivot = 0
       sv.offset += pivotOffset
-      if sv.scrollIntoView:
+      if sv.snapIntoView:
+        sv.scrollMomentum = 0
+        if sv.scrollCenter:
+          let targetOffset = sv.size.y * 0.5 - itemSize.get.y * 0.5
+          sv.scroll(targetOffset - sv.offset)
+        elif sv.offset < sv.margin:
+          sv.scroll(itemSize.get.y)
+        else:
+          sv.scroll(-itemSize.get.y)
+        sv.snapIntoView = false
+        sv.scrollIntoView = false
+        sv.scrollCenter = false
+      elif sv.scrollIntoView:
         sv.scrollMomentum = 0
         if sv.scrollCenter:
           let targetOffset = sv.size.y * 0.5 - itemSize.get.y * 0.5
@@ -134,6 +147,7 @@ proc postItemRendered(sv: var ScrollBox, itemSize: Option[Vec2]): bool =
           sv.scrollWithMomentum(itemSize.get.y)
         else:
           sv.scrollWithMomentum(-itemSize.get.y)
+        sv.snapIntoView = false
         sv.scrollIntoView = false
         sv.scrollCenter = false
       sv.currentOffset += pivotOffset
@@ -199,7 +213,7 @@ proc scrollXToY*(sv: var ScrollBox, index: int, y: float) =
   sv.index = index
   sv.offset = y
 
-proc scrollTo*(sv: var ScrollBox, index: int, center: bool = false, centerOffscreen: bool = false) =
+proc scrollTo*(sv: var ScrollBox, index: int, center: bool = false, centerOffscreen: bool = false, snap: bool = false) =
   for v in sv.items:
     if v.index == index:
       if center:
@@ -208,17 +222,26 @@ proc scrollTo*(sv: var ScrollBox, index: int, center: bool = false, centerOffscr
         sv.index = v.index
         sv.offset = v.bounds.y
         sv.scrollMomentum = 0
-        sv.scrollIntoView = false
+        if snap:
+          sv.snapIntoView = true
+        else:
+          sv.scrollIntoView = false
         sv.scrollCenter = false
         sv.scrollWithMomentum(targetOffset - v.bounds.y)
       elif v.bounds.y < sv.margin:
         sv.scrollMomentum = 0
-        sv.scrollIntoView = false
+        if snap:
+          sv.snapIntoView = true
+        else:
+          sv.scrollIntoView = false
         sv.scrollCenter = false
         sv.scrollWithMomentum(sv.margin - v.bounds.y)
       elif v.bounds.yh >= sv.size.y - sv.margin:
         sv.scrollMomentum = 0
-        sv.scrollIntoView = false
+        if snap:
+          sv.snapIntoView = true
+        else:
+          sv.scrollIntoView = false
         sv.scrollCenter = false
         var targetY = sv.size.y - sv.margin - v.bounds.h
         targetY = max(targetY, sv.margin)
@@ -226,17 +249,23 @@ proc scrollTo*(sv: var ScrollBox, index: int, center: bool = false, centerOffscr
         sv.scrollWithMomentum(offset)
       return
 
-  let firstIndex = if sv.items.len == 0: sv.index else: sv.items[0].index
-  let lastIndex = if sv.items.len == 0: sv.index else: sv.items[^1].index
+  let firstIndex = if sv.items.len == 0: -1 else: sv.items[0].index
+  let lastIndex = if sv.items.len == 0: -1 else: sv.items[^1].index
   if index < firstIndex:
     sv.index = index
     sv.offset = sv.margin
     sv.pivot = 1
-    sv.scrollIntoView = true
+    if snap:
+      sv.snapIntoView = true
+    else:
+      sv.scrollIntoView = true
     sv.scrollCenter = center or centerOffscreen
   elif index > lastIndex:
     sv.index = index
     sv.offset = sv.size.y - sv.margin
     sv.pivot = 0
-    sv.scrollIntoView = true
+    if snap:
+      sv.snapIntoView = true
+    else:
+      sv.scrollIntoView = true
     sv.scrollCenter = center or centerOffscreen
