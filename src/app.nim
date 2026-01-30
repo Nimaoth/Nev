@@ -1069,7 +1069,7 @@ proc shutdown*(self: App) =
   for popup in self.layout.popups:
     popup.deinit()
 
-  let editors = collect(for e in self.editors.editors.values: e)
+  let editors = collect(for e in self.editors.allEditors: e)
   for editor in editors:
     editor.deinit()
 

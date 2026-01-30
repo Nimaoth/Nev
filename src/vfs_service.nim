@@ -39,16 +39,6 @@ when implModule:
     let localVfs2 = newVFSLocal()
     self.localVfs2 = localVfs2
 
-    self.vfs = VFS()
-    self.vfs.mount("", VFS())
-    self.vfs.mount("local://", localVfs)
-    self.vfs.mount("", VFSLink(target: localVfs, targetPrefix: ""))
-    self.vfs.mount("app://", VFSLink(target: localVfs, targetPrefix: getAppDir().normalizeNativePath))
-    self.vfs.mount("temp://", VFSLink(target: localVfs, targetPrefix: getTempDir().normalizeNativePath))
-    self.vfs.mount("settings://", VFSConfig.new(self.services.getService(ConfigService).get))
-    self.vfs.mount("ed://", VFSInMemory())
-    self.vfs.mount("ws://", VFS())
-
     self.vfs2 = newVFS()
     self.vfs2.mount("", newVFS())
     self.vfs2.mount("local://", localVfs2)
@@ -56,8 +46,19 @@ when implModule:
     self.vfs2.mount("app://", newVFSLink(localVfs2, getAppDir().normalizeNativePath))
     self.vfs2.mount("temp://", newVFSLink(localVfs2, getTempDir().normalizeNativePath))
     # self.vfs2.mount("settings://", VFSConfig.new(self.services.getService(ConfigService).get))
-    # self.vfs2.mount("ed://", VFSInMemory())
+    let edVFs = newVFSInMemory()
+    self.vfs2.mount("ed://", edVFs)
     self.vfs2.mount("ws://", newVFS())
+
+    self.vfs = VFS()
+    self.vfs.mount("", VFS())
+    self.vfs.mount("local://", localVfs)
+    self.vfs.mount("", VFSLink(target: localVfs, targetPrefix: ""))
+    self.vfs.mount("app://", VFSLink(target: localVfs, targetPrefix: getAppDir().normalizeNativePath))
+    self.vfs.mount("temp://", VFSLink(target: localVfs, targetPrefix: getTempDir().normalizeNativePath))
+    self.vfs.mount("settings://", VFSConfig.new(self.services.getService(ConfigService).get))
+    self.vfs.mount("ed://", VFS2Wrapper(vfs: edVFs))
+    self.vfs.mount("ws://", VFS())
 
     var ignore = parseGlobs """
   *
@@ -129,12 +130,53 @@ when implModule:
       log lvlError, &"Invalid VFS config, unknown type '{typ}'"
       return VFS.none
 
+  proc createVfs2*(self: VFSService, config: JsonNode): Option[Arc[VFS2]] =
+    result = Arc[VFS2].none
+    if config.kind != JObject:
+      log lvlError, &"Invalid config, expected object, got {config}"
+      return
+
+    let typ = config.fields.getOrDefault("type", newJNull()).getStr.catch:
+      log lvlError, &"Invalid config, expected string property 'type', got {config}"
+      return
+
+    template expect(value: untyped, msg: untyped, got: untyped): untyped =
+      try:
+        value
+      except:
+        log lvlError, "Invalid config, expected " & msg & ", got " & got
+        return
+
+    case typ
+    of "link":
+      let targetMaxDepth = config.fields.getOrDefault("targetMaxDepth", newJInt(1)).getInt.expect("int 'targetMaxDepth'", $config)
+      let targetName = config.fields.getOrDefault("target", newJNull()).jsonTo(Option[string]).catch:
+        log lvlError, "Invalid config, target must be string or null: " & config.pretty
+        return
+      let (target, sub) = if targetName.getSome(t):
+        self.vfs2.getVFS(t, targetMaxDepth)
+      else:
+        (self.vfs2, "")
+
+      if sub != "":
+        log lvlError, &"Unknown target '{targetName}', unmatched: '{sub}'"
+        return Arc[VFS2].none
+
+      let targetPrefix = config.fields.getOrDefault("targetPrefix", newJString("")).getStr.expect("string 'targetPrefix'", $config)
+
+      # log lvlInfo, &"create VFSLink {target.name}, {target.prefix}, {targetPrefix}"
+      return newVFSLink(target, targetPrefix).some
+
+    else:
+      log lvlError, &"Invalid VFS config, unknown type '{typ}'"
+      return Arc[VFS2].none
+
   ###########################################################################
 
   proc getVfsService(): Option[VFSService] =
     {.gcsafe.}:
-      if gServices.isNil: return VFSService.none
-      return gServices.getService(VFSService)
+      if getServices().isNil: return VFSService.none
+      return getServices().getService(VFSService)
 
   static:
     addInjector(VFSService, getVfsService)
@@ -148,6 +190,14 @@ when implModule:
 
     if self.createVfs(config).getSome(newVFS):
       vfs.mount(prefix, newVFS)
+
+    let vfs2 = if parentPath.getSome(p):
+      self.vfs2.getVFS(p).vfs
+    else:
+      self.vfs2
+
+    if self.createVfs2(config).getSome(newVFS):
+      vfs2.mount(prefix, newVFS)
 
   proc normalizePath*(self: VFSService, path: string): string {.expose("vfs").} =
     return self.vfs.normalize(path)

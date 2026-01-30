@@ -481,8 +481,8 @@ when implModule:
 
   proc getEventHandlerService(): Option[EventHandlerService] =
     {.gcsafe.}:
-      if gServices.isNil: return EventHandlerService.none
-      return gServices.getService(EventHandlerService)
+      if getServices().isNil: return EventHandlerService.none
+      return getServices().getService(EventHandlerService)
 
   static:
     addInjector(EventHandlerService, getEventHandlerService)

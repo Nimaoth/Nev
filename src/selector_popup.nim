@@ -171,8 +171,8 @@ method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
 
 proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] {.gcsafe, raises: [].} =
   {.gcsafe.}:
-    if gServices.isNil: return SelectorPopup.none
-    let layout = gServices.getService(LayoutService).get
+    if getServices().isNil: return SelectorPopup.none
+    let layout = getServices().getService(LayoutService).get
     if layout.getPopupForId(wrapper.id).getSome(editor):
       if editor of SelectorPopup:
         return editor.SelectorPopup.some

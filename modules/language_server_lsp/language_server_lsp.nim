@@ -111,7 +111,7 @@ when implModule:
     # todo: this function is quite slow (up to 100ms)
 
     {.gcsafe.}:
-      let config = gServices.getService(ConfigService).get
+      let config = getServices().getService(ConfigService).get
       let workspaceConfigName = config.runtime.get("lsp." & self.name & ".workspace-configuration-name", "settings")
 
       for item in params.items:
@@ -734,10 +734,10 @@ when implModule:
     if self.documentHandles.len == 0:
       self.stop()
 
-      if ({.gcsafe.}: gServices) == nil:
+      if ({.gcsafe.}: getServices()) == nil:
         # during shutdown
         return
-      let service = ({.gcsafe.}: gServices.getService(LanguageServerLspService).get)
+      let service = ({.gcsafe.}: getServices().getService(LanguageServerLspService).get)
       for (language, ls) in service.languageServers.pairs:
         if ls == self:
           log lvlInfo, &"[{self.name}] Removed language server for '{language}' from global language server list"

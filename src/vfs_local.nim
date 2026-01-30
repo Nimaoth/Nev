@@ -626,15 +626,65 @@ proc vfsLocalRead*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[
 {.push, hint[XCannotRaiseY]: off.}
 proc vfsLocalReadRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).} =
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
-  discard
+  if not path.isAbsolute:
+    raise newException(IOError, &"Path not absolute '{path}'")
+  if not fileExists(path):
+    raise newException(FileNotFoundError, &"Not found '{path}'")
+
+  try:
+    # logScope lvlInfo, &"[loadFileRope] '{path}'"
+
+    var err: ref CatchableError = nil
+    var cancel: Atomic[bool]
+    var threadDone: Atomic[bool]
+    try:
+      await spawnAsync(loadFileRopeThread, (path, rope, err.addr, cancel.addr, threadDone.addr))
+    except CancelledError:
+      cancel.store(true)
+
+      while not threadDone.load:
+        try:
+          await sleepAsync(10.milliseconds)
+        except CancelledError:
+          discard
+
+    if err != nil:
+      if err of IOError:
+        raise err
+      else:
+        raise newException(IOError, err.msg, err)
+
+  except IOError as e:
+    raise e
+  except:
+    raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
 proc vfsLocalWrite*(self: Arc[VFS2], path: string, content: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
-  discard
+  if not path.isAbsolute:
+    raise newException(IOError, &"Path not absolute '{path}'")
+
+  try:
+    logScope lvlInfo, &"[saveFile] '{path}'"
+    let (ok, err) = await spawnAsync(writeFileThread, (path, content))
+    if not ok:
+      raise newException(IOError, err)
+  except:
+    raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
 proc vfsLocalWrite*(self: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.gcsafe, async: (raises: [IOError]).} =
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
-  discard
+  if not path.isAbsolute:
+    raise newException(IOError, &"Path not absolute '{path}'")
+
+  try:
+    logScope lvlInfo, &"[saveFile (rope)] '{path}'"
+    let (ok, err) = await spawnAsync(writeRopeThread, (path, content))
+    if not ok:
+      raise newException(IOError, err)
+
+  except:
+    raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
 proc vfsLocalDelete*(self: Arc[VFS2], path: string): Future[bool] {.gcsafe, async: (raises: []).} =
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)

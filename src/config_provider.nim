@@ -890,8 +890,8 @@ when implModule:
 
   proc getConfigService(): Option[ConfigService] =
     {.gcsafe.}:
-      if gServices.isNil: return ConfigService.none
-      return gServices.getService(ConfigService)
+      if getServices().isNil: return ConfigService.none
+      return getServices().getService(ConfigService)
 
   static:
     addInjector(ConfigService, getConfigService)

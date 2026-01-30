@@ -322,7 +322,7 @@ proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: 
 proc renderView*(self: View, builder: UINodeBuilder,
     body: proc(): seq[OverlayFunction] {.gcsafe, raises: [].},
     header: proc(): seq[OverlayFunction] {.gcsafe, raises: [].}): seq[OverlayFunction] =
-  let services = ({.gcsafe.}: gServices)
+  let services = ({.gcsafe.}: getServices())
   self.resetDirty()
 
   let config = services.getServiceChecked(ConfigService).runtime

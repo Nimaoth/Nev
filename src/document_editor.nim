@@ -1,6 +1,9 @@
 import std/[tables, options, sets, hashes]
 import bumpy
 import misc/[event, custom_logger, id, custom_async, util, generational_seq]
+import component
+
+export component
 
 include dynlib_export
 
@@ -14,9 +17,10 @@ logCategory "document-editor"
 
 type
   EditorIdNew* = distinct uint64
-  DocumentEditor* = ref object of RootObj
+  DocumentEditor* = ref object of ComponentOwner
     id*: EditorIdNew
     userId*: Id
+    currentDocument*: Document
     renderHeader*: bool
     fillAvailableSpace*: bool
     lastContentBounds*: Rect
@@ -31,7 +35,7 @@ type
 
   DocumentEditorService* = ref object of Service
     platform: Platform
-    editors*: Table[EditorIdNew, DocumentEditor]
+    # editors*: Table[EditorIdNew, DocumentEditor]
     pinnedEditors*: HashSet[EditorIdNew]
     pinnedDocuments*: seq[Document]
     onEditorRegistered*: Event[DocumentEditor]
@@ -77,6 +81,7 @@ proc getEditorDocument*(self: DocumentEditor): Document {.apprtl.}
 proc getDocument*(self: DocumentEditorService, id: DocumentId): Option[Document] {.apprtl.}
 proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] {.apprtl.}
 proc getDocumentByPath*(self: DocumentEditorService, path: string, usage = ""): Option[Document] {.apprtl.}
+proc getEditorsForDocument*(self: DocumentEditorService, document: Document): seq[DocumentEditor] {.apprtl.}
 
 when implModule:
   import std/[json]
@@ -180,17 +185,17 @@ when implModule:
 
   proc registerEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
     editor.id = self.allEditors.add(editor)
-    self.editors[editor.id] = editor
+    # self.editors[editor.id] = editor
     self.onEditorRegistered.invoke editor
 
   proc unregisterEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
     self.allEditors.del(editor.id)
 
-    self.editors.del(editor.id)
+    # self.editors.del(editor.id)
     self.onEditorDeregistered.invoke editor
 
   proc getAllDocuments*(self: DocumentEditorService): seq[Document] =
-    for it in self.editors.values:
+    for it in self.allEditors:
       result.incl it.getDocument
 
   proc getDocument*(self: DocumentEditorService, path: string, usage = ""): Option[Document] =
@@ -220,10 +225,7 @@ when implModule:
         result.add editor
 
   proc getEditorForId*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] =
-    self.editors.withValue(id, editor):
-      return editor[].some
-
-    return DocumentEditor.none
+    return self.getEditor(id)
 
   proc openDocument*(self: DocumentEditorService, path: string, load = true): Option[Document] =
     try:
@@ -281,7 +283,7 @@ when implModule:
       return
 
     var hasAnotherEditor = false
-    for id, editor in self.editors.pairs:
+    for id, editor in self.allEditors.pairs:
       if editor.getDocument() == document:
         hasAnotherEditor = true
         break
@@ -305,14 +307,14 @@ when implModule:
 
   proc getDocumentEditorService(): Option[DocumentEditorService] =
     {.gcsafe.}:
-      if gServices.isNil: return DocumentEditorService.none
-      return gServices.getService(DocumentEditorService)
+      if getServices().isNil: return DocumentEditorService.none
+      return getServices().getService(DocumentEditorService)
 
   static:
     addInjector(DocumentEditorService, getDocumentEditorService)
 
   proc getAllEditors*(self: DocumentEditorService): seq[EditorId] {.expose("editors").} =
-    for id in self.editors.keys:
+    for id in self.allEditors.keys:
       result.add id.EditorId
 
   proc getExistingEditor*(self: DocumentEditorService, path: string): Option[EditorId] {.expose("editors").} =
@@ -324,7 +326,7 @@ when implModule:
     if path.len == 0:
       return EditorId.none
 
-    for id, editor in self.editors.pairs:
+    for id, editor in self.allEditors.pairs:
       if editor.getDocument() == nil:
         continue
       if editor.getDocument().filename != path:

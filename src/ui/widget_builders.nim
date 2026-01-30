@@ -3,8 +3,7 @@ import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils]
 import ui/node
 import platform/platform
-import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
-  widget_builder_debugger, widget_library]
+import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup, widget_library]
 import document_editor, theme, compilation_config, view, layout, config_provider, command_service, toast
 import text/text_editor
 import render_view, dynamic_view

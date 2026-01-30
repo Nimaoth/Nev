@@ -276,9 +276,6 @@ proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageS
 func buffer*(self: TextDocument): var Buffer = self.textComponent.buffer
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
 
-proc isReady*(self: TextDocument): bool =
-  return not (self.requiresLoad or self.isLoadingAsync)
-
 method getStatisticsString*(self: TextDocument): string =
   try:
     let visibleTextStats = stats(self.buffer.snapshot.visibleText.tree)
@@ -1025,6 +1022,7 @@ proc saveAsync*(self: TextDocument) {.async.} =
     self.isBackedByFile = true
     self.lastSavedRevision = self.undoableRevision
     self.onSaved.invoke()
+    self.onDocumentSaved.invoke(self)
     self.eventBus.emit(&"document/{self.id}/saved", $self.id)
 
     if self.settings.formatter.onSave.get():

@@ -26,8 +26,8 @@ proc requestRender(self: CommandService) =
 
 proc getCommandService(): Option[CommandService] =
   {.gcsafe.}:
-    if gServices.isNil: return CommandService.none
-    return gServices.getService(CommandService)
+    if getServices().isNil: return CommandService.none
+    return getServices().getService(CommandService)
 
 static:
   addInjector(CommandService, getCommandService)

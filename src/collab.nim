@@ -45,7 +45,7 @@ proc handleSelections(line: string, editors: DocumentEditorService) =
 proc connectCollaboratorAsync(port: int) {.async.} =
   ############### CLIENT
   try:
-    let services: Services = ({.gcsafe.}: gServices)
+    let services: Services = ({.gcsafe.}: getServices())
     let editors = services.getService(DocumentEditorService).get
     let config = services.getService(ConfigService).get
     let delay = config.runtime.get("sync.delay", 100)
@@ -177,7 +177,7 @@ proc processCollabClient(server: StreamServer, transp: StreamTransport) {.async:
       toasts.showToast("Collab", &"Denied connection from {transp.remoteAddress}", "info")
       return
 
-    let services: Services = ({.gcsafe.}: gServices)
+    let services: Services = ({.gcsafe.}: getServices())
     let editors = services.getService(DocumentEditorService).get
     let config = services.getService(ConfigService).get
     let delay = config.runtime.get("sync.delay", 100)

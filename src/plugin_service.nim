@@ -425,8 +425,8 @@ template withPluginSystem*(self: PluginService, pluginSystem: untyped, body: unt
 
 proc getPluginService(): Option[PluginService] =
   {.gcsafe.}:
-    if gServices.isNil: return PluginService.none
-    return gServices.getService(PluginService)
+    if getServices().isNil: return PluginService.none
+    return getServices().getService(PluginService)
 
 static:
   addInjector(PluginService, getPluginService)

@@ -1,5 +1,5 @@
 import std/[json, tables, options]
-import misc/[traits, myjsonutils]
+import misc/[myjsonutils]
 import finder/[finder, previewer]
 
 type ISelectorPopup* = object

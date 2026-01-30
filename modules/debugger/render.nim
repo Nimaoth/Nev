@@ -5,9 +5,7 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 import platform/platform
 import ui/[widget_builders_base, widget_library]
 import theme, view
-import text/text_editor
-import text/language/debugger
-import text/language/dap_client
+import types_impl, debugger, dap_client
 
 import ui/node
 
@@ -359,98 +357,86 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
 
         currentNode.markDirty(builder)
 
-method createUI*(self: StacktraceView, builder: UINodeBuilder): seq[OverlayFunction] =
-  let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  if getDebugger().getSome(debugger):
-    self.renderView(builder,
-      proc(): seq[OverlayFunction] =
-        self.createStackTrace(builder, debugger)
-      ,
-      proc(): seq[OverlayFunction] =
-        let currentThreadText = debugger.currentThread().mapIt(&" - Thread {it.id} {it.name}").get("")
-        let text = &"Stack{currentThreadText}"
-        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = text)
-    )
-  else:
-    @[]
-
-method createUI*(self: ThreadsView, builder: UINodeBuilder): seq[OverlayFunction] =
-  let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  if getDebugger().getSome(debugger):
-    self.renderView(builder,
-      proc(): seq[OverlayFunction] =
-        self.createThreads(builder, debugger)
-      ,
-      proc(): seq[OverlayFunction] =
-        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Threads")
-    )
-  else:
-    @[]
-
-method createUI*(self: VariablesView, builder: UINodeBuilder): seq[OverlayFunction] =
-  let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  let textColorHighlight = builder.theme.color("editor.foreground.highlight", color(0.9, 0.8, 0.8))
-  if getDebugger().getSome(debugger):
-    self.renderView(builder,
-      proc(): seq[OverlayFunction] =
-        self.createVariables(builder, debugger)
-      ,
-      proc(): seq[OverlayFunction] =
-        if self.renderHeader:
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Variables")
-
-          if self.variablesFilter.len > 0:
-            builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = " - Filter: ")
-            builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColorHighlight, text = self.variablesFilter)
-    )
-  else:
-    @[]
-
-method createUI*(self: OutputView, builder: UINodeBuilder): seq[OverlayFunction] =
-  let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  if getDebugger().getSome(debugger):
-    self.renderView(builder,
-      proc(): seq[OverlayFunction] =
-        if debugger.outputEditor != nil:
-          let wasActive = debugger.outputEditor.active
-          debugger.outputEditor.active = self.active
-          if debugger.outputEditor.active != wasActive:
-            debugger.outputEditor.markDirty(notify=false)
-          return debugger.outputEditor.createUI(builder)
-      ,
-      proc(): seq[OverlayFunction] =
-        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Output")
-    )
-  else:
-    @[]
-
-method createUI*(self: ToolbarView, builder: UINodeBuilder): seq[OverlayFunction] =
+proc createUI*(self: StacktraceView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
   let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   self.renderView(builder,
     proc(): seq[OverlayFunction] =
-      if getDebugger().getSome(debugger):
-        if debugger.debuggerState == DebuggerState.Paused:
-          if debugger.currentStopData.description.isSome:
-            builder.panel(&{FillX, SizeToContentY, DrawText, TextWrap}, textColor = textColor, text = debugger.currentStopData.description.get)
+      self.createStackTrace(builder, debugger)
+    ,
+    proc(): seq[OverlayFunction] =
+      let currentThreadText = debugger.currentThread().mapIt(&" - Thread {it.id} {it.name}").get("")
+      let text = &"Stack{currentThreadText}"
+      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = text)
+  )
+
+proc createUI*(self: ThreadsView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
+  let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  self.renderView(builder,
+    proc(): seq[OverlayFunction] =
+      self.createThreads(builder, debugger)
+    ,
+    proc(): seq[OverlayFunction] =
+      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Threads")
+  )
+
+proc createUI*(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
+  let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  let textColorHighlight = builder.theme.color("editor.foreground.highlight", color(0.9, 0.8, 0.8))
+  self.renderView(builder,
+    proc(): seq[OverlayFunction] =
+      self.createVariables(builder, debugger)
+    ,
+    proc(): seq[OverlayFunction] =
+      if self.renderHeader:
+        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Variables")
+
+        if self.variablesFilter.len > 0:
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = " - Filter: ")
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColorHighlight, text = self.variablesFilter)
+  )
+
+proc createUI*(self: OutputView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
+  let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  self.renderView(builder,
+    proc(): seq[OverlayFunction] =
+      if debugger.outputEditor != nil:
+        discard
+        # todo
+        # let wasActive = debugger.outputEditor.active
+        # debugger.outputEditor.active = self.active
+        # if debugger.outputEditor.active != wasActive:
+        #   debugger.outputEditor.markDirty(notify=false)
+        # return debugger.outputEditor.createUI(builder)
+    ,
+    proc(): seq[OverlayFunction] =
+      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Output")
+  )
+
+proc createUI*(self: ToolbarView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
+  let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  self.renderView(builder,
+    proc(): seq[OverlayFunction] =
+      if debugger.debuggerState == DebuggerState.Paused:
+        if debugger.currentStopData.description.isSome:
+          builder.panel(&{FillX, SizeToContentY, DrawText, TextWrap}, textColor = textColor, text = debugger.currentStopData.description.get)
     ,
     proc(): seq[OverlayFunction] =
       var text = &"Debugger"
-      if getDebugger().getSome(debugger):
-        case debugger.debuggerState
-        of DebuggerState.None: text.add " - Not started"
-        of DebuggerState.Starting: text.add " - Starting"
-        of DebuggerState.Paused:
-          text.add " - Paused"
-          if debugger.currentStopData.reason != "":
-            text.add " (" & debugger.currentStopData.reason & ")"
-        of DebuggerState.Running: text.add " - Running"
+      case debugger.debuggerState
+      of DebuggerState.None: text.add " - Not started"
+      of DebuggerState.Starting: text.add " - Starting"
+      of DebuggerState.Paused:
+        text.add " - Paused"
+        if debugger.currentStopData.reason != "":
+          text.add " (" & debugger.currentStopData.reason & ")"
+      of DebuggerState.Running: text.add " - Running"
 
-        if debugger.lastConfiguration.getSome(config):
-          text.add " - " & config
+      if debugger.lastConfiguration.getSome(config):
+        text.add " - " & config
 
-        if debugger.breakpointsEnabled:
-          text.add " - Breakpoints: ✅"
-        else:
-          text.add " - Breakpoints: ❌"
+      if debugger.breakpointsEnabled:
+        text.add " - Breakpoints: ✅"
+      else:
+        text.add " - Breakpoints: ❌"
       builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = text)
   )

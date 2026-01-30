@@ -270,7 +270,6 @@ when enableGui:
 when enableAst:
   import ast/model_document
 import text/text_editor
-import text/language/debugger
 import plugin_service
 import selector_popup, layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, toast
 import language_server_dynamic
