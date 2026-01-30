@@ -25,11 +25,15 @@ type Document* = ref object of ComponentOwner
   lastSavedRevision*: int               ## Undobale revision at the time we saved the last time
   vfs*: VFS
   usage*: string
+  onDocumentSaved*: Event[Document]
   onDocumentLoaded*: Event[Document]
 
 # DLL API
 proc documentLocalizedPath*(self: Document): string {.apprtl, gcsafe, raises: [].}
 proc localizedPath*(self: Document): string {.inline.} = documentLocalizedPath(self)
+
+proc isReady*(self: Document): bool =
+  return not (self.requiresLoad or self.isLoadingAsync)
 
 when implModule:
   method `$`*(document: Document): string {.base, gcsafe, raises: [].} = return ""

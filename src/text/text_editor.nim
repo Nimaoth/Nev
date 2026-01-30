@@ -20,7 +20,7 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 import lisp
 import view
-import scroll_box, treesitter_component
+import scroll_box, component, treesitter_component, text_editor_component, config_component
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
@@ -262,6 +262,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   configService*: ConfigService
   configChanged: bool = false
 
+  textEditorComponent*: TextEditorComponentImpl
+
   document*: TextDocument
   snapshot: BufferSnapshot
   selectionAnchors: seq[(Anchor, Anchor)]
@@ -292,11 +294,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   selectionsBeforeReload: Selections
   wasAtEndBeforeReload: bool = false
-  selectionsInternal: Selections
-  targetSelectionsInternal: Option[Selections] # The selections we want to have once
-                                               # the document is loaded
-  selectionHistory: Deque[Selections]
-  dontRecordSelectionHistory: bool
 
   cursorHistories*: seq[seq[Vec2]]
 
@@ -365,7 +362,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   disableScrolling*: bool
   scrollOffset*: Vec2
   interpolatedScrollOffset*: Vec2
-  scrollBox*: ScrollBox
 
   currentCenterCursor*: Cursor # Cursor representing the center of the screen
   currentCenterCursorRelativeYPos*: float # 0: top of screen, 1: bottom of screen
@@ -467,7 +463,7 @@ var allTextEditors*: seq[TextDocumentEditor] = @[]
 
 method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Filename: {self.document.filename}\n"
-  result.add &"Selection History: {self.selectionHistory.len}\n"
+  result.add &"Selection History: {self.textEditorComponent.selectionHistory.len}\n"
   result.add &"Search Query: {self.searchQuery}\n"
   result.add &"Search Results: {self.searchResults.len}\n"
   result.add &"Custom Highlights: {self.customHighlights.len}\n"
@@ -549,6 +545,9 @@ proc clampSelection*(self: TextDocumentEditor, selection: Selection, includeAfte
 proc clampAndMergeSelections*(self: TextDocumentEditor, selections: openArray[Selection]): Selections =
   self.document.clampAndMergeSelections(selections)
 
+proc selectionsInternal(self: TextDocumentEditor): var Selections =
+  self.textEditorComponent.selectionsOld
+
 proc selections*(self: TextDocumentEditor): Selections =
   self.selectionsInternal
 
@@ -557,31 +556,27 @@ proc selection*(self: TextDocumentEditor): Selection =
   self.selectionsInternal[self.selectionsInternal.high]
 
 proc `selections=`*(self: TextDocumentEditor, selections: Selections, addToHistory: Option[bool] = bool.none) =
-  let selections = self.clampAndMergeSelections(selections)
+  var selections = self.clampAndMergeSelections(selections)
   if selections.len == 0:
     log lvlWarn, "Trying to set empty selections, not allowed"
     return
 
+  self.textEditorComponent.setSelectionsOld(selections)
+
+proc scrollBox*(self: TextDocumentEditor): var ScrollBox =
+  self.textEditorComponent.scrollBox
+
+proc handleSelectionsChanged(self: TextDocumentEditor, old: openArray[Selection]) =
+  self.cursorVisible = true
+
   var changedLine = false
-  if self.selectionsInternal.len != selections.len:
+  if old.len != self.selectionsInternal.len:
     changedLine = true
   else:
-    for i in 0..<selections.len:
-      if self.selectionsInternal[i].last.line != selections[i].last.line or
-          self.selectionsInternal[i].first.line != selections[i].first.line:
+    for i in 0..<self.selectionsInternal.len:
+      if old[i].last.line != self.selectionsInternal[i].last.line or
+          old[i].first.line != self.selectionsInternal[i].first.line:
         changedLine = true
-
-  if not self.dontRecordSelectionHistory:
-    let addToHistory = addToHistory.get(self.selectionHistory.len == 0 or
-        abs(selections[^1].last.line - self.selectionsInternal[^1].last.line) > 1 or
-        self.selectionsInternal.len != selections.len)
-    if addToHistory:
-      self.selectionHistory.addLast self.selectionsInternal
-      if self.selectionHistory.len > 100:
-        discard self.selectionHistory.popFirst
-
-  self.selectionsInternal = selections
-  self.cursorVisible = true
 
   let snapshot {.cursor.} = self.document.buffer.snapshot
   self.selectionAnchors = self.selectionsInternal.mapIt (snapshot.anchorAfter(it.first.toPoint), snapshot.anchorBefore(it.last.toPoint))
@@ -616,11 +611,8 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   self.selections = @[selection]
 
 proc `targetSelection=`*(self: TextDocumentEditor, selection: Selection) =
-  if self.document.isLoadingAsync or self.document.requiresLoad:
-    self.targetSelectionsInternal = @[selection].some
-  else:
-    self.selection = selection
-    self.updateTargetColumn(Last)
+  self.textEditorComponent.setTargetSelection selection.toRange
+  self.updateTargetColumn(Last)
 
 proc clampSelection*(self: TextDocumentEditor) =
   self.selections = self.clampAndMergeSelections(self.selectionsInternal)
@@ -661,9 +653,10 @@ proc clearDocument*(self: TextDocumentEditor) =
 
     let document = self.document
     self.document = nil
+    self.currentDocument = nil
     self.editors.tryCloseDocument(document)
 
-    self.selectionHistory.clear()
+    self.textEditorComponent.selectionHistory.clear()
     self.customHighlights.clear()
     self.signs.clear()
     self.clearOverlayViews()
@@ -680,6 +673,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   if document == self.document:
     return
 
+  self.textEditorComponent.setDocument(document)
   # logScope lvlInfo, &"[setDocument] ({self.id}): '{document.filename}'"
 
   if self.completionEngine.isNotNil:
@@ -687,6 +681,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
 
   self.clearDocument()
   self.document = document
+  self.currentDocument = document
   self.snapshot = document.buffer.snapshot.clone()
   self.displayMap.setBuffer(self.snapshot.clone())
   self.config.setParent(self.document.config)
@@ -1267,7 +1262,7 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
 
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
   {.gcsafe.}:
-    if gServices.getService(DocumentEditorService).getSome(editors):
+    if getServices().getService(DocumentEditorService).getSome(editors):
       if editors.getEditorForId(wrapper.id.EditorIdNew).getSome(editor):
         if editor of TextDocumentEditor:
           return editor.TextDocumentEditor.some
@@ -1708,10 +1703,10 @@ proc edit*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[stri
   return self.document.edit(selections, self.selections, texts, notify, record, inclusiveEnd=inclusiveEnd)
 
 proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.selectionHistory.len > 0:
-    let selection = self.selectionHistory.popLast
+  if self.textEditorComponent.selectionHistory.len > 0:
+    let selection = self.textEditorComponent.selectionHistory.popLast
     assert selection.len > 0, "[selectPrev] Empty selection"
-    self.selectionHistory.addFirst self.selections
+    self.textEditorComponent.selectionHistory.addFirst self.selections
     self.selectionsInternal = selection
     self.cursorVisible = true
     if self.blinkCursorTask.isNotNil and self.active:
@@ -1721,10 +1716,10 @@ proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
   self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
 proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.selectionHistory.len > 0:
-    let selection = self.selectionHistory.popFirst
+  if self.textEditorComponent.selectionHistory.len > 0:
+    let selection = self.textEditorComponent.selectionHistory.popFirst
     assert selection.len > 0, "[selectNext] Empty selection"
-    self.selectionHistory.addLast self.selections
+    self.textEditorComponent.selectionHistory.addLast self.selections
     self.selectionsInternal = selection
     self.cursorVisible = true
     if self.blinkCursorTask.isNotNil and self.active:
@@ -5002,8 +4997,8 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
 
   # debugf"handleTextDocumentLoaded {self.id}, {self.usage}, '{self.document.filename}': targetSelectionsInternal: {self.targetSelectionsInternal}"
 
-  if self.targetSelectionsInternal.getSome(s):
-    self.selections = s
+  if self.textEditorComponent.mTargetSelections.getSome(s):
+    self.textEditorComponent.selections = s
     self.centerCursor()
     self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
@@ -5024,7 +5019,7 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
     self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
   self.cursorHistories.setLen(0)
-  self.targetSelectionsInternal = Selections.none
+  self.textEditorComponent.mTargetSelections = seq[Range[Point]].none
   self.updateTargetColumn(Last)
 
   if self.diffDocument.isNotNil:
@@ -5087,7 +5082,7 @@ proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap, o
 
 ## Only use this to create TextDocumentEditorInstances
 proc createTextEditorInstance(): TextDocumentEditor =
-  let editor = TextDocumentEditor(selectionsInternal: @[(0, 0).toSelection])
+  let editor = TextDocumentEditor()
   editor.cursorsId = newId()
   editor.completionsId = newId()
   editor.hoverId = newId()
@@ -5127,6 +5122,15 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
     self.configChanged = true
     self.markDirty()
 
+  self.textEditorComponent = newTextEditorComponent()
+  self.addComponent(self.textEditorComponent)
+  self.addComponent(newConfigComponent(self.config))
+
+  self.textEditorComponent.displayMap = self.displayMap
+
+  discard self.textEditorComponent.onSelectionsChanged.subscribe proc(args: auto) =
+    self.handleSelectionsChanged(args.old)
+
   self.uiSettings = UiSettings.new(self.config)
   self.debugSettings = DebugSettings.new(self.config)
   self.settings = TextEditorSettings.new(self.config)
@@ -5155,8 +5159,8 @@ method unregister*(self: TextDocumentEditor) =
   self.editors.unregisterEditor(self)
 
 method getStateJson*(self: TextDocumentEditor): JsonNode =
-  let selection = if self.targetSelectionsInternal.getSome(s) and s.len > 0:
-    s.last
+  let selection = if self.textEditorComponent.mTargetSelections.getSome(s) and s.len > 0:
+    s.last.toSelection
   else:
     self.selection
   return %*{

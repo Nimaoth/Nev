@@ -1,4 +1,4 @@
-import std/[options, strutils, tables, os, random, strformat]
+import std/[options, strutils, tables, os, random, strformat, locks]
 import nimsumtree/[rope, arc]
 import misc/[custom_async, util, custom_logger, cancellation_token, regex, id]
 import fsnotify
@@ -43,7 +43,11 @@ type
     of VFSInMemoryItemKind.Rope:
       rope: Rope
 
-  VFSInMemory* = ref object of VFS
+  VFS2Wrapper* = ref object of VFS
+    vfs*: Arc[VFS2]
+
+  VFSInMemory2* = object
+    lock: Lock
     files: Table[string, VFSInMemoryItem]
     handlers: Table[string, seq[(Id, proc(events: seq[PathEvent]) {.gcsafe, raises: [].})]]
 
@@ -315,7 +319,7 @@ proc newVFS*(): Arc[VFS2] =
   result.getMutUnsafe.readImpl = vfsRead
   result.getMutUnsafe.readRopeImpl = vfsReadRope
   result.getMutUnsafe.writeImpl = vfsWrite
-  result.getMutUnsafe.writeImpl = vfsWrite
+  result.getMutUnsafe.writeRopeImpl = vfsWrite
   result.getMutUnsafe.deleteImpl = vfsDelete
   result.getMutUnsafe.createDirImpl = vfsCreateDir
   result.getMutUnsafe.getFileKindImpl = vfsGetFileKind
@@ -396,7 +400,7 @@ proc newVFSLink*(target: Arc[VFS2], prefix: string): Arc[VFS2] =
   result.getMutUnsafe.readImpl = vfsLinkRead
   result.getMutUnsafe.readRopeImpl = vfsLinkReadRope
   result.getMutUnsafe.writeImpl = vfsLinkWrite
-  result.getMutUnsafe.writeImpl = vfsLinkWrite
+  result.getMutUnsafe.writeRopeImpl = vfsLinkWrite
   result.getMutUnsafe.deleteImpl = vfsLinkDelete
   result.getMutUnsafe.createDirImpl = vfsLinkCreateDir
   result.getMutUnsafe.getFileKindImpl = vfsLinkGetFileKind
@@ -406,7 +410,103 @@ proc newVFSLink*(target: Arc[VFS2], prefix: string): Arc[VFS2] =
   result.getMutUnsafe.getVFSImpl = vfsLinkGetVFS
   result.getMutUnsafe.copyFileImpl = vfsLinkCopyFile
 
-proc newInMemoryVFS*(): VFSInMemory = VFSInMemory(files: initTable[string, VFSInMemoryItem]())
+proc vfsInMemoryName*(self: Arc[VFS2]): string =
+  let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
+  return &"VFSInMemory()"
+
+proc vfsInMemoryRead*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.gcsafe, async: (raises: [IOError]).} =
+  let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
+  withLock vfs.lock:
+    vfs.files.withValue(path, file):
+      case file[].kind
+      of VFSInMemoryItemKind.String:
+        return file[].text
+      of VFSInMemoryItemKind.Rope:
+        return $file[].rope
+    raise newException(IOError, "VFSInMemory: File not found '" & path & "'")
+
+proc vfsInMemoryReadRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
+  withLock vfs.lock:
+    vfs.files.withValue(path, file):
+      case file[].kind
+      of VFSInMemoryItemKind.String:
+        rope[] = Rope.new(file[].text)
+      of VFSInMemoryItemKind.Rope:
+        rope[] = file[].rope
+      return
+    raise newException(IOError, "VFSInMemory: File not found '" & path & "'")
+
+proc vfsInMemoryWrite*(self: Arc[VFS2], path: string, content: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
+  withLock vfs.lock:
+    let existedBefore = path in vfs.files
+    vfs.files[path] = VFSInMemoryItem(kind: VFSInMemoryItemKind.String, text: content)
+    # vfs.handleFileChanged(path, existedBefore)
+
+proc vfsInMemoryWrite*(self: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
+  withLock vfs.lock:
+    let existedBefore = path in vfs.files
+    vfs.files[path] = VFSInMemoryItem(kind: VFSInMemoryItemKind.Rope, rope: content.toRope)
+    # vfs.handleFileChanged(path, existedBefore)
+
+proc vfsInMemoryDelete*(self: Arc[VFS2], path: string): Future[bool] {.gcsafe, async: (raises: []).} =
+  let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
+  withLock vfs.lock:
+    if path in vfs.files:
+      vfs.files.del(path)
+      return true
+
+proc vfsInMemoryCreateDir*(self: Arc[VFS2], path: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  # let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
+  discard
+
+proc vfsInMemoryGetFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.gcsafe, async: (raises: []).} =
+  let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
+  withLock vfs.lock:
+    if path in vfs.files:
+      return FileKind.File.some
+    return FileKind.none
+
+proc vfsInMemoryGetFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.gcsafe, async: (raises: []).} =
+  let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
+  withLock vfs.lock:
+    if path in vfs.files:
+      return FileAttributes(writable: true, readable: true).some
+    return FileAttributes.none
+
+proc vfsInMemorySetFileAttributes*(self: Arc[VFS2], path: string, attributes: FileAttributes): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  # let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
+  discard
+
+proc vfsInMemoryGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).} =
+  let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
+  withLock vfs.lock:
+    for file in vfs.files.keys:
+      if file.startsWith(path):
+        result.files.add file
+
+proc newVFSInMemory*(): Arc[VFS2] =
+  let vfs = create(VFSInMemory2)
+  vfs.lock.initLock()
+  vfs.files = Table[string, VFSInMemoryItem].default
+  vfs.handlers = Table[string, seq[(Id, proc(events: seq[PathEvent]) {.gcsafe, raises: [].})]].default
+
+  result = Arc[VFS2].new()
+  result.getMutUnsafe.impl = vfs
+  result.getMutUnsafe.nameImpl = vfsInMemoryName
+  result.getMutUnsafe.readImpl = vfsInMemoryRead
+  result.getMutUnsafe.readRopeImpl = vfsInMemoryReadRope
+  result.getMutUnsafe.writeImpl = vfsInMemoryWrite
+  result.getMutUnsafe.writeRopeImpl = vfsInMemoryWrite
+  result.getMutUnsafe.deleteImpl = vfsInMemoryDelete
+  result.getMutUnsafe.createDirImpl = vfsInMemoryCreateDir
+  result.getMutUnsafe.getFileKindImpl = vfsInMemoryGetFileKind
+  result.getMutUnsafe.getFileAttributesImpl = vfsInMemoryGetFileAttributes
+  result.getMutUnsafe.setFileAttributesImpl = vfsInMemorySetFileAttributes
+  result.getMutUnsafe.getDirectoryListingImpl = vfsInMemoryGetDirectoryListing
+  # result.getMutUnsafe.copyFileImpl = vfsInMemoryCopyFile
 
 method clone*(self: VFS): VFS {.base.} =
   result = VFS(prefix: self.prefix)
@@ -547,101 +647,54 @@ method getVFSImpl*(self: VFSLink, path: openArray[char], maxDepth: int = int.hig
 method copyFileImpl*(self: VFSLink, src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =
   await self.target.copyFile(src, dest)
 
-method name*(self: VFSInMemory): string = &"VFSInMemory({self.prefix})"
+method name*(self: VFS2Wrapper): string = &"VFS2Wrapper({self.vfs.nameImpl})"
 
-method readImpl*(self: VFSInMemory, path: string, flags: set[ReadFlag]): Future[string] {.async: (raises: [IOError]).} =
-  when debugLogVfs:
-    debugf"VFSInMemory.read({path})"
-  self.files.withValue(path, file):
-    case file[].kind
-    of VFSInMemoryItemKind.String:
-      return file[].text
-    of VFSInMemoryItemKind.Rope:
-      return $file[].rope
-  raise newException(IOError, "VFSInMemory: File not found '" & path & "'")
+method readImpl*(self: VFS2Wrapper, path: string, flags: set[ReadFlag]): Future[string] {.async: (raises: [IOError]).} =
+  return await self.vfs.readImpl(path, flags)
 
-method readRopeImpl*(self: VFSInMemory, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).} =
-  when debugLogVfs:
-    debugf"VFSInMemory.read({path})"
-  self.files.withValue(path, file):
-    case file[].kind
-    of VFSInMemoryItemKind.String:
-      rope[] = Rope.new(file[].text)
-    of VFSInMemoryItemKind.Rope:
-      rope[] = file[].rope
-    return
-  raise newException(IOError, "VFSInMemory: File not found '" & path & "'")
+method readRopeImpl*(self: VFS2Wrapper, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).} =
+  await self.vfs.readRopeImpl(path, rope)
 
-proc handleFileChanged(self: VFSInMemory, path: string, existedBefore: bool) =
-  if path in self.handlers:
-    let action = if existedBefore:
-      FileEventAction.Modify
-    else:
-      FileEventAction.Create
-    let events = @[(path, action, "")]
-    let handlers = self.handlers[path]
-    for (_, handler) in handlers:
-      handler(events)
+# proc handleFileChanged(self: VFS2Wrapper, path: string, existedBefore: bool) =
+#   if path in self.handlers:
+#     let action = if existedBefore:
+#       FileEventAction.Modify
+#     else:
+#       FileEventAction.Create
+#     let events = @[(path, action, "")]
+#     let handlers = self.handlers[path]
+#     for (_, handler) in handlers:
+#       handler(events)
 
-method writeImpl*(self: VFSInMemory, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
-  when debugLogVfs:
-    debugf"VFSInMemory.write({path})"
-  let existedBefore = path in self.files
-  self.files[path] = VFSInMemoryItem(kind: VFSInMemoryItemKind.String, text: content)
-  self.handleFileChanged(path, existedBefore)
+method writeImpl*(self: VFS2Wrapper, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
+  await self.vfs.writeImpl(path, content)
 
-method writeImpl*(self: VFSInMemory, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).} =
-  when debugLogVfs:
-    debugf"VFSInMemory.write({path})"
-  let existedBefore = path in self.files
-  self.files[path] = VFSInMemoryItem(kind: VFSInMemoryItemKind.Rope, rope: content.toRope)
-  self.handleFileChanged(path, existedBefore)
+method writeImpl*(self: VFS2Wrapper, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).} =
+  await self.vfs.writeImpl(path, content)
 
-method deleteImpl*(self: VFSInMemory, path: string): Future[bool] {.async: (raises: []).} =
-  if path in self.files:
-    self.files.del(path)
-    return true
+method deleteImpl*(self: VFS2Wrapper, path: string): Future[bool] {.async: (raises: []).} =
+  return await self.vfs.deleteImpl(path)
 
-method createDirImpl*(self: VFSInMemory, path: string): Future[void] {.async: (raises: [IOError]).} =
-  discard
+method createDirImpl*(self: VFS2Wrapper, path: string): Future[void] {.async: (raises: [IOError]).} =
+  await self.vfs.createDirImpl(path)
 
-method getFileKindImpl*(self: VFSInMemory, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
-  if path in self.files:
-    return FileKind.File.some
-  return FileKind.none
+method getFileKindImpl*(self: VFS2Wrapper, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
+  return await self.vfs.getFileKindImpl(path)
 
-method getFileAttributesImpl*(self: VFSInMemory, path: string): Future[Option[FileAttributes]] {.async: (raises: []).} =
-  if path in self.files:
-    return FileAttributes(writable: true, readable: true).some
-  return FileAttributes.none
+method getFileAttributesImpl*(self: VFS2Wrapper, path: string): Future[Option[FileAttributes]] {.async: (raises: []).} =
+  return await self.vfs.getFileAttributesImpl(path)
 
-method getDirectoryListingImpl*(self: VFSInMemory, path: string): Future[DirectoryListing] {.async: (raises: []).} =
-  for file in self.files.keys:
-    if file.startsWith(path):
-      result.files.add file
+method getDirectoryListingImpl*(self: VFS2Wrapper, path: string): Future[DirectoryListing] {.async: (raises: []).} =
+  return await self.vfs.getDirectoryListingImpl(path)
 
-method watchImpl*(self: VFSInMemory, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id =
-  if not self.handlers.contains(path):
-    self.handlers[path] = @[]
+method watchImpl*(self: VFS2Wrapper, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id =
+  return self.vfs.watchImpl(path, cb)
 
-  let id = newId()
-  self.handlers[path].add((id, cb))
-  return id
+method unwatchImpl*(self: VFS2Wrapper, id: Id) =
+  self.vfs.unwatchImpl(id)
 
-method unwatchImpl*(self: VFSInMemory, id: Id) =
-  for entry in self.handlers.mpairs:
-    var i = 0
-    for handlerId, handler in entry[1].mitems:
-      if handlerId == id:
-        entry[1].removeShift(i)
-        return
-      inc i
-
-method copyFileImpl*(self: VFSInMemory, src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =
-  if src in self.files:
-    self.files[dest] = self.files[src]
-  else:
-    raise newException(IOError, &"Failed to copy non-existing file '{src}' to '{dest}'")
+method copyFileImpl*(self: VFS2Wrapper, src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =
+  await self.vfs.copyFileImpl(src, dest)
 
 proc getVFS*(self: Arc[VFS2], path: openArray[char], maxDepth: int = int.high): tuple[vfs: Arc[VFS2], relativePath: string] =
   if maxDepth == 0:

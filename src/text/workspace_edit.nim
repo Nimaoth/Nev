@@ -19,11 +19,11 @@ proc applyWorkspaceEdit*(editors: DocumentEditorService, vfs: VFS, wsEdit: Works
   let editors = if editors != nil:
     editors
   else:
-    ({.gcsafe.}: gServices).getService(DocumentEditorService).get
+    ({.gcsafe.}: getServices()).getService(DocumentEditorService).get
   let vfs = if vfs != nil:
     vfs
   else:
-    ({.gcsafe.}: gServices).getService(VFSService).get.vfs
+    ({.gcsafe.}: getServices()).getService(VFSService).get.vfs
 
   proc lspPathToVfsPath(self: VFS, lspPath: string): string =
     let localVfs = self.getVFS("local://").vfs # todo

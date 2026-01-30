@@ -14,8 +14,8 @@ logCategory "vcs_api"
 
 proc getVCSService(): Option[VCSService] =
   {.gcsafe.}:
-    if gServices.isNil: return VCSService.none
-    return gServices.getService(VCSService)
+    if getServices().isNil: return VCSService.none
+    return getServices().getService(VCSService)
 
 static:
   addInjector(VCSService, getVCSService)

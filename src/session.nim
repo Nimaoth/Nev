@@ -1,16 +1,11 @@
-import std/[strutils, options, json, tables]
-import misc/[custom_async, custom_logger, util, myjsonutils, event, id]
-import scripting/[expose]
-import dispatch_tables, service, plugin_service, event_service
+import std/[options, json]
+import misc/[event, id]
+import service, view, popup, selector_popup_builder
 
-{.push gcsafe.}
-{.push raises: [].}
-
-logCategory "session"
+include dynlib_export
 
 type
   SessionService* = ref object of Service
-    plugins*: PluginService
     sessionData*: JsonNode
     onSessionRestored*: Event[SessionService]
     hasSession*: bool
@@ -20,92 +15,110 @@ type
       save: proc(): JsonNode {.gcsafe, raises: [].},
       load: proc(data: JsonNode) {.gcsafe, raises: [].},
     ]]
-    events: EventService
 
 func serviceName*(_: typedesc[SessionService]): string = "SessionService"
-addBuiltinService(SessionService, PluginService)
 
-method init*(self: SessionService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  log lvlInfo, &"SessionService.init"
-  self.sessionData = newJObject()
-  self.plugins = self.services.getService(PluginService).get
-  self.events = self.services.getService(EventService).get
-  return ok()
+# DLL API
+proc sessionServiceAddSaveHandler(self: SessionService, key: string, save: proc(): JsonNode {.gcsafe, raises: [].}, load: proc(data: JsonNode) {.gcsafe, raises: [].}) {.apprtl, gcsafe, raises: [].}
 
-proc restoreSession*(self: SessionService, sessionData: JsonNode) =
-  log lvlInfo, &"SessionService.restoreSession"
-  self.sessionData = sessionData
-  if self.sessionData.hasKey("dynamic"):
-    let dynamic = self.sessionData["dynamic"]
-    if dynamic.kind == JObject:
-      for handler in self.sessionSaveHandlers:
-        if dynamic.hasKey(handler.key):
-          handler.load(dynamic[handler.key])
-    else:
-      log lvlError, &"Invalid data in session data: '{dynamic}' should be an object"
+# Nice wrappers
+proc addSaveHandler*(self: SessionService, key: string, save: proc(): JsonNode {.gcsafe, raises: [].}, load: proc(data: JsonNode) {.gcsafe, raises: [].}) {.inline.} = sessionServiceAddSaveHandler(self, key, save, load)
 
-  self.hasSession = true
-  self.onSessionRestored.invoke(self)
-  self.events.emit("session/restored", "")
+# Implementation
+when implModule:
+  import std/[strutils, options, json, tables]
+  import misc/[custom_async, custom_logger, util, myjsonutils]
+  import scripting/[expose]
+  import dispatch_tables, service, event_service
 
-proc addSaveHandler*(self: SessionService, key: string,
-    save: proc(): JsonNode {.gcsafe, raises: [].},
-    load: proc(data: JsonNode) {.gcsafe, raises: [].}) =
-  self.sessionSaveHandlers.add (newId(), key, save, load)
+  {.push gcsafe.}
+  {.push raises: [].}
 
-proc saveSession*(self: SessionService): JsonNode =
-  log lvlInfo, &"SessionService.saveSession"
-  self.events.emit("session/save", "")
-  result = self.sessionData.shallowCopy()
-  if result == nil:
-    result = newJObject()
-  var dynamic = newJObject()
-  for saveHandler in self.sessionSaveHandlers:
-    let data = saveHandler.save()
-    if data != nil:
-      dynamic[saveHandler.key] = data
-  result["dynamic"] = dynamic
+  logCategory "session"
 
-###########################################################################
+  addBuiltinService(SessionService)
 
-proc getSessionService(): Option[SessionService] =
-  {.gcsafe.}:
-    if gServices.isNil: return SessionService.none
-    return gServices.getService(SessionService)
+  method init*(self: SessionService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+    log lvlInfo, &"SessionService.init"
+    self.sessionData = newJObject()
+    return ok()
 
-static:
-  addInjector(SessionService, getSessionService)
+  proc restoreSession*(self: SessionService, sessionData: JsonNode) =
+    log lvlInfo, &"SessionService.restoreSession"
+    self.sessionData = sessionData
+    if self.sessionData.hasKey("dynamic"):
+      let dynamic = self.sessionData["dynamic"]
+      if dynamic.kind == JObject:
+        for handler in self.sessionSaveHandlers:
+          if dynamic.hasKey(handler.key):
+            handler.load(dynamic[handler.key])
+      else:
+        log lvlError, &"Invalid data in session data: '{dynamic}' should be an object"
 
-proc setSessionDataJson*(self: SessionService, path: string, value: JsonNode, override: bool = true) {.expose("session").} =
-  if self.isNil or path.len == 0:
-    return
+    self.hasSession = true
+    self.onSessionRestored.invoke(self)
+    let events = self.services.getService(EventService).get
+    events.emit("session/restored", "")
 
-  try:
-    let pathItems = path.split(".")
-    var node = self.sessionData
-    for key in pathItems[0..^2]:
-      if node.kind != JObject:
-        return
-      if not node.contains(key):
-        node[key] = newJObject()
-      node = node[key]
-    if node.isNil or node.kind != JObject:
+  proc sessionServiceAddSaveHandler(self: SessionService, key: string,
+      save: proc(): JsonNode {.gcsafe, raises: [].},
+      load: proc(data: JsonNode) {.gcsafe, raises: [].}) =
+    self.sessionSaveHandlers.add (newId(), key, save, load)
+
+  proc saveSession*(self: SessionService): JsonNode =
+    log lvlInfo, &"SessionService.saveSession"
+    let events = self.services.getService(EventService).get
+    events.emit("session/save", "")
+    result = self.sessionData.shallowCopy()
+    if result == nil:
+      result = newJObject()
+    var dynamic = newJObject()
+    for saveHandler in self.sessionSaveHandlers:
+      let data = saveHandler.save()
+      if data != nil:
+        dynamic[saveHandler.key] = data
+    result["dynamic"] = dynamic
+
+  ###########################################################################
+
+  proc getSessionService(): Option[SessionService] =
+    {.gcsafe.}:
+      if getServices().isNil: return SessionService.none
+      return getServices().getService(SessionService)
+
+  static:
+    addInjector(SessionService, getSessionService)
+
+  proc setSessionDataJson*(self: SessionService, path: string, value: JsonNode, override: bool = true) {.expose("session").} =
+    if self.isNil or path.len == 0:
       return
 
-    let key = pathItems[^1]
-    if not override and node.hasKey(key):
-      node.fields[key].extendJson(value, true)
-    else:
-      node[key] = value
-  except:
-    discard
+    try:
+      let pathItems = path.split(".")
+      var node = self.sessionData
+      for key in pathItems[0..^2]:
+        if node.kind != JObject:
+          return
+        if not node.contains(key):
+          node[key] = newJObject()
+        node = node[key]
+      if node.isNil or node.kind != JObject:
+        return
 
-proc getSessionDataJson*(self: SessionService, path: string, default: JsonNode): JsonNode {.expose("session").} =
-  if self.isNil:
-    return default
-  let node = self.sessionData{path.split(".")}
-  if node.isNil:
-    return default
-  return node
+      let key = pathItems[^1]
+      if not override and node.hasKey(key):
+        node.fields[key].extendJson(value, true)
+      else:
+        node[key] = value
+    except:
+      discard
 
-addGlobalDispatchTable "session", genDispatchTable("session")
+  proc getSessionDataJson*(self: SessionService, path: string, default: JsonNode): JsonNode {.expose("session").} =
+    if self.isNil:
+      return default
+    let node = self.sessionData{path.split(".")}
+    if node.isNil:
+      return default
+    return node
+
+  addGlobalDispatchTable "session", genDispatchTable("session")

@@ -119,8 +119,8 @@ proc recordCommand*(self: Registers, command: string, registers: openArray[strin
 
 proc getRegisters(): Option[Registers] =
   {.gcsafe.}:
-    if gServices.isNil: return Registers.none
-    return gServices.getService(Registers)
+    if getServices().isNil: return Registers.none
+    return getServices().getService(Registers)
 
 static:
   addInjector(Registers, getRegisters)

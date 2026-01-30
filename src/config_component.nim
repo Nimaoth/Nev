@@ -12,7 +12,8 @@ type ConfigComponent* = ref object of Component
 var ConfigComponentId* {.apprtl.}: ComponentTypeId
 
 proc getConfigComponent*(self: ComponentOwner): Option[ConfigComponent] {.apprtl, gcsafe, raises: [].}
-proc configComponentGetRaw*(self: ConfigComponent, key: string): JsonNodeEx {.apprtl, gcsafe, raises: [].}
+proc configComponentGetRaw(self: ConfigComponent, key: string): JsonNodeEx {.apprtl, gcsafe, raises: [].}
+proc configComponentSet(self: ConfigComponent, key: string, value: JsonNodeEx) {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
 proc get*(self: ConfigComponent, key: string, T: typedesc, defaultValue: T): T =
@@ -38,6 +39,9 @@ proc get*(self: ConfigComponent, key: string, T: typedesc): T {.inline.} =
 proc get*[T](self: ConfigComponent, key: string, defaultValue: T): T {.inline.} =
   self.get(key, T, defaultValue)
 
+proc set*[T](self: ConfigComponent, key: string, value: T) {.inline.} =
+  configComponentSet(self, key, value.toJsonex)
+
 # Implementation
 when implModule:
   import misc/[util]
@@ -54,6 +58,10 @@ when implModule:
   proc newConfigComponent*(config: ConfigStore): ConfigComponent =
     return ConfigComponentImpl(typeId: ConfigComponentId, config: config)
 
-  proc configComponentGetRaw*(self: ConfigComponent, key: string): JsonNodeEx {.gcsafe, raises: [].} =
+  proc configComponentGetRaw(self: ConfigComponent, key: string): JsonNodeEx {.gcsafe, raises: [].} =
     let self = self.ConfigComponentImpl
     return self.config.get(key)
+
+  proc configComponentSet(self: ConfigComponent, key: string, value: JsonNodeEx) =
+    let self = self.ConfigComponentImpl
+    self.config.set(key, value)

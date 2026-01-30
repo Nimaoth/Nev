@@ -10,7 +10,7 @@ export types
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-func serviceName*(_: typedesc[TerminalService]): string = "TerminalService2"
+func serviceName*(_: typedesc[TerminalService]): string = "TerminalService"
 
 proc terminalServiceCreateTerminalViewChannel(self: TerminalService, stdin: Arc[BaseChannel], stdout: Arc[BaseChannel], options: CreateTerminalOptions, id: Id = idNone()): View {.rtl, gcsafe, raises: [].}
 proc terminalServiceCreateTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions, id: Id = idNone()): View {.rtl, gcsafe, raises: [].}
@@ -32,13 +32,14 @@ when implModule:
   import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, async_process, wrap, case_swap, jsonex, array_set]
   import ui/node
   import platform/platform
-  from scripting_api import SshOptions
+  from scripting_api import SshOptions, LineNumbers
   import finder/[finder, previewer]
-  import view, dynamic_view, events, config_provider, layout, theme, vterm, input, input_api, channel, selector_popup_builder, event_service
+  import view, dynamic_view, events, config_provider, layout, theme, vterm, input, input_api, channel, selector_popup_builder, vfs, vfs_service
+  import text_editor_component, config_component
   import types_impl
   import render
 
-  func serviceName*(_: typedesc[TerminalServiceImpl]): string = "TerminalService2"
+  func serviceName*(_: typedesc[TerminalServiceImpl]): string = "TerminalService"
 
   when defined(enableLibssh):
     static:
@@ -2040,7 +2041,7 @@ when implModule:
           raise newException(IOError, "SSH session handshake failed: " & $rc)
 
         # Authenticate. Try with empty password first, if that fails then prompt user for password.
-        let vfs = self.services.getService(VFSService).get.vfs
+        let vfs = self.services.getService(VFSService).get.vfs2
         let privateKeyPath = vfs.localize(options.privateKeyPath)
         let publicKeyPath = vfs.localize(options.publicKeyPath)
         log lvlInfo, &"Authenticate ssh session '{options.username}@{address}' ({privateKeyPath}) with empty password"
@@ -2838,39 +2839,44 @@ when implModule:
   # # todo: I don't like this import
   # import text/text_editor
 
-  # proc requestEditBuffer*(self: TerminalView) {.async.} =
-  #   var rope: Rope = Rope.new()
-  #   let ropePtr = rope.addr
-  #   self.terminal.sendEvent(InputEvent(kind: InputEventKind.RequestRope, rope: ropePtr))
+  proc requestEditBuffer(self: TerminalView) {.async.} =
+    try:
+      var rope: Rope = Rope.new()
+      let ropePtr = rope.addr
+      self.terminal.sendEvent(InputEvent(kind: InputEventKind.RequestRope, rope: ropePtr))
 
-  #   var waiting = true
-  #   let handle = self.terminal.onRope.subscribe proc(r: ptr Rope) =
-  #     if r != ropePtr:
-  #       return
-  #     waiting = false
+      var waiting = true
+      let handle = self.terminal.onRope.subscribe proc(r: ptr Rope) =
+        if r != ropePtr:
+          return
+        waiting = false
 
-  #   while waiting:
-  #     # todo: use async signals
-  #     await sleepAsync(30.milliseconds)
+      while waiting:
+        # todo: use async signals
+        await sleepAsync(30.milliseconds)
 
-  #   self.terminal.onRope.unsubscribe(handle)
+      self.terminal.onRope.unsubscribe(handle)
 
-  #   let path = &"ed://{self.terminal.id}.terminal-output"
-  #   await self.terminals.services.getService(VFSService).get.vfs.write(path, rope)
+      let path = &"ed://{self.terminal.id}.terminal-output"
+      await self.terminals.services.getService(VFSService).get.vfs2.write(path, rope)
 
-  #   if self.terminals.layout.openFile(path).getSome(editor) and editor of TextDocumentEditor:
-  #     let textEditor = editor.TextDocumentEditor
-  #     let numLines = rope.lines
-  #     let height = self.size.height
-  #     let scrollY = self.terminal.scrollY
-  #     textEditor.targetSelection = (numLines - height div 2 - 1 - scrollY, 0).toSelection
-  #     textEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
-  #     textEditor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
-  #     textEditor.centerCursor()
+      if self.terminals.layout.openFile(path).getSome(editor):
+        let numLines = rope.lines
+        let height = self.size.height
+        let scrollY = self.terminal.scrollY
+        let te = editor.getTextEditorComponent().getOr:
+          return
+        let p = point(numLines - height div 2 - 2 - scrollY, 0)
+        te.setTargetSelection(p...p)
+        if editor.getConfigComponent().getSome(config):
+          config.set("ui.line-numbers", LineNumbers.None)
+        te.centerCursor(p, snap = true)
+    except IOError as e:
+      log lvlError, &"Failed to create file for terminal buffer: {e.msg}"
 
-  # proc editTerminalBuffer*(self: TerminalServiceImpl) {.expose("terminal").} =
-  #   if self.getActiveView().getSome(view):
-  #     asyncSpawn view.requestEditBuffer()
+  proc editTerminalBuffer*(self: TerminalServiceImpl) =
+    if self.getActiveView().getSome(view):
+      asyncSpawn view.requestEditBuffer()
 
   type
     TerminalPreviewer* = ref object of DynamicPreviewer
@@ -3091,6 +3097,10 @@ when implModule:
     proc selectTerminal(preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.9, previewScale: float = 0.6) {.command.} =
       service.selectTerminal(preview, scaleX, scaleY, previewScale)
     registerCommand("select", "...", @[], "void", selectTerminalJson)
+
+    proc editTerminalBuffer() {.command.} =
+      service.editTerminalBuffer()
+    registerCommand("edit-terminal-buffer", "...", @[], "void", editTerminalBufferJson)
 
   proc shutdown_module_terminal*() {.cdecl, exportc, dynlib.} =
     let services = getServices()

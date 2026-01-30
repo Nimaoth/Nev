@@ -1,23 +1,30 @@
 import std/[options, json]
 import service, view, popup, selector_popup_builder
+import document, document_editor
 
 include dynlib_export
 
 type
   CreateView* = proc(config: JsonNode): View {.gcsafe, raises: [ValueError].}
   LayoutService* = ref object of Service
+  EditorView* = ref object of View
+    path: string
+    document*: Document # todo: remove
+    editor*: DocumentEditor
 
 func serviceName*(_: typedesc[LayoutService]): string = "LayoutService"
 
 # DLL API
-proc layoutServicePopups*(self: LayoutService): lent seq[Popup] {.apprtl, gcsafe, raises: [].}
-proc layoutServiceAllViews*(self: LayoutService): lent seq[View] {.apprtl, gcsafe, raises: [].}
-proc layoutServiceAddView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) {.apprtl, gcsafe, raises: [].}
-proc layoutServiceShowView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) {.apprtl, gcsafe, raises: [].}
-proc layoutServiceCloseView*(self: LayoutService, view: View, keepHidden: bool = false, restoreHidden: bool = true) {.apprtl, gcsafe, raises: [].}
+proc layoutServicePopups(self: LayoutService): lent seq[Popup] {.apprtl, gcsafe, raises: [].}
+proc layoutServiceAllViews(self: LayoutService): lent seq[View] {.apprtl, gcsafe, raises: [].}
+proc layoutServiceAddView(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) {.apprtl, gcsafe, raises: [].}
+proc layoutServiceShowView(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) {.apprtl, gcsafe, raises: [].}
+proc layoutServiceCloseView(self: LayoutService, view: View, keepHidden: bool = false, restoreHidden: bool = true) {.apprtl, gcsafe, raises: [].}
 proc layoutServiceTryGetCurrentView(self: LayoutService): Option[View] {.apprtl, gcsafe, raises: [].}
 proc layoutServiceAddViewFactory(self: LayoutService, name: string, create: CreateView, override: bool = false) {.apprtl, gcsafe, raises: [].}
-proc layoutServicePushSelectorPopup*(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup {.apprtl, gcsafe, raises: [].}
+proc layoutServicePushSelectorPopup(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup {.apprtl, gcsafe, raises: [].}
+proc layoutServiceOpenFile(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] {.apprtl, gcsafe, raises: [].}
+proc layoutServiceIsViewVisible(self: LayoutService, view: View): bool {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
 proc popups*(self: LayoutService): lent seq[Popup] {.inline.} = self.layoutServicePopups()
@@ -28,6 +35,15 @@ proc closeView*(self: LayoutService, view: View, keepHidden: bool = false, resto
 proc tryGetCurrentView*(self: LayoutService): Option[View] {.inline.} = self.layoutServiceTryGetCurrentView()
 proc addViewFactory*(self: LayoutService, name: string, create: CreateView, override: bool = false) {.inline.} = self.layoutServiceAddViewFactory(name, create, override)
 proc pushSelectorPopup*(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup {.inline.} = self.layoutServicePushSelectorPopup(builder)
+proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] {.inline.} = self.layoutServiceOpenFile(path, slot)
+proc isViewVisible*(self: LayoutService, view: View): bool {.inline.} = self.layoutServiceIsViewVisible(view)
+
+proc getViews*(self: LayoutService, T: typedesc): seq[T] =
+  var res = newSeq[T]()
+  for v in self.allViews:
+    if v of T:
+      res.add v.T
+  return res
 
 # Implementation
 when implModule:
@@ -38,7 +54,7 @@ when implModule:
   import scripting/expose
   import workspaces/workspace
   import finder/finder
-  import platform_service, dispatch_tables, document, document_editor, events, config_provider, vfs, vfs_service, session, layouts, command_service
+  import platform_service, dispatch_tables, document, events, config_provider, vfs, vfs_service, session, layouts, command_service, document_editor
   from scripting_api import EditorId
 
   export layouts
@@ -51,11 +67,6 @@ when implModule:
   type
     LayoutProperties* = ref object
       props: Table[string, float32]
-
-    EditorView* = ref object of View
-      path: string
-      document*: Document # todo: remove
-      editor*: DocumentEditor
 
     PushSelectorPopupImpl = proc(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup {.gcsafe, raises: [].}
 
@@ -93,21 +104,13 @@ when implModule:
   proc getView*(self: LayoutService, id: Id): Option[View]
   proc preRender*(self: LayoutService)
 
-  proc layoutServicePopups*(self: LayoutService): lent seq[Popup] =
+  proc layoutServicePopups(self: LayoutService): lent seq[Popup] =
     let self = self.LayoutServiceImpl
     self.mPopups
 
-  proc layoutServiceAllViews*(self: LayoutService): lent seq[View] =
+  proc layoutServiceAllViews(self: LayoutService): lent seq[View] =
     let self = self.LayoutServiceImpl
     self.mAllViews
-
-  proc getViews*(self: LayoutService, T: typedesc): seq[T] =
-    let self = self.LayoutServiceImpl
-    var res = newSeq[T]()
-    for v in self.mAllViews:
-      if v of T:
-        res.add v.T
-    return res
 
   proc layoutServiceAddViewFactory(self: LayoutService, name: string, create: CreateView, override: bool = false) =
     let self = self.LayoutServiceImpl
@@ -128,6 +131,7 @@ when implModule:
     return nil
 
   proc registerView*(self: LayoutService, view: View) =
+    assert view != nil
     let self = self.LayoutServiceImpl
     if view notin self.mAllViews:
       self.mAllViews.incl view
@@ -354,9 +358,15 @@ when implModule:
       var discardedViews = initHashSet[Id]()
       var viewStates = newJArray()
       for view in self.mAllViews:
+        if view == nil:
+          log lvlError, &"Failed to save view: null view"
+          continue
         let state = view.saveState()
         if state != nil:
-          viewStates.add state
+          if state.kind == JNull:
+            log lvlError, &"Failed to save view {view.desc}: null state"
+          else:
+            viewStates.add state
         else:
           discardedViews.incl view.id
       result["views"] = viewStates
@@ -372,11 +382,17 @@ when implModule:
       try:
         log lvlInfo, &"Restore layout from session"
         self.updateLayoutTree()
+        if data == nil or data.kind != JObject:
+          log lvlError, &"Failed to restore layout from session: Expected json object"
+          return
 
         if data.hasKey("views"):
           let views = data["views"]
           checkJson views.kind == JArray, &"Expected array, got {views}"
           for state in views.elems:
+            if state.kind != JObject:
+              log lvlError, &"Failed to restore view from session: Expected json object, got {state}"
+              continue
             if not state.hasKey("kind"):
               log lvlError, &"Failed to restore view from session state: missing field kind"
               continue
@@ -645,7 +661,7 @@ when implModule:
       popup.deinit()
     self.platform.requestRender()
 
-  proc layoutServicePushSelectorPopup*(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup =
+  proc layoutServicePushSelectorPopup(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup =
     let self = self.LayoutServiceImpl
     self.pushSelectorPopupImpl(self, builder)
 
@@ -725,8 +741,8 @@ when implModule:
 
   proc getLayoutService(): Option[LayoutService] =
     {.gcsafe.}:
-      if gServices.isNil: return LayoutService.none
-      return gServices.getService(LayoutService)
+      if getServices().isNil: return LayoutService.none
+      return getServices().getService(LayoutService)
 
   static:
     addInjector(LayoutService, getLayoutService)
@@ -772,7 +788,7 @@ when implModule:
       res.add(v)
     return res
 
-  proc isViewVisible*(self: LayoutService, view: View): bool =
+  proc layoutServiceIsViewVisible(self: LayoutService, view: View): bool =
     let self = self.LayoutServiceImpl
     var res = false
     self.layout.forEachVisibleView proc(v: View): bool =
@@ -795,7 +811,7 @@ when implModule:
     let self = self.LayoutServiceImpl
     return self.getHiddenViews().len
 
-  proc layoutServiceShowView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) =
+  proc layoutServiceShowView(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) =
     ## Make the given view visible
     let self = self.LayoutServiceImpl
 
@@ -900,7 +916,7 @@ when implModule:
 
     return DocumentEditor.none
 
-  proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] =
+  proc layoutServiceOpenFile(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] =
     let self = self.LayoutServiceImpl
     defer:
       self.platform.requestRender()
@@ -920,7 +936,7 @@ when implModule:
 
     return self.createAndAddView(document, slot = slot)
 
-  proc layoutServiceCloseView*(self: LayoutService, view: View, keepHidden: bool = false, restoreHidden: bool = true) =
+  proc layoutServiceCloseView(self: LayoutService, view: View, keepHidden: bool = false, restoreHidden: bool = true) =
     ## Closes the current view.
     let self = self.LayoutServiceImpl
     self.platform.requestRender()

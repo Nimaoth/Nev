@@ -61,8 +61,8 @@ proc updateToasts(self: ToastService) {.async.} =
 
 proc getToastService(): Option[ToastService] =
   {.gcsafe.}:
-    if gServices.isNil: return ToastService.none
-    return gServices.getService(ToastService)
+    if getServices().isNil: return ToastService.none
+    return getServices().getService(ToastService)
 
 static:
   addInjector(ToastService, getToastService)
