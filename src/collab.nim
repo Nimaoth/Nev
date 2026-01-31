@@ -35,12 +35,12 @@ proc handleSelections(line: string, editors: DocumentEditorService) =
     for editor in editors.getEditorsForDocument(doc):
       if editor of text_editor.TextDocumentEditor:
         let textEditor = editor.TextDocumentEditor
-        textEditor.signs.clearCustomHighlights(highlightId)
+        textEditor.decorations.clearCustomHighlights(highlightId)
         for s in selections:
           var sel = s
           if sel.isEmpty:
             sel.last.column += 1
-          textEditor.signs.addCustomHighlight(highlightId, sel, "collabClientSelections")
+          textEditor.decorations.addCustomHighlight(highlightId, sel, "collabClientSelections")
 
 proc connectCollaboratorAsync(port: int) {.async.} =
   ############### CLIENT

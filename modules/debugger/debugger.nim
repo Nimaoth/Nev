@@ -442,7 +442,7 @@ when implModule:
       te.setTargetSelection(location...location)
       te.scrollToCursor(location, CenterMargin)
 
-      if editor.getSignsComponent().getSome(decos):
+      if editor.getDecorationComponent().getSome(decos):
         decos.addCustomHighlight(debuggerCurrentLineId, point(location.row, 0)...point(location.row, uint32.high), "editorError.foreground", color(1, 1, 1, 0.3))
       # todo
       # asyncSpawn editor.updateInlayHintsAsync()
@@ -1078,7 +1078,7 @@ when implModule:
       return
 
     if self.lastEditor.isSome:
-      if self.lastEditor.get.getSignsComponent().getSome(decos):
+      if self.lastEditor.get.getDecorationComponent().getSome(decos):
         decos.clearCustomHighlights(debuggerCurrentLineId)
       # todo
       # self.lastEditor.get.updateInlayHints()
@@ -1381,7 +1381,7 @@ when implModule:
         self.currentThreadIndex = 0
 
     if self.lastEditor.isSome:
-      if self.lastEditor.get.getSignsComponent().getSome(decos):
+      if self.lastEditor.get.getDecorationComponent().getSome(decos):
         decos.clearCustomHighlights(debuggerCurrentLineId)
       self.lastEditor = DocumentEditor.none
 
@@ -1409,7 +1409,7 @@ when implModule:
     log(lvlInfo, &"onContinued {data}")
     self.debuggerState = DebuggerState.Running
     if self.lastEditor.isSome:
-      if self.lastEditor.get.getSignsComponent().getSome(decos):
+      if self.lastEditor.get.getDecorationComponent().getSome(decos):
         decos.clearCustomHighlights(debuggerCurrentLineId)
       # todo
     #   self.lastEditor.get.updateInlayHints()
@@ -1419,7 +1419,7 @@ when implModule:
   proc handleTerminated(self: Debugger, data: Option[OnTerminatedData]) =
     log(lvlInfo, &"onTerminated {data}")
     if self.lastEditor.isSome:
-      if self.lastEditor.get.getSignsComponent().getSome(decos):
+      if self.lastEditor.get.getDecorationComponent().getSome(decos):
         decos.clearCustomHighlights(debuggerCurrentLineId)
       self.lastEditor = DocumentEditor.none
     self.stopDebugSessionDelayed()
@@ -1597,10 +1597,10 @@ when implModule:
       self.chooseRunConfiguration()
 
   proc applyBreakpointSignsToEditor(self: Debugger, editor: DocumentEditor) =
-    let signs = editor.getSignsComponent.getOr:
+    let decos = editor.getDecorationComponent().getOr:
       return
 
-    signs.clearSigns("breakpoints")
+    decos.clearSigns("breakpoints")
 
     if editor.document.isNil:
       return
@@ -1617,7 +1617,7 @@ when implModule:
         "error"
       else:
         ""
-      discard signs.addSign(idNone(), breakpoint.breakpoint.line - 1, sign, group = "breakpoints", color = color, width = 2)
+      discard decos.addSign(idNone(), breakpoint.breakpoint.line - 1, sign, group = "breakpoints", color = color, width = 2)
 
   proc flushBreakpointsForFileDelayedAsync(self: Debugger, path: string, delay: int) {.async.} =
     try:
