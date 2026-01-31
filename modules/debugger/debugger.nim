@@ -31,7 +31,7 @@ when implModule:
   import workspaces/workspace, vfs, vfs_service, language_server_dynamic
   import ui/node
   import nimsumtree/[rope, buffer]
-  import text_component, text_editor_component, language_server_component, signs_component
+  import text_component, text_editor_component, language_server_component, decoration_component
   import types_impl
 
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor

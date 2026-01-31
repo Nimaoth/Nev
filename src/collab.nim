@@ -8,7 +8,7 @@ import document
 import toast, layout
 import scripting_api except TextDocumentEditor
 
-import text/text_document, signs_component
+import text/text_document, decoration_component
 import text/text_editor
 
 import nimsumtree/[buffer, clock, rope]
