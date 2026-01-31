@@ -247,7 +247,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   configChanged: bool = false
 
   textEditorComponent*: TextEditorComponentImpl
-  signs*: SignsComponentImpl
+  decorations*: DecorationComponentImpl
 
   document*: TextDocument
   snapshot: BufferSnapshot
@@ -457,7 +457,7 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Selection History: {self.textEditorComponent.selectionHistory.len}\n"
   result.add &"Search Query: {self.searchQuery}\n"
   result.add &"Search Results: {self.searchResults.len}\n"
-  result.add &"Custom Highlights: {self.signs.customHighlights.len}\n"
+  result.add &"Custom Highlights: {self.decorations.customHighlights.len}\n"
   result.add &"Inlay Hints: {self.inlayHints.len}\n"
   result.add &"Overlay map: {st.stats(self.displayMap.overlay.snapshot.map)}\n"
   result.add &"Wrap map: {st.stats(self.displayMap.diffMap.snapshot.map)}\n"
@@ -646,7 +646,7 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.editors.tryCloseDocument(document)
 
     self.textEditorComponent.selectionHistory.clear()
-    self.signs.clear()
+    self.decorations.clear()
     self.clearOverlayViews()
     self.clearHoverView()
     self.showHover = false
@@ -865,7 +865,7 @@ proc tabWidth*(self: TextDocumentEditor): int =
 
 proc requiredSignColumnWidth*(self: TextDocumentEditor): int =
   let selection = self.visibleTextRange(2)
-  return self.signs.requiredSignColumnWidth(selection.first.line...selection.last.line)
+  return self.decorations.requiredSignColumnWidth(selection.first.line...selection.last.line)
 
 proc lineNumberBounds*(self: TextDocumentEditor): Vec2 =
   # line numbers
@@ -952,7 +952,7 @@ proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
     let buffer = self.document.buffer.snapshot.clone()
     let searchQuery = self.searchQuery
     if searchQuery.len == 0:
-      self.signs.clearCustomHighlights(searchResultsId)
+      self.decorations.clearCustomHighlights(searchResultsId)
       self.searchResults.setLen(0)
       self.markDirty()
       return
@@ -966,9 +966,9 @@ proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
 
     self.searchResults = searchResults
     self.lastSearchResultUpdate = (buffer.remoteId, buffer.version, searchQuery)
-    self.signs.clearCustomHighlights(searchResultsId)
+    self.decorations.clearCustomHighlights(searchResultsId)
     for s in searchResults:
-      self.signs.addCustomHighlight(searchResultsId, s.toSelection, "editor.findMatchBackground")
+      self.decorations.addCustomHighlight(searchResultsId, s.toSelection, "editor.findMatchBackground")
 
     self.onSearchResultsUpdated.invoke(self)
 
@@ -4224,7 +4224,7 @@ proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selecti
       if sign.len > 0:
         let signWidth = self.settings.codeActions.signWidth.get()
         let color = self.settings.codeActions.signColor.get()
-        discard self.signs.addSign(idNone(), selection.first.line, sign, group = "code-actions-" & ls.name, color = color, width = signWidth)
+        discard self.decorations.addSign(idNone(), selection.first.line, sign, group = "code-actions-" & ls.name, color = color, width = signWidth)
 
     for actionOrCommand in actions.result:
       if actionOrCommand.asCommand().getSome(command):
@@ -4707,7 +4707,7 @@ proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, 
 
   self.lastDiagnosticsVersions.mgetOrPut(languageServer.name).inc
   self.codeActions.mgetOrPut(languageServer.name).clear()
-  self.signs.clearSigns("code-actions-" & languageServer.name)
+  self.decorations.clearSigns("code-actions-" & languageServer.name)
   asyncSpawn self.updateCodeActionsAsync(languageServer.some)
 
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument) =
@@ -4755,10 +4755,10 @@ proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
         if s.first.column > 0 and self.document.rope.charAt(prev.toPoint) in AlphaNumeric:
           s = self.document.rope.vimMotionWord(prev, false).normalized
         else:
-          self.signs.clearCustomHighlights(wordHighlightId)
+          self.decorations.clearCustomHighlights(wordHighlightId)
           return
       if self.document.rope.charAt(s.first.toPoint) notin AlphaNumeric:
-        self.signs.clearCustomHighlights(wordHighlightId)
+        self.decorations.clearCustomHighlights(wordHighlightId)
         return
       (s, false, true)
     else:
@@ -4785,9 +4785,9 @@ proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
       if self.document.buffer.version != version or self.selection != oldSelection:
         continue
 
-      self.signs.clearCustomHighlights(wordHighlightId)
+      self.decorations.clearCustomHighlights(wordHighlightId)
       for r in ranges:
-        self.signs.addCustomHighlight(wordHighlightId, r.toSelection, "matching-text-highlight")
+        self.decorations.addCustomHighlight(wordHighlightId, r.toSelection, "matching-text-highlight")
 
       break
     except Exception as e:
@@ -4795,7 +4795,7 @@ proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
 
 proc updateMatchingWordHighlight(self: TextDocumentEditor) =
   if not self.settings.highlightMatches.enable.get():
-    self.signs.clearCustomHighlights(wordHighlightId)
+    self.decorations.clearCustomHighlights(wordHighlightId)
     return
 
   if self.isUpdatingMatchingWordHighlights:
@@ -5036,8 +5036,8 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
 
   self.addComponent(newConfigComponent(self.config))
 
-  self.signs = newSignsComponent(self.settings.signs)
-  self.addComponent(self.signs)
+  self.decorations = newDecorationComponent(self.settings.signs)
+  self.addComponent(self.decorations)
 
   self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =
     self.applyMoveFallback(move, selections, count, args, env)

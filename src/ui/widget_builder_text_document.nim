@@ -1200,7 +1200,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     diffChanges: if self.diffChanges.isSome: self.diffChanges.get.addr else: nil,
 
     customOverlayRenderers: self.customOverlayRenderers.addr,
-    signs: self.signs.signs.addr,
+    signs: self.decorations.signs.addr,
     diagnosticsPerLS: self.document.diagnosticsPerLS.addr,
 
     absoluteBounds: rect(currentNode.boundsAbsolute.x + mainOffset, currentNode.boundsAbsolute.y, width, parentHeight),
@@ -1314,7 +1314,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
   var ropeCursor = self.displayMap.buffer.visibleText.cursorT(Point)
   let visibleTextRange = self.visibleTextRange(2)
-  for selections in self.signs.customHighlights.values:
+  for selections in self.decorations.customHighlights.values:
     for s in selections:
       if s.selection.isEmpty:
         continue
