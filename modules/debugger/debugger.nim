@@ -13,14 +13,7 @@ import std/macros
 
 func serviceName*(_: typedesc[DebuggerService]): string = "Debugger"
 
-when not implModule:
-  static:
-    echo "DONT Build debugger implementation"
-
 when implModule:
-  static:
-    echo "DO Build debugger implementation"
-
   import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils, enumerate, osproc, macros, genasts]
   import vmath, bumpy, chroma
   import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap, arena, array_view, rope_utils]
@@ -259,14 +252,11 @@ when implModule:
 
     let document = self.editors.createDocument("text", ".debugger-output", load = false, %%*{"createLanguageServer": false})
     document.usage = "debugger-output"
-    # todo
-    # document.setReadOnly(true)
-    self.outputEditor = self.editors.createEditorForDocument(document).get(nil)
+    document.setReadOnly(true)
+    self.outputEditor = self.editors.createEditorForDocument(document, %%*{"usage": "debugger-output"}).get(nil)
     if self.outputEditor != nil:
-      # self.outputEditor.usage = "debugger-output"
-      # self.outputEditor.renderHeader = true
+      # todo
       # self.outputEditor.disableCompletions = true
-
       discard self.outputEditor.onMarkedDirty.subscribe () =>
         self.platform.requestRender()
 
@@ -306,22 +296,18 @@ when implModule:
       self.handleEditorRegistered(e)
 
     self.layout.addViewFactory "debugger.threads", proc(config: JsonNode): View {.raises: [].} =
-      echo "restore view ", ThreadsView, ", ", config
       return createDebuggerView[ThreadsView](self)
 
     self.layout.addViewFactory "debugger.stacktrace", proc(config: JsonNode): View {.raises: [].} =
-      echo "restore view ", StacktraceView, ", ", config
       return createDebuggerView[StacktraceView](self)
 
     self.layout.addViewFactory "debugger.variables", proc(config: JsonNode): View {.raises: [].} =
       return self.createVariablesView()
 
     self.layout.addViewFactory "debugger.output", proc(config: JsonNode): View {.raises: [].} =
-      echo "restore view ", OutputView, ", ", config
       return createDebuggerView[OutputView](self)
 
     self.layout.addViewFactory "debugger.toolbar", proc(config: JsonNode): View {.raises: [].} =
-      echo "restore view ", ToolbarView, ", ", config
       return createDebuggerView[ToolbarView](self)
 
     proc save(): JsonNode =
@@ -441,40 +427,6 @@ when implModule:
       if editor.getInlayHintComponent().getSome(inlayHints):
         inlayHints.updateInlayHints(now = false)
       self.lastEditor = editor.some
-
-  proc reevaluateCursorRefs*(self: Debugger, cursor: VariableCursor): VariableCursor =
-    let scopes = self.currentScopes().getOr:
-      return VariableCursor()
-
-    result.scope = cursor.scope.clamp(0, scopes[].scopes.high)
-    if scopes[].scopes.len == 0:
-      return
-
-    let ids = self.currentVariablesContext().getOr:
-      return
-
-    let scope {.cursor.} = scopes[].scopes[result.scope]
-    if not self.variables.contains(ids & scope.variablesReference) or
-        self.variables[ids & scope.variablesReference].variables.len == 0:
-      return
-
-    var varRef = scope.variablesReference
-    var variables = self.variables[ids & varRef].addr
-    for i, item in cursor.path:
-      let index = item.index.clamp(0, variables[].variables.high)
-      if index < 0:
-        break
-
-      result.path.add (index, varRef)
-      varRef = variables[].variables[index].variablesReference
-      if not self.variables.contains(ids & varRef) or self.variables[ids & varRef].variables.len == 0:
-        break
-
-      variables = self.variables[ids & varRef].addr
-
-  proc reevaluateCurrentCursor*(self: VariablesView, debugger: Debugger) =
-    self.variablesCursor = debugger.reevaluateCursorRefs(self.variablesCursor)
-    debugger.platform.requestRender()
 
   proc clampCursor*(self: Debugger, cursor: VariableCursor): VariableCursor =
     let scopes = self.currentScopes().getOr:
@@ -1106,14 +1058,6 @@ when implModule:
       val.jsonTo(T).catch:
         els
 
-  # todo
-  # proc getFreePort*(): Port =
-  #   var server = newAsyncHttpServer()
-  #   server.listen(Port(0))
-  #   let port = server.getPort()
-  #   server.close()
-  #   return port
-
   proc createConnectionWithType(self: Debugger, name: string): Future[Option[Connection]] {.async.} =
     log lvlInfo, &"Try create debugger connection '{name}'"
 
@@ -1340,9 +1284,6 @@ when implModule:
 
         if timestamp != self.timestamp:
           return
-
-        # todo
-        # self.reevaluateCurrentCursor()
 
   proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
     log(lvlInfo, &"onStopped {data}")
@@ -1631,13 +1572,13 @@ when implModule:
 
   proc listenToDocumentChanges*(self: Debugger, document: Document) =
     if document.filename notin self.documentCallbacks:
+      let text = document.getTextComponent().getOr:
+        return
       let id = document.onDocumentSaved.subscribe proc(document: Document) =
         self.flushBreakpointsForFileDelayed(document.filename, 1000)
-      # todo
-      # let id2 = document.textChanged.subscribe proc(doc: Document) =
-      #   self.updateBreakpointsForFile(document.filename)
-      # self.documentCallbacks[document.filename] = (document, id, id2)
-      self.documentCallbacks[document.filename] = (document, id, idNone())
+      let id2 = text.onEdit.subscribe proc(patch: auto) =
+        self.updateBreakpointsForFile(document.filename)
+      self.documentCallbacks[document.filename] = (document, id, id2)
 
   proc toggleBreakpointAt*(self: Debugger, editorId: EditorId, line: int) =
     ## Line is 0-based
@@ -2100,7 +2041,6 @@ when implModule:
       if timestamp != self.debugger.timestamp:
         return
 
-      # todo
       for i in 0..decls.high:
         let eval = futures[i].read
         self.evaluations[(filename, decls[i].name, decls[i].value)] = eval

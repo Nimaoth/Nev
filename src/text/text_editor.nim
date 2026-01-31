@@ -437,14 +437,20 @@ method createDocument*(self: TextDocumentFactory, services: Services, path: stri
       createLanguageServer = options["createLanguageServer"].jsonTo(bool)
     except CatchableError:
       discard # todo
-  debugf"createDocument {path} {createLanguageServer}"
   return newTextDocument(services, path, app=false, load=load, createLanguageServer=createLanguageServer)
 
-method canEditDocument*(self: TextDocumentEditorFactory, document: Document): bool =
+method canEditDocument*(self: TextDocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool =
   return document of TextDocument
 
-method createEditor*(self: TextDocumentEditorFactory, services: Services, document: Document): DocumentEditor =
-  result = newTextEditor(document.TextDocument, services)
+method createEditor*(self: TextDocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor =
+  let textEditor = newTextEditor(document.TextDocument, services)
+  if options != nil and options.kind == JObject:
+    try:
+      if options.hasKey("usage"):
+        textEditor.usage = options["usage"].jsonTo(string)
+    except CatchableError:
+      discard # todo
+  return textEditor
 
 var allTextEditors*: seq[TextDocumentEditor] = @[]
 

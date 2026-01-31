@@ -203,7 +203,6 @@ type
     isParsingAsync*: bool = false
 
     singleLine*: bool = false
-    readOnly*: bool = false
     staged*: bool = false
 
     onRequestRerender*: Event[void]
@@ -515,6 +514,8 @@ proc `content=`*(self: TextDocument, value: sink string) =
   self.notifyTextChanged()
 
 proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[S], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
+  if self.readOnly:
+    return @selections
 
   let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
   if selections.len == 0:
@@ -1186,10 +1187,6 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
   self.onDocumentLoaded.invoke self
   self.eventBus.emit(&"document/{self.id}/loaded", $self.id)
 
-proc setReadOnly*(self: TextDocument, readOnly: bool) =
-  ## Sets the interal readOnly flag, but doesn't not changed permission of the underlying file
-  self.readOnly = readOnly
-
 proc enableAutoReload*(self: TextDocument, enabled: bool) =
   self.settings.autoReload.set(enabled)
   if enabled and (not self.fileWatchHandle.isBound or self.fileWatchHandle.path != self.filename):
@@ -1213,16 +1210,6 @@ proc enableAutoReload*(self: TextDocument, enabled: bool) =
 
   elif not enabled:
     self.fileWatchHandle.unwatch()
-
-proc setFileReadOnlyAsync*(self: TextDocument, readOnly: bool): Future[bool] {.async.} =
-  ## Tries to set the underlying file permissions
-  try:
-    await self.vfs.setFileAttributes(self.filename, FileAttributes(writable: not readOnly, readable: true))
-    self.readOnly = readOnly
-    return true
-  except IOError as e:
-    log lvlError, &"Failed to change file permissions of '{self.filename}': {e.msg}"
-    return false
 
 proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, content: sink S) =
   let filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
