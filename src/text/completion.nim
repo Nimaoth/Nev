@@ -17,6 +17,7 @@ type
     case kind*: MergeStrategyKind
     of TakeAll: discard
     of FillN:
+      min*: int
       max*: int
 
   Completion* = object
@@ -79,10 +80,12 @@ proc updateCombinedCompletions(self: CompletionEngine) =
 
     of FillN:
       provider.filteredCompletions.sort(cmp, Descending)
+      var i = 0
       for c in provider.filteredCompletions:
-        if self.combinedCompletions.len >= provider.mergeStrategy.max:
+        if self.combinedCompletions.len >= provider.mergeStrategy.max and i >= provider.mergeStrategy.min:
           break
         self.combinedCompletions.add c
+        inc i
 
   self.combinedCompletions.sort(cmp, Descending)
   self.combinedDirty = false

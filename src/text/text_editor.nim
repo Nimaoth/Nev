@@ -723,7 +723,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
       .withMergeStrategy(MergeStrategy(kind: TakeAll))
       .withPriority(1)
     self.completionEngine.addProvider newCompletionProviderDocument(self.document)
-      .withMergeStrategy(MergeStrategy(kind: FillN, max: 20))
+      .withMergeStrategy(MergeStrategy(kind: FillN, min: 5, max: 20))
       .withPriority(0)
 
   self.onDocumentChanged.invoke((oldDocument.Document,))
@@ -1783,20 +1783,23 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
 
   var texts = @[text]
 
-  var locations = initHashSet[Cursor]()
-  for anchor in self.lastAutoCloseLocations:
-    let cursor = anchor.summaryOpt(Point, self.document.buffer.snapshot)
-    if cursor.isSome:
-      locations.incl cursor.get.toCursor
-
+  # Check if we insert a character which corresponds to an automatically opened (, [, { or <
   var insertedExistingAutoClose = false
-  if text.len > 0 and text == self.lastAutoCloseText and self.lastAutoCloseLocations.len > 0:
-    for s in selections.mitems:
-      if s.isEmpty and s.last in locations and self.document.runeAt(s.last) == text.runeAt(0):
-        s.last.column += 1
-        insertedExistingAutoClose = true
+  if text.len > 0 and text == self.lastAutoCloseText:
+    var lastAutoCloseLocations = initHashSet[Cursor]()
+    for anchor in self.lastAutoCloseLocations:
+      let cursor = anchor.summaryOpt(Point, self.document.buffer.snapshot)
+      if cursor.isSome:
+        lastAutoCloseLocations.incl cursor.get.toCursor
 
-  var allWhitespace = false
+    # Modify selections to move the last cursor right by one if inserting an auto closing character
+    if self.lastAutoCloseLocations.len > 0:
+      for s in selections.mitems:
+        if s.isEmpty and s.last in lastAutoCloseLocations and self.document.runeAt(s.last) == text.runeAt(0):
+          s.last.column += 1
+          insertedExistingAutoClose = true
+
+  var allWhitespace = false # True if all lines where we insert start with whitespace
   var insertedAutoIndent = false
   if text == "\n":
     allWhitespace = true
@@ -1804,7 +1807,6 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
       if selection.first != selection.last:
         allWhitespace = false
         break
-      # todo: don't use getLine
       for c in self.document.getLine(selection.first.line).chars:
         if c != ' ' and c != '\t':
           allWhitespace = false
@@ -1820,6 +1822,8 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
     elif autoIndent:
       insertedAutoIndent = true
       texts.setLen(selections.len)
+      for i in 1..texts.high:
+        texts[i] = text
 
       for i, selection in selections:
         var indentClosing = false
