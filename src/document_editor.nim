@@ -1,6 +1,7 @@
 import std/[tables, options, sets, hashes]
 import bumpy
-import misc/[event, custom_logger, id, custom_async, util, generational_seq]
+import misc/[event, custom_logger, id, custom_async, util, generational_seq, jsonex]
+import events
 import component
 
 export component
@@ -82,12 +83,20 @@ proc getDocument*(self: DocumentEditorService, id: DocumentId): Option[Document]
 proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] {.apprtl.}
 proc getDocumentByPath*(self: DocumentEditorService, path: string, usage = ""): Option[Document] {.apprtl.}
 proc getEditorsForDocument*(self: DocumentEditorService, document: Document): seq[DocumentEditor] {.apprtl.}
+proc createEditorForDocument*(self: DocumentEditorService, document: Document): Option[DocumentEditor] {.apprtl.}
+proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx): Document {.apprtl.}
+proc documentEditorSetActive(self: DocumentEditor, newActive: bool) {.apprtl.}
+proc documentEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.apprtl, gcsafe, raises: [].}
+
+
+# Nice wrappers
+proc createDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx = nil): Document {.inline.} = documentEditorCreateDocument(self, kind, path, load, options)
+proc `active=`*(self: DocumentEditor, newActive: bool) = documentEditorSetActive(self, newActive)
 
 when implModule:
   import std/[json]
   import misc/[array_set]
   import vmath
-  import events
   import scripting/expose
   import input, platform_service, dispatch_tables
   from scripting_api import EditorId
@@ -108,8 +117,9 @@ when implModule:
     self.pinnedEditors = initHashSet[EditorIdNew]()
     return ok()
 
+  method kind*(self: DocumentFactory): string {.base, gcsafe, raises: [].} = discard
   method canOpenFile*(self: DocumentFactory, path: string): bool {.base, gcsafe, raises: [].} = discard
-  method createDocument*(self: DocumentFactory, services: Services, path: string, load: bool): Document {.base, gcsafe, raises: [].} = discard
+  method createDocument*(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document {.base, gcsafe, raises: [].} = discard
 
   method canEditDocument*(self: DocumentEditorFactory, document: Document): bool {.base, gcsafe, raises: [].} = discard
   method createEditor*(self: DocumentEditorFactory, services: Services, document: Document): DocumentEditor {.base, gcsafe, raises: [].} = discard
@@ -153,7 +163,10 @@ when implModule:
 
   method getStatisticsString*(self: DocumentEditor): string {.base, gcsafe, raises: [].} = discard
 
-  proc `active=`*(self: DocumentEditor, newActive: bool) =
+  proc documentEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].} =
+    self.getEventHandlers(inject)
+
+  proc documentEditorSetActive(self: DocumentEditor, newActive: bool) =
     let changed = if newActive != self.active:
       self.markDirty()
       true
@@ -170,6 +183,12 @@ when implModule:
       assert self.active == newActive
 
   proc getEditorDocument*(self: DocumentEditor): Document = self.getDocument()
+
+  proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx): Document =
+    for factory in self.documentFactories:
+      if factory.kind == kind and factory.canOpenFile(path):
+        return factory.createDocument(self.services, path, load, options)
+    return nil
 
   proc addDocumentFactory*(self: DocumentEditorService, factory: DocumentFactory) =
     self.documentFactories.add(factory)
@@ -336,3 +355,6 @@ when implModule:
     return EditorId.none
 
   addGlobalDispatchTable "editors", genDispatchTable("editors")
+
+else:
+  proc getEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.inline.} = documentEditorGetEventHandlers(self, inject)

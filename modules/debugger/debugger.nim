@@ -31,7 +31,7 @@ when implModule:
   import workspaces/workspace, vfs, vfs_service, language_server_dynamic
   import ui/node
   import nimsumtree/[rope, buffer]
-  import text_component, language_server_component
+  import text_component, text_editor_component, language_server_component, signs_component
   import types_impl
 
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -145,6 +145,11 @@ when implModule:
   proc renderView(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc]
   proc renderView(self: OutputView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc]
   proc renderView(self: ToolbarView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc]
+  proc getEventHandlers(view: ThreadsView, inject: Table[string, EventHandler]): seq[EventHandler]
+  proc getEventHandlers(view: StacktraceView, inject: Table[string, EventHandler]): seq[EventHandler]
+  proc getEventHandlers(view: VariablesView, inject: Table[string, EventHandler]): seq[EventHandler]
+  proc getEventHandlers(view: OutputView, inject: Table[string, EventHandler]): seq[EventHandler]
+  proc getEventHandlers(view: ToolbarView, inject: Table[string, EventHandler]): seq[EventHandler]
 
   proc createDebuggerView[T](debugger: Debugger): T =
     let view = T()
@@ -259,17 +264,18 @@ when implModule:
     except CancelledError:
       discard
 
+    let document = self.editors.createDocument("text", ".debugger-output", load = false, %%*{"createLanguageServer": false})
+    document.usage = "debugger-output"
     # todo
-    # let document = newTextDocument(self.services, createLanguageServer=false)
-    # document.usage = "debugger-output"
     # document.setReadOnly(true)
-    # self.outputEditor = newTextEditor(document, self.services)
-    # self.outputEditor.usage = "debugger-output"
-    # self.outputEditor.renderHeader = true
-    # self.outputEditor.disableCompletions = true
+    self.outputEditor = self.editors.createEditorForDocument(document).get(nil)
+    if self.outputEditor != nil:
+      # self.outputEditor.usage = "debugger-output"
+      # self.outputEditor.renderHeader = true
+      # self.outputEditor.disableCompletions = true
 
-    # discard self.outputEditor.onMarkedDirty.subscribe () =>
-    #   self.platform.requestRender()
+      discard self.outputEditor.onMarkedDirty.subscribe () =>
+        self.platform.requestRender()
 
     assignEventHandler(self.eventHandler, self.events.getEventHandlerConfig("debugger")):
       onAction:
@@ -427,15 +433,16 @@ when implModule:
     if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
       return (t.id, frame[].id, varRef).some
 
-  proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor, slot: string = "") {.async.} =
+  proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Point, slot: string = "") {.async.} =
     let editor = self.layout.openFile(path, slot = slot)
 
     if editor.getSome(editor):
-      discard
-      # todo
-      # editor.targetSelection = location.toSelection
-      # editor.scrollToCursor(location, scrollBehaviour = CenterMargin.some)
+      let te = editor.getTextEditorComponent().getOr:
+        return
+      te.setTargetSelection(location...location)
+      te.scrollToCursor(location, CenterMargin)
 
+      # todo
       # let lineSelection = ((location.line, 0), (location.line, editor.lineLength(location.line)))
       # editor.addCustomHighlight(debuggerCurrentLineId, lineSelection, "editorError.foreground",
       #   color(1, 1, 1, 0.3))
@@ -649,7 +656,7 @@ when implModule:
     if self.currentStackFrame().getSome(frame) and
         frame[].source.isSome and
         frame[].source.get.path.getSome(path):
-      asyncSpawn self.tryOpenFileInWorkspace(path, (frame[].line - 1, frame[].column - 1), slot)
+      asyncSpawn self.tryOpenFileInWorkspace(path, point(frame[].line - 1, frame[].column - 1), slot)
 
   proc prevVariable*(self: VariablesView, skipChildren: bool = false) =
     let debugger = getDebugger().getOr:
@@ -1393,7 +1400,7 @@ when implModule:
       let frame {.cursor.} = stack.stackFrames[0]
 
       if frame.source.isSome and frame.source.get.path.getSome(path):
-        await self.tryOpenFileInWorkspace(path, (frame.line - 1, frame.column - 1))
+        await self.tryOpenFileInWorkspace(path, point(frame.line - 1, frame.column - 1))
 
   proc handleStopped(self: Debugger, data: OnStoppedData) =
     asyncSpawn self.handleStoppedAsync(data)
@@ -1589,8 +1596,10 @@ when implModule:
       self.chooseRunConfiguration()
 
   proc applyBreakpointSignsToEditor(self: Debugger, editor: DocumentEditor) =
-    # todo
-    # editor.clearSigns("breakpoints")
+    let signs = editor.getSignsComponent.getOr:
+      return
+
+    signs.clearSigns("breakpoints")
 
     if editor.document.isNil:
       return
@@ -1607,9 +1616,7 @@ when implModule:
         "error"
       else:
         ""
-      # todo
-      # discard editor.addSign(idNone(), breakpoint.breakpoint.line - 1, sign,
-      #   group = "breakpoints", color = color, width = 2)
+      discard signs.addSign(idNone(), breakpoint.breakpoint.line - 1, sign, group = "breakpoints", color = color, width = 2)
 
   proc flushBreakpointsForFileDelayedAsync(self: Debugger, path: string, delay: int) {.async.} =
     try:
@@ -1629,6 +1636,7 @@ when implModule:
       # let id2 = document.textChanged.subscribe proc(doc: Document) =
       #   self.updateBreakpointsForFile(document.filename)
       # self.documentCallbacks[document.filename] = (document, id, id2)
+      self.documentCallbacks[document.filename] = (document, id, idNone())
 
   proc toggleBreakpointAt*(self: Debugger, editorId: EditorId, line: int) =
     ## Line is 0-based
@@ -1659,8 +1667,9 @@ when implModule:
   proc toggleBreakpoint*(self: Debugger) =
     if self.layout.tryGetCurrentView().getSome(view) and view of EditorView:
       let editor = view.EditorView.editor
-      # todo
-      # self.toggleBreakpointAt(editor.id.EditorId, editor.selection.last.line)
+      let text = editor.getTextEditorComponent().getOr:
+        return
+      self.toggleBreakpointAt(editor.id.EditorId, text.selection.b.row.int)
 
   proc removeBreakpoint*(self: Debugger, path: string, line: int) =
     ## Line is 1-based
@@ -1780,22 +1789,22 @@ when implModule:
 
     builder.customActions["delete-breakpoint"] = proc(popup: ISelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].} =
       if popup.getSelectedItem().getSome(item):
-        # let b = item.data.parseJson.jsonTo(BreakpointInfo).catch:
-        #   log lvlError, &"Failed to parse BreakpointInfo: {getCurrentExceptionMsg()}"
-        #   return
+        let b = item.data.parseJson.jsonTo(BreakpointInfo).catch:
+          log lvlError, &"Failed to parse BreakpointInfo: {getCurrentExceptionMsg()}"
+          return
 
-        # self.removeBreakpoint(b.path, b.breakpoint.line)
+        self.removeBreakpoint(b.path, b.breakpoint.line)
         source.retrigger()
 
       true
 
     builder.customActions["toggle-breakpoint-enabled"] = proc(popup: ISelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].} =
       if popup.getSelectedItem().getSome(item):
-        # let b = item.data.parseJson.jsonTo(BreakpointInfo).catch:
-        #   log lvlError, &"Failed to parse BreakpointInfo: {getCurrentExceptionMsg()}"
-        #   return
+        let b = item.data.parseJson.jsonTo(BreakpointInfo).catch:
+          log lvlError, &"Failed to parse BreakpointInfo: {getCurrentExceptionMsg()}"
+          return
 
-        # self.toggleBreakpointEnabled(b.path, b.breakpoint.line)
+        self.toggleBreakpointEnabled(b.path, b.breakpoint.line)
         source.retrigger()
 
       true
@@ -1931,17 +1940,17 @@ when implModule:
 
     return Ignored
 
-  proc getEventHandlers*(view: ThreadsView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  proc getEventHandlers(view: ThreadsView, inject: Table[string, EventHandler]): seq[EventHandler] =
     let debugger = ({.gcsafe.}: gDebugger)
     result.add debugger.eventHandler
     result.add debugger.threadsEventHandler
 
-  proc getEventHandlers*(view: StacktraceView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  proc getEventHandlers(view: StacktraceView, inject: Table[string, EventHandler]): seq[EventHandler] =
     let debugger = ({.gcsafe.}: gDebugger)
     result.add debugger.eventHandler
     result.add debugger.stackTraceEventHandler
 
-  proc getEventHandlers*(view: VariablesView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  proc getEventHandlers(view: VariablesView, inject: Table[string, EventHandler]): seq[EventHandler] =
     let debugger = ({.gcsafe.}: gDebugger)
     result.add debugger.eventHandler
     if view.eventHandler == nil:
@@ -1957,14 +1966,13 @@ when implModule:
           Handled
     result.add view.eventHandler
 
-  proc getEventHandlers*(view: OutputView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  proc getEventHandlers(view: OutputView, inject: Table[string, EventHandler]): seq[EventHandler] =
     let debugger = ({.gcsafe.}: gDebugger)
     result.add debugger.eventHandler
-    # todo
-    # if debugger.outputEditor.isNotNil:
-    #   result.add debugger.outputEditor.getEventHandlers(inject)
+    if debugger.outputEditor.isNotNil:
+      result.add debugger.outputEditor.getEventHandlers(inject)
 
-  proc getEventHandlers*(view: ToolbarView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  proc getEventHandlers(view: ToolbarView, inject: Table[string, EventHandler]): seq[EventHandler] =
     let debugger = ({.gcsafe.}: gDebugger)
     result.add debugger.eventHandler
 
@@ -2152,7 +2160,7 @@ when implModule:
         description: inDesc,
         parameters: inParams,
         returnType: inRet,
-        execute: proc(argsString: string): string {.gcsafe, raises: [CatchableError].} =
+        execute: proc(argsString: string): string {.gcsafe.} =
           log lvlDebug, "execute '", argsString, "'"
           var args = newJArray()
           try:
