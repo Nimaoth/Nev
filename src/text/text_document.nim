@@ -514,9 +514,6 @@ proc `content=`*(self: TextDocument, value: sink string) =
   self.notifyTextChanged()
 
 proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[S], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
-  if self.readOnly:
-    return @selections
-
   let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
   if selections.len == 0:
     return selections
