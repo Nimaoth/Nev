@@ -169,7 +169,7 @@ method getInlayHints*(self: LanguageServerList, filename: string, selection: Sel
 method getDiagnostics*(self: LanguageServerList, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
   return self.mergeResponse(lsp_types.Diagnostic, ls.getDiagnostics(filename), "getDiagnostics")
 
-method getCompletionTriggerChars*(self: LanguageServerList): set[char] =
+method getCompletionTriggerChars*(self: LanguageServerList): set[char] {.raises: [].} =
   for ls in self.languageServers:
     result.incl ls.getCompletionTriggerChars()
 

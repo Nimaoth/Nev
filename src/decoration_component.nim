@@ -26,47 +26,59 @@ declareSettings SignColumnSettings, "":
   ## If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width.
   declare maxWidth, Option[int], 2
 
-type DecorationComponent* = ref object of Component
-  settings*: SignColumnSettings
+type
+  OverlayRenderLocation* {.pure.} = enum
+    Inline
+    Below
+    Above
+  DecorationComponent* = ref object of Component
+    settings*: SignColumnSettings
 
 # DLL API
 var DecorationComponentId* {.apprtl.}: ComponentTypeId
 
-proc signsComponentClearSigns(self: DecorationComponent, group: string = "") {.apprtl, gcsafe, raises: [].}
-proc signsComponentAddSign(self: DecorationComponent, id: Id, line: int, text: string, group: string = "", tint: Color = color(1, 1, 1), color: string = "", width: int = 1): Id {.apprtl, gcsafe, raises: [].}
-proc signsClearCustomHighlights(self: DecorationComponent, id: Id) {.apprtl, gcsafe, raises: [].}
-proc signsAddCustomHighlight(self: DecorationComponent, id: Id, selection: Range[Point], color: string, tint: Color = color(1, 1, 1)) {.apprtl, gcsafe, raises: [].}
+proc decorationComponentClearSigns(self: DecorationComponent, group: string = "") {.apprtl, gcsafe, raises: [].}
+proc decorationComponentAddSign(self: DecorationComponent, id: Id, line: int, text: string, group: string = "", tint: Color = color(1, 1, 1), color: string = "", width: int = 1): Id {.apprtl, gcsafe, raises: [].}
+proc decorationComponentClearCustomHighlights(self: DecorationComponent, id: Id) {.apprtl, gcsafe, raises: [].}
+proc decorationComponentAddCustomHighlight(self: DecorationComponent, id: Id, selection: Range[Point], color: string, tint: Color = color(1, 1, 1)) {.apprtl, gcsafe, raises: [].}
+proc decorationComponentClearOverlays(self: DecorationComponent, id: int = -1) {.apprtl, gcsafe, raises: [].}
+proc decorationComponentAddOverlay(self: DecorationComponent, selection: Range[Point], text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) {.apprtl, gcsafe, raises: [].}
 
 proc getDecorationComponent*(self: ComponentOwner): Option[DecorationComponent] {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
-proc clearSigns*(self: DecorationComponent, group: string = "") {.inline.} = signsComponentClearSigns(self, group)
-proc addSign*(self: DecorationComponent, id: Id, line: int, text: string, group: string = "", tint: Color = color(1, 1, 1), color: string = "", width: int = 1): Id {.inline.} = signsComponentAddSign(self, id, line, text, group, tint, color, width)
-proc clearCustomHighlights*(self: DecorationComponent, id: Id) {.inline.} = signsClearCustomHighlights(self, id)
-proc addCustomHighlight*(self: DecorationComponent, id: Id, selection: Range[Point], color: string, tint: Color = color(1, 1, 1)) {.inline.} = signsAddCustomHighlight(self, id, selection, color, tint)
+proc clearSigns*(self: DecorationComponent, group: string = "") {.inline.} = decorationComponentClearSigns(self, group)
+proc addSign*(self: DecorationComponent, id: Id, line: int, text: string, group: string = "", tint: Color = color(1, 1, 1), color: string = "", width: int = 1): Id {.inline.} = decorationComponentAddSign(self, id, line, text, group, tint, color, width)
+proc clearCustomHighlights*(self: DecorationComponent, id: Id) {.inline.} = decorationComponentClearCustomHighlights(self, id)
+proc addCustomHighlight*(self: DecorationComponent, id: Id, selection: Range[Point], color: string, tint: Color = color(1, 1, 1)) {.inline.} = decorationComponentAddCustomHighlight(self, id, selection, color, tint)
+proc clearOverlays*(self: DecorationComponent, id: int = -1) {.inline.} = decorationComponentClearOverlays(self, id)
+proc addOverlay*(self: DecorationComponent, selection: Range[Point], text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) {.inline.} = decorationComponentAddOverlay(self, selection, text, id, scope, bias, renderId, location)
 
 # Implementation
 when implModule:
   import std/[tables]
   import misc/[util, custom_logger, rope_utils]
   import document_editor
+  import text/[display_map, overlay_map]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
-  logCategory "signs-component"
+  logCategory "decoration-component"
 
   DecorationComponentId = componentGenerateTypeId()
 
   type DecorationComponentImpl* = ref object of DecorationComponent
+    displayMap: DisplayMap
     signs*: Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color, color: string, width: int]]]
     customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string, tint: Color]]]
 
   proc getDecorationComponent*(self: ComponentOwner): Option[DecorationComponent] {.gcsafe, raises: [].} =
     return self.getComponent(DecorationComponentId).mapIt(it.DecorationComponent)
 
-  proc newDecorationComponent*(settings: SignColumnSettings): DecorationComponentImpl =
+  proc newDecorationComponent*(settings: SignColumnSettings, displayMap: DisplayMap): DecorationComponentImpl =
     return DecorationComponentImpl(
       typeId: DecorationComponentId,
       settings: settings,
+      displayMap: displayMap,
     )
 
   proc clear*(self: DecorationComponent) =
@@ -82,7 +94,7 @@ when implModule:
     let self = self.DecorationComponentImpl
     self.customHighlights.clear()
 
-  proc signsComponentClearSigns(self: DecorationComponent, group: string = "") =
+  proc decorationComponentClearSigns(self: DecorationComponent, group: string = "") =
     let self = self.DecorationComponentImpl
     var linesToRemove: seq[int] = @[]
     for line, signs in self.signs.mpairs:
@@ -97,7 +109,7 @@ when implModule:
 
     self.owner.DocumentEditor.markDirty()
 
-  proc signsComponentAddSign(self: DecorationComponent, id: Id, line: int, text: string, group: string = "",
+  proc decorationComponentAddSign(self: DecorationComponent, id: Id, line: int, text: string, group: string = "",
       tint: Color = color(1, 1, 1), color: string = "", width: int = 1): Id =
     let self = self.DecorationComponentImpl
     self.signs.withValue(line, val):
@@ -150,7 +162,7 @@ when implModule:
 
       yield ((selection.last.line, 0), selection.last)
 
-  proc signsClearCustomHighlights(self: DecorationComponent, id: Id) =
+  proc decorationComponentClearCustomHighlights(self: DecorationComponent, id: Id) =
     ## Removes all custom highlights associated with the given id
     let self = self.DecorationComponentImpl
 
@@ -174,5 +186,19 @@ when implModule:
         self.customHighlights[selection.first.line] = @[(id, selection, color, tint)]
     self.owner.DocumentEditor.markDirty()
 
-  proc signsAddCustomHighlight(self: DecorationComponent, id: Id, selection: Range[Point], color: string, tint: Color = color(1, 1, 1)) =
+  proc decorationComponentAddCustomHighlight(self: DecorationComponent, id: Id, selection: Range[Point], color: string, tint: Color = color(1, 1, 1)) =
     self.addCustomHighlight(id, selection.toSelection, color, tint)
+
+  proc decorationComponentClearOverlays(self: DecorationComponent, id: int = -1) =
+    let self = self.DecorationComponentImpl
+    self.displayMap.overlay.clear(id)
+    self.owner.DocumentEditor.markDirty()
+
+  proc decorationComponentAddOverlay(self: DecorationComponent, selection: Range[Point], text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) =
+    let self = self.DecorationComponentImpl
+    let location = case location
+      of Inline: overlay_map.OverlayRenderLocation.Inline
+      of Below: overlay_map.OverlayRenderLocation.Below
+      of Above: overlay_map.OverlayRenderLocation.Above
+    self.displayMap.overlay.addOverlay(selection, text, id, scope, bias, renderId, location)
+    self.owner.DocumentEditor.markDirty()

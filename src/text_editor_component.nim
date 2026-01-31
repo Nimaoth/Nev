@@ -147,3 +147,29 @@ when implModule:
       of TopOfScreen: (false, false)
 
     self.scrollBox.scrollTo(displayPoint.row.int, center = centerY, centerOffscreen = centerOffscreenY, snap = snap)
+
+  proc numDisplayLines*(self: TextEditorComponent): int =
+    let self = self.TextEditorComponentImpl
+    return self.displayMap.endDisplayPoint.row.int + 1
+
+  proc screenLineCount*(self: TextEditorComponent): int =
+    ## Returns the number of lines that can be shown on the screen
+    ## This value depends on the size of the view this editor is in and the font size
+    let self = self.TextEditorComponentImpl
+    return self.scrollBox.items.len
+
+  proc visibleDisplayRange*(self: TextEditorComponent, buffer: int = 0): Range[DisplayPoint] =
+    let self = self.TextEditorComponentImpl
+    assert self.numDisplayLines > 0
+    if self.scrollBox.items.len > 0:
+      let firstDisplayLine = self.scrollBox.items[0].index
+      let lastDisplayLine = self.scrollBox.items[^1].index
+      return displayPoint(firstDisplayLine, 0)...displayPoint(lastDisplayLine + 1, 0).clamp(displayPoint(), self.displayMap.endDisplayPoint)
+
+    return displayPoint(0, 0)...displayPoint(0, 0)
+
+  proc visibleTextRange*(self: TextEditorComponent, buffer: int = 0): Selection =
+    let self = self.TextEditorComponentImpl
+    let displayRange = self.visibleDisplayRange(buffer)
+    result.first = self.displayMap.toPoint(displayRange.a).toCursor
+    result.last = self.displayMap.toPoint(displayRange.b).toCursor
