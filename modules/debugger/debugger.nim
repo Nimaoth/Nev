@@ -1433,15 +1433,20 @@ when implModule:
     if data.category == "stdout".some or data.category == "stderr".some:
       let document = self.outputEditor.document
 
-      # todo
-      # let selection = document.lastCursor.toSelection
-      # let cursorAtEnd = self.outputEditor.selection == selection
-      # discard document.edit([selection], [selection], [data.output.replace("\r\n", "\n")])
+      let te = self.outputEditor.getTextEditorComponent().getOr:
+        return
 
-      # if cursorAtEnd:
-      #   self.outputEditor.selection = document.lastCursor.toSelection
-      #   self.outputEditor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
-      #   self.outputEditor.scrollToCursor()
+      let text = document.getTextComponent().getOr:
+        return
+
+      let endPoint = text.content.endPoint
+      let selection = endPoint...endPoint
+      let cursorAtEnd = te.selection == selection
+      discard text.edit([selection], [selection], [data.output.replace("\r\n", "\n")])
+
+      if cursorAtEnd:
+        te.selection = text.content.endPoint
+        te.scrollToCursor(text.content.endPoint, ScrollToMargin, snap = true)
 
     else:
       log(lvlInfo, &"[dap-{data.category}] {data.output}")
