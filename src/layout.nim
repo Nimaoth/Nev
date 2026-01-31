@@ -1,4 +1,5 @@
 import std/[options, json]
+import misc/[custom_async]
 import service, view, popup, selector_popup_builder
 import document, document_editor
 
@@ -25,6 +26,8 @@ proc layoutServiceAddViewFactory(self: LayoutService, name: string, create: Crea
 proc layoutServicePushSelectorPopup(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup {.apprtl, gcsafe, raises: [].}
 proc layoutServiceOpenFile(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] {.apprtl, gcsafe, raises: [].}
 proc layoutServiceIsViewVisible(self: LayoutService, view: View): bool {.apprtl, gcsafe, raises: [].}
+proc layoutServicePromptString(self: LayoutService, title: string = ""): Future[Option[string]] {.apprtl, gcsafe, async: (raises: [])}
+proc layoutServicePrompt(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.apprtl, gcsafe, async: (raises: [])}
 
 # Nice wrappers
 proc popups*(self: LayoutService): lent seq[Popup] {.inline.} = self.layoutServicePopups()
@@ -37,6 +40,8 @@ proc addViewFactory*(self: LayoutService, name: string, create: CreateView, over
 proc pushSelectorPopup*(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup {.inline.} = self.layoutServicePushSelectorPopup(builder)
 proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] {.inline.} = self.layoutServiceOpenFile(path, slot)
 proc isViewVisible*(self: LayoutService, view: View): bool {.inline.} = self.layoutServiceIsViewVisible(view)
+proc promptString*(self: LayoutService, title: string = ""): Future[Option[string]] {.async: (raises: [])} = await layoutServicePromptString(self, title)
+proc prompt*(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.gcsafe, async: (raises: [])} = await layoutServicePrompt(self, choices, title)
 
 proc getViews*(self: LayoutService, T: typedesc): seq[T] =
   var res = newSeq[T]()
@@ -665,7 +670,7 @@ when implModule:
     let self = self.LayoutServiceImpl
     self.pushSelectorPopupImpl(self, builder)
 
-  proc promptString*(self: LayoutService, title: string = ""): Future[Option[string]] =
+  proc layoutServicePromptString(self: LayoutService, title: string = ""): Future[Option[string]] {.apprtl, gcsafe, async: (raises: [])} =
     let self = self.LayoutServiceImpl
     defer:
       self.platform.requestRender()
@@ -695,9 +700,12 @@ when implModule:
       return true
 
     discard self.pushSelectorPopup(builder)
-    return fut
+    try:
+      return await fut
+    except CatchableError:
+      return string.none
 
-  proc prompt*(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] =
+  proc layoutServicePrompt(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.apprtl, gcsafe, async: (raises: [])} =
     let self = self.LayoutServiceImpl
     defer:
       self.platform.requestRender()
@@ -728,7 +736,10 @@ when implModule:
       return true
 
     discard self.pushSelectorPopup(builder)
-    return fut
+    try:
+      return await fut
+    except CatchableError:
+      return string.none
 
   iterator visibleEditors*(self: LayoutService): DocumentEditor =
     let self = self.LayoutServiceImpl

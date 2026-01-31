@@ -2721,6 +2721,7 @@ when implModule:
     self.markDirtyBase()
     self.terminals.updateModeEventHandlers(self)
 
+  # todo
   # proc pasteAsync*(self: TerminalServiceImpl, view: TerminalView, registerName: string): Future[void] {.async.} =
   #   log lvlInfo, fmt"paste register from '{registerName}'"
 
@@ -2835,9 +2836,6 @@ when implModule:
   proc sendTerminalInputAndSetMode*(self: TerminalServiceImpl, input: string, mode: string) =
     self.sendTerminalInput(input)
     self.setTerminalMode(mode)
-
-  # # todo: I don't like this import
-  # import text/text_editor
 
   proc requestEditBuffer(self: TerminalView) {.async.} =
     try:
