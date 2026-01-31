@@ -288,8 +288,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastSearchResultUpdate: tuple[buffer: BufferId, version: Global, searchQuery: string]
   isUpdatingMatchingWordHighlights: bool
 
-  customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string, tint: Color]]]
-
   defaultScrollBehaviour*: ScrollBehaviour = ScrollToMargin
   nextScrollBehaviour*: Option[ScrollBehaviour]
   defaultSnapBehaviour*: ScrollSnapBehaviour = MinDistanceOffscreen
@@ -459,7 +457,7 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Selection History: {self.textEditorComponent.selectionHistory.len}\n"
   result.add &"Search Query: {self.searchQuery}\n"
   result.add &"Search Results: {self.searchResults.len}\n"
-  result.add &"Custom Highlights: {self.customHighlights.len}\n"
+  result.add &"Custom Highlights: {self.signs.customHighlights.len}\n"
   result.add &"Inlay Hints: {self.inlayHints.len}\n"
   result.add &"Overlay map: {st.stats(self.displayMap.overlay.snapshot.map)}\n"
   result.add &"Wrap map: {st.stats(self.displayMap.diffMap.snapshot.map)}\n"
@@ -483,8 +481,6 @@ proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, mo
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last)
 proc updateInlayHints*(self: TextDocumentEditor)
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection
-proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection, color: string, tint: Color = color(1, 1, 1))
-proc clearCustomHighlights*(self: TextDocumentEditor, id: Id)
 proc updateSearchResults(self: TextDocumentEditor)
 proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, snap: bool = false)
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5, snap: bool = false)
@@ -650,7 +646,6 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.editors.tryCloseDocument(document)
 
     self.textEditorComponent.selectionHistory.clear()
-    self.customHighlights.clear()
     self.signs.clear()
     self.clearOverlayViews()
     self.clearHoverView()
@@ -946,49 +941,6 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.showCompletions:
     self.updateCompletionsFromEngine()
 
-iterator splitSelectionIntoLines(self: TextDocumentEditor, selection: Selection,
-    includeAfter: bool = true): Selection =
-  ## Yields a selection for each line covered by the input selection, covering the same range as the input
-  ## If includeAfter is true then the selections will go until line.len, otherwise line.high
-
-  let selection = selection.normalized
-  if selection.first.line == selection.last.line:
-    yield selection
-  else:
-    yield (
-      selection.first,
-      (selection.first.line, self.document.rope.lastValidIndex(selection.first.line, includeAfter))
-    )
-
-    for i in (selection.first.line + 1)..<selection.last.line:
-      yield ((i, 0), (i, self.document.rope.lastValidIndex(i, includeAfter)))
-
-    yield ((selection.last.line, 0), selection.last)
-
-proc clearCustomHighlights*(self: TextDocumentEditor, id: Id) =
-  ## Removes all custom highlights associated with the given id
-
-  var anyChanges = false
-  for highlights in self.customHighlights.mvalues:
-    for i in countdown(highlights.high, 0):
-      if highlights[i].id == id:
-        highlights.removeSwap(i)
-        anyChanges = true
-
-  if anyChanges:
-    self.markDirty()
-
-proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection, color: string,
-    tint: Color = color(1, 1, 1)) =
-  # customHighlights*: Table[int, seq[(Id, Selection, Color)]]
-  for lineSelection in self.splitSelectionIntoLines(selection):
-    assert lineSelection.first.line == lineSelection.last.line
-    self.customHighlights.withValue(selection.first.line, val):
-      val[].add (id, selection, color, tint)
-    do:
-      self.customHighlights[selection.first.line] = @[(id, selection, color, tint)]
-  self.markDirty()
-
 proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
   if self.isUpdatingSearchResults:
     return
@@ -1000,7 +952,7 @@ proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
     let buffer = self.document.buffer.snapshot.clone()
     let searchQuery = self.searchQuery
     if searchQuery.len == 0:
-      self.clearCustomHighlights(searchResultsId)
+      self.signs.clearCustomHighlights(searchResultsId)
       self.searchResults.setLen(0)
       self.markDirty()
       return
@@ -1014,9 +966,9 @@ proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
 
     self.searchResults = searchResults
     self.lastSearchResultUpdate = (buffer.remoteId, buffer.version, searchQuery)
-    self.clearCustomHighlights(searchResultsId)
+    self.signs.clearCustomHighlights(searchResultsId)
     for s in searchResults:
-      self.addCustomHighlight(searchResultsId, s.toSelection, "editor.findMatchBackground")
+      self.signs.addCustomHighlight(searchResultsId, s.toSelection, "editor.findMatchBackground")
 
     self.onSearchResultsUpdated.invoke(self)
 
@@ -4803,10 +4755,10 @@ proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
         if s.first.column > 0 and self.document.rope.charAt(prev.toPoint) in AlphaNumeric:
           s = self.document.rope.vimMotionWord(prev, false).normalized
         else:
-          self.clearCustomHighlights(wordHighlightId)
+          self.signs.clearCustomHighlights(wordHighlightId)
           return
       if self.document.rope.charAt(s.first.toPoint) notin AlphaNumeric:
-        self.clearCustomHighlights(wordHighlightId)
+        self.signs.clearCustomHighlights(wordHighlightId)
         return
       (s, false, true)
     else:
@@ -4833,9 +4785,9 @@ proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
       if self.document.buffer.version != version or self.selection != oldSelection:
         continue
 
-      self.clearCustomHighlights(wordHighlightId)
+      self.signs.clearCustomHighlights(wordHighlightId)
       for r in ranges:
-        self.addCustomHighlight(wordHighlightId, r.toSelection, "matching-text-highlight")
+        self.signs.addCustomHighlight(wordHighlightId, r.toSelection, "matching-text-highlight")
 
       break
     except Exception as e:
@@ -4843,7 +4795,7 @@ proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
 
 proc updateMatchingWordHighlight(self: TextDocumentEditor) =
   if not self.settings.highlightMatches.enable.get():
-    self.clearCustomHighlights(wordHighlightId)
+    self.signs.clearCustomHighlights(wordHighlightId)
     return
 
   if self.isUpdatingMatchingWordHighlights:

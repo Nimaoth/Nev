@@ -442,12 +442,11 @@ when implModule:
       te.setTargetSelection(location...location)
       te.scrollToCursor(location, CenterMargin)
 
+      if editor.getSignsComponent().getSome(decos):
+        decos.addCustomHighlight(debuggerCurrentLineId, point(location.row, 0)...point(location.row, uint32.high), "editorError.foreground", color(1, 1, 1, 0.3))
       # todo
-      # let lineSelection = ((location.line, 0), (location.line, editor.lineLength(location.line)))
-      # editor.addCustomHighlight(debuggerCurrentLineId, lineSelection, "editorError.foreground",
-      #   color(1, 1, 1, 0.3))
       # asyncSpawn editor.updateInlayHintsAsync()
-      # self.lastEditor = editor.some
+      self.lastEditor = editor.some
 
   proc reevaluateCursorRefs*(self: Debugger, cursor: VariableCursor): VariableCursor =
     let scopes = self.currentScopes().getOr:
@@ -1078,10 +1077,11 @@ when implModule:
       log lvlWarn, "No active debug session"
       return
 
-    # todo
-    # if self.lastEditor.isSome:
-    #   self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
-    #   self.lastEditor.get.updateInlayHints()
+    if self.lastEditor.isSome:
+      if self.lastEditor.get.getSignsComponent().getSome(decos):
+        decos.clearCustomHighlights(debuggerCurrentLineId)
+      # todo
+      # self.lastEditor.get.updateInlayHints()
 
     asyncSpawn self.client.get.disconnect(restart=false)
     self.client.get.deinit()
@@ -1380,10 +1380,10 @@ when implModule:
       else:
         self.currentThreadIndex = 0
 
-    # todo
-    # if self.lastEditor.isSome:
-    #   self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
-    #   self.lastEditor = DocumentEditor.none
+    if self.lastEditor.isSome:
+      if self.lastEditor.get.getSignsComponent().getSome(decos):
+        decos.clearCustomHighlights(debuggerCurrentLineId)
+      self.lastEditor = DocumentEditor.none
 
     let threadId = await self.getStackTrace(data.threadId)
     if timestamp != self.timestamp:
@@ -1408,19 +1408,20 @@ when implModule:
   proc handleContinued(self: Debugger, data: OnContinuedData) =
     log(lvlInfo, &"onContinued {data}")
     self.debuggerState = DebuggerState.Running
-    # todo
-    # if self.lastEditor.isSome:
-    #   self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
+    if self.lastEditor.isSome:
+      if self.lastEditor.get.getSignsComponent().getSome(decos):
+        decos.clearCustomHighlights(debuggerCurrentLineId)
+      # todo
     #   self.lastEditor.get.updateInlayHints()
     self.languageServer.evaluations.clear()
     self.platform.requestRender()
 
   proc handleTerminated(self: Debugger, data: Option[OnTerminatedData]) =
     log(lvlInfo, &"onTerminated {data}")
-    # todo
-    # if self.lastEditor.isSome:
-    #   self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
-    #   self.lastEditor = DocumentEditor.none
+    if self.lastEditor.isSome:
+      if self.lastEditor.get.getSignsComponent().getSome(decos):
+        decos.clearCustomHighlights(debuggerCurrentLineId)
+      self.lastEditor = DocumentEditor.none
     self.stopDebugSessionDelayed()
     self.platform.requestRender()
 
