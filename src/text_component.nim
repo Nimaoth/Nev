@@ -40,6 +40,11 @@ proc content*(self: TextComponent, selection: Range[Point], inclusiveEnd: bool =
   let res = c.slice(target, Bias.Right)
   return $res
 
+proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Range[Point]] {.inline.} =
+  self.textComponentEditString(selections, oldSelections, texts, notify, record, inclusiveEnd)
+proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Range[Point]] {.inline.} =
+  self.textComponentEditRope(selections, oldSelections, texts, notify, record, inclusiveEnd)
+
 # Implementation
 when implModule:
   import std/[sequtils]
@@ -83,11 +88,5 @@ when implModule:
     self.TextComponentImpl.editString(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd).mapIt(it.toRange)
   proc textComponentEditRope(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Range[Point]] =
     self.TextComponentImpl.editRope(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd).mapIt(it.toRange)
-
-else:
-  proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Range[Point]] {.inline.} =
-    self.textComponentEditString(selections, oldSelections, texts, notify, record, inclusiveEnd)
-  proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Range[Point]] {.inline.} =
-    self.textComponentEditRope(selections, oldSelections, texts, notify, record, inclusiveEnd)
 
 proc buffer*(self: TextComponent): lent Buffer {.inline.} = self.textComponentBuffer()

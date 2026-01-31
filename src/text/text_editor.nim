@@ -1589,6 +1589,8 @@ proc delete*(self: TextDocumentEditor, selections: seq[Selection], notify: bool 
 
 proc edit*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[string],
     notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
+  if self.document.readOnly:
+    return @selections
   return self.document.edit(selections, self.selections, texts, notify, record, inclusiveEnd=inclusiveEnd)
 
 proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -1768,6 +1770,8 @@ proc autoShowCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.hideCompletions()
 
 proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true, autoClose: Option[bool] = bool.none) {.expose("editor.text").} =
+  if self.document.readOnly:
+    return
   if self.document.singleLine and text == "\n":
     return
 
@@ -3662,6 +3666,8 @@ proc createCompletionFromSnippet(self: TextDocumentEditor, snippet: JsonNode): C
     log lvlError, &"Failed to create completion from snippet: {e.msg}"
 
 proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
+  if self.document.readOnly:
+    return
   let completion = completion
   log(lvlInfo, fmt"Applying completion {completion.item.label}")
 
