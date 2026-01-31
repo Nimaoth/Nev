@@ -1314,7 +1314,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
   var ropeCursor = self.displayMap.buffer.visibleText.cursorT(Point)
   let visibleTextRange = self.visibleTextRange(2)
-  for selections in self.customHighlights.values:
+  for selections in self.signs.customHighlights.values:
     for s in selections:
       if s.selection.isEmpty:
         continue

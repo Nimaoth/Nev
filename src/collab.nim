@@ -8,7 +8,7 @@ import document
 import toast, layout
 import scripting_api except TextDocumentEditor
 
-import text/text_document
+import text/text_document, signs_component
 import text/text_editor
 
 import nimsumtree/[buffer, clock, rope]
@@ -35,12 +35,12 @@ proc handleSelections(line: string, editors: DocumentEditorService) =
     for editor in editors.getEditorsForDocument(doc):
       if editor of text_editor.TextDocumentEditor:
         let textEditor = editor.TextDocumentEditor
-        textEditor.clearCustomHighlights(highlightId)
+        textEditor.signs.clearCustomHighlights(highlightId)
         for s in selections:
           var sel = s
           if sel.isEmpty:
             sel.last.column += 1
-          textEditor.addCustomHighlight(highlightId, sel, "collabClientSelections")
+          textEditor.signs.addCustomHighlight(highlightId, sel, "collabClientSelections")
 
 proc connectCollaboratorAsync(port: int) {.async.} =
   ############### CLIENT
