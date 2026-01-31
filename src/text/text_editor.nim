@@ -20,7 +20,7 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 import lisp
 import view
-import scroll_box, component, treesitter_component, text_editor_component, config_component
+import scroll_box, component, treesitter_component, text_editor_component, config_component, signs_component
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
@@ -49,27 +49,11 @@ type
 
   ScrollToChangeOnReload* {.pure.} = enum First = "first", Last = "last"
 
-  SignColumnShowKind* {.pure.} = enum Auto = "auto", Yes = "yes", No = "no", Number = "number"
-
 proc typeNameToJson*(T: typedesc[ScrollToChangeOnReload]): string =
   return "\"first\" | \"last\""
 
 proc typeNameToJson*(T: typedesc[ColorType]): string =
   return "\"hex\" | \"float1\" | \"float255\""
-
-proc typeNameToJson*(T: typedesc[SignColumnShowKind]): string =
-  return "\"auto\" | \"yes\" | \"no\" | \"number\""
-
-declareSettings SignColumnSettings, "":
-  ## Defines how the sign column is displayed.
-  ## - auto: Signs are next to line numbers, width is based on amount of signs in a line.
-  ## - yes: Signs are next to line numbers and sign column is always visible. Width is defined in `max-width`
-  ## - no: Don't show the sign column
-  ## - number: Show signs instead of the line number, no extra sign column.
-  declare show, SignColumnShowKind, SignColumnShowKind.Number
-
-  ## If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width.
-  declare maxWidth, Option[int], 2
 
 declareSettings CodeActionSettings, "":
   ## Character to use as sign for lines where code actions are available. Empty string or null means no sign will be shown for code actions.
@@ -263,6 +247,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   configChanged: bool = false
 
   textEditorComponent*: TextEditorComponentImpl
+  signs*: SignsComponentImpl
 
   document*: TextDocument
   snapshot: BufferSnapshot
@@ -304,7 +289,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   isUpdatingMatchingWordHighlights: bool
 
   customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string, tint: Color]]]
-  signs*: Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color, color: string, width: int]]]
 
   defaultScrollBehaviour*: ScrollBehaviour = ScrollToMargin
   nextScrollBehaviour*: Option[ScrollBehaviour]
@@ -447,11 +431,20 @@ method init*(self: TextDocumentEditorService): Future[Result[void, ref Catchable
   editors.addDocumentEditorFactory(TextDocumentEditorFactory())
   return ok()
 
+method kind*(self: TextDocumentFactory): string = "text"
+
 method canOpenFile*(self: TextDocumentFactory, path: string): bool =
   return true
 
-method createDocument*(self: TextDocumentFactory, services: Services, path: string, load: bool): Document =
-  return newTextDocument(services, path, app=false, load=load)
+method createDocument*(self: TextDocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document =
+  var createLanguageServer = true
+  if options != nil and options.kind == JObject:
+    try:
+      createLanguageServer = options["createLanguageServer"].jsonTo(bool)
+    except CatchableError:
+      discard # todo
+  debugf"createDocument {path} {createLanguageServer}"
+  return newTextDocument(services, path, app=false, load=load, createLanguageServer=createLanguageServer)
 
 method canEditDocument*(self: TextDocumentEditorFactory, document: Document): bool =
   return document of TextDocument
@@ -876,31 +869,8 @@ proc tabWidth*(self: TextDocumentEditor): int =
     return 4
 
 proc requiredSignColumnWidth*(self: TextDocumentEditor): int =
-  case self.settings.signs.show.get()
-  of SignColumnShowKind.Auto:
-    var width = 0
-    let selection = self.visibleTextRange(1)
-    for line in selection.first.line..selection.last.line:
-      self.signs.withValue(line, value):
-        var subWidth = 0
-        for s in value[]:
-          subWidth += s.width
-        width = max(width, subWidth)
-
-    if self.settings.signs.maxWidth.get().getSome(maxWidth):
-      width = min(width, maxWidth)
-    return width
-
-  of SignColumnShowKind.Yes:
-    if self.settings.signs.maxWidth.get().getSome(maxWidth):
-      return maxWidth
-    return 1
-
-  of SignColumnShowKind.No:
-    return 0
-
-  of SignColumnShowKind.Number:
-    return 0
+  let selection = self.visibleTextRange(2)
+  return self.signs.requiredSignColumnWidth(selection.first.line...selection.last.line)
 
 proc lineNumberBounds*(self: TextDocumentEditor): Vec2 =
   # line numbers
@@ -1017,28 +987,6 @@ proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection,
       val[].add (id, selection, color, tint)
     do:
       self.customHighlights[selection.first.line] = @[(id, selection, color, tint)]
-  self.markDirty()
-
-proc clearSigns*(self: TextDocumentEditor, group: string = "") =
-  var linesToRemove: seq[int] = @[]
-  for line, signs in self.signs.mpairs:
-    for i in countdown(signs.high, 0):
-      if signs[i].group == group:
-        signs.removeSwap(i)
-    if signs.len == 0:
-      linesToRemove.add line
-
-  for line in linesToRemove:
-    self.signs.del line
-
-  self.markDirty()
-
-proc addSign*(self: TextDocumentEditor, id: Id, line: int, text: string, group: string = "",
-    tint: Color = color(1, 1, 1), color: string = "", width: int = 1): Id =
-  self.signs.withValue(line, val):
-    val[].add (id, group, text, tint, color, width)
-  do:
-    self.signs[line] = @[(id, group, text, tint, color, width)]
   self.markDirty()
 
 proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
@@ -4324,7 +4272,7 @@ proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selecti
       if sign.len > 0:
         let signWidth = self.settings.codeActions.signWidth.get()
         let color = self.settings.codeActions.signColor.get()
-        discard self.addSign(idNone(), selection.first.line, sign, group = "code-actions-" & ls.name, color = color, width = signWidth)
+        discard self.signs.addSign(idNone(), selection.first.line, sign, group = "code-actions-" & ls.name, color = color, width = signWidth)
 
     for actionOrCommand in actions.result:
       if actionOrCommand.asCommand().getSome(command):
@@ -4807,7 +4755,7 @@ proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, 
 
   self.lastDiagnosticsVersions.mgetOrPut(languageServer.name).inc
   self.codeActions.mgetOrPut(languageServer.name).clear()
-  self.clearSigns("code-actions-" & languageServer.name)
+  self.signs.clearSigns("code-actions-" & languageServer.name)
   asyncSpawn self.updateCodeActionsAsync(languageServer.some)
 
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument) =
@@ -4841,9 +4789,11 @@ proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
     if self.document.rope.len > self.settings.highlightMatches.maxFileSize.get():
       return
 
-    let oldSelection = self.selection.normalized
+    var oldSelection = self.selection.normalized
     if oldSelection.last.line - oldSelection.first.line > self.settings.highlightMatches.maxSelectionLines.get():
       return
+
+    oldSelection = self.document.clampSelection(oldSelection)
 
     let (selection, inclusive, addWordBoundary) = if oldSelection.isEmpty:
       var s = self.document.rope.vimMotionWord(oldSelection.last, false).normalized
@@ -5122,18 +5072,20 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
     self.configChanged = true
     self.markDirty()
 
-  self.textEditorComponent = newTextEditorComponent()
-  self.addComponent(self.textEditorComponent)
-  self.addComponent(newConfigComponent(self.config))
-
-  self.textEditorComponent.displayMap = self.displayMap
-
-  discard self.textEditorComponent.onSelectionsChanged.subscribe proc(args: auto) =
-    self.handleSelectionsChanged(args.old)
-
   self.uiSettings = UiSettings.new(self.config)
   self.debugSettings = DebugSettings.new(self.config)
   self.settings = TextEditorSettings.new(self.config)
+
+  self.textEditorComponent = newTextEditorComponent()
+  self.textEditorComponent.displayMap = self.displayMap
+  discard self.textEditorComponent.onSelectionsChanged.subscribe proc(args: auto) =
+    self.handleSelectionsChanged(args.old)
+  self.addComponent(self.textEditorComponent)
+
+  self.addComponent(newConfigComponent(self.config))
+
+  self.signs = newSignsComponent(self.settings.signs)
+  self.addComponent(self.signs)
 
   self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =
     self.applyMoveFallback(move, selections, count, args, env)

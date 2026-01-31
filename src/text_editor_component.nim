@@ -1,6 +1,7 @@
 import std/[options]
 import nimsumtree/[rope]
 import misc/[event]
+import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import component
 
 export component
@@ -19,8 +20,10 @@ proc textEditorComponentSetTargetSelections(self: TextEditorComponent, selection
 
 proc getTextEditorComponent*(self: ComponentOwner): Option[TextEditorComponent] {.apprtl, gcsafe, raises: [].}
 proc textEditorComponentCenterCursor(self: TextEditorComponent, point: Point, relativePosition: float = 0.5, snap: bool = false) {.apprtl, gcsafe, raises: [].}
+proc textEditorComponentScrollToCursor(self: TextEditorComponent, point: Point, scrollBehaviour: ScrollBehaviour, snap: bool = false) {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
+proc selection*(self: TextEditorComponent): Range[Point] {.inline.} = textEditorComponentSelections(self)[0]
 proc selections*(self: TextEditorComponent): lent seq[Range[Point]] {.inline.} = textEditorComponentSelections(self)
 proc `selections=`*(self: TextEditorComponent, selections: sink seq[Range[Point]]) {.inline.} = textEditorComponentSetSelections(self, selections.ensureMove)
 proc `selection=`*(self: TextEditorComponent, selection: Range[Point]) {.inline.} = textEditorComponentSetSelections(self, @[selection])
@@ -29,6 +32,7 @@ proc setTargetSelection*(self: TextEditorComponent, selection: Range[Point]) {.i
 proc `targetSelections=`*(self: TextEditorComponent, selections: sink seq[Range[Point]]) {.inline.} = textEditorComponentSetTargetSelections(self, selections.ensureMove)
 proc `targetSelection=`*(self: TextEditorComponent, selection: Range[Point]) {.inline.} = textEditorComponentSetTargetSelections(self, @[selection])
 proc centerCursor*(self: TextEditorComponent, point: Point, relativePosition: float = 0.5, snap: bool = false) {.inline.} = textEditorComponentCenterCursor(self, point, relativePosition, snap)
+proc scrollToCursor*(self: TextEditorComponent, point: Point, scrollBehaviour: ScrollBehaviour, snap: bool = false) {.inline.} = textEditorComponentScrollToCursor(self, point, scrollBehaviour, snap)
 
 # Implementation
 when implModule:
@@ -36,7 +40,6 @@ when implModule:
   import misc/[util, custom_logger, rope_utils]
   import nimsumtree/[clock]
   import text/[text_document, display_map]
-  import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import scroll_box
 
   logCategory "text-editor-component"
@@ -131,3 +134,15 @@ when implModule:
       self.scrollBox.scrollXToY(displayPoint.row.int, self.scrollBox.size.y * relativePosition)
     else:
       self.scrollBox.scrollTo(displayPoint.row.int, center = true, snap = snap)
+
+  proc textEditorComponentScrollToCursor(self: TextEditorComponent, point: Point, scrollBehaviour: ScrollBehaviour, snap: bool = false) =
+    let self = self.TextEditorComponentImpl
+    let displayPoint = self.displayMap.toDisplayPoint(point)
+    let (centerY, centerOffscreenY) = case scrollBehaviour
+      of CenterAlways: (true, false)
+      of CenterOffscreen: (false, true)
+      of CenterMargin: (false, false)
+      of ScrollToMargin: (false, false)
+      of TopOfScreen: (false, false)
+
+    self.scrollBox.scrollTo(displayPoint.row.int, center = centerY, centerOffscreen = centerOffscreenY, snap = snap)

@@ -260,6 +260,7 @@ func runeIndex*(self: RopeSlice, offset: int): RuneIndex =
   return self.convert(offset, Count).RuneIndex
 
 proc getEnclosing*(text: RopeSlice, column: int, inclusive: bool, predicate: proc(c: char): bool {.gcsafe, raises: [].}): (int, int) =
+  let column = column.clamp(0, text.bytes)
   var cf = text.cursor(column)
   var cb = cf.clone()
   while cf.offset < text.len:

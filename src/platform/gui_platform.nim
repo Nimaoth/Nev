@@ -42,10 +42,12 @@ type
 
     textures: Table[string, Texture]
 
+    defaultTypeface: Typeface
+    fallbackTypefaces*: seq[Future[Typeface]]
     fontCache1: Table[(string, float32), Font]
     fontCache2: Table[(UINodeFlags, float32), Font]
     fontInfoCache: Table[(UINodeFlags, float32), FontInfo]
-    typefaces: Table[string, Typeface]
+    typefaces: Table[string, Future[Typeface]]
     glyphCache: LruCache[(Rune, UINodeFlags, float), string]
     asciiGlyphCache: array[128, string]
 
@@ -60,6 +62,8 @@ proc toInput(button: Button): int64
 proc centerWindowOnMonitor*(window: Window, monitor: int)
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
+
+const defaultTypefaceText = staticRead("../fonts/DejaVuSansMono.ttf")
 
 method moveToMonitor*(self: GuiPlatform, index: int) {.gcsafe, raises: [].} =
   centerWindowOnMonitor(self.window, index)
@@ -86,6 +90,7 @@ method init*(self: GuiPlatform, options: AppOptions) =
     self.supportsThinCursor = true
     self.focused = self.window.focused
     self.vsync = true
+    self.defaultTypeface = parseTtf(defaultTypefaceText)
 
     try:
       log lvlInfo, "Read icon"
@@ -280,45 +285,75 @@ method requestRender*(self: GuiPlatform, redrawEverything = false) =
   self.requestedRender = true
   self.redrawEverything = self.redrawEverything or redrawEverything
 
-proc readTypeface(vfs: VFS, filePath: string): Typeface {.raises: [IOError].} =
+proc readTypeface(vfs: VFS, filePath: string): Future[Typeface] {.async: (raises: [IOError]).} =
   try:
-    result =
-      case splitFile(filePath).ext.toLowerAscii():
-        of ".ttf":
-          parseTtf(vfs.read(filePath, {Binary}).waitFor)
-        of ".otf":
-          parseOtf(vfs.read(filePath, {Binary}).waitFor)
-        of ".svg":
-          parseSvgFont(vfs.read(filePath, {Binary}).waitFor)
-        else:
-          raise newException(IOError, "Unsupported font format")
+    case splitFile(filePath).ext.toLowerAscii():
+    of ".ttf":
+      result = vfs.read(filePath, {Binary}).await.parseTtf()
+    of ".otf":
+      result = vfs.read(filePath, {Binary}).await.parseOtf()
+    of ".svg":
+      result = vfs.read(filePath, {Binary}).await.parseSvgFont()
+    else:
+      raise newException(IOError, "Unsupported font format")
   except Exception as e:
     raise newException(IOError, &"Failed to load typeface '{filePath}': " & e.msg, e)
 
   result.filePath = filePath
 
+proc clearFontCaches(self: GuiPlatform) =
+  self.fontCache1.clear()
+  self.fontCache2.clear()
+  self.fontInfoCache.clear()
+  try:
+    for image in self.glyphCache.removedKeys:
+      self.boxy.removeImage($image)
+
+    for (_, image) in self.glyphCache.pairs:
+      self.boxy.removeImage(image)
+
+    for image in self.asciiGlyphCache.mitems:
+      if image.len > 0:
+        self.boxy.removeImage(image)
+      image.setLen(0)
+  except:
+    discard
+
+  self.glyphCache.clearRemovedKeys()
+  self.glyphCache.clear()
+
+proc loadTypeface(self: GuiPlatform, font: string): Future[Typeface] {.async.} =
+  if font in self.typefaces:
+    return self.typefaces[font].await
+
+  try:
+    log lvlInfo, &"Reading font '{font}'"
+    let fallbackTypefaces = self.fallbackTypefaces
+    let typefaceFuture = self.vfs.readTypeface(font)
+    self.typefaces[font] = typefaceFuture
+
+    let typeface = await typefaceFuture
+    for fallbackFont in fallbackTypefaces:
+      typeface.fallbacks.add fallbackFont.await
+
+    self.clearFontCaches()
+    self.requestRender(true)
+
+    return typeface
+  except IOError as e:
+    log lvlError, &"Failed to load typeface '{font}': {e.msg}"
+    return nil
+
 proc getTypeface*(self: GuiPlatform, font: string): Typeface =
-  if font notin self.typefaces:
-    var typeface: Typeface = nil
-    try:
-      log lvlInfo, &"Reading font '{font}'"
-      typeface = self.vfs.readTypeface(font)
-      self.typefaces[font] = typeface
-
-      for fallbackFont in self.fallbackFonts:
-        try:
-          log lvlInfo, &"Reading fallback font '{fallbackFont}'"
-          let fallback = self.vfs.readTypeface(fallbackFont)
-          if fallback.isNotNil:
-            typeface.fallbacks.add fallback
-        except IOError as e:
-          log lvlError, &"Failed to load fallback font '{fallbackFont}': {e.msg}"
-
-    except IOError as e:
-      log lvlError, &"Failed to load typeface '{font}': {e.msg}"
-      return nil
-
-  result = self.typefaces[font]
+  if font in self.typefaces:
+    let fut = self.typefaces[font]
+    if fut.finished:
+      try:
+        return fut.read
+      except CatchableError:
+        return self.defaultTypeface
+  asyncSpawn asyncDiscard self.loadTypeface(font)
+  return self.defaultTypeface
 
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font =
   assert font != ""
@@ -424,27 +459,16 @@ method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontIt
   self.fontBoldItalic = fontBoldItalic
   self.fallbackFonts = fallbackFonts
   self.typefaces.clear()
-  self.fontCache1.clear()
-  self.fontCache2.clear()
-  self.fontInfoCache.clear()
+  self.clearFontCaches()
   self.updateCharWidth()
 
-  try:
-    for image in self.glyphCache.removedKeys:
-      self.boxy.removeImage($image)
-
-    for (_, image) in self.glyphCache.pairs:
-      self.boxy.removeImage(image)
-
-    for image in self.asciiGlyphCache.mitems:
-      if image.len > 0:
-        self.boxy.removeImage(image)
-      image.setLen(0)
-  except:
-    discard
-
-  self.glyphCache.clearRemovedKeys()
-  self.glyphCache.clear()
+  for fallbackFont in self.fallbackFonts:
+    try:
+      log lvlInfo, &"Reading fallback font '{fallbackFont}'"
+      let fallback = self.vfs.readTypeface(fallbackFont)
+      self.fallbackTypefaces.add(fallback)
+    except IOError as e:
+      log lvlError, &"Failed to load fallback font '{fallbackFont}': {e.msg}"
 
 method `fontSize=`*(self: GuiPlatform, fontSize: float) =
   self.ctx.fontSize = fontSize
@@ -628,13 +652,7 @@ method render*(self: GuiPlatform, rerender: bool) =
 
       if self.ctx.fontSize != self.lastFontSize:
         self.lastFontSize = self.ctx.fontSize
-        for (_, image) in self.glyphCache.pairs:
-          self.boxy.removeImage(image)
-        self.glyphCache.clear()
-        for image in self.asciiGlyphCache.mitems:
-          if image.len > 0:
-            self.boxy.removeImage(image)
-          image.setLen(0)
+        self.clearFontCaches()
 
       if self.builder.root.lastSizeChange == self.builder.frameIndex:
         self.redrawEverything = true

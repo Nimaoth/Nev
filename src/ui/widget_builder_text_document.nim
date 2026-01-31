@@ -9,7 +9,7 @@ import app, document_editor, theme, config_provider, layout
 import text/language/[lsp_types]
 import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]
 import view
-import scroll_box, treesitter_component
+import scroll_box, treesitter_component, signs_component
 
 import ui/node
 
@@ -764,22 +764,22 @@ proc drawChunk(chunk: DisplayChunk, state: var LineDrawerState, commands: var Re
 
   return LineDrawerResult.Continue
 
-proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: var DisplayChunkIterator, index: int): Option[Vec2] =
-  if index < 0 or index > state.displayMap.endDisplayPoint.row.int:
+proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: var DisplayChunkIterator, line: int): Option[Vec2] =
+  if line < 0 or line > state.displayMap.endDisplayPoint.row.int:
     return Vec2.none
   if state.chunkBoundsPerLine.len >= state.chunkBoundsPerLine.cap:
     return Vec2.none
 
   let maxNumChunks = ceil(state.bounds.w / state.builder.charWidth).int + 5
   state.chunkBoundsPerLine.add LineBounds(
-    line: index,
+    line: line,
     chunks: state.builder.arena.allocEmptyArray(maxNumChunks, ChunkBounds)
   )
 
   # When drawing lines upwards we have to reset the iterator because it can iterate backwards
-  if iter.displayPoint.row.int != index or not iter.didSeek:
+  if iter.displayPoint.row.int != line or not iter.didSeek:
     iter = state.createIter()
-    iter.seekLine(index)
+    iter.seekLine(line)
     discard iter.next()
     if iter.displayChunk.isSome:
       state.lastDisplayEndPoint = iter.displayChunk.get.displayPoint
@@ -790,15 +790,15 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
   defer:
     commands.endTransform()
 
-  if iter.displayChunk.isNone or iter.displayChunk.get.displayPoint.row.int != index:
+  if iter.displayChunk.isNone or iter.displayChunk.get.displayPoint.row.int != line:
     return vec2(state.bounds.w, state.builder.textHeight).some
 
   let chunk {.cursor.} = iter.displayChunk.get
 
   # Check whether we are rendering the first display line of a given real line
-  let point = state.displayMap.toPoint(displayPoint(index, 0))
+  let point = state.displayMap.toPoint(displayPoint(line, 0))
   let firstDisplayLine = state.displayMap.toDisplayPoint(point(point.row.int, 0))
-  let firstDisplayLineInRealLine = firstDisplayLine.row.int == index
+  let firstDisplayLineInRealLine = firstDisplayLine.row.int == line
 
   # Do some things (like line numbers) only on the first display line for a real line
   var drawDiagnostics = false
@@ -840,12 +840,12 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
 
   # Iterate through chunks and render them until we reach the end or get a chunk which is on the next display line.
   state.offset = state.bounds.xy + vec2(state.lineNumberWidth, 0)
-  state.lastDisplayEndPoint = displayPoint(index, 0)
+  state.lastDisplayEndPoint = displayPoint(line, 0)
   state.customRendererChunksBelow.setLen(0)
   state.customRendererChunksAbove.setLen(0)
   state.lineBounds = rect(0, 0, 0, 0)
   while iter.displayChunk.isSome:
-    if iter.displayChunk.get.displayPoint.row.int > index:
+    if iter.displayChunk.get.displayPoint.row.int > line:
       break
     # todo: this sometimes happens for a frame or two, probably because some data structures are in an invalid state
     # which causes an infinte loop here.
@@ -1200,7 +1200,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     diffChanges: if self.diffChanges.isSome: self.diffChanges.get.addr else: nil,
 
     customOverlayRenderers: self.customOverlayRenderers.addr,
-    signs: self.signs.addr,
+    signs: self.signs.signs.addr,
     diagnosticsPerLS: self.document.diagnosticsPerLS.addr,
 
     absoluteBounds: rect(currentNode.boundsAbsolute.x + mainOffset, currentNode.boundsAbsolute.y, width, parentHeight),
