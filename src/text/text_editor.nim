@@ -4,7 +4,7 @@ import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, generational_seq,
-  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex, render_command]
+  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex, render_command, case_swap]
 import scripting/[expose]
 import platform/[platform]
 import language/[language_server_base]
@@ -20,7 +20,7 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 import lisp
 import view
-import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component
+import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
@@ -110,6 +110,9 @@ declareSettings TextEditorSettings, "text":
   ## Configure code actions.
   use codeActions, CodeActionSettings
 
+  ## Configure inlay hints.
+  use inlayHints, InlayHintSettings
+
   ## Specifies whether a selection includes the character after the end cursor.
   ## If true then a selection like (0:0...0:4) with the text "Hello world" would select "Hello".
   ## If false then the selected text would be "Hell".
@@ -193,9 +196,6 @@ declareSettings TextEditorSettings, "text":
   ## Command to execute when the mode of the text editor changes
   declare modeChangedHandlerCommand, string, ""
 
-  ## Whether inlay hints are enabled.
-  declare inlayHintsEnabled, bool, true
-
   ## Whether signature help is enabled.
   declare signatureHelpEnabled, bool, true
 
@@ -248,6 +248,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   textEditorComponent*: TextEditorComponentImpl
   decorations*: DecorationComponentImpl
+  inlayHints: InlayHintComponent
 
   document*: TextDocument
   snapshot: BufferSnapshot
@@ -323,13 +324,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   currentSignature*: int
   currentSignatureParam*: int
 
-  # inline hints
-  inlayHints: seq[tuple[anchor: Anchor, hint: InlayHint]]
-  inlayHintsTask: DelayedTask
-  lastInlayHintTimestamp: Global
-  lastInlayHintDisplayRange: Range[Point]
-  lastInlayHintBufferRange: Range[Point]
   lastDiagnosticsVersions: Table[string, int]
+  codeActionsTask: DelayedTask
   codeActions: Table[string, Table[int, seq[CodeActionOrCommand]]] # LS name -> line -> code actions
 
   mEventHandlers: seq[EventHandler]
@@ -458,7 +454,6 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Search Query: {self.searchQuery}\n"
   result.add &"Search Results: {self.searchResults.len}\n"
   result.add &"Custom Highlights: {self.decorations.customHighlights.len}\n"
-  result.add &"Inlay Hints: {self.inlayHints.len}\n"
   result.add &"Overlay map: {st.stats(self.displayMap.overlay.snapshot.map)}\n"
   result.add &"Wrap map: {st.stats(self.displayMap.diffMap.snapshot.map)}\n"
   result.add &"Diff map: {st.stats(self.displayMap.wrapMap.snapshot.map)}\n"
@@ -479,7 +474,6 @@ proc hideCompletions*(self: TextDocumentEditor)
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0, includeEol: bool = true): Selection
 proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last)
-proc updateInlayHints*(self: TextDocumentEditor)
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection
 proc updateSearchResults(self: TextDocumentEditor)
 proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, snap: bool = false)
@@ -643,7 +637,6 @@ proc clearDocument*(self: TextDocumentEditor) =
     let document = self.document
     self.document = nil
     self.currentDocument = nil
-    self.editors.tryCloseDocument(document)
 
     self.textEditorComponent.selectionHistory.clear()
     self.decorations.clear()
@@ -651,9 +644,11 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.clearHoverView()
     self.showHover = false
     self.showSignatureHelp = false
-    self.inlayHints.setLen 0
     self.scrollOffset = vec2(0, 0)
     self.currentSnippetData = SnippetData.none
+    self.onDocumentChanged.invoke((document.Document,))
+
+    self.editors.tryCloseDocument(document)
 
 proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   assert document.isNotNil
@@ -661,6 +656,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   if document == self.document:
     return
 
+  let oldDocument = self.document
   self.textEditorComponent.setDocument(document)
   # logScope lvlInfo, &"[setDocument] ({self.id}): '{document.filename}'"
 
@@ -724,6 +720,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
       .withMergeStrategy(MergeStrategy(kind: FillN, max: 20))
       .withPriority(0)
 
+  self.onDocumentChanged.invoke((oldDocument.Document,))
   self.handleDocumentChanged()
 
 method deinit*(self: TextDocumentEditor) =
@@ -742,8 +739,10 @@ method deinit*(self: TextDocumentEditor) =
 
   self.clearDocument()
 
+  for c in self.components:
+    componentDeinitialize(c)
+
   if self.blinkCursorTask.isNotNil: self.blinkCursorTask.pause()
-  if self.inlayHintsTask.isNotNil: self.inlayHintsTask.pause()
   if self.showHoverTask.isNotNil: self.showHoverTask.pause()
   if self.hideHoverTask.isNotNil: self.hideHoverTask.pause()
   if self.showSignatureHelpTask.isNotNil: self.showSignatureHelpTask.pause()
@@ -845,18 +844,6 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
   if inject.contains("above-completion"):
     result.add inject["above-completion"]
 
-proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
-  if self.inlayHints.len > 0 and self.lastInlayHintTimestamp != self.document.buffer.snapshot.version:
-    self.lastInlayHintTimestamp = self.document.buffer.snapshot.version
-    let snapshot = self.document.buffer.snapshot.clone()
-
-    for i in countdown(self.inlayHints.high, 0):
-      if self.inlayHints[i].anchor.summaryOpt(Point, snapshot, resolveDeleted = false).getSome(point):
-        self.inlayHints[i].hint.location = point.toCursor
-        self.inlayHints[i].anchor = snapshot.anchorAt(self.inlayHints[i].hint.location.toPoint, Left)
-      else:
-        self.inlayHints.removeSwap(i)
-
 proc tabWidth*(self: TextDocumentEditor): int =
   result = self.settings.tabWidth.get()
   if result == 0:
@@ -925,12 +912,8 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
     self.configChanged = false
     asyncSpawn self.updateColorOverlays()
 
-  self.updateInlayHintsAfterChange()
   self.document.resolveDiagnosticAnchors()
-  let visibleRange = self.visibleTextRange.toRange
-  let bufferRange = self.lastInlayHintBufferRange
-  if visibleRange.a < bufferRange.a or visibleRange.b > bufferRange.b:
-    self.updateInlayHints()
+  self.inlayHints.preRender()
 
   let newVersion = (self.document.buffer.version, self.selections[^1].last)
   if self.showCompletions and newVersion != self.lastCompletionTrigger:
@@ -2427,7 +2410,7 @@ proc clearOverlays*(self: TextDocumentEditor, id: int = -1) {.expose("editor.tex
   self.displayMap.overlay.clear(id)
   self.markDirty()
 
-proc addOverlay*(self: TextDocumentEditor, selection: Selection, text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) {.expose("editor.text").} =
+proc addOverlay*(self: TextDocumentEditor, selection: Selection, text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: overlay_map.OverlayRenderLocation = overlay_map.OverlayRenderLocation.Inline) {.expose("editor.text").} =
   self.displayMap.overlay.addOverlay(selection.toRange, text, id, scope, bias, renderId, location)
   self.markDirty()
 
@@ -4109,52 +4092,6 @@ proc getContextLines*(self: TextDocumentEditor, cursor: Cursor): seq[int] =
 
     node = node.parent
 
-proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
-  if self.document.isNil:
-    return
-  if not self.settings.inlayHintsEnabled.get():
-    return
-  if self.document.requiresLoad or self.document.isLoadingAsync:
-    return
-
-  if self.document.getLanguageServer().getSome(ls):
-    if self.document.isNil:
-      return
-
-    let screenLineCount = self.screenLineCount
-    let visibleRangeHalf = self.visibleTextRange(screenLineCount div 2)
-    let visibleRange = self.visibleTextRange(screenLineCount)
-    let snapshot = self.document.buffer.snapshot.clone()
-    let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.filename, visibleRange)
-    if self.document.isNil:
-      return
-
-    if inlayHints.isSuccess:
-      template getBias(hint: untyped): Bias =
-        if hint.paddingRight:
-          Bias.Right
-        else:
-          Bias.Left
-
-      self.inlayHints = inlayHints.result.mapIt (snapshot.anchorAt(it.location.toPoint, it.getBias), it)
-      self.lastInlayHintTimestamp = snapshot.version
-      self.updateInlayHintsAfterChange()
-      self.lastInlayHintDisplayRange = visibleRange.toRange
-      self.lastInlayHintBufferRange = visibleRangeHalf.toRange
-
-      self.displayMap.overlay.clear(overlayIdInlayHint)
-      for hint in self.inlayHints:
-        let point = hint.hint.location.toPoint
-        let bias = hint.hint.getBias
-        if hint.hint.paddingLeft:
-          self.displayMap.overlay.addOverlay(point...point, " " & hint.hint.label, overlayIdInlayHint, "comment", bias)
-        elif hint.hint.paddingRight:
-          self.displayMap.overlay.addOverlay(point...point, hint.hint.label & " ", overlayIdInlayHint, "comment", bias)
-        else:
-          self.displayMap.overlay.addOverlay(point...point, hint.hint.label, overlayIdInlayHint, "comment", bias)
-
-      self.markDirty()
-
 proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor, languageServer: LanguageServer): seq[lsp_types.Diagnostic] =
   let codeActions = self.codeActions.mgetOrPut(languageServer.name).addr
   let visibleRange = self.visibleTextRange(0)
@@ -4327,12 +4264,14 @@ proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.markDirty()
 
 proc updateInlayHints*(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.inlayHintsTask.isNil:
-    self.inlayHintsTask = startDelayed(200, repeat=false):
-      asyncSpawn self.updateInlayHintsAsync()
+  self.inlayHints.updateInlayHints()
+
+proc updateCodeActions*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.codeActionsTask.isNil:
+    self.codeActionsTask = startDelayed(200, repeat=false):
       asyncSpawn self.updateCodeActionsAsync(LanguageServer.none)
   else:
-    self.inlayHintsTask.reschedule()
+    self.codeActionsTask.reschedule()
 
 proc lspInfo(self: TextDocumentEditor) {.expose("editor.text").} =
   var builder = SelectorPopupBuilder()
@@ -4699,7 +4638,7 @@ proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocume
       .withMergeStrategy(MergeStrategy(kind: TakeAll))
       .withPriority(2)
 
-  self.updateInlayHints()
+  self.inlayHints.updateInlayHints()
 
 proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer) =
   if document != self.document:
@@ -4718,10 +4657,10 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
   self.snapshot = self.document.buffer.snapshot.clone()
   self.displayMap.setBuffer(self.snapshot.clone())
   self.selections = self.selections
-  self.inlayHints.setLen(0)
   self.cursorHistories.setLen(0)
   self.hideCompletions()
-  self.updateInlayHints()
+  self.onDocumentChanged.invoke((self.document.Document,))
+  self.inlayHints.updateInlayHints()
   self.updateSearchResults()
   self.markDirty()
 
@@ -4880,7 +4819,7 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
 
   self.clampSelection()
   self.updateSearchResults()
-  self.updateInlayHints()
+  self.inlayHints.updateInlayHints()
 
   asyncSpawn self.updateColorOverlays()
 
@@ -4989,7 +4928,6 @@ proc createTextEditorInstance(): TextDocumentEditor =
   editor.completionsId = newId()
   editor.hoverId = newId()
   editor.signatureHelpId = newId()
-  editor.inlayHints = @[]
   editor.init()
   {.gcsafe.}:
     allTextEditors.add editor
@@ -5036,8 +4974,11 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
 
   self.addComponent(newConfigComponent(self.config))
 
-  self.decorations = newDecorationComponent(self.settings.signs)
+  self.decorations = newDecorationComponent(self.settings.signs, self.displayMap)
   self.addComponent(self.decorations)
+
+  self.inlayHints = newInlayHintComponent(self.settings.inlayHints, self.displayMap)
+  self.addComponent(self.inlayHints)
 
   self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =
     self.applyMoveFallback(move, selections, count, args, env)

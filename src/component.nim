@@ -16,7 +16,8 @@ type
   Component* = ref object of RootObj
     mOwner {.cursor.}: ComponentOwner
     typeId*: ComponentTypeId
-    initializeImpl*: proc(owner: ComponentOwner) {.gcsafe, raises: [].}
+    initializeImpl*: proc(self: Component, owner: ComponentOwner) {.gcsafe, raises: [].}
+    deinitializeImpl*: proc(self: Component) {.gcsafe, raises: [].}
 
 # DLL API
 proc componentGenerateTypeId*(): ComponentTypeId {.apprtl, gcsafe, raises: [].}
@@ -35,7 +36,11 @@ when implModule:
   proc componentInitialize*(self: Component, owner: ComponentOwner) =
     self.mOwner = owner
     if self.initializeImpl != nil:
-      self.initializeImpl(owner)
+      self.initializeImpl(self, owner)
+
+  proc componentDeinitialize*(self: Component) =
+    if self.deinitializeImpl != nil:
+      self.deinitializeImpl(self)
 
   proc componentOwnerAddComponent*(self: ComponentOwner, component: Component) =
     assert component.typeId.int != 0

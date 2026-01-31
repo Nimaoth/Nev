@@ -103,4 +103,4 @@ type
 
   LanguageServerDebugger* = ref object of LanguageServerDynamic
     debugger*: Debugger
-    evaluations*: Table[tuple[file: string, range: Selection, expression: string], Response[EvaluateResponse]]
+    evaluations*: Table[tuple[file: string, range: Range[Point], expression: string], Response[EvaluateResponse]]

@@ -23,15 +23,16 @@ when implModule:
 
   import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils, enumerate, osproc, macros, genasts]
   import vmath, bumpy, chroma
-  import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap]
+  import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap, arena, array_view, rope_utils]
   import dap_client, config_provider, service, selector_popup_builder, events, dynamic_view, view, document, document_editor, layout, platform_service, session
   import text/language/[language_server_base]
+  import text/[treesitter_type_conv]
   import platform/platform
   import finder/[previewer, finder]
   import workspaces/workspace, vfs, vfs_service, language_server_dynamic
   import ui/node
   import nimsumtree/[rope, buffer]
-  import text_component, text_editor_component, language_server_component, decoration_component
+  import text_component, text_editor_component, language_server_component, decoration_component, inlay_hint_component, treesitter_component
   import types_impl
 
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -43,13 +44,6 @@ when implModule:
   logCategory "debugger"
 
   let debuggerCurrentLineId = newId()
-
-  proc newLanguageServerDebugger(debugger: Debugger): LanguageServerDebugger =
-    var server = new LanguageServerDebugger
-    server.name = "debugger"
-    server.debugger = debugger
-    server.refetchWorkspaceSymbolsOnQueryChange = false
-    return server
 
   proc dump(self: ThreadsView): string = "ThreadsView" & $(self[])
   proc dump(self: StacktraceView): string = "StacktraceView" & $(self[])
@@ -153,7 +147,6 @@ when implModule:
 
   proc createDebuggerView[T](debugger: Debugger): T =
     let view = T()
-    # view.dumpImpl = proc(self: DynamicView): string = dump(self.T)
     view.kindImpl = proc(self: DynamicView): string = kind(self.T)
     view.descImpl = proc(self: DynamicView): string = desc(self.T)
     view.displayImpl = proc(self: DynamicView): string = display(self.T)
@@ -293,6 +286,7 @@ when implModule:
       onAction:
         self.handleAction action, arg
 
+  proc newLanguageServerDebugger(debugger: Debugger): LanguageServerDebugger
   proc initService(self: Debugger): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"Debugger.init"
     {.gcsafe.}:
@@ -444,8 +438,8 @@ when implModule:
 
       if editor.getDecorationComponent().getSome(decos):
         decos.addCustomHighlight(debuggerCurrentLineId, point(location.row, 0)...point(location.row, uint32.high), "editorError.foreground", color(1, 1, 1, 0.3))
-      # todo
-      # asyncSpawn editor.updateInlayHintsAsync()
+      if editor.getInlayHintComponent().getSome(inlayHints):
+        inlayHints.updateInlayHints(now = false)
       self.lastEditor = editor.some
 
   proc reevaluateCursorRefs*(self: Debugger, cursor: VariableCursor): VariableCursor =
@@ -1080,8 +1074,8 @@ when implModule:
     if self.lastEditor.isSome:
       if self.lastEditor.get.getDecorationComponent().getSome(decos):
         decos.clearCustomHighlights(debuggerCurrentLineId)
-      # todo
-      # self.lastEditor.get.updateInlayHints()
+      if self.lastEditor.get.getInlayHintComponent().getSome(inlayHints):
+        inlayHints.updateInlayHints(now = false)
 
     asyncSpawn self.client.get.disconnect(restart=false)
     self.client.get.deinit()
@@ -1176,6 +1170,7 @@ when implModule:
           log lvlError, &"Failed to connect to debug adapter {host}:{port}: {e.msg}"
           return Connection.none
 
+      # todo
       # let host = config.tryGet("host", string, "127.0.0.1".newJexString):
       #   log lvlError, &"No/invalid debugger host in {config.pretty}"
       #   return Connection.none
@@ -1411,8 +1406,8 @@ when implModule:
     if self.lastEditor.isSome:
       if self.lastEditor.get.getDecorationComponent().getSome(decos):
         decos.clearCustomHighlights(debuggerCurrentLineId)
-      # todo
-    #   self.lastEditor.get.updateInlayHints()
+      if self.lastEditor.get.getInlayHintComponent().getSome(inlayHints):
+        inlayHints.updateInlayHints(now = false)
     self.languageServer.evaluations.clear()
     self.platform.requestRender()
 
@@ -2031,7 +2026,48 @@ when implModule:
           if i == -1:
             self.nextVariable()
 
-  method getInlayHints*(self: LanguageServerDebugger, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+  proc getDeclarationsInRange*(document: Document, visibleRange: Range[Point]): Future[seq[tuple[decl: Range[Point], name: Range[Point], value: string]]] {.async.} =
+    result = @[]
+
+    if not document.isReady:
+      return
+    let text = document.getTextComponent().getOr:
+      return
+    let treesitter = document.getTreesitterComponent().getOr:
+      return
+    if treesitter.currentTree.isNil:
+      return
+
+    let query = await treesitter.query("textobjects")
+    if query.isNone or treesitter.currentTree.isNil:
+      return
+
+    let endPoint = text.content.endPoint
+    var arena = initArena()
+
+    var res = newSeq[string]()
+    for match in query.get.matches(treesitter.currentTree.root, visibleRange.tsRange, arena):
+      var isDecl = false
+      var declRange: Range[Point]
+      var nameRange: Range[Point]
+
+      for capture in match.captures:
+        var sel = capture.node.getRange().toRange
+        if capture.name == "decl":
+          declRange = sel
+          isDecl = true
+        elif capture.name == "decl.name":
+          nameRange = sel
+        else:
+          continue
+
+      if isDecl:
+        result.add (declRange, nameRange, text.content(nameRange))
+
+    return result
+
+  proc debuggerGetInlayHints*(self: LanguageServerDynamic, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+    let self = self.LanguageServerDebugger
     result = newSeq[language_server_base.InlayHint]().success
 
     if self.debugger.debuggerState != Paused:
@@ -2046,68 +2082,76 @@ when implModule:
       if doc.isNone:
         return
 
-      # let document = doc.get
-      # let timestamp = self.debugger.timestamp
-      # let decls = document.getDeclarationsInRange(selection)
+      let document = doc.get
+      let timestamp = self.debugger.timestamp
+      let decls = await document.getDeclarationsInRange(selection.toRange)
       var inlayHints = newSeq[language_server_base.InlayHint]()
 
-      # let futures = collect:
-      #   for decl in decls:
-      #     let key = (filename, decl.name, decl.value)
-      #     # todo: use cached evaluations
-      #     if key in self.evaluations:
-      #       self.evaluations[key].toFuture
-      #     else:
-      #       client.evaluate(decl.value, document.localizedPath, decl.name.first.line, decl.name.first.column, frame.get.id)
+      let futures = collect:
+        for decl in decls:
+          let key = (filename, decl.name, decl.value)
+          # todo: use cached evaluations
+          if key in self.evaluations:
+            self.evaluations[key].toFuture
+          else:
+            client.evaluate(decl.value, document.localizedPath, decl.name.a.row.int, decl.name.a.column.int, frame.get.id)
 
-      # await futures.allFutures
-      # if timestamp != self.debugger.timestamp:
-      #   return
+      await futures.allFutures
+      if timestamp != self.debugger.timestamp:
+        return
 
-      # for i in 0..decls.high:
-      #   let eval = futures[i].read
-      #   self.evaluations[(filename, decls[i].name, decls[i].value)] = eval
-      #   if eval.isError:
-      #     continue
+      # todo
+      for i in 0..decls.high:
+        let eval = futures[i].read
+        self.evaluations[(filename, decls[i].name, decls[i].value)] = eval
+        if eval.isError:
+          continue
 
-      #   var nl = eval.result.result.find('\n')
-      #   if nl == -1:
-      #     let eq = eval.result.result.find("= ")
-      #     if eq != -1:
-      #       inlayHints.add language_server_base.InlayHint(
-      #         location: decls[i].decl.last,
-      #         label: eval.result.result[eq..^1].strip(),
-      #         paddingLeft: true,
-      #       )
-      #     else:
-      #       inlayHints.add language_server_base.InlayHint(
-      #         location: decls[i].decl.last,
-      #         label: eval.result.result,
-      #         paddingLeft: true,
-      #       )
-      #   else:
-      #     var label = ""
-      #     for i, line in enumerate(eval.result.result.splitLines):
-      #       if i == 0:
-      #         var eq = line.find("= ")
-      #         if eq != -1:
-      #           label.add line[eq..^1].strip()
-      #           continue
-      #       if i > 0:
-      #         label.add " "
-      #       label.add line.strip()
-      #       if label.len > 60: # todo: make this configurable
-      #         label.add "..."
-      #         break
+        var nl = eval.result.result.find('\n')
+        if nl == -1:
+          let eq = eval.result.result.find("= ")
+          if eq != -1:
+            inlayHints.add language_server_base.InlayHint(
+              location: decls[i].decl.b.toCursor,
+              label: eval.result.result[eq..^1].strip(),
+              paddingLeft: true,
+            )
+          else:
+            inlayHints.add language_server_base.InlayHint(
+              location: decls[i].decl.b.toCursor,
+              label: eval.result.result,
+              paddingLeft: true,
+            )
+        else:
+          var label = ""
+          for i, line in enumerate(eval.result.result.splitLines):
+            if i == 0:
+              var eq = line.find("= ")
+              if eq != -1:
+                label.add line[eq..^1].strip()
+                continue
+            if i > 0:
+              label.add " "
+            label.add line.strip()
+            if label.len > 60: # todo: make this configurable
+              label.add "..."
+              break
 
-      #     inlayHints.add language_server_base.InlayHint(
-      #       location: decls[i].decl.last,
-      #       label: label,
-      #       paddingLeft: true,
-      #     )
+          inlayHints.add language_server_base.InlayHint(
+            location: decls[i].decl.b.toCursor,
+            label: label,
+            paddingLeft: true,
+          )
 
       result = inlayHints.success
 
+  proc newLanguageServerDebugger(debugger: Debugger): LanguageServerDebugger =
+    var server = new LanguageServerDebugger
+    server.name = "debugger"
+    server.debugger = debugger
+    server.refetchWorkspaceSymbolsOnQueryChange = false
+    server.getInlayHintsImpl = debuggerGetInlayHints
+    return server
 
   proc exposeImpl(context: NimNode, name: string, fun: NimNode, active: bool): NimNode =
     try:
