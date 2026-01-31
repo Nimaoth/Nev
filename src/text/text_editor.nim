@@ -20,7 +20,7 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 import lisp
 import view
-import scroll_box, component, treesitter_component, text_editor_component, config_component, signs_component
+import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,

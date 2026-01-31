@@ -9,7 +9,7 @@ import app, document_editor, theme, config_provider, layout
 import text/language/[lsp_types]
 import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]
 import view
-import scroll_box, treesitter_component, signs_component
+import scroll_box, treesitter_component, decoration_component
 
 import ui/node
 
