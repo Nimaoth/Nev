@@ -1,5 +1,5 @@
 import std/hashes
-import misc/[util, event]
+import misc/[util, event, custom_async]
 import vfs, component
 
 export component
@@ -19,6 +19,7 @@ type Document* = ref object of ComponentOwner
   isBackedByFile*: bool = false
   requiresLoad*: bool = false           ## Whether the document content has not been scheduled for loading yet.
   isLoadingAsync*: bool = false
+  readOnly*: bool = false
   filename*: string
   revision*: int
   undoableRevision*: int
@@ -31,6 +32,19 @@ type Document* = ref object of ComponentOwner
 # DLL API
 proc documentLocalizedPath*(self: Document): string {.apprtl, gcsafe, raises: [].}
 proc localizedPath*(self: Document): string {.inline.} = documentLocalizedPath(self)
+
+proc setReadOnly*(self: Document, readOnly: bool) =
+  ## Sets the interal readOnly flag, but doesn't not changed permission of the underlying file
+  self.readOnly = readOnly
+
+proc setFileReadOnlyAsync*(self: Document, readOnly: bool): Future[bool] {.async.} =
+  ## Tries to set the underlying file permissions
+  try:
+    await self.vfs.setFileAttributes(self.filename, FileAttributes(writable: not readOnly, readable: true))
+    self.readOnly = readOnly
+    return true
+  except IOError as e:
+    return false
 
 proc isReady*(self: Document): bool =
   return not (self.requiresLoad or self.isLoadingAsync)

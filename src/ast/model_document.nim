@@ -242,10 +242,10 @@ method createDocument*(self: ModelDocumentFactory, services: Services, path: str
 
   return newModelDocument(path, app=false, workspaceFolder=workspace.some)
 
-method canEditDocument*(self: DocumentEditorFactory, document: Document): bool =
+method canEditDocument*(self: DocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool =
   return document of ModelDocument
 
-method createEditor*(self: DocumentEditorFactory, services: Services, document: Document): DocumentEditor =
+method createEditor*(self: DocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor =
   let app = ({.gcsafe.}: gAppInterface)
   let fs = ({.gcsafe.}: fs)
   # todo

@@ -84,7 +84,7 @@ proc getDocument*(self: DocumentEditorService, id: DocumentId): Option[Document]
 proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] {.apprtl.}
 proc getDocumentByPath*(self: DocumentEditorService, path: string, usage = ""): Option[Document] {.apprtl.}
 proc getEditorsForDocument*(self: DocumentEditorService, document: Document): seq[DocumentEditor] {.apprtl.}
-proc createEditorForDocument*(self: DocumentEditorService, document: Document): Option[DocumentEditor] {.apprtl.}
+proc createEditorForDocument*(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor] {.apprtl.}
 proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx): Document {.apprtl.}
 proc documentEditorSetActive(self: DocumentEditor, newActive: bool) {.apprtl.}
 proc documentEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.apprtl, gcsafe, raises: [].}
@@ -122,8 +122,8 @@ when implModule:
   method canOpenFile*(self: DocumentFactory, path: string): bool {.base, gcsafe, raises: [].} = discard
   method createDocument*(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document {.base, gcsafe, raises: [].} = discard
 
-  method canEditDocument*(self: DocumentEditorFactory, document: Document): bool {.base, gcsafe, raises: [].} = discard
-  method createEditor*(self: DocumentEditorFactory, services: Services, document: Document): DocumentEditor {.base, gcsafe, raises: [].} = discard
+  method canEditDocument*(self: DocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool {.base, gcsafe, raises: [].} = discard
+  method createEditor*(self: DocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor {.base, gcsafe, raises: [].} = discard
 
   method deinit*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
     discard
@@ -280,10 +280,10 @@ when implModule:
 
     return self.platform
 
-  proc createEditorForDocument*(self: DocumentEditorService, document: Document): Option[DocumentEditor] =
+  proc createEditorForDocument*(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor] =
     for factory in self.editorFactories:
-      if factory.canEditDocument(document):
-        result = factory.createEditor(self.services, document).some
+      if factory.canEditDocument(document, options):
+        result = factory.createEditor(self.services, document, options).some
         break
 
     if result.isNone:
