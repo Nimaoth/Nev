@@ -907,6 +907,12 @@ proc newTextDocument*(
     c.owner.TextDocument.handleLanguageChanged()
 
   self.textComponent = newTextComponent()
+  self.textComponent.editString = proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string],
+      notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.gcsafe, raises: [].} =
+    self.edit(selections, oldSelections, texts, notify, record, inclusiveEnd)
+  self.textComponent.editRope = proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[Rope],
+      notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.gcsafe, raises: [].} =
+    self.edit(selections, oldSelections, texts, notify, record, inclusiveEnd)
   self.addComponent(self.textComponent)
 
   self.treesitterComponent = newTreesitterComponent(self.vfs)
