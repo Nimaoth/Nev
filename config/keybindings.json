@@ -625,6 +625,7 @@
 
     "vim.visual": {
         // special
+        "V": ["vim.visual-line-mode"],
         "A": ["vim.insert-mode", "right"],
         "I": ["vim.insert-mode", "first"],
         "<move>": ["vim.select <move>"],
@@ -682,6 +683,7 @@
 
     "vim.visual-line": {
         // special
+        "v": ["set-mode", "vim.visual"],
         "<move>": ["vim.select <move>"],
         "<?-count><text_object>": ["vim.select-move <text_object> <#count>"],
 
