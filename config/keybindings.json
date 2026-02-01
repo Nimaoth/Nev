@@ -18,7 +18,7 @@
         "<SPACE>sr": "open-recent-session",
         "<SPACE>to": ["terminal.select"],
         "<SPACE>ts": [
-            "run-in-terminal",
+            "terminal.run",
             "default",
             "",
             {
@@ -469,7 +469,7 @@
         "<SPACE>sr": "open-recent-session",
         "<SPACE>to": ["terminal.select"],
         "<SPACE>ts": [
-            "run-in-terminal",
+            "terminal.run",
             "default",
             "",
             {
