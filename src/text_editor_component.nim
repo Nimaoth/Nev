@@ -82,11 +82,19 @@ when implModule:
   proc selectionsOld*(self: TextEditorComponent): var seq[Selection] =
     return self.TextEditorComponentImpl.mSelectionsOld
 
+  proc shouldAddToHistory(old, new: openArray[Selection]): bool =
+    if old.len != new.len:
+      return true
+    if abs(new[^1].last.line - old[^1].last.line) > 1:
+      return true
+    for i in 0..old.high:
+      if not old[i].isEmpty and old[i].first != new[i].first and old[i].last != new[i].last:
+        return true
+    return false
+
   proc handleSelectionsChanged(self: TextEditorComponentImpl, old: openArray[Selection], addToHistory: Option[bool] = bool.none) =
-    let addToHistory = addToHistory.get(self.selectionHistory.len == 0 or
-        abs(self.mSelectionsOld[^1].last.line - old[^1].last.line) > 1 or
-        old.len != self.mSelectionsOld.len)
-    if addToHistory:
+    let addToHistory2 = self.selectionHistory.len == 0 or addToHistory.get(shouldAddToHistory(old, self.mSelectionsOld))
+    if addToHistory2:
       self.selectionHistory.addLast @old
       if self.selectionHistory.len > 100:
         discard self.selectionHistory.popFirst
