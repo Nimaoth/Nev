@@ -2389,7 +2389,6 @@ when implModule:
   proc handleKey(self: TerminalServiceImpl, view: TerminalView, input: int64, modifiers: Modifiers, noKitty: bool = false)
 
   proc closeTerminalView*(self: TerminalView) =
-    debugf"closeTerminalView"
     if not self.open:
       return
     self.open = false
@@ -2524,7 +2523,6 @@ when implModule:
     return ok()
 
   proc handleInput(self: TerminalServiceImpl, view: TerminalView, text: string) =
-    debugf"handleInput '{text}'"
     view.terminal.sendEvent(InputEvent(kind: InputEventKind.Text, text: text))
     view.terminal.lastEventTime = startTimer()
 
@@ -3051,7 +3049,6 @@ when implModule:
         parameters: inParams,
         returnType: inRet,
         execute: proc(argsString: string): string {.gcsafe, raises: [CatchableError].} =
-          log lvlDebug, "execute '", argsString, "'"
           var args = newJArray()
           try:
             for a in newStringStream(argsString).parseJsonFragments():

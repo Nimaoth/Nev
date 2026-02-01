@@ -512,7 +512,6 @@ proc main() =
         let funcName = &"shutdown_module_{name}"
         let shutdown = cast[proc() {.cdecl.}](lib.symAddr(funcName.cstring))
         if shutdown != nil:
-          log lvlDebug, &"Shutdown module '{name}'"
           shutdown()
     else:
       shutdownModules()
