@@ -39,6 +39,13 @@
         "editorSuggestWidget.highlightForeground": "#fbf1c7",
         "descriptionForeground": "#a89984",
 
+        "rainbow0": "#cc241d",
+        "rainbow1": "#c8c71a",
+        "rainbow2": "#f7a921",
+        "rainbow3": "#45b5b8",
+        "rainbow4": "#c162c6",
+        "rainbow5": "#88cd8a",
+
         "terminal.ansiBlack": "#282828",
         "terminal.ansiRed": "#cc241d",
         "terminal.ansiGreen": "#98971a",
