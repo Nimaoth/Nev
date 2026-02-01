@@ -412,10 +412,10 @@ proc diff*[T](a, b: sink RopeSlice[T], cancel: ptr Atomic[bool] = nil, enableCan
       inc indexB
 
     if startA < indexA or startB < indexB:
-      let start = a.convert(startA.Count, T)
-      let index = a.convert(indexA.Count, T)
-      let startBPoint = b.convert(startB.Count, T)
-      let indexBPoint = b.convert(indexB.Count, T)
+      let start = a.convert(startA, T)
+      let index = a.convert(indexA, T)
+      let startBPoint = b.convert(startB, T)
+      let indexBPoint = b.convert(indexB, T)
       result.edits.add (start...index, startBPoint...indexBPoint, dataB.data.slice(startB, indexB).slice(T))
 
 proc oldToNew*[T](diff: RopeDiff[T], pos: T): T =
