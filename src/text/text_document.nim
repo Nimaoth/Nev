@@ -452,10 +452,13 @@ proc tsTree*(self: TextDocument): TsTree =
   return self.treesitterComponent.currentTree
 
 proc languageId*(self: TextDocument): string =
-  self.languageComponent.languageId
+  if self.languageComponent != nil:
+    return self.languageComponent.languageId
+  return ""
 
 proc `languageId=`*(self: TextDocument, languageId: string) =
-  self.languageComponent.setLanguageId(languageId)
+  if self.languageComponent != nil:
+    self.languageComponent.setLanguageId(languageId)
 
 proc handleLanguageChanged*(self: TextDocument) =
   self.config.setParent(self.configService.getLanguageStore(self.languageId))
@@ -744,6 +747,8 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   let pathOverride = self.settings.treesitter.path.get()
   let treesitterLanguageName = self.settings.treesitter.language.get().get(self.languageId)
   var language = await getTreesitterLanguage(self.vfs, treesitterLanguageName, pathOverride)
+  if not self.isInitialized:
+    return
 
   if prevLanguageId != self.languageId:
     return
