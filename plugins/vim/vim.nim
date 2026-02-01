@@ -815,17 +815,21 @@ proc selectPrev(editor: TextEditor) {.exposeActive(editorContext).} =
   discard editor.command(ws"select-prev", ws"")
   for s in editor.getSelections:
     if not s.isEmpty:
-      editor.visualMode()
+      if $editor.mode != "vim.visual":
+        editor.visualMode()
       return
-  editor.normalMode()
+  if $editor.mode != "vim.normal":
+    editor.normalMode()
 
 proc selectNext(editor: TextEditor) {.exposeActive(editorContext).} =
   discard editor.command(ws"select-next", ws"")
   for s in editor.getSelections:
     if not s.isEmpty:
-      editor.visualMode()
+      if $editor.mode != "vim.visual":
+        editor.visualMode()
       return
-  editor.normalMode()
+  if $editor.mode != "vim.normal":
+    editor.normalMode()
 
 proc addCursorAbove(editor: TextEditor) {.exposeActive(editorContext).} =
   var selections = @(editor.getSelections.toOpenArray)
