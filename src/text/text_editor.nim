@@ -550,7 +550,7 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections, addToHisto
     log lvlWarn, "Trying to set empty selections, not allowed"
     return
 
-  self.textEditorComponent.setSelectionsOld(selections)
+  self.textEditorComponent.setSelectionsOld(selections, addToHistory)
 
 proc scrollBox*(self: TextDocumentEditor): var ScrollBox =
   self.textEditorComponent.scrollBox
@@ -1598,26 +1598,18 @@ proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
     let selection = self.textEditorComponent.selectionHistory.popLast
     assert selection.len > 0, "[selectPrev] Empty selection"
     self.textEditorComponent.selectionHistory.addFirst self.selections
-    self.selectionsInternal = selection
-    self.cursorVisible = true
-    if self.blinkCursorTask.isNotNil and self.active:
-      self.blinkCursorTask.reschedule()
+    self.textEditorComponent.setSelectionsOld(selection, addToHistory = false.some)
   self.updateTargetColumn(Last)
   self.scrollToCursor(self.selection.last)
-  self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
 proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.textEditorComponent.selectionHistory.len > 0:
     let selection = self.textEditorComponent.selectionHistory.popFirst
     assert selection.len > 0, "[selectNext] Empty selection"
     self.textEditorComponent.selectionHistory.addLast self.selections
-    self.selectionsInternal = selection
-    self.cursorVisible = true
-    if self.blinkCursorTask.isNotNil and self.active:
-      self.blinkCursorTask.reschedule()
+    self.textEditorComponent.setSelectionsOld(selection, addToHistory = false.some)
   self.updateTargetColumn(Last)
   self.scrollToCursor(self.selection.last)
-  self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
 proc getParentNodeSelection(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Selection =
   if self.document.tsTree.isNil:
