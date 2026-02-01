@@ -1146,6 +1146,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
   let lineNumbers = self.uiSettings.lineNumbers.get()
   let lineNumberBounds = self.lineNumberBounds()
+  let rainbowParens = self.uiSettings.rainbowParentheses.get()
 
   let highlight = self.uiSettings.syntaxHighlighting.get()
   let indentGuide = self.uiSettings.indentGuide.get()
@@ -1153,7 +1154,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   proc createIter(): DisplayChunkIterator =
     var highlighter = Highlighter.none
     if self.document.tsTree.isNotNil and self.document.treesitterComponent.highlightQuery.isNotNil and highlight:
-      highlighter = Highlighter(query: self.document.treesitterComponent.highlightQuery, tree: self.document.tsTree).some
+      highlighter = Highlighter(query: self.document.treesitterComponent.highlightQuery, tree: self.document.tsTree, rainbowParens: rainbowParens).some
     var res = self.displayMap.iter(highlighter, builder.theme)
     res.styledChunks.diagnosticEndPoints = self.document.diagnosticEndPoints # todo: don't copy everything here
     if indentGuide:
@@ -1164,7 +1165,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   proc createDiffIter(): DisplayChunkIterator =
     var highlighter = Highlighter.none
     if self.diffDocument.tsTree.isNotNil and self.diffDocument.treesitterComponent.highlightQuery.isNotNil and highlight:
-      highlighter = Highlighter(query: self.diffDocument.treesitterComponent.highlightQuery, tree: self.diffDocument.tsTree).some
+      highlighter = Highlighter(query: self.diffDocument.treesitterComponent.highlightQuery, tree: self.diffDocument.tsTree, rainbowParens: rainbowParens).some
     var res = self.diffDisplayMap.iter(highlighter, builder.theme)
     return res
 

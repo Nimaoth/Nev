@@ -1,6 +1,8 @@
 import std/[options, json, tables]
 import misc/[custom_logger, custom_async, util, custom_unicode, jsonex, arena, array_view]
 import vfs, wasm_engine
+import treesitter_type_conv
+export treesitter_type_conv
 
 from scripting_api import Cursor, Selection, byteIndexToCursor
 
@@ -160,11 +162,8 @@ template withQueryCursor*(cursor: untyped, body: untyped): untyped =
     body
 
 template withTreeCursor*(node: untyped, cursor: untyped, body: untyped): untyped =
-  bind ts.tsTreeCursorNew
-  bind ts.tsTreeCursorDelete
   block:
-    var cursor = ts.tsTreeCursorNew(node.impl)
-    defer: ts.tsTreeCursorDelete(cursor.addr)
+    var cursor = initTreeCursor(node)
     body
 
 # Available on all targets
@@ -399,8 +398,6 @@ template withParser*(p: untyped, body: untyped): untyped =
 proc tsPoint*(line: int, column: RuneIndex, text: openArray[char]): TSPoint = TSPoint(row: line, column: text.runeOffset(column))
 proc tsPoint*(cursor: Cursor): TSPoint = TSPoint(row: cursor.line, column: cursor.column)
 proc tsRange*(selection: scripting_api.Selection): TSRange = TSRange(first: tsPoint(selection.first), last: tsPoint(selection.last))
-proc toCursor*(point: TSPoint): Cursor = (point.row, point.column)
-proc toSelection*(rang: TSRange): scripting_api.Selection = (rang.first.toCursor, rang.last.toCursor)
 
 proc freeDynamicLibraries*() =
   for p in parsers:

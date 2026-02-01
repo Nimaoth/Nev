@@ -1038,6 +1038,9 @@ declareSettings UiSettings, "ui":
   ## Enable syntax highlighting.
   declare syntaxHighlighting, bool, true
 
+  ## Enable highlighting parentheses, brackets etc in different colors. Uses "rainbow0", "rainbow1" etc theme keys.
+  declare rainbowParentheses, bool, false
+
   ## Enable indent guides to show the indentation of the current line.
   declare indentGuide, bool, true
 

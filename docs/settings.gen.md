@@ -129,6 +129,7 @@ For examples and default values see [here](../config/settings.json)
 | `ui.indent-guide` | bool | true | Enable indent guides to show the indentation of the current line. |
 | `ui.line-numbers` | "none" \| "absolute" \| "relative" | "absolute" | How line numbers should be displayed. |
 | `ui.max-views` | int | 2 | Maximum number of views (files or other UIs) which can be shown. |
+| `ui.rainbow-parentheses` | bool | false | Enable highlighting parentheses, brackets etc in different colors. Uses "rainbow0", "rainbow1" etc theme keys. |
 | `ui.scroll-speed` | float | 50.0 | How many pixels (or rows in the terminal) to scroll per scroll wheel tick. |
 | `ui.smooth-scroll` | bool | true | Enable smooth scrolling. |
 | `ui.smooth-scroll-snap-threshold` | float | 0.5 | Percentage of screen height at which the smooth scroll offset will be snapped to the target location. E.g. if this is 0.5, then if the smooth scroll offset if further from the target scroll offset than 50% of the screen height then the smooth scroll offset will instantly jump to the target scroll offset (-50% of the screen height). This means that the smooth scrolling will not take time proportional to the scroll distance for jumps bigger than the screen height. |

@@ -52,7 +52,20 @@ type TSInputEdit* = object
   oldEndPosition*: TSPoint
   newEndPosition*: TSPoint
 
-type TSTreeCursor* = ts.TSTreeCursor
+type TSTreeCursor* = object
+  valid: bool
+  impl*: ts.TSTreeCursor
+
+func `=copy`*(a: var TSTreeCursor, b: TSTreeCursor) {.error.}
+func `=dup`*(a: TSTreeCursor): TSTreeCursor {.error.}
+
+func `=destroy`*(t: TSTreeCursor) {.raises: [].} =
+  if t.valid:
+    ts.tsTreeCursorDelete(t.impl.addr)
+
+proc initTreeCursor*(node: TSNode): TSTreeCursor =
+  var cursor = ts.tsTreeCursorNew(node.impl)
+  result = TSTreeCursor(impl: cursor, valid: true)
 
 func `=destroy`(t: TsTree) {.raises: [].} = discard
 
@@ -156,6 +169,19 @@ proc currentDescendantIndex*(cursor: var ts.TSTreeCursor): int = tsTreeCursorCur
 proc currentDepth*(cursor: var ts.TSTreeCursor): int = tsTreeCursorCurrentDepth(addr cursor).int
 proc currentFieldName*(cursor: var ts.TSTreeCursor): cstring = tsTreeCursorCurrentFieldName(addr cursor)
 proc currentFieldId*(cursor: var ts.TSTreeCursor): ts.TSFieldId = tsTreeCursorCurrentFieldId(addr cursor)
+
+proc currentNode*(cursor: var TSTreeCursor): TSNode = currentNode(cursor.impl)
+proc reset*(cursor: var TSTreeCursor, node: TSNode) = reset(cursor.impl, node)
+proc gotoParent*(cursor: var TSTreeCursor): bool = gotoParent(cursor.impl)
+proc gotoPreviousSibling*(cursor: var TSTreeCursor): bool = gotoPreviousSibling(cursor.impl)
+proc gotoNextSibling*(cursor: var TSTreeCursor): bool = gotoNextSibling(cursor.impl)
+proc gotoFirstChild*(cursor: var TSTreeCursor): bool = gotoFirstChild(cursor.impl)
+proc gotoLastChild*(cursor: var TSTreeCursor): bool = gotoLastChild(cursor.impl)
+proc gotoDescendant*(cursor: var TSTreeCursor, index: Natural): bool = gotoDescendant(cursor.impl, index.uint32)
+proc currentDescendantIndex*(cursor: var TSTreeCursor): int = currentDescendantIndex(cursor.impl).int
+proc currentDepth*(cursor: var TSTreeCursor): int = currentDepth(cursor.impl).int
+proc currentFieldName*(cursor: var TSTreeCursor): cstring = currentFieldName(cursor.impl)
+proc currentFieldId*(cursor: var TSTreeCursor): ts.TSFieldId = currentFieldId(cursor.impl)
 
 proc setPointRange*(cursor: ptr ts.TSQueryCursor, rang: TSRange) =
   discard cursor.tsQueryCursorSetPointRange(rang.first.toTsPoint, rang.last.toTsPoint)

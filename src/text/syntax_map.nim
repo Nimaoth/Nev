@@ -3,7 +3,7 @@ import nimsumtree/[rope, sumtree, buffer, clock]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[custom_async, custom_unicode, util, regex, timer, rope_utils, arena, array_view]
-import text/diff, text/custom_treesitter
+import text/diff, text/[custom_treesitter, treesitter_type_conv]
 from language/lsp_types import nil
 import theme
 import chroma
@@ -53,6 +53,7 @@ type
   Highlighter* = object
     query*: TSQuery
     tree*: TsTree
+    rainbowParens*: bool
 
   Highlight = tuple[range: Range[Point], color: Color, fontStyle: set[FontStyle], fontScale: float, priority: int]
 
@@ -84,6 +85,9 @@ type
     infoColor: Color
     hintColor: Color
     arena: Arena
+    parenColors: seq[Color]
+    depthOffset: int
+    currentNode: TSNode
 
 func high*(_: typedesc[Point]): Point = Point(row: uint32.high, column: uint32.high)
 
@@ -232,20 +236,14 @@ func next*(self: var ChunkIterator): Option[RopeChunk] =
       if self.localOffset == chunk.chars.len:
         continue
 
-      let nextTab = chunk.chars(self.localOffset, chunk.chars.len - 1).find('\t')
-      let nextNewLine = chunk.chars(self.localOffset, chunk.chars.len - 1).find('\n')
-      var maxEndIndex = if nextTab == -1 and nextNewLine == -1:
-        chunk.chars.len
-      elif nextTab == -1 or (nextNewLine != -1 and nextNewLine < nextTab):
-        self.localOffset + nextNewLine
-      elif nextTab > 0:
-        self.localOffset + nextTab
-      else:
-        assert nextTab == 0
-        var endOffset = self.localOffset + 1
-        while endOffset < chunk.chars.len and chunk.chars[endOffset] == '\t':
-          inc endOffset
-        endOffset
+      var maxEndIndex = self.localOffset
+      while maxEndIndex < chunk.chars.len:
+        case chunk.chars[maxEndIndex]
+        of '\t', '\n', '(', ')', '{', '}', '[', ']':
+          inc maxEndIndex
+          break
+        else:
+          inc maxEndIndex
 
       assert maxEndIndex >= self.localOffset
 
@@ -339,7 +337,7 @@ iterator ropeChunks*(rope: Rope, state: var RopeChunksState): RopeChunk =
 
       # Handle current char
       let c = inputChunk.chars[i]
-      if c == '\t':
+      if c in {'\t', '(', ')', '{', '}', '[', ']'}:
         if i > start:
           let (prefix, suffix) = chunk.split(i - start)
           yieldChunk prefix, suffix, i
@@ -409,6 +407,13 @@ proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, highlighter: 
     result.infoColor = theme.tokenColor("info", result.defaultColor)
     result.hintColor = theme.tokenColor("hint", result.defaultColor)
 
+    if result.highlighter.isSome and result.highlighter.get.rainbowParens:
+      for i in 0..10:
+        let c = theme.color("rainbow" & $i, color(0, 0, 0, 0))
+        if c == color(0, 0, 0, 0):
+          break
+        result.parenColors.add c
+
 func point*(self: StyledChunkIterator): Point = self.chunks.state.nextPoint
 func point*(self: StyledChunk): Point = self.chunk.point
 func endPoint*(self: StyledChunk): Point = self.chunk.endPoint
@@ -472,6 +477,12 @@ proc addHighlight(highlights: var seq[Highlight], nextHighlight: sink Highlight)
 
 var regexes = initTable[string, Regex]()
 
+proc depth(n: TSNode): int =
+  var n = n
+  while not n.parent.isNull:
+    inc result
+    n = n.parent
+
 proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
   var regexes = ({.gcsafe.}: regexes.addr)
 
@@ -496,111 +507,131 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
 
     let currentChunk = self.chunk.get
     if self.highlighter.isSome:
-      let point = currentChunk.point
-      let endPoint = currentChunk.endPoint
-      let range = tsRange(tsPoint(point.row.int, point.column.int), tsPoint(endPoint.row.int, endPoint.column.int))
-      self.arena.restoreCheckpoint(0)
+      if self.highlighter.get.rainbowParens and currentChunk.toOpenArray.len == 1 and currentChunk.toOpenArray[0] in {'(', ')', '{', '}', '[', ']'} and self.parenColors.len > 0:
+        let n = self.highlighter.get.tree.root.descendantForRange((currentChunk.point...currentChunk.point).tsRange)
+        if n != self.currentNode:
+          self.depthOffset = 0
+        else:
+          if currentChunk.toOpenArray[0] in {')', '}', ']'}:
+            dec self.depthOffset
+            self.depthOffset = max(self.depthOffset, 0)
+        let depth = n.depth + self.depthOffset
+        let colorIndex = depth mod self.parenColors.len
+        let color = self.parenColors[colorIndex]
+        let r = currentChunk.point...point(currentChunk.point.row, currentChunk.point.column + 1)
+        var nextHighlight: Highlight = (r, color, {Bold}, 1.0, 100)
+        self.highlights.setLen(0)
+        self.highlights.add(nextHighlight.ensureMove)
+        self.currentNode = n
+        if currentChunk.toOpenArray[0] in {'(', '{', '['}:
+          inc self.depthOffset
 
-      var requiresSort = false
-      for match in self.highlighter.get.query.matches(self.highlighter.get.tree.root, range, self.arena):
-        let predicates = self.highlighter.get.query.predicatesForPattern(match.pattern, self.arena)
-        for capture in match.captures:
-          let node = capture.node
-          # let byteRange = node.startByte...node.endByte
-          let nodeRange = node.startPoint.toCursor.toPoint...node.endPoint.toCursor.toPoint
-          if nodeRange.b <= currentChunk.point or nodeRange.a >= currentChunk.endPoint:
-            continue
+      else:
+        let point = currentChunk.point
+        let endPoint = currentChunk.endPoint
+        let range = tsRange(tsPoint(point.row.int, point.column.int), tsPoint(endPoint.row.int, endPoint.column.int))
+        self.arena.restoreCheckpoint(0)
 
-          var matches = true
-          if nodeRange.a.row !=  nodeRange.b.row:
-            matches = false
+        var requiresSort = false
+        for match in self.highlighter.get.query.matches(self.highlighter.get.tree.root, range, self.arena):
+          let predicates = self.highlighter.get.query.predicatesForPattern(match.pattern, self.arena)
+          for capture in match.captures:
+            let node = capture.node
+            # let byteRange = node.startByte...node.endByte
+            let nodeRange = node.startPoint.toCursor.toPoint...node.endPoint.toCursor.toPoint
+            if nodeRange.b <= currentChunk.point or nodeRange.a >= currentChunk.endPoint:
+              continue
 
-          for predicate in predicates:
-            if not matches:
-              break
+            var matches = true
+            if nodeRange.a.row !=  nodeRange.b.row:
+              matches = false
 
-            for operand in predicate.operands:
-              if operand.name != capture.name:
-                matches = false
+            for predicate in predicates:
+              if not matches:
                 break
 
-              case predicate.operator
-              # of "match?":
-              #   if not regexes[].contains(operand.`type`):
-              #     try:
-              #       regexes[][operand.`type`] = re(operand.`type`)
-              #     except RegexError:
-              #       matches = false
-              #       break
-              #   let regex {.cursor.} = regexes[][operand.`type`]
+              for operand in predicate.operands:
+                if operand.name != capture.name:
+                  matches = false
+                  break
 
-              #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-              #   if nodeText.matchLen(regex, 0) != nodeText.len:
-              #     matches = false
-              #     break
+                case predicate.operator
+                # of "match?":
+                #   if not regexes[].contains(operand.`type`):
+                #     try:
+                #       regexes[][operand.`type`] = re(operand.`type`)
+                #     except RegexError:
+                #       matches = false
+                #       break
+                #   let regex {.cursor.} = regexes[][operand.`type`]
 
-              # of "not-match?":
-              #   if not regexes[].contains(operand.`type`):
-              #     try:
-              #       regexes[][operand.`type`] = re(operand.`type`)
-              #     except RegexError:
-              #       matches = false
-              #       break
-              #   let regex {.cursor.} = regexes[][operand.`type`]
+                #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+                #   if nodeText.matchLen(regex, 0) != nodeText.len:
+                #     matches = false
+                #     break
 
-              #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-              #   if nodeText.matchLen(regex, 0) == nodeText.len:
-              #     matches = false
-              #     break
+                # of "not-match?":
+                #   if not regexes[].contains(operand.`type`):
+                #     try:
+                #       regexes[][operand.`type`] = re(operand.`type`)
+                #     except RegexError:
+                #       matches = false
+                #       break
+                #   let regex {.cursor.} = regexes[][operand.`type`]
 
-              # of "eq?":
-              #   # @todo: second arg can be capture aswell
-              #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-              #   if nodeText != operand.`type`:
-              #     matches = false
-              #     break
+                #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+                #   if nodeText.matchLen(regex, 0) == nodeText.len:
+                #     matches = false
+                #     break
 
-              # of "not-eq?":
-              #   # @todo: second arg can be capture aswell
-              #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-              #   if nodeText == operand.`type`:
-              #     matches = false
-              #     break
+                # of "eq?":
+                #   # @todo: second arg can be capture aswell
+                #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+                #   if nodeText != operand.`type`:
+                #     matches = false
+                #     break
 
-              # of "any-of?":
-              #   # todo
-              #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+                # of "not-eq?":
+                #   # @todo: second arg can be capture aswell
+                #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+                #   if nodeText == operand.`type`:
+                #     matches = false
+                #     break
 
-              else:
-                discard
+                # of "any-of?":
+                #   # todo
+                #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
 
-          if not matches:
-            continue
+                else:
+                  discard
 
-          var nodeRangeClamped = nodeRange
-          if nodeRangeClamped.a.row < currentChunk.point.row:
-            nodeRangeClamped.a.row = currentChunk.point.row
-            nodeRangeClamped.a.column = 0
-          if nodeRangeClamped.b.row > currentChunk.point.row:
-            nodeRangeClamped.b.row = currentChunk.point.row
-            nodeRangeClamped.b.column = uint32.high
+            if not matches:
+              continue
 
-          let color = self.theme.tokenColor(capture.name, self.defaultColor)
-          let fontStyle = self.theme.tokenFontStyle(capture.name)
-          let fontScale = self.theme.tokenFontScale(capture.name)
-          var nextHighlight: Highlight = (nodeRangeClamped, color, fontStyle, fontScale, match.pattern)
-          if self.highlights.len > 0 and nextHighlight.range.a < self.highlights[^1].range.a:
-            requiresSort = true
-            self.highlights.add(nextHighlight.ensureMove)
-          else:
-            self.highlights.addHighlight(nextHighlight.ensureMove)
+            var nodeRangeClamped = nodeRange
+            if nodeRangeClamped.a.row < currentChunk.point.row:
+              nodeRangeClamped.a.row = currentChunk.point.row
+              nodeRangeClamped.a.column = 0
+            if nodeRangeClamped.b.row > currentChunk.point.row:
+              nodeRangeClamped.b.row = currentChunk.point.row
+              nodeRangeClamped.b.column = uint32.high
 
-      if requiresSort:
-        var highlights = self.highlights
-        highlights.sort(proc(a, b: Highlight): int = cmp(a.range.a, b.range.a))
-        self.highlights.setLen(0)
-        for nextHighlight in highlights.mitems:
-          self.highlights.addHighlight(nextHighlight)
+            let color = self.theme.tokenColor(capture.name, self.defaultColor)
+            let fontStyle = self.theme.tokenFontStyle(capture.name)
+            let fontScale = self.theme.tokenFontScale(capture.name)
+            var nextHighlight: Highlight = (nodeRangeClamped, color, fontStyle, fontScale, match.pattern)
+            if self.highlights.len > 0 and nextHighlight.range.a < self.highlights[^1].range.a:
+              requiresSort = true
+              self.highlights.add(nextHighlight.ensureMove)
+            else:
+              self.highlights.addHighlight(nextHighlight.ensureMove)
+
+        if requiresSort:
+          var highlights = self.highlights
+          highlights.sort(proc(a, b: Highlight): int = cmp(a.range.a, b.range.a))
+          self.highlights.setLen(0)
+          for nextHighlight in highlights.mitems:
+            self.highlights.addHighlight(nextHighlight)
 
   assert self.chunk.isSome
   var currentChunk = self.chunk.get
