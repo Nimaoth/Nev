@@ -59,12 +59,14 @@ proc alloc*(arena: var Arena, size: int, alignment: int): pointer =
   return cast[pointer](alignedAddress)
 
 proc allocEmptyArray*(arena: var Arena, num: int, T: typedesc): ArrayView[T] =
+  assert num >= 0
   if num == 0:
     return ArrayView[T].default
   let data = cast[ptr UncheckedArray[T]](arena.alloc(num * sizeof(T), alignof(T)))
   return initArrayView(data, len = 0, capacity = num)
 
 proc allocArray*(arena: var Arena, num: int, T: typedesc): ArrayView[T] =
+  assert num >= 0
   if num == 0:
     return ArrayView[T].default
   let data = cast[ptr UncheckedArray[T]](arena.alloc(num * sizeof(T), alignof(T)))

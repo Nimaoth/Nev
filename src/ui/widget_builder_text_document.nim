@@ -770,7 +770,7 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
   if state.chunkBoundsPerLine.len >= state.chunkBoundsPerLine.cap:
     return Vec2.none
 
-  let maxNumChunks = ceil(state.bounds.w / state.builder.charWidth).int + 5
+  let maxNumChunks = max(ceil(state.bounds.w / state.builder.charWidth).int + 5, 1)
   state.chunkBoundsPerLine.add LineBounds(
     line: line,
     chunks: state.builder.arena.allocEmptyArray(maxNumChunks, ChunkBounds)
@@ -979,8 +979,8 @@ proc drawLines(state: var LineDrawerState, commands: var RenderCommands, backgro
 
   scrollBox.beginRender(state.bounds.wh, 0.UINodeFlags, state.displayMap.endDisplayPoint.row.int)
 
-  let maxNumLines = ceil(state.bounds.h / state.builder.textHeight).int + 50
-  let maxNumCharsPerLine = ceil(state.bounds.w / state.builder.charWidth).int + 5
+  let maxNumLines = max(ceil(state.bounds.h / state.builder.textHeight).int + 50, 1)
+  let maxNumCharsPerLine = max(ceil(state.bounds.w / state.builder.charWidth).int + 5, 1)
 
   state.chunkBoundsPerLine = state.builder.arena.allocEmptyArray(maxNumLines, LineBounds)
   state.charBounds = state.builder.arena.allocEmptyArray(maxNumLines * maxNumCharsPerLine, Rect)
@@ -1040,8 +1040,8 @@ proc drawLines(state: var LineDrawerState, commands: var RenderCommands, backgro
   state.drawDiffBackgrounds(backgroundCommands, scrollBox)
 
 proc drawDiffLines(state: var LineDrawerState, commands: var RenderCommands, backgroundCommands: var RenderCommands, scrollBox: var ScrollBox) =
-  let maxNumLines = ceil(state.bounds.h / state.builder.textHeight).int + 15
-  let maxNumCharsPerLine = ceil(state.bounds.w / state.builder.charWidth).int + 5
+  let maxNumLines = max(ceil(state.bounds.h / state.builder.textHeight).int + 15, 1)
+  let maxNumCharsPerLine = max(ceil(state.bounds.w / state.builder.charWidth).int + 5, 1)
 
   state.chunkBoundsPerLine = state.builder.arena.allocEmptyArray(maxNumLines, LineBounds)
   state.charBounds = state.builder.arena.allocEmptyArray(maxNumLines * maxNumCharsPerLine, Rect)
@@ -1072,7 +1072,7 @@ proc drawContextLines(state: var LineDrawerState, commands: var RenderCommands, 
   var state = state
   let maxNumLines = contextLines.len
   state.chunkBoundsPerLine = state.builder.arena.allocEmptyArray(maxNumLines, LineBounds)
-  let maxNumCharsPerLine = ceil(state.bounds.w / state.builder.charWidth).int + 5
+  let maxNumCharsPerLine = max(ceil(state.bounds.w / state.builder.charWidth).int + 5, 1)
   state.charBounds = state.builder.arena.allocEmptyArray(maxNumLines * maxNumCharsPerLine, Rect)
 
   var iter = state.createIter()
