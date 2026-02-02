@@ -303,7 +303,11 @@ proc visualLineRange*(displayMap: DisplayMap, point: WrapPoint, bias: Bias, incl
   let displayLineEnd = wrapPoint(point.row + 1)
   let startBytes = displayMap.toWrapBytes(displayLineStart)
   let endBytes = displayMap.toWrapBytes(displayLineEnd)
-  displayLineStart...wrapPoint(displayLineStart.row.int, endBytes - startBytes - 1)
+  var endColumn = endBytes - startBytes
+  if not includeEol:
+    # todo: handle multi byte char
+    endColumn -= 1
+  displayLineStart...wrapPoint(displayLineStart.row.int, max(endColumn, 0))
 
 proc getInlayRangeAt(displayMap: DisplayMap, point: Point): Range[WrapPoint] =
   let left = displayMap.toWrapPoint(point, Bias.Left)
