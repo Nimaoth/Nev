@@ -750,9 +750,9 @@ proc createDir*(self: Arc[VFS2], path: string): Future[void] {.raises: [].} =
   let (vfs, path) = self.getVFS(path)
   vfs.createDirImpl(path)
 
-proc getFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.raises: [].} =
+proc getFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   let (vfs, path) = self.getVFS(path)
-  return vfs.getFileKindImpl(path)
+  return vfs.getFileKindImpl(path).await
 
 proc getFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.raises: [].} =
   let (vfs, path) = self.getVFS(path)
@@ -1071,4 +1071,10 @@ proc genTempPath*(vfs: VFS, prefix: string, suffix: string, dir: string = "temp:
   for i in 0..maxRetry:
     result = dir // (prefix & randomPathName(randLen) & suffix)
     if not checkExists or vfs.getFileKind(result).waitFor.isNone:
+      break
+
+proc genTempPath*(vfs: Arc[VFS2], prefix: string, suffix: string, dir: string = "temp://", randLen: int = 8, checkExists: bool = true): Future[string] {.async: (raises: []).} =
+  for i in 0..maxRetry:
+    result = dir // (prefix & randomPathName(randLen) & suffix)
+    if not checkExists or vfs.getFileKind(result).await.isNone:
       break

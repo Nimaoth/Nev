@@ -30,6 +30,8 @@ For examples and default values see [here](../config/settings.json)
 | `editor.watch-theme` | bool | true | Watch the theme directory for changes to the theme. |
 | `editor.watch-user-config` | bool | true | Watch the config files in the user directory and automatically reload them when they change. |
 | `editor.watch-workspace-config` | bool | true | Watch the config files in the workspace directory and automatically reload them when they change. |
+| `formatter.command` | string[] | [] | Command to run. First entry is path to the formatter program, subsequent entries are passed as arguments to the formatter. |
+| `formatter.on-save` | bool | false | If true run the formatter when saving. |
 | `lsp-merge.timeout` | int | 10000 | Timeout for LSP requests in milliseconds |
 | `plugins.command-load-behaviour` | PluginCommandLoadBehaviour | "async-or-wait" | Defines if and how to run commands which trigger a plugin to load. "dont-run": Don't run the command after the plugin is loaded. You have to manually run the command again. "async-run": Asynchronously load the plugin and run the command afterwards. If the command returns something              then the return value will not be available if the command is e.g. called from a plugin. "wait-and-run": Synchronously load the plugin and run the command afterwards. Return values work fine, but the editor                 will freeze while loading the plugin. "async-or-wait": Use "async-run" behaviour for commands with no return value and "wait-and-run" for commands with return values. |
 | `plugins.watch-plugin-directories` | bool | true | Whether to watch the plugin directories for changes and load new plugins |
@@ -61,8 +63,6 @@ For examples and default values see [here](../config/settings.json)
 | `text.diff-reload.timeout` | int | 250 | Max number of milliseconds to use for diffing. If the timeout is exceeded then the file will be reloaded normally. |
 | `text.double-click-command` | string | "extend-select-move" | Command to run after double clicking on some text. |
 | `text.double-click-command-args` | any | ["word",true] | Arguments to the command which is run when double clicking on some text. |
-| `text.formatter.command` | string[] | [] | Command to run. First entry is path to the formatter program, subsequent entries are passed as arguments to the formatter. |
-| `text.formatter.on-save` | bool | false | If true run the formatter when saving. |
 | `text.highlight-matches.delay` | int | 250 | How long after moving the cursor matching text is highlighted. |
 | `text.highlight-matches.enable` | bool | true | Enable highlighting of text matching the current selection or word containing the cursor (if the selection is empty). |
 | `text.highlight-matches.max-file-size` | int | 104857600 | Don't highlight matching text in files above this size (in bytes). |
