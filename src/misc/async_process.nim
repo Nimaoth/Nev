@@ -215,8 +215,7 @@ proc writeOutput(chan: Arc[OwnedChannel[Option[ProcessObj]]], stdin: Arc[BaseCha
         # echo &"writeOutput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
 
-    # todo: figure out when to close the stream
-    # stream.close()
+    stream.close()
 
 proc start*(process: AsyncProcess): bool =
   log(lvlInfo, fmt"start process {process.name} {process.args}")

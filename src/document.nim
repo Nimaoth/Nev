@@ -26,6 +26,8 @@ type Document* = ref object of ComponentOwner
   lastSavedRevision*: int               ## Undobale revision at the time we saved the last time
   vfs*: VFS
   usage*: string
+  preSaveHandlers*: seq[proc (self: Document): Future[void] {.async: (raises: []).}]
+  onDocumentBeforeSave*: Event[Document]
   onDocumentSaved*: Event[Document]
   onDocumentLoaded*: Event[Document]
 

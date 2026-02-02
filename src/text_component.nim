@@ -16,8 +16,8 @@ var TextComponentId* {.apprtl.}: ComponentTypeId
 proc textComponentContent*(self: TextComponent): Rope {.apprtl, gcsafe, raises: [].}
 proc textComponentBuffer*(self: TextComponent): lent Buffer {.apprtl, gcsafe, raises: [].}
 proc getTextComponent*(self: ComponentOwner): Option[TextComponent] {.apprtl, gcsafe, raises: [].}
-proc textComponentEditString(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
-proc textComponentEditRope(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
+proc textComponentEditString(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
+proc textComponentEditRope(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
 proc normalized*(r: Range[Point]): Range[Point] =
@@ -40,10 +40,10 @@ proc content*(self: TextComponent, selection: Range[Point], inclusiveEnd: bool =
   let res = c.slice(target, Bias.Right)
   return $res
 
-proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Range[Point]] {.inline.} =
-  self.textComponentEditString(selections, oldSelections, texts, notify, record, inclusiveEnd)
-proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Range[Point]] {.inline.} =
-  self.textComponentEditRope(selections, oldSelections, texts, notify, record, inclusiveEnd)
+proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.inline.} =
+  self.textComponentEditString(selections, oldSelections, texts, notify, record, inclusiveEnd, checkpoint)
+proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.inline.} =
+  self.textComponentEditRope(selections, oldSelections, texts, notify, record, inclusiveEnd, checkpoint)
 
 # Implementation
 when implModule:
@@ -58,8 +58,8 @@ when implModule:
 
   type TextComponentImpl* = ref object of TextComponent
     buffer*: Buffer
-    editString*: proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.gcsafe, raises: [].}
-    editRope*: proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.gcsafe, raises: [].}
+    editString*: proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].}
+    editRope*: proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].}
 
   var nextBufferId = 1.BufferId
   proc getNextBufferId*(): BufferId =
@@ -84,9 +84,9 @@ when implModule:
   proc initBuffer*(self: TextComponent, replicaId: ReplicaId, content: sink Rope, remoteId: BufferId = 1.BufferId) =
     self.TextComponentImpl.buffer = initBuffer(replicaId, content, remoteId)
 
-  proc textComponentEditString(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Range[Point]] =
-    self.TextComponentImpl.editString(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd).mapIt(it.toRange)
-  proc textComponentEditRope(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Range[Point]] =
-    self.TextComponentImpl.editRope(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd).mapIt(it.toRange)
+  proc textComponentEditString(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] =
+    self.TextComponentImpl.editString(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd, checkpoint).mapIt(it.toRange)
+  proc textComponentEditRope(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] =
+    self.TextComponentImpl.editRope(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd, checkpoint).mapIt(it.toRange)
 
 proc buffer*(self: TextComponent): lent Buffer {.inline.} = self.textComponentBuffer()

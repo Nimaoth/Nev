@@ -9,7 +9,8 @@ import document, document_editor, custom_treesitter, indent, config_provider, se
 import syntax_map
 import pkg/[chroma, results]
 import vcs/vcs, layout, event_service
-import language_server_component, config_component, move_database, move_component, text_component, treesitter_component, language_component
+import language_server_component, config_component, move_database, move_component, text_component, treesitter_component,
+  language_component, formatting_component
 import display_map
 
 include dynlib_export
@@ -80,13 +81,6 @@ declareSettings TrimTrailingWhitespaceSettings, "":
   ## Don't trim trailing whitespace when filesize is above this limit.
   declare maxSize, int, 1000000
 
-declareSettings FormatSettings, "":
-  ## If true run the formatter when saving.
-  declare onSave, bool, false
-
-  ## Command to run. First entry is path to the formatter program, subsequent entries are passed as arguments to the formatter.
-  declare command, seq[string], newSeq[string]()
-
 declareSettings IndentDetectionSettings, "":
   ## Enable auto detecting the indent style when opening files.
   declare enable, bool, true
@@ -143,9 +137,6 @@ declareSettings TextSettings, "text":
   ## Configure search regexes.
   use searchRegexes, SearchRegexSettings
 
-  ## Settings for code formatting.
-  use formatter, FormatSettings
-
   ## Settings for automatically detecting the indent style of files.
   use indentDetection, IndentDetectionSettings
 
@@ -192,6 +183,7 @@ type
     textComponent*: TextComponentImpl
     treesitterComponent*: TreesitterComponentImpl
     lsComponent*: LanguageServerComponent
+    formattingComponent: FormattingComponent
     services: Services
     workspace: Workspace
     editors: DocumentEditorService
@@ -271,6 +263,7 @@ proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.}
 proc enableAutoReload*(self: TextDocument, enabled: bool)
 proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageServer)
 proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageServer)
+proc addNextCheckpoint*(self: TextDocument, checkpoint: string)
 
 func buffer*(self: TextDocument): var Buffer = self.textComponent.buffer
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
@@ -904,6 +897,10 @@ proc newTextDocument*(
   self.isBackedByFile = load
   self.requiresLoad = load
 
+  self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}")
+  self.settings = TextSettings.new(self.config)
+  self.languageServerList = newLanguageServerList(self.config)
+
   self.languageComponent = newLanguageComponent()
   self.addComponent(self.languageComponent)
   discard self.languageComponent.onLanguageChanged.subscribe proc (c: LanguageComponent) =
@@ -911,19 +908,22 @@ proc newTextDocument*(
 
   self.textComponent = newTextComponent()
   self.textComponent.editString = proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string],
-      notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.gcsafe, raises: [].} =
+      notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].} =
+    if checkpoint != "":
+      self.addNextCheckpoint(checkpoint)
     self.edit(selections, oldSelections, texts, notify, record, inclusiveEnd)
   self.textComponent.editRope = proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[Rope],
-      notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.gcsafe, raises: [].} =
+      notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].} =
+    if checkpoint != "":
+      self.addNextCheckpoint(checkpoint)
     self.edit(selections, oldSelections, texts, notify, record, inclusiveEnd)
   self.addComponent(self.textComponent)
 
   self.treesitterComponent = newTreesitterComponent(self.vfs)
   self.addComponent(self.treesitterComponent)
 
-  self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}")
-  self.settings = TextSettings.new(self.config)
-  self.languageServerList = newLanguageServerList(self.config)
+  self.formattingComponent = newFormattingComponent(services.getService(VFSService).get.vfs2, self.config)
+  self.addComponent(self.formattingComponent)
 
   self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =
     self.applyMoveFallback(move, selections, count, args, env)
@@ -1009,6 +1009,10 @@ proc saveAsync*(self: TextDocument) {.async.} =
     if self.staged:
       return
 
+    self.onDocumentBeforeSave.invoke(self)
+    for h in self.preSaveHandlers:
+      await h(self)
+
     let trimTrailingWhitespace = self.settings.trimTrailingWhitespace.enabled.get()
     let maxFileSizeForTrim = self.settings.trimTrailingWhitespace.maxSize.get()
     if trimTrailingWhitespace:
@@ -1033,9 +1037,6 @@ proc saveAsync*(self: TextDocument) {.async.} =
     self.onSaved.invoke()
     self.onDocumentSaved.invoke(self)
     self.eventBus.emit(&"document/{self.id}/saved", $self.id)
-
-    if self.settings.formatter.onSave.get():
-      asyncSpawn self.format(runOnTempFile = false)
 
     if newFile:
       asyncSpawn self.addFileVcsAsync();
@@ -1258,43 +1259,7 @@ method load*(self: TextDocument, filename: string = "") =
 
 proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.} =
   try:
-    let command = self.settings.formatter.command.get()
-    if command.len == 0:
-      return
-
-    let formatterPath = command[0]
-    let formatterArgs = command[1..^1]
-
-    log lvlInfo, &"Format document '{self.filename}' with '{formatterPath} {formatterArgs}'"
-
-    if runOnTempFile:
-      let ext = self.filename.splitFile.ext
-      let tempFile = self.vfs.genTempPath(prefix = "format/", suffix = ext)
-      try:
-        var rope = self.rope.clone()
-        await self.vfs.write(tempFile, self.rope)
-      except IOError as e:
-        log lvlError, &"[format] Failed to write file {tempFile}: {e.msg}\n{e.getStackTrace()}"
-        return
-
-      defer:
-        asyncSpawn asyncDiscard self.vfs.delete(tempFile)
-
-      discard await runProcessAsync(formatterPath, formatterArgs & @[self.vfs.localize(tempFile)])
-
-      var rope: Rope = Rope.new()
-      try:
-        await self.vfs.readRope(tempFile, rope.addr)
-      except IOError as e:
-        log lvlError, &"[format] Failed to load file {tempFile}: {e.msg}\n{e.getStackTrace()}"
-        return
-
-      discard await self.reloadFromRope(rope.clone())
-
-    else:
-      discard await runProcessAsync(formatterPath, formatterArgs & @[self.localizedPath])
-      await self.loadAsync(isReload = true)
-
+    await self.formattingComponent.format()
   except Exception as e:
     log lvlError, &"Failed to format document '{self.filename}': {e.msg}\n{e.getStackTrace()}"
 
