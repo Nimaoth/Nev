@@ -550,12 +550,15 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
       let (_, initialIndex) = state.chunkBounds.toOpenArray().binarySearchRange(p, Bias.Left, cmp)
 
       var lastIndex = initialIndex
-      if lastIndex > 0 and p in state.chunkBounds[lastIndex - 1].range and not state.chunkBounds[lastIndex - 1].displayChunk.styledChunk.chunk.external:
+      if lastIndex > 0 and p in state.chunkBounds[lastIndex - 1].range and not state.chunkBounds[lastIndex - 1].displayChunk.styledChunk.chunk.external and not state.chunkBounds[lastIndex].displayChunk.diffChunk.wrapChunk.inputChunk.wasTab:
         dec lastIndex
 
       var currentExternal = state.chunkBounds[lastIndex].displayChunk.styledChunk.chunk.external
       while lastIndex < state.chunkBounds.high:
-        if not currentExternal and p < state.chunkBounds[lastIndex].range.b:
+        if state.chunkBounds[lastIndex].displayChunk.diffChunk.wrapChunk.inputChunk.wasTab:
+          if p == state.chunkBounds[lastIndex].range.a:
+            break
+        elif not currentExternal and p < state.chunkBounds[lastIndex].range.b:
           break
         let nextExternal = state.chunkBounds[lastIndex + 1].displayChunk.styledChunk.chunk.external
         if not nextExternal and p < state.chunkBounds[lastIndex + 1].range.a:
