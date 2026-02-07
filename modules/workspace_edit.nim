@@ -110,3 +110,6 @@ when implModule:
       return true
 
     return false
+
+  proc init_module_workspace_edit*() {.cdecl, exportc, dynlib.} =
+    discard
