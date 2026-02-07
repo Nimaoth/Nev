@@ -88,10 +88,12 @@ proc createEditorForDocument*(self: DocumentEditorService, document: Document, o
 proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx): Document {.apprtl.}
 proc documentEditorSetActive(self: DocumentEditor, newActive: bool) {.apprtl.}
 proc documentEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.apprtl, gcsafe, raises: [].}
+proc documentEditorGetOrOpenDocument(self: DocumentEditorService, path: string, load: bool = true): Option[Document] {.apprtl, gcsafe, raises: [].}
 
 
 # Nice wrappers
 proc createDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx = nil): Document {.inline.} = documentEditorCreateDocument(self, kind, path, load, options)
+proc getOrOpenDocument*(self: DocumentEditorService, path: string, load = true): Option[Document] = documentEditorGetOrOpenDocument(self, path, load)
 proc `active=`*(self: DocumentEditor, newActive: bool) = documentEditorSetActive(self, newActive)
 
 when implModule:
@@ -266,7 +268,7 @@ when implModule:
       log(lvlError, fmt"[openDocument] Failed to load file '{path}': {getCurrentExceptionMsg()}")
       return Document.none
 
-  proc getOrOpenDocument*(self: DocumentEditorService, path: string, load = true): Option[Document] =
+  proc documentEditorGetOrOpenDocument(self: DocumentEditorService, path: string, load = true): Option[Document] =
     result = self.getDocument(path)
     if result.isSome:
       return

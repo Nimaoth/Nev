@@ -1,3 +1,4 @@
+#use workspace_edit
 import std/[strformat, strutils, os, sets, tables, options, json, sequtils, uri]
 import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_process, event, response, rope_utils, arena, array_view, jsonex, myjsonutils]
 import text/language/[language_server_base, lsp_types]
@@ -16,6 +17,7 @@ include module_base
 
 when implModule:
   import language_server_component, config_component, move_component, text_component, treesitter_component, language_component
+  import workspace_edit
 
   logCategory "language-server-lsp"
 
@@ -30,8 +32,9 @@ when implModule:
       serverCapabilities*: ServerCapabilities
       fullDocumentSync: bool = false
 
-      vfs: VFS
-      localVfs: VFS
+      vfs: Arc[VFS2]
+      localVfs: Arc[VFS2]
+      editors: DocumentEditorService
 
     LanguageServerLspService* = ref object of DynamicService
       documents: DocumentEditorService
@@ -131,16 +134,15 @@ when implModule:
     discard
 
     # todo: nice error messages when failing
-    # todo
-    # if applyWorkspaceEdit(nil, nil, params.edit).await:
-    #   return lsp_types.ApplyWorkspaceEditResponse(
-    #     applied: true,
-    #   )
-    # else:
-    #   return lsp_types.ApplyWorkspaceEditResponse(
-    #     applied: false,
-    #     failureReason: "Internal error".some,
-    #   )
+    if applyWorkspaceEdit(self.editors, self.vfs, params.edit).await:
+      return lsp_types.ApplyWorkspaceEditResponse(
+        applied: true,
+      )
+    else:
+      return lsp_types.ApplyWorkspaceEditResponse(
+        applied: false,
+        failureReason: "Internal error".some,
+      )
 
   proc handleWorkspaceConfigurationRequests(self: LanguageServerLSP) {.async.} =
     while self.client != nil:
@@ -809,8 +811,9 @@ when implModule:
 
       lsp.initializedFuture = newFuture[bool]("lsp.initializedFuture")
       self.languageServers[name] = lsp
-      lsp.vfs = self.services.getService(VFSService).get.vfs
+      lsp.vfs = self.services.getService(VFSService).get.vfs2
       lsp.localVfs = lsp.vfs.getVFS("local://").vfs # todo
+      lsp.editors = self.services.getService(DocumentEditorService).get
       lsp.refetchWorkspaceSymbolsOnQueryChange = true
 
       asyncSpawn lsp.handleWorkspaceConfigurationRequests()
