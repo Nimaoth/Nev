@@ -35,6 +35,9 @@ type Document* = ref object of ComponentOwner
 proc documentLocalizedPath*(self: Document): string {.apprtl, gcsafe, raises: [].}
 proc localizedPath*(self: Document): string {.inline.} = documentLocalizedPath(self)
 
+proc documentSave(self: Document, filename: string = "") {.apprtl, gcsafe, raises: [].}
+proc documentLoad(self: Document, filename: string = "") {.apprtl, gcsafe, raises: [].}
+
 proc setReadOnly*(self: Document, readOnly: bool) =
   ## Sets the interal readOnly flag, but doesn't not changed permission of the underlying file
   self.readOnly = readOnly
@@ -62,3 +65,10 @@ when implModule:
     return self.vfs.normalize(self.filename)
 
   proc documentLocalizedPath*(self: Document): string {.gcsafe, raises: [].} = self.vfs.localize(self.filename)
+
+  proc documentSave(self: Document, filename: string = "") = self.save(filename)
+  proc documentLoad(self: Document, filename: string = "") = self.load(filename)
+
+else:
+  proc save*(self: Document, filename: string = "") = documentSave(self, filename)
+  proc load*(self: Document, filename: string = "") = documentLoad(self, filename)

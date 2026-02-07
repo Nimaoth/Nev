@@ -22,6 +22,8 @@ import lisp
 import view
 import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component
 
+import "../../modules"/workspace_edit
+
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
   Command, WorkspaceEdit, asCommand, asCodeAction
@@ -242,6 +244,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   eventBus: EventService
   vfsService: VFSService
   vfs*: VFS
+  vfs2*: Arc[VFS2]
   commands*: CommandServiceImpl
   configService*: ConfigService
   configChanged: bool = false
@@ -518,8 +521,6 @@ proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
   includeAfter: bool = true, wrap: bool = true): Selection
 proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
   includeAfter: bool = true, wrap: bool = true): Selection
-
-import workspace_edit
 
 proc debug*(self: TextDocumentEditor): string =
   return &"TE({self.id}, '{self.usage}', '{self.getFileName()}')"
@@ -3531,7 +3532,7 @@ proc renameAsync(self: TextDocumentEditor) {.async.} =
         if it.isSuccess and it.result.len > 0:
           log lvlInfo, &"Apply workspace edit for rename:\n{it.result[0]}"
           # todo: handle multiple workspace edits by allowing to choose one.
-          asyncSpawn asyncDiscard applyWorkspaceEdit(self.editors, self.vfs, it.result[0])
+          asyncSpawn asyncDiscard applyWorkspaceEdit(self.editors, self.vfs2, it.result[0])
         elif it.isError:
           log lvlError, &"Failed to rename to '{name}': {it.error}"
 
@@ -4145,7 +4146,7 @@ proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeA
 
     of CodeActionKind.CodeAction:
       if commandOrAction.action.edit.getSome(edit):
-        discard await applyWorkspaceEdit(self.editors, self.vfs, edit)
+        discard await applyWorkspaceEdit(self.editors, self.vfs2, edit)
         if self.document.isNil:
           return
 
@@ -4956,6 +4957,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.moveDatabase = self.services.getService(MoveDatabase).get
   self.eventBus = self.services.getService(EventService).get
   self.vfs = self.services.getService(VFSService).get.vfs
+  self.vfs2 = self.services.getService(VFSService).get.vfs2
   self.commands = self.services.getService(CommandServiceImpl).get
   self.displayMap = DisplayMap.new()
   self.diffDisplayMap = DisplayMap.new()

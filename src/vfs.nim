@@ -720,9 +720,12 @@ proc localize*(self: Arc[VFS2], path: string): string =
 proc normalize*(self: Arc[VFS2], path: string): string =
   var (vfs, path) = self.getVFS(path)
   path = vfs.normalizeImpl(path)
-  while vfs.get.parent.getSome(parent):
-    path = vfs.get.prefix // path
-    vfs = parent
+  while true:
+    if vfs.get.parent.isSome:
+      path = vfs.get.prefix // path
+      vfs = vfs.get.parent.get
+    else:
+      break
 
   return path.normalizeNativePath
 
