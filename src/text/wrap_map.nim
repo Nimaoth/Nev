@@ -686,6 +686,10 @@ proc next*(self: var WrapChunkIterator): Option[WrapChunk] =
 
   else:
     self.localOffset = map.src.b.column.int - currentChunk.outputPoint.column.int
+    if self.localOffset < 0:
+      self.wrapChunk = WrapChunk(inputChunk: currentChunk, wrapPoint: self.wrapPoint).some
+      return
+
     assert self.localOffset >= 0
     var newChunk = currentChunk.split(startOffset).suffix.split(self.localOffset - startOffset).prefix
     newChunk.outputPoint = currentInputPoint
