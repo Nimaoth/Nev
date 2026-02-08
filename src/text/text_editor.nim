@@ -20,7 +20,7 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 import lisp
 import view
-import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component, hover_component
+import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component
 
 import "../../modules"/workspace_edit
 
@@ -250,6 +250,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   decorations*: DecorationComponentImpl
   inlayHints: InlayHintComponent
   hoverComponent*: HoverComponent
+  commandComponent*: CommandComponent
 
   document*: TextDocument
   snapshot: BufferSnapshot
@@ -3849,43 +3850,6 @@ proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpt
 
   self.markDirty()
 
-proc showHoverFor*(self: TextDocumentEditor, cursor: Cursor) =
-  ## Shows lsp hover information for the given cursor.
-  ## Does nothing if no language server is available or the language server doesn't return any info.
-  debugf"showHoverFor {cursor}"
-  self.hoverComponent.mouseHoverLocation = self.selection.last.toPoint
-  asyncSpawn self.hoverComponent.showHoverForAsync(cursor.toPoint)
-
-proc showHoverForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
-  ## Shows lsp hover information for the current selection.
-  ## Does nothing if no language server is available or the language server doesn't return any info.
-  debugf"showHoverForCurrent {self.hoverComponent.mouseHoverLocation}"
-  asyncSpawn self.hoverComponent.showHoverForAsync(self.hoverComponent.mouseHoverLocation)
-
-proc showHover*(self: TextDocumentEditor) {.expose("editor.text").} =
-  ## Shows lsp hover information for the current selection.
-  ## Does nothing if no language server is available or the language server doesn't return any info.
-  debugf"showHover {self.selection.last.toPoint}"
-  self.hoverComponent.mouseHoverLocation = self.selection.last.toPoint
-  asyncSpawn self.hoverComponent.showHoverForAsync(self.selection.last.toPoint)
-
-proc toggleHover*(self: TextDocumentEditor) {.expose("editor.text").} =
-  ## Shows lsp hover information for the current selection.
-  ## Does nothing if no language server is available or the language server doesn't return any info.
-  debugf"toggleHover"
-  if self.hoverComponent.showHover:
-    self.hoverComponent.clearHoverView()
-    self.hoverComponent.showHover = false
-    self.markDirty()
-  else:
-    self.hoverComponent.mouseHoverLocation = self.selection.last.toPoint
-    asyncSpawn self.hoverComponent.showHoverForAsync(self.selection.last.toPoint)
-
-proc hideHover*(self: TextDocumentEditor) {.expose("editor.text").} =
-  ## Hides the hover information.
-  debugf"hideHoverf"
-  self.hoverComponent.hideHover()
-
 proc showSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Shows lsp signature information for the current selection.
   ## Does nothing if no language server is available or the language server doesn't return any info.
@@ -4439,6 +4403,9 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
       self.registers.recordCommand("." & action & " " & arg)
 
     if not action.startsWith("("): # Hacky, this should not be checked here. Lisp commands are handled through self.commands
+      self.commandComponent.commands.withValue(action, cmd):
+        return newJString(cmd.cb(cmd.handler, arg)).some
+
       var args = newJArray()
       for a in newStringStream(arg).parseJsonFragments():
         args.add a
@@ -4804,6 +4771,9 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.uiSettings = UiSettings.new(self.config)
   self.debugSettings = DebugSettings.new(self.config)
   self.settings = TextEditorSettings.new(self.config)
+
+  self.commandComponent = newCommandComponent()
+  self.addComponent(self.commandComponent)
 
   self.textEditorComponent = newTextEditorComponent()
   self.textEditorComponent.displayMap = self.displayMap

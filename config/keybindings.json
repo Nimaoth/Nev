@@ -591,7 +591,7 @@
         "go": ["switch-source-header"],
         "ga": ["select-code-action"],
         "gR": ["rename"],
-        "K": ["toggle-hover"],
+        "K": ["hover.toggle"],
         "H": ["toggle-signature-help"],
 
         // scroll
@@ -619,7 +619,7 @@
         "<C-t>": ["vim.indent"],
         "<C-d>": ["vim.unindent"],
         "<C-r>": ["set-mode", "vim.insert-register"],
-        "<C-k>": ["toggle-hover"],
+        "<C-k>": ["hover.toggle"],
         "<C-h>": ["toggle-signature-help"],
     },
 
@@ -728,7 +728,7 @@
     },
 
     "vim.hover": {
-        "<ESCAPE>": ["hide-hover"],
+        "<ESCAPE>": ["hover.hide"],
     },
 
     // vscode
@@ -880,7 +880,7 @@
         "<C-g><C-w>": ["goto-workspace-symbol"],
         "<C-g><C-r>": ["goto-references"],
         "<C-g><C-o>": ["switch-source-header"],
-        "<C-g><C-k>": ["show-hover-for-current"],
+        "<C-g><C-k>": ["hover.toggle"],
         "<C-g><C-h>": ["show-diagnostics-for-current"],
         "<C-SPACE>": ["get-completions"],
         "<F12>": ["goto-definition"],
