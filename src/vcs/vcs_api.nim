@@ -162,6 +162,10 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
 
   var popup = newSelectorPopup(self.services, "git".some, finder.some, previewer.Previewer.toDisposableRef.some)
 
+  for vcs in self.getAllVersionControlSystems():
+    popup.title.add &"git: {vcs.status}"
+    break
+
   popup.scale.x = 1
   popup.scale.y = 0.9
   popup.previewScale = 0.75
