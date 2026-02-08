@@ -26,7 +26,6 @@ when implModule:
     try:
       var args = @["status", "-b", "--porcelain=2"]
 
-      log lvlInfo, fmt"updateGitStatus"
       const branchHead = "# branch.head "
       const branchUpstream = "# branch.upstream "
       const branchAb = "# branch.ab "
@@ -35,7 +34,7 @@ when implModule:
       var upstream = "origin/main"
       var ap = (ahead: 0, behind: 0)
 
-      let lines = runProcessAsync("git", args, workingDir=self.root).await
+      let lines = runProcessAsync("git", args, workingDir=self.root, log = false).await
       for line in lines:
         if line.startsWith(branchHead):
           branch = line[branchHead.len..^1]

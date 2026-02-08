@@ -395,9 +395,10 @@ proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[stri
     result[2] = getCurrentException()
 
 proc runProcessAsync*(name: string, args: seq[string] = @[], workingDir: string = "",
-    maxLines: int = int.high, eval: bool = false): Future[seq[string]] {.async.} =
+    maxLines: int = int.high, eval: bool = false, log: bool = true): Future[seq[string]] {.async.} =
 
-  log lvlInfo, fmt"[runProcessAsync] {name}, {args}, '{workingDir}', {maxLines}"
+  if log:
+    log lvlInfo, fmt"[runProcessAsync] {name}, {args}, '{workingDir}', {maxLines}"
   let (lines, _, err) = await spawnAsync(readProcessOutputThread, (name, args, maxLines, workingDir, true, false, eval))
   if err != nil:
     raise newException(IOError, err.msg, err)
