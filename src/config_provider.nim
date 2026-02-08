@@ -1096,6 +1096,9 @@ declareSettings UiSettings, "ui":
   # ## How long the cursor trail is. Set to 0 to disable cursor trail.
   # declare inclusiveSelection, int, 2
 
+  ## Configures what to show in the status line.
+  declare statusLine, seq[JsonNodeEx], @[newJexString"mode", newJexString"layout", newJexString"vcs.status", newJexString"session"]
+
 # declareSettings LanguageSettings, "languages.*":
 #   ## Name of the github repository or link to git repository for the treesitter parser.
 #   declare treesitter, string, ""
