@@ -1,4 +1,6 @@
 import "../modules/debugger/debugger.nim"
+import "../modules/vcs_git.nim"
+import "../modules/vcs_perforce.nim"
 import "../modules/hover_component.nim"
 import "../modules/language_server_ctags.nim"
 import "../modules/language_server_regex.nim"
@@ -12,6 +14,8 @@ import "../modules/angelscript_formatter.nim"
 
 proc initModules*() =
   init_module_debugger()
+  init_module_vcs_git()
+  init_module_vcs_perforce()
   init_module_hover_component()
   init_module_language_server_ctags()
   init_module_language_server_regex()
@@ -25,6 +29,8 @@ proc initModules*() =
 
 proc shutdownModules*() =
   when declared(shutdown_module_debugger): shutdown_module_debugger()
+  when declared(shutdown_module_vcs_git): shutdown_module_vcs_git()
+  when declared(shutdown_module_vcs_perforce): shutdown_module_vcs_perforce()
   when declared(shutdown_module_hover_component): shutdown_module_hover_component()
   when declared(shutdown_module_language_server_ctags): shutdown_module_language_server_ctags()
   when declared(shutdown_module_language_server_regex): shutdown_module_language_server_regex()
