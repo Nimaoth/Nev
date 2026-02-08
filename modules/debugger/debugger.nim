@@ -829,7 +829,7 @@ when implModule:
 
       return VariableCursor.none
 
-  proc expandVariable*(self: VariablesView) =
+  proc expandVariable*(self: VariablesView) {.async.} =
     let debugger = getDebugger().getOr:
       return
     let scopes = debugger.currentScopes().getOr:
@@ -851,7 +851,8 @@ when implModule:
 
         if va.variablesReference != 0.VariablesReference:
           self.collapsedVariables.excl ids & va.variablesReference
-          asyncSpawn debugger.updateVariables(va.variablesReference, 0)
+          self.markDirty()
+          await debugger.updateVariables(va.variablesReference, 0)
       else:
         log lvlError, &"Failed to find variable {ids & v.varRef}"
 
@@ -859,9 +860,10 @@ when implModule:
       self.collapsedVariables.excl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
 
     self.refilterVariables(debugger)
+    self.markDirty()
     debugger.platform.requestRender()
 
-  proc expandVariableChildren*(self: VariablesView) =
+  proc expandVariableChildren*(self: VariablesView) {.async.} =
     let debugger = getDebugger().getOr:
       return
     let scopes = debugger.currentScopes().getOr:
@@ -883,20 +885,24 @@ when implModule:
 
         if va.variablesReference != 0.VariablesReference:
           self.collapsedVariables.excl ids & va.variablesReference
+          self.markDirty()
 
           if debugger.variables.contains(ids & va.variablesReference):
-            for childVariable in debugger.variables[ids & va.variablesReference].variables:
-              self.collapsedVariables.excl ids & childVariable.variablesReference
-              if childVariable.variablesReference != 0.VariablesReference:
-                asyncSpawn debugger.updateVariables(childVariable.variablesReference, 0)
+            let childrenUpdateFutures = collect:
+              for childVariable in debugger.variables[ids & va.variablesReference].variables:
+                self.collapsedVariables.excl ids & childVariable.variablesReference
+                if childVariable.variablesReference != 0.VariablesReference:
+                  debugger.updateVariables(childVariable.variablesReference, 0)
+            await allFutures(childrenUpdateFutures)
           else:
-            asyncSpawn debugger.updateVariables(va.variablesReference, 0)
+            await debugger.updateVariables(va.variablesReference, 0)
       else:
         log lvlError, &"Failed to find variable {ids & v.varRef}"
 
     elif self.variablesCursor.scope in 0..scopes[].scopes.high:
       self.collapsedVariables.excl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
 
+    self.markDirty()
     debugger.platform.requestRender()
 
   proc collapseVariable*(self: VariablesView) =
@@ -930,6 +936,7 @@ when implModule:
     elif self.variablesCursor.scope in 0..scopes[].scopes.high:
       self.collapsedVariables.incl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
 
+    self.markDirty()
     debugger.platform.requestRender()
 
   proc expandOrCollapseVariable*(self: VariablesView) =
@@ -946,7 +953,7 @@ when implModule:
           let va {.cursor.} = vars.variables[varIndex.index]
           if va.variablesReference != 0.VariablesReference:
             if self.isCollapsed(ids & va.variablesReference) or (ids & va.variablesReference) notin debugger.variables:
-              self.expandVariable()
+              asyncSpawn self.expandVariable()
             else:
               self.collapseVariable()
             return
@@ -2235,10 +2242,10 @@ when implModule:
       if getVariablesView().getSome(view): view.nextVariable(skipChildren)
     registerCommand("next-variable", "...", @[], "void", nextVariableJson)
     proc expandVariable() {.command.} =
-      if getVariablesView().getSome(view): view.expandVariable()
+      if getVariablesView().getSome(view): asyncSpawn view.expandVariable()
     registerCommand("expand-variable", "...", @[], "void", expandVariableJson)
     proc expandVariableChildren() {.command.} =
-      if getVariablesView().getSome(view): view.expandVariableChildren()
+      if getVariablesView().getSome(view): asyncSpawn view.expandVariableChildren()
     registerCommand("expand-variable-children", "...", @[], "void", expandVariableChildrenJson)
     proc collapseVariable() {.command.} =
       if getVariablesView().getSome(view): view.collapseVariable()
