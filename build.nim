@@ -145,7 +145,7 @@ proc getAllModules(): Table[string, ModuleInfo] =
   var modules = gatherModules()
   let buildOutput = loadBuildOutput()
   for name in modules.keys:
-    let dll = &"modules/{name}.dll"
+    let dll = &"native_plugins/{name}.dll"
     if fileExists(dll):
       # echo &"Check if dll is up to date for {name}"
       var lastSourceModificationTime = 0.int64
@@ -189,7 +189,7 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
 
     try:
       let dependencies = m.dependencies.join(",")
-      let cmd = &"nim c --colors:on --hints:off -o:modules/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependencies} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:none --lineDir:off -d:mallocImport {m.path}"
+      let cmd = &"nim c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependencies} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:none --lineDir:off -d:mallocImport {m.path}"
       if parallel:
         let v = runCmdAsync(cmd)
         if v != nil:

@@ -21,7 +21,7 @@ when defined(useDynlib):
     const nevDepsA = nevDeps.split(",")
     when nevModuleName == "nev" or nevDepsA.contains(currentModuleName):
       # We are compiling the file importing the declarations
-      {.pragma: rtl, importc, dynlib: "modules/" & currentModuleName & ".dll", cdecl.}
+      {.pragma: rtl, importc, dynlib: "native_plugins/" & currentModuleName & ".dll", cdecl.}
     else:
       import std/[strformat]
       {.error: &"{currentModuleName} is not defined as dependency for {nevModuleName}".}
