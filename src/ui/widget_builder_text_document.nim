@@ -9,7 +9,7 @@ import app, document_editor, theme, config_provider, layout
 import text/language/[lsp_types]
 import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]
 import view
-import scroll_box, treesitter_component, decoration_component
+import scroll_box, treesitter_component, decoration_component, hover_component
 
 import ui/node
 
@@ -189,8 +189,8 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   var outerSizeFlags = &{SizeToContentX, SizeToContentY}
   var innerSizeFlags = &{SizeToContentX, SizeToContentY}
 
-  if self.hoverView != nil and self.hoverView.detached:
-    bounds = self.hoverView.absoluteBounds
+  if self.hoverComponent.hoverView != nil and self.hoverComponent.hoverView.detached:
+    bounds = self.hoverComponent.hoverView.absoluteBounds
     outerSizeFlags = 0.UINodeFlags
     innerSizeFlags = &{FillX, FillY}
 
@@ -198,14 +198,14 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   builder.panel(&{MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, SnapInitialBounds, LayoutVertical, MouseHover} + outerSizeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = backgroundColor, borderColor = borderColor, border = border(1), tag = "hover", pivot = vec2()):
     hoverPanel = currentNode
 
-    if self.hoverView != nil:
+    if self.hoverComponent.hoverView != nil:
       builder.panel(innerSizeFlags):
-        discard self.hoverView.createUI(builder)
+        discard self.hoverComponent.hoverView.createUI(builder)
     else:
-      for line in self.hoverText.splitLines:
+      for line in self.hoverComponent.hoverText.splitLines:
         builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = line, textColor = activeHoverColor)
 
-  if self.hoverView == nil or not self.hoverView.detached:
+  if self.hoverComponent.hoverView == nil or not self.hoverComponent.hoverView.detached:
     var clampedX = cursorBounds.x
     if clampedX + hoverPanel.bounds.w > builder.root.w:
       clampedX = max(builder.root.w - hoverPanel.bounds.w, 0)
@@ -666,7 +666,7 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
           self.currentCenterCursor = s.last
           self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
 
-  let hoverScreenPos = self.getScreenPos(builder, state, self.hoverLocation)
+  let hoverScreenPos = self.getScreenPos(builder, state, self.hoverComponent.hoverLocation.toCursor)
   if hoverScreenPos.isSome:
     self.lastHoverLocationBounds = rect(hoverScreenPos.get.x, hoverScreenPos.get.y, builder.charWidth, builder.textHeight).some
 
@@ -1413,9 +1413,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       self.markDirty()
 
     of Hover:
-      self.mouseHoverLocation = newCursor
-      self.mouseHoverMods = mods
-      self.showHoverDelayed()
+      self.hoverComponent.mouseHoverLocation = newCursor.toPoint
+      self.hoverComponent.mouseHoverMods = mods
+      self.hoverComponent.showHoverDelayed()
 
   let textNode = currentNode
   builder.panel(&{UINodeFlag.FillX, FillY, MouseHover}, tag = "text-editor-hover"):
@@ -1424,17 +1424,17 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     onDrag MouseButton.Left:
       self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Drag)
     onBeginHover:
-      if not self.isHovered:
+      if not self.hoverComponent.isHovered:
         self.markDirty()
-      self.isHovered = true
+      self.hoverComponent.isHovered = true
       self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Hover)
     onHover:
       self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Hover)
     onEndHover:
-      if self.isHovered:
+      if self.hoverComponent.isHovered:
         self.markDirty()
-      self.isHovered = false
-      self.cancelHover()
+      self.hoverComponent.isHovered = false
+      self.hoverComponent.cancelHover()
 
   # Get center line
   if not state.cursorOnScreen:
@@ -1573,14 +1573,14 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
         builder.panel(&{FillX, FillY}):
           discard view.createUI(builder)
 
-  for overlay in self.overlayViews:
+  for overlay in self.hoverComponent.overlayViews:
     res.add addDrawOverlayView(overlay)
 
   if self.showCompletions and self.active:
     res.add proc() =
       self.createCompletions(builder, app, self.lastCursorLocationBounds.get(rect(100, 100, 10, 10)))
 
-  if self.showHover:
+  if self.hoverComponent.showHover:
     res.add proc() =
       self.createHover(builder, app, self.lastHoverLocationBounds.get(rect(100, 100, 10, 10)))
 

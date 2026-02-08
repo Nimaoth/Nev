@@ -1,3 +1,4 @@
+#use hover_component
 import platform/[tui]
 import nimsumtree/[arc]
 import misc/[id]
@@ -25,7 +26,7 @@ when implModule:
   import workspaces/workspace, vfs, vfs_service, language_server_dynamic
   import ui/node
   import nimsumtree/[rope, buffer]
-  import text_component, text_editor_component, language_server_component, decoration_component, inlay_hint_component, treesitter_component
+  import text_component, text_editor_component, language_server_component, decoration_component, inlay_hint_component, treesitter_component, hover_component, move_component
   import types_impl
 
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -981,35 +982,45 @@ when implModule:
     if frame.isNone:
       return
 
-    # todo
-    # if self.layout.tryGetCurrentView().getSome(view) and view of EditorView:
-    #   let editor = view.EditorView.editor
-    #   let timestamp = self.timestamp
-    #   if self.client.getSome(client):
-    #     var range = if useMouseHover:
-    #       editor.mouseHoverLocation.toSelection
-    #     else:
-    #       editor.selection
-    #     if range.isEmpty:
-    #       let move = self.config.runtime.get("debugger.hover.move", "(word)")
-    #       range = editor.getSelectionForMove(range.last, move, 1, true)
-    #     let expression = editor.getText(range)
-    #     var evaluation = await client.evaluate(expression, editor.document.localizedPath, range.first.line, range.first.column, frame.get.id)
-    #     if evaluation.isError:
-    #       log lvlWarn, &"Failed to evaluate {expression}: {evaluation}"
-    #       return
+    if self.layout.tryGetCurrentView().getSome(view) and view of EditorView:
+      let editor = view.EditorView.editor
+      let hover = editor.getHoverComponent().getOr:
+        return
 
-    #     if timestamp != self.timestamp:
-    #       return
+      let te = editor.getTextEditorComponent().getOr:
+        return
 
-    #     let view = self.createVariablesView()
-    #     view.renderHeader = false
-    #     view.evaluation = evaluation.result
-    #     view.evaluationName = expression
-    #     view.variablesCursor.scope = -1
-    #     editor.showHover(view, range.first)
-    #     if evaluation.result.variablesReference != 0.VariablesReference:
-    #       asyncSpawn self.updateVariables(evaluation.result.variablesReference, 0)
+      let moves = editor.currentDocument.getMoveComponent().getOr:
+        return
+      let text = editor.currentDocument.getTextComponent().getOr:
+        return
+
+      let timestamp = self.timestamp
+      if self.client.getSome(client):
+        var range = if useMouseHover:
+          hover.mouseHoverLocation...hover.mouseHoverLocation
+        else:
+          te.selection
+        if range.a == range.b:
+          let move = self.config.runtime.get("debugger.hover.move", "(word)")
+          range = moves.applyMove(range, move, 1)
+        let expression = text.content(range)
+        var evaluation = await client.evaluate(expression, editor.document.localizedPath, range.a.row.int, range.a.column.int, frame.get.id)
+        if evaluation.isError:
+          log lvlWarn, &"Failed to evaluate {expression}: {evaluation}"
+          return
+
+        if timestamp != self.timestamp:
+          return
+
+        let view = self.createVariablesView()
+        view.renderHeader = false
+        view.evaluation = evaluation.result
+        view.evaluationName = expression
+        view.variablesCursor.scope = -1
+        hover.showHoverView(view, range.a)
+        if evaluation.result.variablesReference != 0.VariablesReference:
+          asyncSpawn self.updateVariables(evaluation.result.variablesReference, 0)
 
   proc evaluateHover*(self: Debugger) =
     asyncSpawn self.evaluateHoverAsync(useMouseHover = false)

@@ -1,4 +1,5 @@
 import "../modules/debugger/debugger.nim"
+import "../modules/hover_component.nim"
 import "../modules/language_server_ctags.nim"
 import "../modules/language_server_regex.nim"
 import "../modules/workspace_edit.nim"
@@ -10,6 +11,7 @@ import "../modules/angelscript_formatter.nim"
 
 proc initModules*() =
   init_module_debugger()
+  init_module_hover_component()
   init_module_language_server_ctags()
   init_module_language_server_regex()
   init_module_workspace_edit()
@@ -21,6 +23,7 @@ proc initModules*() =
 
 proc shutdownModules*() =
   when declared(shutdown_module_debugger): shutdown_module_debugger()
+  when declared(shutdown_module_hover_component): shutdown_module_hover_component()
   when declared(shutdown_module_language_server_ctags): shutdown_module_language_server_ctags()
   when declared(shutdown_module_language_server_regex): shutdown_module_language_server_regex()
   when declared(shutdown_module_workspace_edit): shutdown_module_workspace_edit()

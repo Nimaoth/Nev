@@ -20,7 +20,7 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 import lisp
 import view
-import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component
+import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component, hover_component
 
 import "../../modules"/workspace_edit
 
@@ -115,6 +115,9 @@ declareSettings TextEditorSettings, "text":
   ## Configure inlay hints.
   use inlayHints, InlayHintSettings
 
+  ## Configure hover popups.
+  use hover, HoverSettings
+
   ## Specifies whether a selection includes the character after the end cursor.
   ## If true then a selection like (0:0...0:4) with the text "Hello world" would select "Hello".
   ## If false then the selected text would be "Hell".
@@ -130,9 +133,6 @@ declareSettings TextEditorSettings, "text":
   ## How far from the edge to keep the cursor, either percentage of screen height (0-1) or number of lines,
   ## depending on `text.cursor-margin-relative`.
   declare cursorMargin, float, 0.15
-
-  ## How many milliseconds after hovering a word the lsp hover request is sent.
-  declare hoverDelay, int, 200
 
   ## Enable line wrapping.
   declare wrapLines, bool, true
@@ -175,9 +175,6 @@ declareSettings TextEditorSettings, "text":
 
   ## Arguments to the command which is run when triple clicking on some text.
   declare tripleClickCommandArgs, JsonNode, %[newJString("line"), newJBool(true)]
-
-  ## Arguments to the command which is run when triple clicking on some text.
-  declare hoverCommand, JsonNodeEx, nil
 
   ## If not null then scroll to the changed region when a file is reloaded.
   declare scrollToChangeOnReload, Option[ScrollToChangeOnReload], nil
@@ -252,6 +249,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   textEditorComponent*: TextEditorComponentImpl
   decorations*: DecorationComponentImpl
   inlayHints: InlayHintComponent
+  hoverComponent*: HoverComponent
 
   document*: TextDocument
   snapshot: BufferSnapshot
@@ -270,16 +268,11 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   cursorsId*: Id
   completionsId*: Id
-  hoverId*: Id
   signatureHelpId*: Id
   diagnosticsId*: Id
   lastCursorLocationBounds*: Option[Rect]
   lastHoverLocationBounds*: Option[Rect]
   lastSignatureHelpLocationBounds*: Option[Rect]
-  hoverView*: View
-  isHovered*: bool
-
-  overlayViews*: seq[View]
 
   selectionsBeforeReload: Selections
   wasAtEndBeforeReload: bool = false
@@ -309,15 +302,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   # auto insert closing parens
   lastAutoCloseText: string
   lastAutoCloseLocations: seq[Anchor]
-
-  # hover
-  showHoverTask: DelayedTask    # for showing hover info after a delay
-  hideHoverTask: DelayedTask    # for hiding hover info after a delay
-  currentHoverLocation: Cursor  # the location of the mouse hover
-  showHover*: bool              # whether to show hover info in ui
-  hoverText*: string            # the text to show in the hover info
-  hoverLocation*: Cursor        # where to show the hover info
-  hoverScrollOffset*: float     # the scroll offset inside the hover window
 
   # signatureHelp
   showSignatureHelpTask: DelayedTask    # for showing signatureHelp info after a delay
@@ -351,8 +335,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastTextAreaBounds*: Rect
   lastPressedMouseButton*: MouseButton
   dragStartSelection*: Selection
-  mouseHoverLocation*: Cursor
-  mouseHoverMods*: Modifiers
 
   completionMatchPositions*: Table[int, seq[int]] # Maps from completion index to char indices
                                                   # of matching chars
@@ -389,9 +371,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   onDiagnosticsHandle: Id
   onCompletionsUpdatedHandle: Id
   onFocusChangedHandle: Id
-  onModsChangedHandle: Id
-  onHoverViewMarkedDirtyHandle: Id
-  hoverViewCallbackHandles: Id
 
   customHeader*: string
 
@@ -514,8 +493,6 @@ proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor)
 proc hideSignatureHelp*(self: TextDocumentEditor)
 proc showSignatureHelp*(self: TextDocumentEditor)
 proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selection], move: string, count: int = 0, includeEol: bool = true, wrap: bool = true, options: JsonNode = nil): seq[Selection]
-proc clearHoverView(self: TextDocumentEditor)
-proc clearOverlayViews(self: TextDocumentEditor)
 
 proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
   includeAfter: bool = true, wrap: bool = true): Selection
@@ -577,9 +554,9 @@ proc handleSelectionsChanged(self: TextDocumentEditor, old: openArray[Selection]
   if self.completionEngine.isNotNil:
     self.completionEngine.setCurrentLocations(self.selectionsInternal)
 
-  self.clearOverlayViews()
-  self.clearHoverView()
-  self.showHover = false
+  self.hoverComponent.clearOverlayViews()
+  self.hoverComponent.clearHoverView()
+  self.hoverComponent.showHover = false
   if self.showSignatureHelp:
     if changedLine:
       self.hideSignatureHelp()
@@ -647,9 +624,9 @@ proc clearDocument*(self: TextDocumentEditor) =
 
     self.textEditorComponent.selectionHistory.clear()
     self.decorations.clear()
-    self.clearOverlayViews()
-    self.clearHoverView()
-    self.showHover = false
+    self.hoverComponent.clearOverlayViews()
+    self.hoverComponent.clearHoverView()
+    self.hoverComponent.showHover = false
     self.showSignatureHelp = false
     self.scrollOffset = vec2(0, 0)
     self.currentSnippetData = SnippetData.none
@@ -735,7 +712,6 @@ method deinit*(self: TextDocumentEditor) =
   self.eventBus.emit(&"editor/{self.id}/destroy", $self.id)
 
   self.platform.onFocusChanged.unsubscribe self.onFocusChangedHandle
-  self.platform.onModifiersChanged.unsubscribe self.onModsChangedHandle
 
   self.configService.removeStore(self.config)
 
@@ -750,8 +726,6 @@ method deinit*(self: TextDocumentEditor) =
     componentDeinitialize(c)
 
   if self.blinkCursorTask.isNotNil: self.blinkCursorTask.pause()
-  if self.showHoverTask.isNotNil: self.showHoverTask.pause()
-  if self.hideHoverTask.isNotNil: self.hideHoverTask.pause()
   if self.showSignatureHelpTask.isNotNil: self.showSignatureHelpTask.pause()
 
   if self.completionEngine.isNotNil:
@@ -811,13 +785,13 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
   if inject.contains("above-mode"):
     result.add inject["above-mode"]
 
-  if self.showHover and self.hoverView != nil:
-    result.add self.hoverView.getEventHandlers(inject)
+  if self.hoverComponent.showHover and self.hoverComponent.hoverView != nil:
+    result.add self.hoverComponent.hoverView.getEventHandlers(inject)
 
-  elif self.overlayViews.len > 0:
-    result.add self.overlayViews[^1].getEventHandlers(inject)
+  elif self.hoverComponent.overlayViews.len > 0:
+    result.add self.hoverComponent.overlayViews[^1].getEventHandlers(inject)
 
-  if self.showHover:
+  if self.hoverComponent.showHover:
     let hoverMode = self.settings.hoverMode.get()
     if self.hoverEventHandler == nil or self.hoverEventHandler.config.context != hoverMode:
       let config = self.events.getEventHandlerConfig(hoverMode)
@@ -1128,14 +1102,6 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor,
       )
       self.selections = selections
     self.scrollToCursor(self.selection.last)
-
-proc getHoveredCompletion*(self: TextDocumentEditor, mousePosWindow: Vec2): int =
-  # todo
-  # for item in self.lastCompletionWidgets:
-  #   if item.widget.lastBounds.contains(mousePosWindow):
-  #     return item.index
-
-  return 0
 
 method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
   if self.disableScrolling:
@@ -3819,81 +3785,6 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
     completion.origin = runeCursor.some
     self.registers.recordCommand(".apply-completion " & $completion.toJson)
 
-proc clearHoverView(self: TextDocumentEditor) =
-  if self.hoverView != nil:
-    self.hoverView.onMarkedDirty.unsubscribe(self.onHoverViewMarkedDirtyHandle)
-    self.hoverView.onDetached.unsubscribe(self.hoverViewCallbackHandles)
-    self.hoverView = nil
-
-proc clearOverlayViews(self: TextDocumentEditor) =
-  for overlay in self.overlayViews:
-    overlay.onMarkedDirty.unsubscribe(self.onHoverViewMarkedDirtyHandle)
-    overlay.onDetached.unsubscribe(self.hoverViewCallbackHandles)
-  self.overlayViews.setLen(0)
-
-proc detachHoverView(self: TextDocumentEditor) =
-  if self.hoverView != nil:
-    self.overlayViews.add(self.hoverView)
-    self.hoverView = nil
-    self.showHover = false
-
-proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {.async.} =
-  if self.hideHoverTask.isNotNil:
-    self.hideHoverTask.pause()
-
-  let languageServer = self.document.getLanguageServer()
-  if self.document.isNil:
-    return
-
-  if languageServer.getSome(ls):
-    let hoverInfo = await ls.getHover(self.document.filename, cursor)
-    if self.document.isNil:
-      return
-    if hoverInfo.getSome(hoverInfo):
-      self.showHover = true
-      self.showSignatureHelp = false
-      self.hoverScrollOffset = 0
-      self.hoverText = hoverInfo
-      self.clearHoverView()
-      self.hoverLocation = cursor
-    else:
-      self.clearHoverView()
-      self.showHover = false
-
-  self.markDirty()
-
-proc showHover*(self: TextDocumentEditor, message: string, location: Cursor) =
-  if self.document.isNil:
-    return
-  if self.hideHoverTask.isNotNil:
-    self.hideHoverTask.pause()
-
-  self.showHover = true
-  self.showSignatureHelp = false
-  self.hoverScrollOffset = 0
-  self.hoverText = message
-  self.clearHoverView()
-  self.hoverLocation = location
-
-  self.markDirty()
-
-proc showHover*(self: TextDocumentEditor, view: View, location: Cursor) =
-  if self.document.isNil:
-    return
-  if self.hideHoverTask.isNotNil:
-    self.hideHoverTask.pause()
-
-  self.clearHoverView()
-  self.showHover = true
-  self.showSignatureHelp = false
-  self.hoverScrollOffset = 0
-  self.hoverView = view
-  self.hoverLocation = location
-  self.onHoverViewMarkedDirtyHandle = view.onMarkedDirty.subscribe proc() = self.markDirty()
-  view.onDetached.subscribe self.hoverViewCallbackHandles, proc() = self.detachHoverView()
-
-  self.markDirty()
-
 proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpty: bool): Future[void] {.async.} =
   if not self.settings.signatureHelpEnabled.get():
     return
@@ -3944,8 +3835,8 @@ proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpt
       self.showSignatureHelp = false
 
     else:
-      self.clearHoverView()
-      self.showHover = false
+      self.hoverComponent.clearHoverView()
+      self.hoverComponent.showHover = false
       self.signatureHelpLocation = cursor
       let move = self.settings.signatureHelpMove.get()
       let argListRanges = self.getSelectionsForMove(@[cursor.toSelection], move)
@@ -3961,36 +3852,39 @@ proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpt
 proc showHoverFor*(self: TextDocumentEditor, cursor: Cursor) =
   ## Shows lsp hover information for the given cursor.
   ## Does nothing if no language server is available or the language server doesn't return any info.
-  self.mouseHoverLocation = self.selection.last
-  asyncSpawn self.showHoverForAsync(cursor)
+  debugf"showHoverFor {cursor}"
+  self.hoverComponent.mouseHoverLocation = self.selection.last.toPoint
+  asyncSpawn self.hoverComponent.showHoverForAsync(cursor.toPoint)
 
 proc showHoverForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Shows lsp hover information for the current selection.
   ## Does nothing if no language server is available or the language server doesn't return any info.
-  asyncSpawn self.showHoverForAsync(self.mouseHoverLocation)
+  debugf"showHoverForCurrent {self.hoverComponent.mouseHoverLocation}"
+  asyncSpawn self.hoverComponent.showHoverForAsync(self.hoverComponent.mouseHoverLocation)
 
 proc showHover*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Shows lsp hover information for the current selection.
   ## Does nothing if no language server is available or the language server doesn't return any info.
-  self.mouseHoverLocation = self.selection.last
-  asyncSpawn self.showHoverForAsync(self.selection.last)
+  debugf"showHover {self.selection.last.toPoint}"
+  self.hoverComponent.mouseHoverLocation = self.selection.last.toPoint
+  asyncSpawn self.hoverComponent.showHoverForAsync(self.selection.last.toPoint)
 
 proc toggleHover*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Shows lsp hover information for the current selection.
   ## Does nothing if no language server is available or the language server doesn't return any info.
-  if self.showHover:
-    self.clearHoverView()
-    self.showHover = false
+  debugf"toggleHover"
+  if self.hoverComponent.showHover:
+    self.hoverComponent.clearHoverView()
+    self.hoverComponent.showHover = false
     self.markDirty()
   else:
-    self.mouseHoverLocation = self.selection.last
-    asyncSpawn self.showHoverForAsync(self.selection.last)
+    self.hoverComponent.mouseHoverLocation = self.selection.last.toPoint
+    asyncSpawn self.hoverComponent.showHoverForAsync(self.selection.last.toPoint)
 
 proc hideHover*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Hides the hover information.
-  self.clearHoverView()
-  self.showHover = false
-  self.markDirty()
+  debugf"hideHoverf"
+  self.hoverComponent.hideHover()
 
 proc showSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Shows lsp signature information for the current selection.
@@ -4009,63 +3903,6 @@ proc toggleSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
 proc hideSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Hides the hover information.
   self.showSignatureHelp = false
-  self.markDirty()
-
-proc cancelDelayedHideHover*(self: TextDocumentEditor) =
-  if self.hideHoverTask.isNotNil:
-    self.hideHoverTask.pause()
-
-proc cancelHover*(self: TextDocumentEditor) =
-  if self.showHoverTask.isNotNil:
-    self.showHoverTask.pause()
-
-proc hideHoverDelayed*(self: TextDocumentEditor) =
-  ## Hides the hover information after a delay.
-  if self.showHoverTask.isNotNil:
-    self.showHoverTask.pause()
-
-  let hoverDelayMs = self.settings.hoverDelay.get()
-  if self.hideHoverTask.isNil:
-    self.hideHoverTask = startDelayed(hoverDelayMs, repeat=false):
-      self.hideHover()
-  else:
-    self.hideHoverTask.interval = hoverDelayMs
-    self.hideHoverTask.reschedule()
-
-proc runHoverCommand*(self: TextDocumentEditor) =
-  try:
-    var command = "show-hover-for-current"
-    var configCommand = self.settings.hoverCommand.get()
-    if configCommand != nil:
-      let modsKey = $self.mouseHoverMods
-      if configCommand.kind == jsonex.JObject and configCommand.hasKey(modsKey):
-        configCommand = configCommand[modsKey]
-
-      let (name, args, ok) = configCommand.parseCommand()
-      if name == "":
-        return
-      if ok:
-        discard self.handleAction(name, args, record = false)
-        return
-
-    discard self.handleAction(command, "", record = false)
-  except CatchableError as e:
-    log lvlError, &"Failed to execute hover command: {e.msg}"
-
-proc showHoverDelayed*(self: TextDocumentEditor) =
-  ## Show hover information after a delay.
-
-  if self.hideHoverTask.isNotNil:
-    self.hideHoverTask.pause()
-
-  let hoverDelayMs = self.settings.hoverDelay.get()
-  if self.showHoverTask.isNil:
-    self.showHoverTask = startDelayed(hoverDelayMs, repeat=false):
-      self.runHoverCommand()
-  else:
-    self.showHoverTask.interval = hoverDelayMs
-    self.showHoverTask.reschedule()
-
   self.markDirty()
 
 proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
@@ -4627,13 +4464,6 @@ proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventRe
     discard
   return Handled
 
-proc handleModsChanged*(self: TextDocumentEditor, oldMods: Modifiers, newMods: Modifiers) =
-  if not self.isHovered:
-    return
-  self.mouseHoverMods = newMods
-  if self.showHover:
-    self.showHoverDelayed()
-
 proc handleFocusChanged*(self: TextDocumentEditor, focused: bool) =
   if focused:
     if self.active and self.blinkCursorTask.isNotNil:
@@ -4935,7 +4765,6 @@ proc createTextEditorInstance(): TextDocumentEditor =
   let editor = TextDocumentEditor()
   editor.cursorsId = newId()
   editor.completionsId = newId()
-  editor.hoverId = newId()
   editor.signatureHelpId = newId()
   editor.init()
   {.gcsafe.}:
@@ -4990,6 +4819,9 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.inlayHints = newInlayHintComponent(self.settings.inlayHints, self.displayMap)
   self.addComponent(self.inlayHints)
 
+  self.hoverComponent = newHoverComponent(self.settings.hover)
+  self.addComponent(self.hoverComponent)
+
   self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =
     self.applyMoveFallback(move, selections, count, args, env)
 
@@ -5001,8 +4833,6 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.eventBus.emit(&"editor/{self.id}/registered", $self.id)
 
   self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
-  self.onModsChangedHandle = self.platform.onModifiersChanged.subscribe proc(change: tuple[old: Modifiers, new: Modifiers]) =
-    self.handleModsChanged(change.old, change.new)
 
   self.setDefaultMode()
 
