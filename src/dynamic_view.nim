@@ -56,6 +56,8 @@ method checkDirty*(view: DynamicView) =
 method markDirty*(view: DynamicView, notify: bool = true) =
   if view.markDirtyImpl != nil:
     view.markDirtyImpl(view, notify)
+  else:
+    view.markDirtyBase(notify)
 
 method getEventHandlers*(view: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] =
   if view.getEventHandlersImpl != nil:
