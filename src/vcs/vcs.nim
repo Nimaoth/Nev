@@ -20,6 +20,7 @@ type
 
   VersionControlSystem* = ref object of RootObj
     root*: string
+    status*: string
     updateStatusImpl*: proc(self: VersionControlSystem) {.gcsafe, raises: [].}
     stageFileImpl*: proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).}
     unstageFileImpl*: proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).}

@@ -13,28 +13,20 @@ when implModule:
   import std/[tables]
   import text/diff
   import service, config_provider
+  import misc/[delayed_task]
 
   logCategory "vsc-git"
 
   type
     VersionControlSystemGit* = ref object of VersionControlSystem
       settings: ConfigStore
-
-  proc gitUpdateStatus(self: VersionControlSystemGit): Future[void] {.gcsafe, async: (raises: []).}
+      updateStatusTask: DelayedTask
 
   proc gitUpdateStatus(self: VersionControlSystemGit): Future[void] {.gcsafe, async: (raises: []).} =
     try:
       var args = @["status", "-b", "--porcelain=2"]
 
-      # let extraArgs = self.settings.get("vcs.git.diff-args", newSeq[string]())
-      # args.add extraArgs
-
-      # if staged:
-      #   args.add "--staged"
-      # args.add path
-
       log lvlInfo, fmt"updateGitStatus"
-
       const branchHead = "# branch.head "
       const branchUpstream = "# branch.upstream "
       const branchAb = "# branch.ab "
@@ -55,9 +47,7 @@ when implModule:
             ap.ahead = parts[0].parseInt.catch(0)
             ap.behind = parts[1].parseInt.catch(0)
 
-      echo branch
-      echo upstream
-      echo ap
+      self.status = &"{branch} {ap.ahead} ↑ {ap.behind} ↓"
     except CatchableError as e:
       log lvlWarn, &"Failed to update git status: {e.msg}"
 
@@ -260,6 +250,12 @@ when implModule:
       return await self.VersionControlSystemGit.gitGetWorkingFileContent(path)
     result.getFileChangesImpl = proc(self: VersionControlSystem, path: string, staged: bool = false): Future[Option[seq[LineMapping]]] {.gcsafe, async: (raises: []).} =
       return await self.VersionControlSystemGit.gitGetFileChanges(path, staged)
+
+    let self = result
+    asyncSpawn self.gitUpdateStatus()
+    self.updateStatusTask = startDelayed(self.settings.get("git.update-status-interval", 5000), true):
+      self.updateStatusTask.interval = self.settings.get("git.update-status-interval", 5000).int64
+      asyncSpawn self.gitUpdateStatus()
 
   proc detectGit(path: string): Option[VersionControlSystem] =
     if dirExists(path // ".git"):
