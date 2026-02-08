@@ -1,3 +1,4 @@
+#use command_component
 import std/[options, tables]
 import nimsumtree/[arc, rope]
 import misc/[event, custom_async, delayed_task, jsonex]
@@ -34,8 +35,11 @@ type
     onModsChangedHandle: Id
     isHovered*: bool
 
+
+{.push gcsafe, raises: [].}
+
 # DLL API
-{.push rtl, gcsafe, raises: [].}
+{.push rtl.}
 proc getHoverComponent*(self: ComponentOwner): Option[HoverComponent]
 proc newHoverComponent*(settings: HoverSettings): HoverComponent
 
@@ -64,20 +68,22 @@ when implModule:
   import std/[sequtils, streams, strformat]
   import misc/[util, custom_logger, rope_utils, async_process]
   import nimsumtree/[rope, buffer, clock]
-  import document, document_editor, text_component, language_server_component
+  import document, document_editor, text_component, language_server_component, command_component, text_editor_component
   import scripting_api except DocumentEditor, HoverComponent, AstDocumentEditor
   import command_service, service, platform_service, platform/platform
 
   logCategory "hover-component"
 
-  proc handleModsChanged(self: HoverComponent, oldMods: Modifiers, newMods: Modifiers) {.gcsafe, raises: [].}
+  proc handleModsChanged(self: HoverComponent, oldMods: Modifiers, newMods: Modifiers)
+  proc toggleHover(self: HoverComponent)
+  proc showHoverMouseAtMouse(self: HoverComponent)
 
   var HoverComponentId: ComponentTypeId = componentGenerateTypeId()
 
   proc markDirty(self: HoverComponent) =
     self.owner.DocumentEditor.markDirty()
 
-  proc getHoverComponent*(self: ComponentOwner): Option[HoverComponent] {.gcsafe, raises: [].} =
+  proc getHoverComponent*(self: ComponentOwner): Option[HoverComponent] =
     return self.getComponent(HoverComponentId).mapIt(it.HoverComponent)
 
   proc newHoverComponent*(settings: HoverSettings): HoverComponent =
@@ -86,9 +92,18 @@ when implModule:
       settings: settings,
       initializeImpl: (proc(self: Component, owner: ComponentOwner) =
         let self = self.HoverComponent
-        let platform = getServices().getService(PlatformService).get.platform
-        self.onModsChangedHandle = platform.onModifiersChanged.subscribe proc(change: tuple[old: Modifiers, new: Modifiers]) {.gcsafe.} =
-          self.handleModsChanged(change.old, change.new)
+        let commands = owner.getCommandComponent().get
+        commands.registerCommand "hover.toggle", self, proc(handler: RootRef, args: string): string {.gcsafe, raises: [].} =
+          let self = handler.HoverComponent
+          self.toggleHover()
+
+        commands.registerCommand "hover.show-at-mouse", self, proc(handler: RootRef, args: string): string {.gcsafe, raises: [].} =
+          let self = handler.HoverComponent
+          self.showHoverMouseAtMouse()
+
+        commands.registerCommand "hover.hide", self, proc(handler: RootRef, args: string): string {.gcsafe, raises: [].} =
+          let self = handler.HoverComponent
+          self.hideHover()
       ),
       deinitializeImpl: (proc(self: Component) =
         let self = self.HoverComponent
@@ -125,6 +140,24 @@ when implModule:
       self.overlayViews.add(self.hoverView)
       self.hoverView = nil
       self.showHover = false
+
+  proc toggleHover(self: HoverComponent) =
+    ## Shows lsp hover information for the current selection.
+    ## Does nothing if no language server is available or the language server doesn't return any info.
+    if self.showHover:
+      self.clearHoverView()
+      self.showHover = false
+      self.markDirty()
+    else:
+      let te = self.owner.getTextEditorComponent().getOr:
+        return
+      self.mouseHoverLocation = te.selection.b
+      asyncSpawn self.showHoverForAsync(self.mouseHoverLocation)
+
+  proc showHoverMouseAtMouse(self: HoverComponent) =
+    ## Shows lsp hover information for the current selection.
+    ## Does nothing if no language server is available or the language server doesn't return any info.
+    asyncSpawn self.showHoverForAsync(self.mouseHoverLocation)
 
   proc hoverComponentShowHoverForAsync(self: HoverComponent, cursor: Point): Future[void] {.async.} =
     if self.hideHoverTask.isNotNil:
@@ -206,9 +239,9 @@ when implModule:
   proc runHoverCommand*(self: HoverComponent) =
     try:
       let commands = getServices().getService(CommandService).get
-      var command = ".show-hover-for-current"
+      var command = ".hover.show-at-mouse "
       var configCommand = self.settings.command.get()
-      if configCommand != nil:
+      if configCommand != nil and configCommand.kind != JNull:
         let modsKey = $self.mouseHoverMods
         if configCommand.kind == jsonex.JObject and configCommand.hasKey(modsKey):
           configCommand = configCommand[modsKey]
@@ -240,3 +273,5 @@ when implModule:
 
   proc init_module_hover_component*() {.cdecl, exportc, dynlib.} =
     discard
+
+{.pop.}
