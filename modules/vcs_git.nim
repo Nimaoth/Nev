@@ -47,7 +47,7 @@ when implModule:
             ap.ahead = parts[0].parseInt.catch(0)
             ap.behind = parts[1].parseInt.catch(0)
 
-      self.status = &"{branch} {ap.ahead} ↑ {ap.behind} ↓"
+      self.status = &"{branch} {ap.ahead}↑ {ap.behind}↓"
     except CatchableError as e:
       log lvlWarn, &"Failed to update git status: {e.msg}"
 

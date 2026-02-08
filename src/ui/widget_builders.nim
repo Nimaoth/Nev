@@ -1,6 +1,6 @@
 import std/[sugar, os, strutils, sets]
 import vmath, bumpy, chroma
-import misc/[custom_logger, rect_utils]
+import misc/[custom_logger, rect_utils, jsonex]
 import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup, widget_library]
@@ -8,6 +8,7 @@ import document_editor, theme, compilation_config, view, layout, config_provider
 import text/text_editor
 import render_view, dynamic_view
 from scripting_api import nil
+import vcs/vcs, service
 
 when enableAst:
   import ui/[widget_builder_model_document]
@@ -338,9 +339,14 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
       # todo: handle self.statusBarOnTop
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
+        var i = 0
+
         proc section(text: string, foreground: Color, background: Color, extraFlags: UINodeFlags) =
           var flags = &{SizeToContentX, SizeToContentY, DrawText} + extraFlags
+          if i > 0:
+            builder.panel(flags, textColor = foreground, backgroundColor = background, text = " | ")
           builder.panel(flags, textColor = foreground, backgroundColor = background, text = text)
+          inc i
 
         proc section(text: string, foreground: Option[string] = string.none, background: Option[string] = string.none) =
           var extraFlags = 0.UINodeFlags
@@ -351,36 +357,66 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           section(text, foreground.get(textColor), background.get(headerColor), extraFlags)
 
         builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}, pivot = vec2(1, 0)):
-          let layout = self.layout.layout.activeLeafLayout()
-          let maximizedText = if self.layout.maximizeView:
-            "Fullscreen"
-          elif layout != nil:
-            let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
-            if layout.maximize:
-              fmt"Max 1/{maxText}"
+
+          for s in self.uiSettings.statusLine.get():
+            case s.kind
+            of JString:
+              case s.getStr
+              of "mode":
+                let modes = if self.layout.getActiveEditor().getSome(editor) and editor of TextDocumentEditor:
+                  let modes = editor.TextDocumentEditor.settings.modes.get()
+                  "[" & modes.join(", ") & "]"
+                else:
+                  ""
+                section(modes)
+
+              of "vcs.status":
+                let vcss: VCSService = self.services.getServiceChecked(VCSService)
+                for vcs in vcss.getAllVersionControlSystems():
+                  section(&"[git: {vcs.status}]")
+                  break
+
+              of "layout":
+                let layout = self.layout.layout.activeLeafLayout()
+                let maximizedText = if self.layout.maximizeView:
+                  "Fullscreen"
+                elif layout != nil:
+                  let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
+                  if layout.maximize:
+                    fmt"Max 1/{maxText}"
+                  else:
+                    fmt"{layout.children.len}/{maxText}"
+                else:
+                  ""
+                section(&"[Layout {self.layout.layoutName} - {layout.desc} - {maximizedText}]")
+
+              of "layout.min":
+                let layout = self.layout.layout.activeLeafLayout()
+                let maximizedText = if self.layout.maximizeView:
+                  "Fullscreen"
+                elif layout != nil:
+                  let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
+                  if layout.maximize:
+                    fmt"Max 1/{maxText}"
+                  else:
+                    fmt"{layout.children.len}/{maxText}"
+                else:
+                  ""
+                section(&"[{maximizedText}]")
+
+              of "global-mode":
+                let modeText = if self.currentMode.len == 0: "[No Mode]" else: self.currentMode
+                section(modeText)
+
+              of "session":
+                let sessionText = if self.sessionFile.len == 0: "[No Session]" else: fmt"[{self.sessionFile}]"
+                section(sessionText)
+
+              else:
+                discard
+
             else:
-              fmt"{layout.children.len}/{maxText}"
-          else:
-            ""
-
-          let modes = if self.layout.getActiveEditor().getSome(editor) and editor of TextDocumentEditor:
-            let modes = editor.TextDocumentEditor.settings.modes.get()
-            "[" & modes.join(", ") & "]"
-          else:
-            ""
-
-          if modes != "":
-            section(modes)
-
-          section(&"[Layout {self.layout.layoutName} - {layout.desc} - {maximizedText}")
-
-          let modeText = if self.currentMode.len == 0: "[No Mode]" else: self.currentMode
-          section(" | ")
-          section(modeText)
-
-          let sessionText = if self.sessionFile.len == 0: "[No Session]" else: fmt"[Session: {self.sessionFile}]"
-          section(" | ")
-          section(sessionText)
+              discard
 
         builder.panel(&{}, w = builder.charWidth)
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = self.inputHistory, textColor = textColor, pivot = vec2(1, 0))

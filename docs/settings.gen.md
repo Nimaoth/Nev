@@ -133,6 +133,7 @@ For examples and default values see [here](../config/settings.json)
 | `ui.smooth-scroll` | bool | true | Enable smooth scrolling. |
 | `ui.smooth-scroll-snap-threshold` | float | 0.5 | Percentage of screen height at which the smooth scroll offset will be snapped to the target location. E.g. if this is 0.5, then if the smooth scroll offset if further from the target scroll offset than 50% of the screen height then the smooth scroll offset will instantly jump to the target scroll offset (-50% of the screen height). This means that the smooth scrolling will not take time proportional to the scroll distance for jumps bigger than the screen height. |
 | `ui.smooth-scroll-speed` | float | 25.0 | How fast smooth scrolling interpolates. |
+| `ui.status-line` | JsonNodeEx[] | ["mode","layout","vcs.status","session"] | Configures what to show in the status line. |
 | `ui.syntax-highlighting` | bool | true | Enable syntax highlighting. |
 | `ui.tab-header-width` | int | 30 | Width of tab layout headers in characters |
 | `ui.theme` | string | "app://themes/tokyo-night-color-theme.json" | VFS path of the theme. |
