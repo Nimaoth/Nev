@@ -462,7 +462,7 @@ when defined(useDynlib):
   var modules: seq[(string, LibHandle)] = @[]
   proc loadModule(name: string) =
     try:
-      let path = &"modules\\{name}.dll"
+      let path = &"native_plugins\\{name}.dll"
       log lvlDebug, &"loadLib '{path}'"
       let lib = loadLib(path)
       if lib == nil:
@@ -478,7 +478,7 @@ when defined(useDynlib):
 
   try:
     log lvlInfo, "Load dynamic modules"
-    for (kind, path) in walkDir("modules", relative=false):
+    for (kind, path) in walkDir("native_plugins", relative=false):
       case kind
       of pcFile:
         if path.endsWith("dll"):
