@@ -1,6 +1,6 @@
 import std/[options, tables]
 import nimsumtree/[arc]
-import misc/[event, custom_async]
+import misc/[custom_async]
 import vfs, config_provider, service, document
 import component
 
@@ -45,11 +45,9 @@ proc registerFormatter*(self: FormattingService, name: string, formatter: Format
 
 # Implementation
 when implModule:
-  import std/[sequtils]
-  import misc/[util, custom_logger, rope_utils, async_process]
-  import nimsumtree/[rope, buffer]
+  import misc/[util, custom_logger, async_process]
+  import nimsumtree/[rope]
   import document, text_component
-  import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
   logCategory "formatting-component"
 

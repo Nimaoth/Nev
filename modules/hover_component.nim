@@ -1,6 +1,6 @@
 #use command_component
-import std/[options, tables]
-import nimsumtree/[arc, rope]
+import std/[options]
+import nimsumtree/[rope]
 import misc/[event, custom_async, delayed_task, jsonex]
 import component, view, config_provider, input_api
 
@@ -65,11 +65,10 @@ proc showHoverView*(self: HoverComponent, view: View, location: Point) = hoverCo
 
 # Implementation
 when implModule:
-  import std/[sequtils, streams, strformat]
-  import misc/[util, custom_logger, rope_utils, async_process]
-  import nimsumtree/[rope, buffer, clock]
+  import std/[strformat]
+  import misc/[util, custom_logger, rope_utils]
+  import nimsumtree/[rope]
   import document, document_editor, text_component, language_server_component, command_component, text_editor_component
-  import scripting_api except DocumentEditor, HoverComponent, AstDocumentEditor
   import command_service, service, platform_service, platform/platform
 
   logCategory "hover-component"
@@ -92,6 +91,10 @@ when implModule:
       settings: settings,
       initializeImpl: (proc(self: Component, owner: ComponentOwner) =
         let self = self.HoverComponent
+        let platform = getServices().getService(PlatformService).get.platform
+        self.onModsChangedHandle = platform.onModifiersChanged.subscribe proc(change: tuple[old: Modifiers, new: Modifiers]) {.gcsafe.} =
+          self.handleModsChanged(change.old, change.new)
+
         let commands = owner.getCommandComponent().get
         commands.registerCommand "hover.toggle", self, proc(handler: RootRef, args: string): string {.gcsafe, raises: [].} =
           let self = handler.HoverComponent
