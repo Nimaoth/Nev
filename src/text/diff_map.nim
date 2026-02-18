@@ -152,6 +152,8 @@ proc `$`*(self: DiffMapSnapshot): string =
         inc i
 
 proc toDiffPoint*(self: DiffMapChunkCursor, point: InputPoint): DiffPoint =
+  if not (point.row in self.startPos.src...self.endPos.src):
+    return self.startPos.dst.diffPoint
   assert point.row in self.startPos.src...self.endPos.src
   # if self.startPos.dst == self.endPos.dst:
   #   return diffPoint(self.startPos.dst)
