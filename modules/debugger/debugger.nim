@@ -1066,7 +1066,6 @@ when implModule:
           let move = self.config.runtime.get("debugger.hover.move", "(word)")
           range = moves.applyMove(range, move, 1)
         let expression = text.content(range)
-        debugf"hover '{expression}', {range.a}"
         var evaluation = await client.evaluate(expression, editor.document.localizedPath, range.a.row.int, range.a.column.int, frame.get.id)
         if evaluation.isError:
           log lvlWarn, &"Failed to evaluate {expression}: {evaluation}"
@@ -1075,7 +1074,6 @@ when implModule:
         if timestamp != self.timestamp:
           return
 
-        debugf"{evaluation.result}"
         let view = self.createVariablesView()
         view.renderHeader = false
         view.evaluation = evaluation.result
