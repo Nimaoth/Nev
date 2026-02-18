@@ -2,7 +2,7 @@ import std/[options, strformat, tables, algorithm]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import misc/[custom_async, custom_unicode, util, regex, timer, rope_utils, arena, array_view]
+import misc/[custom_async, custom_unicode, util, regex, timer, rope_utils, arena, array_view, array_table]
 import text/diff, text/[custom_treesitter, treesitter_type_conv]
 from language/lsp_types import nil
 import theme
@@ -88,6 +88,7 @@ type
     parenColors: seq[Color]
     depthOffset: int
     currentNode: TSNode
+    regexCache: ArrayTable[cstring, Regex]
 
 func high*(_: typedesc[Point]): Point = Point(row: uint32.high, column: uint32.high)
 
@@ -448,7 +449,9 @@ func contentString(self: var StyledChunkIterator, selection: Range[Point], byteR
   if selection.a >= currentChunk.point and selection.b <= currentChunk.endPoint:
     let startIndex = selection.a.column - currentChunk.point.column
     let endIndex = selection.b.column - currentChunk.point.column
-    return $currentChunk[startIndex.int...endIndex.int]
+    result = newStringOfCap(endIndex.int - startIndex.int)
+    for c in currentChunk.data.toOpenArray(startIndex.int, endIndex.int - 1):
+      result.add c
   else:
     result = newStringOfCap(min(selection.b.column.int - selection.a.column.int, maxLen))
     for slice in self.chunks.rope.iterateChunks(byteRange):
@@ -475,8 +478,6 @@ proc addHighlight(highlights: var seq[Highlight], nextHighlight: sink Highlight)
   elif highlights.len == 0 or nextHighlight != highlights[^1]:
     highlights.add nextHighlight
 
-var regexes = initTable[string, Regex]()
-
 proc depth(n: TSNode): int =
   var n = n
   while not n.parent.isNull:
@@ -484,8 +485,6 @@ proc depth(n: TSNode): int =
     n = n.parent
 
 proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
-  var regexes = ({.gcsafe.}: regexes.addr)
-
   if self.atEnd:
     return
 
@@ -537,73 +536,80 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
           let predicates = self.highlighter.get.query.predicatesForPattern(match.pattern, self.arena)
           for capture in match.captures:
             let node = capture.node
-            # let byteRange = node.startByte...node.endByte
+            let byteRange = node.startByte...node.endByte
             let nodeRange = node.startPoint.toCursor.toPoint...node.endPoint.toCursor.toPoint
             if nodeRange.b <= currentChunk.point or nodeRange.a >= currentChunk.endPoint:
               continue
 
             var matches = true
-            if nodeRange.a.row !=  nodeRange.b.row:
-              matches = false
-
-            for predicate in predicates:
-              if not matches:
-                break
-
-              for operand in predicate.operands:
-                if operand.name != capture.name:
-                  matches = false
+            if nodeRange.a.row == nodeRange.b.row:
+              for predicate in predicates:
+                if not matches:
                   break
 
-                case predicate.operator
-                # of "match?":
-                #   if not regexes[].contains(operand.`type`):
-                #     try:
-                #       regexes[][operand.`type`] = re(operand.`type`)
-                #     except RegexError:
-                #       matches = false
-                #       break
-                #   let regex {.cursor.} = regexes[][operand.`type`]
+                for operand in predicate.operands:
+                  if operand.name != capture.name:
+                    matches = false
+                    break
 
-                #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                #   if nodeText.matchLen(regex, 0) != nodeText.len:
-                #     matches = false
-                #     break
+                  case predicate.operator
+                  of "match?":
+                    let cachedRegex = self.regexCache.tryGet(operand.`type`)
+                    var regex: Regex
+                    if cachedRegex.isSome:
+                      regex = cachedRegex.get
+                    else:
+                      try:
+                        regex = re($operand.`type`)
+                        self.regexCache[operand.`type`] = regex
+                      except RegexError:
+                        matches = false
+                        break
 
-                # of "not-match?":
-                #   if not regexes[].contains(operand.`type`):
-                #     try:
-                #       regexes[][operand.`type`] = re(operand.`type`)
-                #     except RegexError:
-                #       matches = false
-                #       break
-                #   let regex {.cursor.} = regexes[][operand.`type`]
+                    let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+                    if nodeText.matchLen(regex, 0) != nodeText.len:
+                      matches = false
+                      break
 
-                #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                #   if nodeText.matchLen(regex, 0) == nodeText.len:
-                #     matches = false
-                #     break
+                  of "not-match?":
+                    let cachedRegex = self.regexCache.tryGet(operand.`type`)
+                    var regex: Regex
+                    if cachedRegex.isSome:
+                      regex = cachedRegex.get
+                    else:
+                      try:
+                        regex = re($operand.`type`)
+                        self.regexCache[operand.`type`] = regex
+                      except RegexError:
+                        matches = false
+                        break
 
-                # of "eq?":
-                #   # @todo: second arg can be capture aswell
-                #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                #   if nodeText != operand.`type`:
-                #     matches = false
-                #     break
+                    let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+                    if nodeText.matchLen(regex, 0) == nodeText.len:
+                      matches = false
+                      break
 
-                # of "not-eq?":
-                #   # @todo: second arg can be capture aswell
-                #   let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                #   if nodeText == operand.`type`:
-                #     matches = false
-                #     break
+                  of "eq?":
+                    # @todo: second arg can be capture aswell
+                    let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+                    if nodeText != operand.`type`:
+                      matches = false
+                      break
 
-                # of "any-of?":
-                #   # todo
-                #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+                  of "not-eq?":
+                    # @todo: second arg can be capture aswell
+                    let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+                    if nodeText == operand.`type`:
+                      matches = false
+                      break
 
-                else:
-                  discard
+                  # of "any-of?":
+                  #   # todo
+                  #   # echo &"Unknown predicate '{predicate.name}'"
+                  #   discard
+
+                  else:
+                    discard
 
             if not matches:
               continue
