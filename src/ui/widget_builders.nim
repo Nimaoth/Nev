@@ -373,7 +373,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
               of "vcs.status":
                 let vcss: VCSService = self.services.getServiceChecked(VCSService)
                 for vcs in vcss.getAllVersionControlSystems():
-                  section(&"[git: {vcs.status}]")
+                  section(&"[{vcs.name}: {vcs.status}]")
                   break
 
               of "layout":
