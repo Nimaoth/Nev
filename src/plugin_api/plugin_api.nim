@@ -52,7 +52,7 @@ type
     platform: Platform
     commands*: CommandServiceImpl
     registers*: Registers
-    terminals*: TerminalService
+    mTerminals*: TerminalService
     editors*: DocumentEditorService
     layout*: LayoutService
     plugins*: PluginService
@@ -203,13 +203,17 @@ type
     instances: seq[WasmModuleInstanceImpl]
     dynamicInstanceData: Arc[InstanceDataImpl]
 
+proc terminals(host: HostContext): TerminalService =
+  if host.mTerminals == nil:
+    host.mTerminals = host.services.getService(TerminalService).get(nil)
+  return host.mTerminals
+
 method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
   self.host.services = services
   self.host.platform = services.getService(PlatformService).get.platform
   self.host.commands = services.getService(CommandServiceImpl).get
   self.host.registers = services.getService(Registers).get
-  self.host.terminals = services.getService(TerminalService).get
   self.host.editors = services.getService(DocumentEditorService).get
   self.host.layout = services.getService(LayoutService).get
   self.host.plugins = services.getService(PluginService).get
@@ -351,8 +355,9 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin, state
   let options = sca.CreateTerminalOptions(
     group: plugin.manifest.id,
   )
-  let view = self.host.terminals.createTerminalView(instanceData.get.stdin, instanceData.get.stdout, options)
-  self.host.layout.registerView(view)
+  if self.host.terminals != nil:
+    let view = self.host.terminals.createTerminalView(instanceData.get.stdin, instanceData.get.stdout, options)
+    self.host.layout.registerView(view)
 
   return instance
 
@@ -1483,9 +1488,10 @@ proc channelCreateTerminal*(instance: ptr InstanceData, stdin: sink WriteChannel
   let options = sca.CreateTerminalOptions(
     group: group,
   )
-  let view = instance.host.terminals.createTerminalView(stdin.channel, stdout.channel, options)
-  instance.host.layout.registerView(view)
-  instance.host.layout.showView(view.id, "#build-run-terminal", true, true)
+  if instance.host.terminals != nil:
+    let view = instance.host.terminals.createTerminalView(stdin.channel, stdout.channel, options)
+    instance.host.layout.registerView(view)
+    instance.host.layout.showView(view.id, "#build-run-terminal", true, true)
 
 proc channelCanRead*(instance: ptr InstanceData; self: var ReadChannelResource): bool =
   return self.channel.isOpen
