@@ -121,6 +121,7 @@ type
     lineGap*: float32
 
     defaultBorderWidth*: float = 0
+    supportsFontScale*: bool = true
 
     draggedNodes*: seq[UINode]
     hoveredNodes*: seq[UINode]
@@ -267,7 +268,8 @@ proc textWidth*(builder: UINodeBuilder, node: UINode): float32 {.inline.} =
   if builder.textWidthImpl.isNotNil and not node.mTextNarrow:
     builder.textWidthImpl(node)
   else:
-    builder.textWidth(node.mTextRuneLen) * node.mFontScale
+    let fontScale = if builder.supportsFontScale: node.mFontScale else: 1
+    builder.textWidth(node.mTextRuneLen) * fontScale
 
 proc textWidth*(builder: UINodeBuilder, text: string): float32 {.inline.} =
   if builder.textWidthStringImpl.isNotNil and not text.isNarrow:
@@ -281,7 +283,8 @@ proc textBounds*(builder: UINodeBuilder, node: UINode): Vec2 {.inline.} =
   if (TextWrap in node.flags or TextMultiLine in node.flags) and builder.textBoundsImpl.isNotNil:
     builder.textBoundsImpl(node)
   else:
-    vec2(builder.textWidth(node.mTextRuneLen), builder.textHeight) * node.mFontScale
+    let fontScale = if builder.supportsFontScale: node.mFontScale else: 1
+    vec2(builder.textWidth(node.mTextRuneLen), builder.textHeight) * fontScale
 
 proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool {.gcsafe, raises: [].}): Option[UINode]
@@ -697,7 +700,8 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
       if TextWrap in node.flags or TextMultiLine in node.flags:
         node.boundsRaw.h = max((parent.h - border.bottom) - node.y, builder.textBounds(node).y).roundPositive
       else:
-        node.boundsRaw.h = max((parent.h - border.bottom) - node.y, builder.textHeight * node.mFontScale).roundPositive
+        let fontScale = if builder.supportsFontScale: node.mFontScale else: 1
+        node.boundsRaw.h = max((parent.h - border.bottom) - node.y, builder.textHeight * fontScale).roundPositive
     else:
       node.boundsRaw.h = ((parent.h - border.bottom) - node.y).roundPositive
   elif SizeToContentY in node.flags:
@@ -705,7 +709,8 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
       if TextWrap in node.flags or TextMultiLine in node.flags:
         node.boundsRaw.h = builder.textBounds(node).y.roundPositive
       else:
-        node.boundsRaw.h = (builder.textHeight * node.mFontScale).roundPositive
+        let fontScale = if builder.supportsFontScale: node.mFontScale else: 1
+        node.boundsRaw.h = (builder.textHeight * fontScale).roundPositive
   elif FillY in node.flags:
     if LayoutVerticalReverse in parent.flags:
       node.boundsRaw.h = node.boundsRaw.y.roundPositive
@@ -787,7 +792,8 @@ proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
       if TextWrap in node.flags:
         builder.textBounds(node).y
       else:
-        builder.textHeight * node.mFontScale
+        let fontScale = if builder.supportsFontScale: node.mFontScale else: 1
+        builder.textHeight * fontScale
     else: 0
 
     node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight) + node.mBorder.top + node.mBorder.bottom).roundPositive
@@ -1372,7 +1378,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
     if inBorderColor.isSome:     node.borderColor     = inBorderColor.get
     if inTextColor.isSome:       node.textColor       = inTextColor.get
     if inUnderlineColor.isSome:  node.underlineColor  = inUnderlineColor.get
-    if inFontScale.isSome:       node.mFontScale      = inFontScale.get
+    if builder.supportsFontScale and inFontScale.isSome: node.mFontScale = inFontScale.get
 
     block:
       let currentNode {.used, inject.} = node

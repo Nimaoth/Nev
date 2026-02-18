@@ -308,6 +308,7 @@ method init*(self: TerminalPlatform, options: AppOptions) =
     self.builder.lineHeight = 1
     self.builder.lineGap = 0
     self.builder.defaultBorderWidth = 1
+    self.builder.supportsFontScale = false
 
     self.supportsThinCursor = false
     self.doubleClickTime = 0.35
