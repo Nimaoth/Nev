@@ -688,7 +688,8 @@ when implModule:
     builder.finder = finder.some
 
     builder.handleCanceled = proc(popup: ISelectorPopup) =
-      fut.complete(string.none)
+      if not fut.finished:
+        fut.complete(string.none)
 
     builder.customActions["accept"] = proc(popup: ISelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].} =
       fut.complete(popup.getSearchString().some)
