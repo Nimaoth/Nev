@@ -27,7 +27,7 @@ type
 # Implementation
 when implModule:
   import std/[sequtils, parsexml, streams, strformat]
-  import misc/[util, custom_logger, rope_utils, async_process]
+  import misc/[util, custom_logger, rope_utils, async_process, timer]
   import nimsumtree/[rope, buffer, clock]
   import document, text_component, channel
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -93,7 +93,7 @@ when implModule:
       discard
 
   proc formatAngelscript(self: AngelscriptFormatter, document: Document): Future[void] {.gcsafe, async: (raises: []).} =
-    log lvlInfo, &"Format angelscript '{document.filename}'"
+    logScope lvlInfo, &"Format angelscript '{document.filename}'"
     let text = document.getTextComponent().getOr:
       return
 
@@ -106,23 +106,31 @@ when implModule:
       discard process.start()
       asyncSpawn readStderr(process.stderr)
 
+      var t = startTimer()
       for chunk in content.iterateChunks:
         process.stdin.write(chunk.chars)
-        await sleepAsync(1.milliseconds)
+        if t.elapsed.ms > 5:
+          await sleepAsync(1.milliseconds)
 
+      await sleepAsync(1.milliseconds)
       process.stdin.close()
 
       var res = newStringOfCap(content.len * 2)
-      var t = ""
-      while true:
+      var buf = ""
+      var ti = startTimer()
+      while not process.stdout.atEnd:
         let available = process.stdout.flushRead()
-        if available == 0 and not process.isAlive:
-          break
-        t.setLen(available)
+        if available == 0:
+          await sleepAsync(1.milliseconds)
+          if not process.isAlive and process.stdout.flushRead() == 0:
+            break
+          continue
+        buf.setLen(available)
         if available > 0:
-          discard process.stdout.read(t.toOpenArrayByte(0, t.high))
-          res.add t
-        await sleepAsync(1.milliseconds)
+          discard process.stdout.read(buf.toOpenArrayByte(0, buf.high))
+          res.add buf
+        if ti.elapsed.ms > 5:
+          await sleepAsync(1.milliseconds)
 
       var selections: seq[Range[Point]]
       var texts: seq[string]
