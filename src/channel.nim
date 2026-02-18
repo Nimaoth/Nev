@@ -27,7 +27,7 @@ type
     data: ptr UncheckedArray[uint8]
     len: int
   InMemoryChannel* = object of BaseChannel
-    isOpen: bool
+    mIsOpen: Atomic[bool]
     isWaiting: bool
     data: seq[uint8] # todo: use something more efficient which doesn't require moving memory
     dataStart: int
@@ -69,10 +69,10 @@ proc stopListening*(self: Arc[BaseChannel], id: ListenId) {.gcsafe, raises: [].}
   self.getMutUnsafe.listeners.del(id)
 
 proc atEnd*(self {.byref.}: BaseChannel): bool {.gcsafe, raises: [].} =
-  not self.isOpenImpl(self.addr) and self.peekImpl(self.addr, uint8.none) == 0
+  not self.isOpenImpl(self.addr) and self.flushReadImpl(self.addr).catch(self.peekImpl(self.addr, uint8.none)) == 0
 
 proc atEnd*(self: Arc[BaseChannel]): bool {.gcsafe, raises: [].} =
-  not self.isOpen and self.peek == 0
+  not self.isOpen() and self.flushRead().catch(self.peek()) == 0
 
 proc readAsync*(self: Arc[BaseChannel], amount: int): Future[string] {.async: (raises: [IOError]).} =
   if self.isNil or self.atEnd:
@@ -98,7 +98,7 @@ proc readLine*(self: Arc[BaseChannel]): Future[string] {.async: (raises: [IOErro
     discard self.flushRead()
     var nl = self.peek('\n'.uint8.some)
     if nl < 0:
-      if not self.isOpen:
+      if not self.isOpen():
         nl = self.peek() - 1
         break
       catch(await self.get.signal.wait()):
@@ -138,10 +138,10 @@ template destroyChannelImpl*(t: untyped): untyped =
       {.pop.}
 
 proc close(self: ptr InMemoryChannel) {.gcsafe, raises: [].} =
-  self.isOpen = false
+  self.mIsOpen.store(false)
   discard self.signal.fireSync()
 
-proc isOpen(self: ptr InMemoryChannel): bool = self.isOpen
+proc isOpen(self: ptr InMemoryChannel): bool = self.mIsOpen.load()
 proc peek(self: ptr InMemoryChannel, to: Option[uint8] = uint8.none): int =
   if to.getSome(to):
     result = self.data.find(to, self.dataStart)
@@ -204,14 +204,14 @@ proc listen(self: Arc[InMemoryChannel]) {.async: (raises: []).} =
   defer:
     self.isWaiting = false
 
-  while self.isOpen or self.peek() != 0:
+  while self.isOpen() or self.peek() != 0:
     if self.peek() > 0:
       self[].fireEvent(false)
 
     if self.listeners.len == 0:
       return
 
-    if not self.isOpen:
+    if not self.isOpen():
       break
 
     try:
@@ -238,7 +238,6 @@ proc newInMemoryChannel*(): Arc[BaseChannel] =
 
   var res = Arc[InMemoryChannel].new()
   res.getMut() = InMemoryChannel(
-    isOpen: true,
     signal: signal.value,
     channel: channel,
     destroyImpl: destroyChannelImpl(InMemoryChannel),
@@ -251,6 +250,7 @@ proc newInMemoryChannel*(): Arc[BaseChannel] =
     flushReadImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [].} = flushRead(cast[ptr InMemoryChannel](self)),
     listenImpl: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = listenInMemoryChannel(self.cloneAs(InMemoryChannel), cb),
   )
+  res.getMut.mIsOpen.store(true)
   return cast[ptr Arc[BaseChannel]](res.addr)[].clone()
 
 var gChannelRegistry = ChannelRegistry()

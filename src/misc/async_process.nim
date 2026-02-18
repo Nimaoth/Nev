@@ -183,7 +183,8 @@ proc readInput(chan: Arc[OwnedChannel[Option[ProcessObj]]], serverDiedNotificati
         break
 
     # todo: figure out when to close the stream
-    # stream.close()
+    stdout.close()
+    stream.close()
 
 proc writeOutput(chan: Arc[OwnedChannel[Option[ProcessObj]]], stdin: Arc[BaseChannel]): NoExceptionDestroy =
   var buffer = newString(100 * 1024)
@@ -208,7 +209,8 @@ proc writeOutput(chan: Arc[OwnedChannel[Option[ProcessObj]]], stdin: Arc[BaseCha
         # todo: Only flush when \n was written? Don't flush on
         stream.flush()
 
-        discard stdin.get.signal.waitSync()
+        if stdin.isOpen:
+          discard stdin.get.signal.waitSync()
 
       except CatchableError:
         # echo "ioerror"
