@@ -117,6 +117,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
           if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.filteredLen > 0:
             let highlightColor = app.themes.theme.color("editor.foreground.highlight", textColor.lighten(0.18))
             let detailColor = textColor.darken(0.2)
+            let detailsFontScale = app.config.runtime.get("ui.selector.details-font-scale", 0.85)
 
             var rows: seq[seq[UINode]] = @[]
             builder.panel(&{FillX, LayoutVertical} + yFlag):
@@ -171,31 +172,37 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
 
                   builder.panel(&{FillX, SizeToContentY}):
                     if app.config.runtime.get("ui.selector.show-score", false):
-                      row.add builder.createTextWithMaxWidth($(item.score * 100), maxColumnWidth, "...", detailColor, &{TextItalic})
+                      row.add builder.createTextWithMaxWidth($(item.score * 100), maxColumnWidth, "...", detailColor, &{TextItalic}, fontScale = detailsFontScale)
 
                     row.add builder.highlightedText(name, matchIndices, textColor, highlightColor, maxDisplayNameWidth)
 
                     if item.details.len > 0:
                       for detail in item.details:
-                        row.add builder.createTextWithMaxWidth(detail, maxColumnWidth, "...", detailColor, &{TextItalic})
+                        row.add builder.createTextWithMaxWidth(detail, maxColumnWidth, "...", detailColor, &{TextItalic}, fontScale = detailsFontScale)
 
                   rows.add row
 
             # Align grid
             var maxWidths: seq[float] = @[]
+            var maxHeights: seq[float] = @[]
             for row, nodes in rows:
+              while maxHeights.len <= row:
+                maxHeights.add 0
               for col, node in nodes:
                 while maxWidths.len <= col:
                   maxWidths.add 0
                 maxWidths[col] = max(maxWidths[col], node.bounds.w)
+                maxHeights[row] = max(maxHeights[row], node.bounds.h)
 
-            let gap = 4 * builder.charWidth
+            let gap = 1 * builder.charWidth
 
             for row, nodes in rows:
               var x = 0.0
               for col, node in nodes:
                 node.rawX = x
                 x += maxWidths[col] + gap
+                # Center all nodes vertically based on the row height
+                node.rawY = floor((maxHeights[row] - node.bounds.h) * 0.5)
 
           builder.updateSizeToContent(currentNode)
           if app.nextPossibleInputs.len == 0:
