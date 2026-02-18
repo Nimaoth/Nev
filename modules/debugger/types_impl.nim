@@ -53,6 +53,7 @@ type
 
     breakpointsEnabled*: bool = true
 
+    readOnlyEditors*: seq[DocumentEditor]
     lastEditor*: Option[DocumentEditor]
     outputEditor*: DocumentEditor
 
@@ -68,6 +69,8 @@ type
     stackTraces*: Table[ThreadId, StackTraceResponse]
     scopes*: Table[(ThreadId, FrameId), Scopes]
     variables*: Table[(ThreadId, FrameId, VariablesReference), Variables]
+
+    watchExpressions*: seq[string]
 
     variableViews*: seq[VariablesView]
 

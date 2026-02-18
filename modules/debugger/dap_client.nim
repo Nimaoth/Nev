@@ -797,6 +797,18 @@ proc evaluate*(client: DAPClient, expression: string, path: string, line: int, c
     return res.to(EvaluateResponse)
   return res.to(EvaluateResponse)
 
+proc evaluateWatch*(client: DAPClient, expression: string, frameId: FrameId): Future[Response[EvaluateResponse]] {.async.} =
+  var args = %*{
+    "expression": expression,
+    "frameId": frameId,
+    "context": "watch",
+  }
+  let res = await client.sendRequest("evaluate", args.some)
+  if res.isError:
+    log lvlError, &"Failed to evaluate watch: {res}"
+    return res.to(EvaluateResponse)
+  return res.to(EvaluateResponse)
+
 proc initialize*(client: DAPClient) {.async.} =
   log lvlInfo, "Initialize client"
   client.run()

@@ -17,7 +17,7 @@ func serviceName*(_: typedesc[DebuggerService]): string = "Debugger"
 when implModule:
   import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils, enumerate, osproc, macros, genasts]
   import vmath, bumpy, chroma
-  import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap, arena, array_view, rope_utils]
+  import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap, arena, array_view, rope_utils, array_set]
   import dap_client, config_provider, service, selector_popup_builder, events, dynamic_view, view, document, document_editor, layout, platform_service, session
   import text/language/[language_server_base]
   import text/[treesitter_type_conv]
@@ -115,6 +115,7 @@ when implModule:
   proc handleAction(self: Debugger, action: string, arg: string): EventResponse
   proc updateVariables(self: Debugger, containerVarRef: VariablesReference, maxDepth: int, force: bool = false) {.async.}
   proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.async.}
+  proc updateWatches(self: Debugger, threadId: ThreadId, frameId: FrameId) {.async.}
   proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]) {.async.}
   proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.async.}
   proc listenToDocumentChanges*(self: Debugger, document: Document)
@@ -175,6 +176,45 @@ when implModule:
   proc `&`*(ids: (ThreadId, FrameId), varRef: VariablesReference):
       tuple[thread: ThreadId, frame: FrameId, varRef: VariablesReference] =
     (ids[0], ids[1], varRef)
+
+  const watchScopeVarRef* = VariablesReference(int.high)
+  const dummyThreadId* = ThreadId(-1)
+  const dummyFrameId* = FrameId(-1)
+
+  proc initWatchScope(self: Debugger) =
+    ## Populates dummy scope/variable entries so watches show before a session starts.
+    ## Cleans up the dummy entries if watchExpressions is empty.
+    echo "initWatchScope"
+    if self.watchExpressions.len == 0:
+      if self.threads.len > 0 and self.threads[0].id == dummyThreadId:
+        self.threads.setLen(0)
+        self.currentThreadIndex = 0
+      self.stackTraces.del(dummyThreadId)
+      self.scopes.del((dummyThreadId, dummyFrameId))
+      self.variables.del((dummyThreadId, dummyFrameId, watchScopeVarRef))
+      return
+
+    if self.threads.len == 0:
+      self.threads = @[ThreadInfo(id: dummyThreadId, name: "")]
+      self.currentThreadIndex = 0
+    if not self.stackTraces.contains(dummyThreadId):
+      self.stackTraces[dummyThreadId] = StackTraceResponse(
+        stackFrames: @[StackFrame(id: dummyFrameId, name: "")]
+      )
+      self.currentFrameIndex = 0
+
+    var scopes = Scopes()
+    scopes.scopes.add Scope(
+      name: "Watch Expressions",
+      variablesReference: watchScopeVarRef,
+      expensive: false,
+    )
+    self.scopes[(dummyThreadId, dummyFrameId)] = scopes
+
+    var variables = Variables(timestamp: self.timestamp)
+    for expr in self.watchExpressions:
+      variables.variables.add Variable(name: expr, value: "")
+    self.variables[(dummyThreadId, dummyFrameId, watchScopeVarRef)] = variables
 
   proc updateBreakpointsForFile(self: Debugger, path: string) =
     let doc = self.editors.getDocumentByPath(path)
@@ -323,6 +363,7 @@ when implModule:
           })
 
       result["breakpoints"] = breakpoints
+      result["watches"] = self.watchExpressions.toJson
 
     proc load(data: JsonNode) =
       try:
@@ -342,6 +383,10 @@ when implModule:
 
         for path in self.breakpoints.keys:
           self.flushBreakpointsForFile(path)
+
+        if data.hasKey("watches"):
+          self.watchExpressions = data["watches"].jsonTo(seq[string], Joptions(allowMissingKeys: true, allowExtraKeys: true))
+          self.initWatchScope()
 
       except Exception as e:
         log lvlError, &"Failed to restore debugger state from session: {e.msg}\n{data.pretty}"
@@ -414,6 +459,11 @@ when implModule:
     if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
       return (t.id, frame[].id, varRef).some
 
+  proc clearReadOnlyEditors(self: Debugger) =
+    for editor in self.readOnlyEditors:
+      editor.currentDocument.setReadOnly(false)
+    self.readOnlyEditors.setLen(0)
+
   proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Point, slot: string = "") {.async.} =
     let editor = self.layout.openFile(path, slot = slot)
 
@@ -422,6 +472,8 @@ when implModule:
         return
       te.setTargetSelection(location...location)
       te.scrollToCursor(location, CenterMargin)
+      editor.currentDocument.setReadOnly(true)
+      self.readOnlyEditors.incl(editor)
 
       if editor.getDecorationComponent().getSome(decos):
         decos.addCustomHighlight(debuggerCurrentLineId, point(location.row, 0)...point(location.row, uint32.high), "editorError.foreground", color(1, 1, 1, 0.3))
@@ -485,7 +537,8 @@ when implModule:
 
       result.path.add (variables.variables.high, self.evaluation.variablesReference)
 
-    while result.path.len > 0:
+    var maxIter = 1000
+    while result.path.len > 0 and maxIter > 0:
       let (index, r) = result.path[result.path.high]
       let variables {.cursor.} = debugger.variables[ids & r]
       result.path[result.path.high].index =
@@ -499,6 +552,7 @@ when implModule:
         return
 
       result.path.add (debugger.variables[ids & childRef].variables.high, childRef)
+      dec maxIter
 
   proc selectFirstVariable*(self: VariablesView) =
     let debugger = getDebugger().getOr:
@@ -1012,6 +1066,7 @@ when implModule:
           let move = self.config.runtime.get("debugger.hover.move", "(word)")
           range = moves.applyMove(range, move, 1)
         let expression = text.content(range)
+        debugf"hover '{expression}', {range.a}"
         var evaluation = await client.evaluate(expression, editor.document.localizedPath, range.a.row.int, range.a.column.int, frame.get.id)
         if evaluation.isError:
           log lvlWarn, &"Failed to evaluate {expression}: {evaluation}"
@@ -1020,6 +1075,7 @@ when implModule:
         if timestamp != self.timestamp:
           return
 
+        debugf"{evaluation.result}"
         let view = self.createVariablesView()
         view.renderHeader = false
         view.evaluation = evaluation.result
@@ -1034,6 +1090,64 @@ when implModule:
 
   proc evaluateMouseHover*(self: Debugger) =
     asyncSpawn self.evaluateHoverAsync(useMouseHover = true)
+
+  proc addWatch*(self: Debugger, expression: string) =
+    if expression notin self.watchExpressions:
+      self.watchExpressions.add expression
+      if self.debuggerState == DebuggerState.Paused:
+        if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
+          asyncSpawn self.updateWatches(t.id, frame[].id)
+          asyncSpawn self.updateScopes(t.id, self.currentFrameIndex, force = true)
+      elif self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
+        asyncSpawn self.updateWatches(t.id, frame[].id)
+      else:
+        self.initWatchScope()
+      self.platform.requestRender()
+
+  proc addWatchPrompt*(self: Debugger) {.async.} =
+    let res = await self.layout.promptString("Add watch")
+    if res.isSome and res.get != "":
+      self.addWatch(res.get)
+
+  proc removeWatch*(self: Debugger, expression: string) =
+    let i = self.watchExpressions.find(expression)
+    if i >= 0:
+      self.watchExpressions.delete(i)
+      if self.debuggerState == DebuggerState.Paused:
+        if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
+          asyncSpawn self.updateScopes(t.id, self.currentFrameIndex, force = true)
+      elif self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
+        asyncSpawn self.updateWatches(t.id, frame[].id)
+      else:
+        self.initWatchScope()
+      for view in self.variableViews:
+        view.variablesCursor = self.clampCursor(view.variablesCursor)
+        view.baseIndex = self.clampCursor(view.baseIndex)
+      self.platform.requestRender()
+
+  proc addWatchFromSelection*(self: Debugger) =
+    if self.layout.tryGetCurrentView().getSome(view) and view of EditorView:
+      let editor = view.EditorView.editor
+      let te = editor.getTextEditorComponent().getOr:
+        return
+      let text = editor.currentDocument.getTextComponent().getOr:
+        return
+      let expr = text.content(te.selection)
+      if expr.len > 0:
+        self.addWatch(expr)
+
+  proc removeWatchAtCursor*(self: Debugger) =
+    let view = getVariablesView().getOr: return
+    let scopes = self.currentScopes().getOr: return
+    if scopes[].scopes.len == 0:
+      return
+    let watchScopeIndex = scopes[].scopes.high
+    if scopes[].scopes[watchScopeIndex].variablesReference != watchScopeVarRef:
+      return
+    if view.variablesCursor.path.len > 0 and view.variablesCursor.scope == watchScopeIndex:
+      let watchIndex = view.variablesCursor.path[0].index
+      if watchIndex in 0..self.watchExpressions.high:
+        self.removeWatch(self.watchExpressions[watchIndex])
 
   proc stopDebugSession*(self: Debugger) =
     log lvlInfo, "[stopDebugSession] Stopping session"
@@ -1055,6 +1169,7 @@ when implModule:
     self.threads.setLen 0
     self.stackTraces.clear()
     self.variables.clear()
+    self.initWatchScope()
     self.platform.requestRender()
 
   proc stopDebugSessionDelayedAsync*(self: Debugger) {.async.} =
@@ -1199,13 +1314,14 @@ when implModule:
     if self.client.getSome(client):
       var variables = await client.variables(containerVarRef)
       if variables.isError:
-        log lvlError, &"Failed to get variables {containerVarRef}: {variables}"
+        log lvlWarn, &"Failed to get variables {containerVarRef}: {variables}"
         return
 
       if timestamp != self.timestamp:
         return
 
       variables.result.timestamp = self.timestamp
+      # debugf"[updateVariables] containerVarRef={containerVarRef}, maxDepth={maxDepth}, force={force}, timestamp={timestamp}"
 
       var childrenToUpdate = newSeq[int]()
       if self.variables.contains(containerId) and self.variables[containerId].timestamp != self.timestamp:
@@ -1218,35 +1334,95 @@ when implModule:
             let newChildId = ids & newChild.variablesReference
 
             if self.variables.contains(oldChildId):
-              childrenToUpdate.add i
-              self.variables[newChildId] = self.variables[oldChildId]
+              # Only map if new reference is valid (non-zero)
+              # variablesReference=0 means "no children", so mapping doesn't make sense
+              if newChild.variablesReference != 0.VariablesReference:
+                # debugf"  [mapping] child[{i}] '{oldChild.name}': {oldChildId.varRef} -> {newChildId.varRef} (cached data transferred)"
+                childrenToUpdate.add i
+                self.variables[newChildId] = self.variables[oldChildId]
+
+                # Update cursor paths in all views
+                for view in self.variableViews:
+                  for p in view.variablesCursor.path.mitems:
+                    if p.varRef == oldChildId.varRef:
+                      p.varRef = newChildId.varRef
+
+                  for p in view.baseIndex.path.mitems:
+                    if p.varRef == oldChildId.varRef:
+                      p.varRef = newChildId.varRef
+              # else:
+              #   debugf"  [skip mapping] child[{i}] '{oldChild.name}': {oldChildId.varRef} -> 0 (new value has no children)"
+
+              # Always clean up old reference, even if not mapped
               varsToDelete.add oldChildId.varRef
 
+            # Only map collapsed state if new reference is valid
+            if newChild.variablesReference != 0.VariablesReference:
               for view in self.variableViews:
-                for p in view.variablesCursor.path.mitems:
-                  if p.varRef == oldChildId.varRef:
-                    p.varRef = newChildId.varRef
-
-                for p in view.baseIndex.path.mitems:
-                  if p.varRef == oldChildId.varRef:
-                    p.varRef = newChildId.varRef
-
-            for view in self.variableViews:
-              if view.collapsedVariables.contains(oldChildId):
-                view.collapsedVariables.excl(oldChildId)
-                view.collapsedVariables.incl(newChildId)
+                if view.collapsedVariables.contains(oldChildId):
+                  # debugf"  [mapping] collapsed state: {oldChildId.varRef} -> {newChildId.varRef}"
+                  view.collapsedVariables.excl(oldChildId)
+                  view.collapsedVariables.incl(newChildId)
+            else:
+              # New value has no children, remove from collapsed set entirely
+              for view in self.variableViews:
+                if view.collapsedVariables.contains(oldChildId):
+                  # debugf"  [removing] collapsed state for {oldChildId.varRef} (new value has no children)"
+                  view.collapsedVariables.excl(oldChildId)
 
             if oldChild.name == newChild.name and oldChild.value != newChild.value:
               newChild.valueChanged = true.some
 
         # Remove old cached values
+        # debugf"  [cleanup] Deleting {varsToDelete.len} old variable references"
         for v in varsToDelete:
           self.variables.del(ids & v)
 
+        # Validate and fix cursor paths after reference mapping
+        for view in self.variableViews:
+          let oldCursor = view.variablesCursor
+          view.variablesCursor = self.clampCursor(view.variablesCursor)
+          # if view.variablesCursor != oldCursor:
+          #   debugf"  [clamp] cursor path adjusted: {oldCursor.path.len} -> {view.variablesCursor.path.len} elements"
+
+          let oldBase = view.baseIndex
+          view.baseIndex = self.clampCursor(view.baseIndex)
+          # if view.baseIndex != oldBase:
+          #   debugf"  [clamp] baseIndex path adjusted: {oldBase.path.len} -> {view.baseIndex.path.len} elements"
+
       self.variables[containerId] = variables.result
+      # debugf"[updateVariables] Stored {variables.result.variables.len} variables for containerVarRef={containerVarRef}"
       self.platform.requestRender()
 
-      if maxDepth <= 0 and childrenToUpdate.len == 0:
+      # When maxDepth == -1, recursively update children that were previously cached
+      if maxDepth == -1:
+        let vars {.cursor.} = self.variables[containerId]
+        # debugf"[updateVariables] Checking {vars.variables.len} children for recursive update"
+        let futures = collect:
+          for variable in vars.variables:
+            if variable.variablesReference != 0.VariablesReference:
+              let childId = ids & variable.variablesReference
+              # Only recurse if this child's data was already cached (was fetched before)
+              if not self.variables.contains(childId):
+                # debugf"  [skip] '{variable.name}' (varRef={variable.variablesReference}) - not cached, skipping"
+                continue
+              # debugf"  [recurse] '{variable.name}' (varRef={variable.variablesReference}) - previously cached, updating recursively"
+              self.updateVariables(variable.variablesReference, -1, force=true)
+
+        # debugf"[updateVariables] Awaiting {futures.len} recursive updates"
+        await futures.allFutures
+
+        if timestamp != self.timestamp:
+          # debugf"[updateVariables] Timestamp changed during recursive update, aborting"
+          return
+
+        # debugf"[updateVariables] Recursive update complete for containerVarRef={containerVarRef}"
+        return
+
+      # maxDepth = -1 means recurse into all expanded variables (used when force updating on stop)
+      # maxDepth = 0 means don't recurse
+      # maxDepth > 0 means recurse up to that depth
+      if maxDepth == 0 and childrenToUpdate.len == 0:
         return
 
       if childrenToUpdate.len > 0:
@@ -1272,6 +1448,54 @@ when implModule:
 
         await futures.allFutures
 
+  proc updateWatches(self: Debugger, threadId: ThreadId, frameId: FrameId) {.async.} =
+    if self.watchExpressions.len == 0:
+      self.variables.del((threadId, frameId, watchScopeVarRef))
+      return
+
+    if self.debuggerState != DebuggerState.Paused:
+      var variables = Variables(timestamp: self.timestamp)
+      for expr in self.watchExpressions:
+        variables.variables.add Variable(
+          name: expr,
+          value: "",
+        )
+      self.variables[(threadId, frameId, watchScopeVarRef)] = variables
+      self.platform.requestRender()
+      return
+
+    let client = self.client.getOr: return
+
+    let timestamp = self.timestamp
+    var variables = Variables(timestamp: self.timestamp)
+    let futures = collect:
+      for expr in self.watchExpressions:
+        client.evaluateWatch(expr, frameId)
+
+    for i, fut in futures:
+      let res = await fut
+      if timestamp != self.timestamp: return
+      let expr = self.watchExpressions[i]
+      if res.isError:
+        variables.variables.add Variable(name: expr, value: "<error>")
+      else:
+        variables.variables.add Variable(
+          name: expr,
+          value: res.result.result,
+          `type`: res.result.`type`,
+          variablesReference: res.result.variablesReference,
+          namedVariables: res.result.namedVariables,
+          indexedVariables: res.result.indexedVariables,
+        )
+
+    for view in self.variableViews:
+      view.variablesCursor = self.clampCursor(view.variablesCursor)
+      view.baseIndex = self.clampCursor(view.baseIndex)
+
+    if timestamp != self.timestamp: return
+    self.variables[(threadId, frameId, watchScopeVarRef)] = variables
+    self.platform.requestRender()
+
   proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.async.} =
     if self.client.getSome(client):
       self.stackTraces.withValue(threadId, stack):
@@ -1280,6 +1504,7 @@ when implModule:
 
         let frame {.cursor.} = stack[].stackFrames[frameIndex]
 
+        var childrenToUpdate = newSeq[int]()
         let timestamp = self.timestamp
         if force or not self.scopes.contains((threadId, frame.id)):
           var scopes = await client.scopes(frame.id)
@@ -1289,19 +1514,98 @@ when implModule:
           if timestamp != self.timestamp:
             return
 
+          if self.scopes.contains((threadId, frame.id)) and self.scopes[(threadId, frame.id)].timestamp != self.timestamp:
+            # Scope was fetched before - map old scope references to new ones
+            # debugf"[updateScopes] Mapping scope references for thread={threadId}, frame={frame.id}"
+            var scopesToDelete = newSeq[VariablesReference]()
+
+            for i, oldScope in self.scopes[(threadId, frame.id)].scopes:
+              if oldScope.variablesReference == watchScopeVarRef:
+                continue  # Watch scope is handled separately
+              let oldId = (threadId: threadId, frameId: frame.id, varRef: oldScope.variablesReference)
+              if i < scopes.result.scopes.len:
+                let newScope = scopes.result.scopes[i]
+                let newId = (threadId: threadId, frameId: frame.id, varRef: newScope.variablesReference)
+
+                if self.variables.contains(oldId):
+                  # Only map if new reference is valid (non-zero)
+                  if newScope.variablesReference != 0.VariablesReference:
+                    # debugf"  [mapping] scope[{i}] '{oldScope.name}': {oldId.varRef} -> {newId.varRef} (cached data transferred)"
+                    self.variables[newId] = self.variables[oldId]
+
+                    # Update cursor paths in all views
+                    for view in self.variableViews:
+                      for p in view.variablesCursor.path.mitems:
+                        if p.varRef == oldId.varRef:
+                          p.varRef = newId.varRef
+
+                      for p in view.baseIndex.path.mitems:
+                        if p.varRef == oldId.varRef:
+                          p.varRef = newId.varRef
+                  # else:
+                  #   debugf"  [skip mapping] scope[{i}] '{oldScope.name}': {oldId.varRef} -> 0 (new scope has no children)"
+
+                  # Always clean up old reference
+                  scopesToDelete.add oldScope.variablesReference
+
+                # Update collapsed state in all views (only if new reference is valid)
+                if newScope.variablesReference != 0.VariablesReference:
+                  for view in self.variableViews:
+                    if view.collapsedVariables.contains(oldId):
+                      # debugf"  [mapping] scope collapsed state: {oldId.varRef} -> {newId.varRef}"
+                      view.collapsedVariables.excl(oldId)
+                      view.collapsedVariables.incl(newId)
+                else:
+                  # New scope has no children, remove from collapsed set entirely
+                  for view in self.variableViews:
+                    if view.collapsedVariables.contains(oldId):
+                      # debugf"  [removing] scope collapsed state for {oldId.varRef} (new scope has no children)"
+                      view.collapsedVariables.excl(oldId)
+
+            # Remove old cached scope data
+            # debugf"  [cleanup] Deleting {scopesToDelete.len} old scope references"
+            for varRef in scopesToDelete:
+              self.variables.del((threadId, frame.id, varRef))
+
+            # Validate and fix cursor paths after scope reference mapping
+            for view in self.variableViews:
+              let oldCursor = view.variablesCursor
+              view.variablesCursor = self.clampCursor(view.variablesCursor)
+              # if view.variablesCursor != oldCursor:
+              #   debugf"  [clamp] cursor path adjusted: {oldCursor.path.len} -> {view.variablesCursor.path.len} elements"
+
+              let oldBase = view.baseIndex
+              view.baseIndex = self.clampCursor(view.baseIndex)
+              # if view.baseIndex != oldBase:
+              #   debugf"  [clamp] baseIndex path adjusted: {oldBase.path.len} -> {view.baseIndex.path.len} elements"
+
           scopes.result.timestamp = self.timestamp
+
+          # Inject synthetic watch scope (always last) if we have watches
+          if self.watchExpressions.len > 0:
+            scopes.result.scopes.add Scope(
+              name: "Watch Expressions",
+              variablesReference: watchScopeVarRef,
+              expensive: false,
+            )
+
           self.scopes[(threadId, frame.id)] = scopes.result
         self.platform.requestRender()
 
         let futures = collect:
           for scope in self.scopes[(threadId, frame.id)].scopes:
+            if scope.variablesReference == watchScopeVarRef:
+              continue  # Watches are updated separately
             if force or not self.variables.contains((threadId, frame.id, scope.variablesReference)):
-              self.updateVariables(scope.variablesReference, 0)
+              self.updateVariables(scope.variablesReference, if force: -1 else: 0)
 
         await futures.allFutures
 
         if timestamp != self.timestamp:
           return
+
+        # Update watches separately
+        asyncSpawn self.updateWatches(threadId, frame.id)
 
   proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
     log(lvlInfo, &"onStopped {data}")
@@ -1362,6 +1666,7 @@ when implModule:
   proc handleContinued(self: Debugger, data: OnContinuedData) =
     log(lvlInfo, &"onContinued {data}")
     self.debuggerState = DebuggerState.Running
+    self.clearReadOnlyEditors()
     if self.lastEditor.isSome:
       if self.lastEditor.get.getDecorationComponent().getSome(decos):
         decos.clearCustomHighlights(debuggerCurrentLineId)
@@ -1372,6 +1677,7 @@ when implModule:
 
   proc handleTerminated(self: Debugger, data: Option[OnTerminatedData]) =
     log(lvlInfo, &"onTerminated {data}")
+    self.clearReadOnlyEditors()
     if self.lastEditor.isSome:
       if self.lastEditor.get.getDecorationComponent().getSome(decos):
         decos.clearCustomHighlights(debuggerCurrentLineId)
@@ -1510,6 +1816,9 @@ when implModule:
       self.debuggerState = DebuggerState.None
       return
 
+    # self.stackTraces.del(dummyThreadId)
+    # self.scopes.del((dummyThreadId, dummyFrameId))
+    # self.variables.del((dummyThreadId, dummyFrameId, watchScopeVarRef))
     self.threads = threads.result.threads
 
     await client.configurationDone()
@@ -2077,7 +2386,7 @@ when implModule:
           else:
             inlayHints.add language_server_base.InlayHint(
               location: decls[i].decl.b.toCursor,
-              label: eval.result.result,
+              label: "= " & eval.result.result,
               paddingLeft: true,
             )
         else:
@@ -2087,7 +2396,9 @@ when implModule:
               var eq = line.find("= ")
               if eq != -1:
                 label.add line[eq..^1].strip()
-                continue
+              else:
+                label.add "= " & line.strip()
+              continue
             if i > 0:
               label.add " "
             label.add line.strip()
@@ -2262,6 +2573,21 @@ when implModule:
     proc evaluateMouseHover() {.command.} =
       service.evaluateMouseHover()
     registerCommand("evaluate-mouse-hover", "...", @[], "void", evaluateMouseHoverJson)
+    proc addWatch(expression: string) {.command.} =
+      service.addWatch(expression)
+    registerCommand("add-watch", "...", @[], "void", addWatchJson)
+    proc addWatchPrompt() {.command.} =
+      asyncSpawn service.addWatchPrompt()
+    registerCommand("add-watch-prompt", "...", @[], "void", addWatchPromptJson)
+    proc addWatchFromSelection() {.command.} =
+      service.addWatchFromSelection()
+    registerCommand("add-watch-from-selection", "...", @[], "void", addWatchFromSelectionJson)
+    proc removeWatch(expression: string) {.command.} =
+      service.removeWatch(expression)
+    registerCommand("remove-watch", "...", @[], "void", removeWatchJson)
+    proc removeWatchAtCursor() {.command.} =
+      service.removeWatchAtCursor()
+    registerCommand("remove-watch-at-cursor", "...", @[], "void", removeWatchAtCursorJson)
     proc stopDebugSession() {.command.} =
       service.stopDebugSession()
     registerCommand("stop-debug-session", "...", @[], "void", stopDebugSessionJson)
