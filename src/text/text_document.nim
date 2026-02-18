@@ -8,7 +8,7 @@ import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, config_provider, service, vfs, vfs_service, language_server_list
 import syntax_map
 import pkg/[chroma, results]
-import vcs/vcs, layout, event_service
+import vcs/vcs, layout, event_service, toast
 import language_server_component, config_component, move_database, move_component, text_component, treesitter_component,
   language_component, formatting_component
 import display_map
@@ -196,6 +196,8 @@ type
 
     singleLine*: bool = false
     staged*: bool = false
+
+    lastSavedTimer: Timer
 
     onRequestRerender*: Event[void]
     onPreLoaded*: Event[TextDocument]
@@ -1027,7 +1029,9 @@ proc saveAsync*(self: TextDocument) {.async.} =
     if self.vfs.getFileKind(self.filename).await.isNone:
       newFile = true
 
+    self.lastSavedTimer = startTimer()
     await self.vfs.write(self.filename, self.rope.slice())
+    self.lastSavedTimer = startTimer()
 
     if not self.isInitialized:
       return
@@ -1197,12 +1201,18 @@ proc enableAutoReload*(self: TextDocument, enabled: bool) =
     self.fileWatchHandle = self.vfs.watch(self.filename, proc(events: seq[PathEvent]) =
       if not self.isInitialized or not self.settings.autoReload.get():
         return
+      if self.lastSavedTimer.elapsed.ms < 1000:
+        # Probably notification about our own saving, dont reload in that case.
+        return
       let isDirty = self.lastSavedRevision != self.revision
       if isDirty:
+        log lvlError, &"Failed to auto reload '{self.filename}': Unsaved changes"
         return
       for e in events:
         case e.action
         of Modify:
+          # if self.services.getService(ToastService).getSome(toasts):
+          #   toasts.showToast(self.filename, &"Auto reloaded", "info")
           asyncSpawn self.loadAsync(true)
           break
 
@@ -1695,6 +1705,8 @@ proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
 
 proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   result = seq[Selection].none
+  if self.readOnly:
+    return
 
   let oldText = self.buffer.snapshot().visibleText.clone()
   let numPatchesBefore = self.buffer.patches.len
@@ -1730,6 +1742,8 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
 
 proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   result = seq[Selection].none
+  if self.readOnly:
+    return
 
   let oldText = self.buffer.snapshot().visibleText.clone()
   let numPatchesBefore = self.buffer.patches.len

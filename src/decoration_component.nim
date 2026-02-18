@@ -1,7 +1,7 @@
 import std/[options]
 import chroma
 import nimsumtree/rope
-import misc/[event]
+import misc/[event, myjsonutils]
 import config_provider
 import component
 
@@ -24,7 +24,7 @@ declareSettings SignColumnSettings, "":
   declare show, SignColumnShowKind, SignColumnShowKind.Number
 
   ## If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width.
-  declare maxWidth, Option[int], 2
+  declare maxWidth, int, 2
 
 type
   OverlayRenderLocation* {.pure.} = enum
@@ -129,14 +129,16 @@ when implModule:
             subWidth += s.width
           width = max(width, subWidth)
 
-      if self.settings.maxWidth.get().getSome(maxWidth):
+      let maxWidth = self.settings.maxWidth.get()
+      if maxWidth >= 0:
         width = min(width, maxWidth)
       return width
 
     of SignColumnShowKind.Yes:
-      if self.settings.maxWidth.get().getSome(maxWidth):
-        return maxWidth
-      return 1
+      let maxWidth = self.settings.maxWidth.get()
+      if maxWidth < 0:
+        return 1
+      return maxWidth
 
     of SignColumnShowKind.No:
       return 0
