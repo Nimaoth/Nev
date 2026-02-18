@@ -678,17 +678,20 @@ proc next*(self: var WrapChunkIterator): Option[WrapChunk] =
     dst: self.wrapMapCursor.startPos.dst...self.wrapMapCursor.endPos.dst)
 
   if currentChunk.endOutputPoint <= map.src.b:
-    self.localOffset = currentChunk.len
+    self.localOffset = max(currentChunk.len, 0)
+    if self.localOffset < startOffset:
+      self.wrapChunk = WrapChunk(inputChunk: currentChunk, wrapPoint: self.wrapPoint).some
+      return self.wrapChunk
     assert self.localOffset >= 0
     var newChunk = currentChunk.split(startOffset).suffix.split(self.localOffset - startOffset).prefix
     newChunk.outputPoint = currentInputPoint
     self.wrapChunk = WrapChunk(inputChunk: newChunk, wrapPoint: self.wrapPoint).some
 
   else:
-    self.localOffset = map.src.b.column.int - currentChunk.outputPoint.column.int
-    if self.localOffset < 0:
+    self.localOffset = max(map.src.b.column.int - currentChunk.outputPoint.column.int, 0)
+    if self.localOffset < startOffset:
       self.wrapChunk = WrapChunk(inputChunk: currentChunk, wrapPoint: self.wrapPoint).some
-      return
+      return self.wrapChunk
 
     assert self.localOffset >= 0
     var newChunk = currentChunk.split(startOffset).suffix.split(self.localOffset - startOffset).prefix
