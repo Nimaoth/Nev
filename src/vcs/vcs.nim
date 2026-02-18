@@ -18,7 +18,14 @@ type
     unstagedStatus*: VCSFileStatus
     path*: string
 
+  VCSChangelist* = object
+    id*: string
+    description*: string
+    author*: string
+    files*: seq[VCSFileInfo]
+
   VersionControlSystem* = ref object of RootObj
+    name*: string
     root*: string
     status*: string
     updateStatusImpl*: proc(self: VersionControlSystem) {.gcsafe, raises: [].}
@@ -31,7 +38,7 @@ type
     getFileChangesImpl*: proc(self: VersionControlSystem, path: string, staged: bool = false): Future[Option[seq[LineMapping]]] {.gcsafe, async: (raises: []).}
     checkoutFileImpl*: proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).}
     addFileImpl*: proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).}
-    getChangedFilesImpl*: proc(self: VersionControlSystem): Future[seq[VCSFileInfo]] {.gcsafe, async: (raises: []).}
+    getChangedFilesImpl*: proc(self: VersionControlSystem): Future[seq[VCSChangelist]] {.gcsafe, async: (raises: []).}
 
 type
   VCSDetector* = proc(rootDir: string): Option[VersionControlSystem] {.gcsafe, raises: [].}
@@ -85,7 +92,7 @@ proc addFile*(self: VersionControlSystem, path: string): Future[string] {.gcsafe
   if self.addFileImpl != nil:
     return await self.addFileImpl(self, path)
 
-proc getChangedFiles*(self: VersionControlSystem): Future[seq[VCSFileInfo]] {.gcsafe, async: (raises: []).} =
+proc getChangedFiles*(self: VersionControlSystem): Future[seq[VCSChangelist]] {.gcsafe, async: (raises: []).} =
   if self.getChangedFilesImpl != nil:
     return await self.getChangedFilesImpl(self)
 

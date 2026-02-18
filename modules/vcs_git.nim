@@ -75,13 +75,15 @@ when implModule:
       # return (first - 1, first + 1 - 1)
       return (first, first + 1).ok
 
-  proc gitGetChangedFiles(self: VersionControlSystemGit): Future[seq[VCSFileInfo]] {.gcsafe, async: (raises: []).} =
+  proc gitGetChangedFiles(self: VersionControlSystemGit): Future[seq[VCSChangelist]] {.gcsafe, async: (raises: []).} =
     log lvlInfo, "getChangedFiles"
 
     try:
       let lines = runProcessAsync("git", @["status", "-s"], workingDir=self.root).await
 
-      var files = newSeq[VCSFileInfo]()
+      var stagedFiles = newSeq[VCSFileInfo]()
+      var workingFiles = newSeq[VCSFileInfo]()
+
       for line in lines:
         if line.len < 3:
           continue
@@ -90,14 +92,45 @@ when implModule:
         let unstagedStatus = parseFileStatusGit(line[1])
 
         let filePath = line[3..^1]
+        let fullPath = self.root // filePath
 
-        files.add VCSFileInfo(
-          stagedStatus: stagedStatus,
-          unstagedStatus: unstagedStatus,
-          path: self.root // filePath
+        # Add to staged changelist if file has staged changes
+        if stagedStatus != None:
+          stagedFiles.add VCSFileInfo(
+            stagedStatus: stagedStatus,
+            unstagedStatus: None,
+            path: fullPath
+          )
+
+        # Add to working changelist if file has unstaged changes
+        if unstagedStatus != None:
+          workingFiles.add VCSFileInfo(
+            stagedStatus: None,
+            unstagedStatus: unstagedStatus,
+            path: fullPath
+          )
+
+      var changelists = newSeq[VCSChangelist]()
+
+      # Add staged changelist first if it has files
+      if stagedFiles.len > 0:
+        changelists.add VCSChangelist(
+          id: "staged",
+          description: "Staged changes",
+          author: "",
+          files: stagedFiles
         )
 
-      return files
+      # Add working changelist if it has files
+      if workingFiles.len > 0:
+        changelists.add VCSChangelist(
+          id: "working",
+          description: "Working changes",
+          author: "",
+          files: workingFiles
+        )
+
+      return changelists
     except CatchableError as e:
       return @[]
 
@@ -229,11 +262,12 @@ when implModule:
 
   proc newVersionControlSystemGit*(root: string, settings: ConfigStore): VersionControlSystemGit =
     new result
+    result.name = "Git"
     result.root = root
     result.settings = settings
     result.updateStatusImpl = proc(self: VersionControlSystem) {.gcsafe, raises: [].} =
       asyncSpawn self.VersionControlSystemGit.gitUpdateStatus()
-    result.getChangedFilesImpl = proc(self: VersionControlSystem): Future[seq[VCSFileInfo]] {.gcsafe, async: (raises: []).} =
+    result.getChangedFilesImpl = proc(self: VersionControlSystem): Future[seq[VCSChangelist]] {.gcsafe, async: (raises: []).} =
       return await self.VersionControlSystemGit.gitGetChangedFiles()
     result.stageFileImpl = proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).} =
       return await self.VersionControlSystemGit.gitStageFile(path)

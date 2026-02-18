@@ -26,39 +26,22 @@ proc getChangedFilesFromGitAsync(self: VCSService, workspace: Workspace, all: bo
 
   for vcs in vcsList:
     try:
-      let fileInfos = await vcs.getChangedFiles()
+      let changelists = await vcs.getChangedFiles()
 
-      for info in fileInfos:
-        var info = info
-        let (directory, name) = info.path.splitPath
-        var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
-        info.path = self.vfs.normalize(info.path)
+      for changelist in changelists:
+        for info in changelist.files:
+          var info = info
+          let (directory, name) = info.path.splitPath
+          var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
+          info.path = self.vfs.normalize(info.path)
 
-        if relativeDirectory == ".":
-          relativeDirectory = ""
+          if relativeDirectory == ".":
+            relativeDirectory = ""
 
-        if info.stagedStatus != None and info.stagedStatus != Untracked:
-          var info1 = info
-          info1.unstagedStatus = None
-
-          var info2 = info
-          info2.stagedStatus = None
-
-          items.add FinderItem(
-            displayName: $info1.stagedStatus & $info1.unstagedStatus & " " & name,
-            data: $ %info1,
-            details: @[relativeDirectory, vcs.root],
-          )
-          items.add FinderItem(
-            displayName: $info2.stagedStatus & $info2.unstagedStatus & " " & name,
-            data: $ %info2,
-            details: @[relativeDirectory, vcs.root],
-          )
-        else:
           items.add FinderItem(
             displayName: $info.stagedStatus & $info.unstagedStatus & " " & name,
             data: $ %info,
-            details: @[relativeDirectory, vcs.root],
+            details: @[changelist.id, relativeDirectory, vcs.root],
           )
 
       if not all:
@@ -163,7 +146,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
   var popup = newSelectorPopup(self.services, "git".some, finder.some, previewer.Previewer.toDisposableRef.some)
 
   for vcs in self.getAllVersionControlSystems():
-    popup.title.add &"git: {vcs.status}"
+    popup.title.add &"{vcs.name}: {vcs.status}"
     break
 
   popup.scale.x = 1
