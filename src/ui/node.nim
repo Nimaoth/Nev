@@ -72,6 +72,7 @@ type
     mText: string
     mTextRuneLen: int
     mTextNarrow: bool
+    mFontScale: float32
 
     mBackgroundColor: Color
     mBorderColor: Color
@@ -177,6 +178,7 @@ proc `contentDirty=`*(node: UINode, value: bool) {.inline.} =
 
 func id*(node: UINode): lent Id {.inline.} = node.mId
 func text*(node: UINode): lent string {.inline.} = node.mText
+func fontScale*(node: UINode): float32 {.inline.} = node.mFontScale
 func backgroundColor*(node: UINode): Color {.inline.} = node.mBackgroundColor
 func borderColor*(node: UINode): Color {.inline.} = node.mBorderColor
 func textColor*(node: UINode): Color {.inline.} = node.mTextColor
@@ -211,6 +213,7 @@ proc `backgroundColor=`*(node: UINode, value: Color) {.inline.} = (let changed =
 proc `borderColor=`*(node: UINode, value: Color)     {.inline.} = (let changed = (value != node.mBorderColor);     node.contentDirty = node.contentDirty or changed; if changed: node.mBorderColor     = value else: discard)
 proc `textColor=`*(node: UINode, value: Color)       {.inline.} = (let changed = (value != node.mTextColor);       node.contentDirty = node.contentDirty or changed; if changed: node.mTextColor       = value else: discard)
 proc `underlineColor=`*(node: UINode, value: Color)  {.inline.} = (let changed = (value != node.mUnderlineColor);  node.contentDirty = node.contentDirty or changed; if changed: node.mUnderlineColor  = value else: discard)
+proc `fontScale=`*(node: UINode, value: float32)     {.inline.} = (let changed = (value != node.mFontScale);        node.contentDirty = node.contentDirty or changed; if changed: node.mFontScale        = value else: discard)
 
 func handlePressed*   (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].})              {.inline.} = node.mHandlePressed
 func handleReleased*  (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool {.gcsafe, raises: [].})              {.inline.} = node.mHandleReleased
@@ -264,7 +267,7 @@ proc textWidth*(builder: UINodeBuilder, node: UINode): float32 {.inline.} =
   if builder.textWidthImpl.isNotNil and not node.mTextNarrow:
     builder.textWidthImpl(node)
   else:
-    builder.textWidth(node.mTextRuneLen)
+    builder.textWidth(node.mTextRuneLen) * node.mFontScale
 
 proc textWidth*(builder: UINodeBuilder, text: string): float32 {.inline.} =
   if builder.textWidthStringImpl.isNotNil and not text.isNarrow:
@@ -278,7 +281,7 @@ proc textBounds*(builder: UINodeBuilder, node: UINode): Vec2 {.inline.} =
   if (TextWrap in node.flags or TextMultiLine in node.flags) and builder.textBoundsImpl.isNotNil:
     builder.textBoundsImpl(node)
   else:
-    vec2(builder.textWidth(node.mTextRuneLen), builder.textHeight)
+    vec2(builder.textWidth(node.mTextRuneLen), builder.textHeight) * node.mFontScale
 
 proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool {.gcsafe, raises: [].}): Option[UINode]
@@ -532,6 +535,7 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
 
   node.mText = ""
   node.mTextRuneLen = 0
+  node.mFontScale = 1
 
   node.pivot.x = 0
   node.pivot.y = 0
@@ -693,7 +697,7 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
       if TextWrap in node.flags or TextMultiLine in node.flags:
         node.boundsRaw.h = max((parent.h - border.bottom) - node.y, builder.textBounds(node).y).roundPositive
       else:
-        node.boundsRaw.h = max((parent.h - border.bottom) - node.y, builder.textHeight).roundPositive
+        node.boundsRaw.h = max((parent.h - border.bottom) - node.y, builder.textHeight * node.mFontScale).roundPositive
     else:
       node.boundsRaw.h = ((parent.h - border.bottom) - node.y).roundPositive
   elif SizeToContentY in node.flags:
@@ -701,7 +705,7 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
       if TextWrap in node.flags or TextMultiLine in node.flags:
         node.boundsRaw.h = builder.textBounds(node).y.roundPositive
       else:
-        node.boundsRaw.h = builder.textHeight.roundPositive
+        node.boundsRaw.h = (builder.textHeight * node.mFontScale).roundPositive
   elif FillY in node.flags:
     if LayoutVerticalReverse in parent.flags:
       node.boundsRaw.h = node.boundsRaw.y.roundPositive
@@ -783,7 +787,7 @@ proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
       if TextWrap in node.flags:
         builder.textBounds(node).y
       else:
-        builder.textHeight
+        builder.textHeight * node.mFontScale
     else: 0
 
     node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight) + node.mBorder.top + node.mBorder.bottom).roundPositive
@@ -847,7 +851,7 @@ proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode =
 
   totalNodes.inc
 
-  result = UINode(mId: newId(), userId: userId)
+  result = UINode(mId: newId(), userId: userId, mFontScale: 1.0)
   when defined(uiNodeDebugData):
     result.aDebugData.id = ($result.mId).cstring
   if userId.kind == Primary:
@@ -1311,6 +1315,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
   var inAdditionalFlags = genAst(): UINodeFlags.none
   var inBorder = genAst(): UIBorder.none
   var inTag = genAst(): string.none
+  var inFontScale = genAst(): float32.none
 
   for i, arg in args:
     case arg
@@ -1333,6 +1338,8 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
         inBorder = genAst(value): some(value)
       of "tag":
         inTag = genAst(value): some(value)
+      of "fontScale":
+        inFontScale = genAst(value): some(value.float32)
       of "x":
         inX = genAst(value): some(value).maybeFlatten.mapIt(it.float32)
       of "y":
@@ -1356,7 +1363,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
       # echo arg.treeRepr
       error("Only <name> = <value> is allowed here.", arg)
 
-  return genAst(builder, inFlags, inText, inX, inY, inW, inH, inPivot, body, inBackgroundColor, inBorderColor, inBorder, inTextColor, inUnderlineColor, inUserId, inAdditionalFlags, inTag):
+  return genAst(builder, inFlags, inText, inX, inY, inW, inH, inPivot, body, inBackgroundColor, inBorderColor, inBorder, inTextColor, inUnderlineColor, inUserId, inAdditionalFlags, inTag, inFontScale):
     var userId = inUserId
     var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH, inPivot, userId, inAdditionalFlags, inBorder)
     node.tag = inTag.get("")
@@ -1365,6 +1372,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
     if inBorderColor.isSome:     node.borderColor     = inBorderColor.get
     if inTextColor.isSome:       node.textColor       = inTextColor.get
     if inUnderlineColor.isSome:  node.underlineColor  = inUnderlineColor.get
+    if inFontScale.isSome:       node.mFontScale      = inFontScale.get
 
     block:
       let currentNode {.used, inject.} = node

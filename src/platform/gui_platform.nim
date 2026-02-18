@@ -168,7 +168,7 @@ method init*(self: GuiPlatform, options: AppOptions) =
         result = arrangement.layoutBounds()
 
     self.builder.textWidthImpl = proc(node: UINode): float32 =
-      let font = self.getFont(self.ctx.fontSize, node.flags)
+      let font = self.getFont(self.ctx.fontSize * node.fontScale, node.flags)
       let arrangement = font.typeset(node.text, snapToPixel = false)
       result = arrangement.layoutBounds().x
 
@@ -178,7 +178,7 @@ method init*(self: GuiPlatform, options: AppOptions) =
       result = arrangement.layoutBounds().x
 
     self.builder.textBoundsImpl = proc(node: UINode): Vec2 =
-      let font = self.getFont(self.ctx.fontSize, node.flags)
+      let font = self.getFont(self.ctx.fontSize * node.fontScale, node.flags)
       let arrangement = font.typeset(node.text, bounds = node.bounds.wh, wrap = TextWrap in node.flags, snapToPixel = false)
       result = arrangement.layoutBounds()
 
@@ -923,7 +923,7 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
         platform.boxy.popLayer()
 
     if DrawText in node.flags:
-      platform.drawText(node.text, nodePos, node.boundsRaw, node.textColor, node.textColor, node.flags, node.underlineColor)
+      platform.drawText(node.text, nodePos, node.boundsRaw, node.textColor, node.textColor, node.flags, node.underlineColor, fontScale = node.fontScale)
 
     for _, c in node.children:
       builder.drawNode(platform, c, nodePos, force)
