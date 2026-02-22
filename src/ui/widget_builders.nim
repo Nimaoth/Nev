@@ -10,9 +10,6 @@ import render_view, dynamic_view
 from scripting_api import nil
 import vcs/vcs, service
 
-when enableAst:
-  import ui/[widget_builder_model_document]
-
 {.push gcsafe.}
 {.push raises: [].}
 
