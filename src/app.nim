@@ -17,9 +17,6 @@ import nimsumtree/[rope]
 
 import misc/async_process
 
-when enableAst:
-  import ast/[model, project]
-
 import plugin_system_wasm
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
@@ -178,8 +175,6 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
 
 import text/[text_editor, text_document]
-when enableAst:
-  import ast/[model_document]
 import selector_popup
 import finder/[file_previewer, open_editor_previewer]
 

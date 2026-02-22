@@ -267,8 +267,6 @@ when enableGui:
 # Do this after every import
 # Don't remove those imports, they are needed by generatePluginBindings
 {.push warning[UnusedImport]:off.}
-when enableAst:
-  import ast/model_document
 import text/text_editor
 import plugin_service
 import selector_popup, layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, toast
