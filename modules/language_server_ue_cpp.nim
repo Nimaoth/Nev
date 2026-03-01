@@ -504,8 +504,3 @@ when implModule:
         log lvlError, &"Error: {e.msg}"
 
     events.get.listen(newId(), "editor/*/registered", handleEditorRegistered)
-
-
-
-# C:\Program Files (x86)\Common Files\Oracle\Java\java8path
-# C:\Program Files (x86)\Common Files\Oracle\Java\javapath
