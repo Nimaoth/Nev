@@ -61,6 +61,8 @@ type
 
   RuneSetSetting* = distinct HashSet[Rune]
 
+  DiagnosticsLocation* = enum LineEnd = "line-end", Below = "below", LineEndOrBelow = "line-end-or-below"
+
 func serviceName*(_: typedesc[ConfigService]): string = "ConfigService"
 
 const defaultToJsonOptions = ToJsonOptions(enumMode: joptEnumString, jsonNodeMode: joptJsonNodeAsRef)
@@ -268,6 +270,9 @@ proc typeNameToJson*[K](T: typedesc[Table[string, K]]): string =
 
 proc typeNameToJson*(T: typedesc[LineNumbers]): string =
   return "\"none\" | \"absolute\" | \"relative\""
+
+proc typeNameToJson*(T: typedesc[DiagnosticsLocation]): string =
+  return "\"line-end\" | \"below\" | \"line-end-or-below\""
 
 macro addJsonTypeName(key: static[string], name: static[string]) =
   settingToJsonTypeNames[key] = name
@@ -907,6 +912,26 @@ when implModule:
     self.onConfigChanged.invoke()
     self.services.getService(PlatformService).get.platform.requestRender(true)
 
+  proc cycleOption*(self: ConfigService, path: string, values: JsonNode) {.expose("config").} =
+    if self.isNil:
+      return
+
+    let current = self.runtime.get(path, newJNull())
+    if values.kind == JArray:
+      for i, option in values.elems:
+        if option == current:
+          let nextIndex = (i + 1) mod values.elems.len
+          let value = values.elems[nextIndex]
+          self.runtime.set(path, value.toJsonEx(defaultToJsonOptions))
+          self.onConfigChanged.invoke()
+          self.services.getService(PlatformService).get.platform.requestRender(true)
+          return
+      if values.elems.len > 0:
+        let value = values.elems[0]
+        self.runtime.set(path, value.toJsonEx(defaultToJsonOptions))
+        self.onConfigChanged.invoke()
+        self.services.getService(PlatformService).get.platform.requestRender(true)
+
   proc getOptionJson*(self: ConfigService, path: string, default: JsonNode = newJNull()): JsonNode {.expose("editor").} =
     return self.runtime.get(path, default)
 
@@ -1077,6 +1102,12 @@ declareSettings UiSettings, "ui":
 
   ## How line numbers should be displayed.
   declare lineNumbers, LineNumbers, LineNumbers.Absolute
+
+  ## Where diagnostics are displayed relative to their source line.
+  ## "below" renders them on a separate line below.
+  ## "line-end" renders the first diagnostic inline at the end of the line.
+  ## "line-end-or-below" renders below on the cursor line, at line-end elsewhere (default).
+  declare diagnosticsLocation, DiagnosticsLocation, DiagnosticsLocation.LineEnd
 
   ## How long toasts are displayed for, in milliseconds.
   declare toastDuration, int, 8000

@@ -78,6 +78,7 @@ type
     signs: ptr Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color, color: string, width: int]]] = nil
     diagnosticsPerLS: ptr seq[DiagnosticsData] = nil
     lineNumbers: LineNumbers
+    diagnosticsLocation: DiagnosticsLocation
     createIter: proc(): DisplayChunkIterator {.gcsafe, raises: [].}
     renderDiff: bool
 
@@ -748,7 +749,7 @@ proc drawChunk(chunk: DisplayChunk, state: var LineDrawerState, commands: var Re
   if customRenderId != 0 and state.customOverlayRenderers != nil:
     let customRenderLocation = chunk.diffChunk.inputChunk.inputChunk.inputChunk.location
     case customRenderLocation
-    of Inline:
+    of overlay_map.OverlayRenderLocation.Inline:
       let cb = state.customOverlayRenderers[].tryGet(customRenderId.CustomRendererId)
       if cb.isSome:
         commands.startTransform(chunkBounds.xy)
@@ -760,9 +761,9 @@ proc drawChunk(chunk: DisplayChunk, state: var LineDrawerState, commands: var Re
         state.lineBounds.h = max(state.lineBounds.h, actualBounds.y)
         if actualBounds.x > chunkBounds.w:
           state.offset.x += actualBounds.x - chunkBounds.w
-    of Below:
+    of overlay_map.OverlayRenderLocation.Below:
       state.customRendererChunksBelow.add(chunk.diffChunk.inputChunk.inputChunk.inputChunk)
-    of Above:
+    of overlay_map.OverlayRenderLocation.Above:
       state.customRendererChunksAbove.add(chunk.diffChunk.inputChunk.inputChunk.inputChunk)
 
   return LineDrawerResult.Continue
@@ -865,7 +866,7 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
 
   var height = max(state.builder.textHeight, state.lineBounds.h)
 
-  # # Draw chunks with custom render location Below
+  # Draw chunks with custom render location Below
   for customRenderChunk in state.customRendererChunksBelow:
     let customRenderId = customRenderChunk.renderId
     let cb = state.customOverlayRenderers[].tryGet(customRenderId.CustomRendererId)
@@ -878,28 +879,67 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
       height += actualBounds.y
       state.chunkBoundsPerLine[^1].dontCenter = true
 
-  # # Draw diagnostics
+  # Draw diagnostics
   if drawDiagnostics and state.diagnosticsPerLS != nil:
-    for diagnosticsData in state.diagnosticsPerLS[].mitems:
-      diagnosticsData.diagnosticsPerLine.withValue(state.lastPoint.row.int, val):
-        for i in val[].mitems:
-          let i = i
-          let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[i]
-          let nlIndex = diagnostic.message.find("\n")
-          var maxIndex = if nlIndex != -1: nlIndex else: diagnostic.message.len
-          maxIndex = min(maxIndex, max(((state.bounds.w - state.lineNumberWidth) / state.builder.charWidth).int - 3, 0))
-          var message = "     ■ " & diagnostic.message[0..<maxIndex]
-          if maxIndex < diagnostic.message.len:
-            message.add "..."
-          let width = message.runeLen.float * state.builder.charWidth # todo: measure text
-          let color = case diagnostic.severity.get(lsp_types.DiagnosticSeverity.Hint)
-          of lsp_types.DiagnosticSeverity.Error: state.errorColor
-          of lsp_types.DiagnosticSeverity.Warning: state.warningColor
-          of lsp_types.DiagnosticSeverity.Information: state.informationColor
-          of lsp_types.DiagnosticSeverity.Hint: state.hintColor
-          commands.drawText(message, rect(state.lineNumberWidth, height, width, state.builder.textHeight), color, 0.UINodeFlags)
-          height += state.builder.textHeight
-          state.chunkBoundsPerLine[^1].dontCenter = true
+    let renderBelow = case state.diagnosticsLocation
+      of DiagnosticsLocation.Below: true
+      of DiagnosticsLocation.LineEnd: false
+      of DiagnosticsLocation.LineEndOrBelow: state.lastPoint.row.int == state.cursorLine
+
+    if renderBelow:
+      for diagnosticsData in state.diagnosticsPerLS[].mitems:
+        diagnosticsData.diagnosticsPerLine.withValue(state.lastPoint.row.int, val):
+          for i in val[].mitems:
+            let i = i
+            let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[i]
+            let nlIndex = diagnostic.message.find("\n")
+            var maxIndex = if nlIndex != -1: nlIndex else: diagnostic.message.len
+            maxIndex = min(maxIndex, max(((state.bounds.w - state.lineNumberWidth) / state.builder.charWidth).int - 3, 0))
+            var message = "     ■ " & diagnostic.message[0..<maxIndex]
+            if maxIndex < diagnostic.message.len:
+              message.add "..."
+            let width = message.runeLen.float * state.builder.charWidth # todo: measure text
+            let color = case diagnostic.severity.get(lsp_types.DiagnosticSeverity.Hint)
+            of lsp_types.DiagnosticSeverity.Error: state.errorColor
+            of lsp_types.DiagnosticSeverity.Warning: state.warningColor
+            of lsp_types.DiagnosticSeverity.Information: state.informationColor
+            of lsp_types.DiagnosticSeverity.Hint: state.hintColor
+            commands.drawText(message, rect(state.lineNumberWidth, height, width, state.builder.textHeight), color, 0.UINodeFlags)
+            height += state.builder.textHeight
+            state.chunkBoundsPerLine[^1].dontCenter = true
+    else:
+      # Show only the first diagnostic inline at the end of the line; height is not increased
+      block lineEndDiag:
+        for diagnosticsData in state.diagnosticsPerLS[].mitems:
+          diagnosticsData.diagnosticsPerLine.withValue(state.lastPoint.row.int, val):
+            if val[].len == 0:
+              continue
+            for i in val[]:
+              let i = i
+              let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[i]
+              if diagnostic.selection.first.line != state.lastPoint.row.int:
+                continue
+              let nlIndex = diagnostic.message.find("\n")
+              var maxIndex = if nlIndex != -1: nlIndex else: diagnostic.message.len
+              let xPos = max(state.lineBounds.w, state.lineNumberWidth)
+              let availableChars = max(((state.bounds.xw - xPos) / state.builder.charWidth).int - 2, 0)
+              maxIndex = min(maxIndex, availableChars)
+              if maxIndex <= 0:
+                continue
+              var message = " ■ " & diagnostic.message[0..<maxIndex]
+              if maxIndex < diagnostic.message.len:
+                message.add "..."
+              let width = message.runeLen.float * state.builder.charWidth # todo: measure text
+              let color = case diagnostic.severity.get(lsp_types.DiagnosticSeverity.Hint)
+              of lsp_types.DiagnosticSeverity.Error: state.errorColor
+              of lsp_types.DiagnosticSeverity.Warning: state.warningColor
+              of lsp_types.DiagnosticSeverity.Information: state.informationColor
+              of lsp_types.DiagnosticSeverity.Hint: state.hintColor
+              commands.drawText(message, rect(xPos, 0, width, state.builder.textHeight), color, 0.UINodeFlags)
+              state.lineBounds.w += width
+
+              # if xPos > state.bounds.w:
+              #   break lineEndDiag
 
   return vec2(state.bounds.w, height).some
 
@@ -1148,6 +1188,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let cursorDisplayLine = self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int
 
   let lineNumbers = self.uiSettings.lineNumbers.get()
+  let diagnosticsLocation = self.uiSettings.diagnosticsLocation.get()
   let lineNumberBounds = self.lineNumberBounds()
   let rainbowParens = self.uiSettings.rainbowParentheses.get()
 
@@ -1226,6 +1267,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     signColumnPixelWidth: signColumnPixelWidth,
     signColumnWidth: signColumnWidth,
     lineNumbers: lineNumbers,
+    diagnosticsLocation: diagnosticsLocation,
     lineNumberWidth: lineNumberWidth,
     lineNumberBounds: lineNumberBounds,
   )
@@ -1259,6 +1301,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     signColumnPixelWidth: signColumnPixelWidth,
     signColumnWidth: signColumnWidth,
     lineNumbers: lineNumbers,
+    diagnosticsLocation: diagnosticsLocation,
     lineNumberWidth: lineNumberWidth,
     lineNumberBounds: lineNumberBounds,
   )
