@@ -9,7 +9,7 @@ type OverlayRenderFunc* = proc() {.closure, gcsafe, raises: [].}
 proc documentEditorRender(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayRenderFunc] {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
-proc render*(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayRenderFunc] {.inline.} = documentEditorRender(self, builder)
+# proc render*(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayRenderFunc] {.inline.} = documentEditorRender(self, builder)
 
 when implModule:
   var renderEditorImpl*: proc(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].}

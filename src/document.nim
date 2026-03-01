@@ -1,5 +1,6 @@
 import std/hashes
 import misc/[util, event, custom_async]
+import nimsumtree/[arc]
 import vfs, component
 
 export component
@@ -25,6 +26,7 @@ type Document* = ref object of ComponentOwner
   undoableRevision*: int
   lastSavedRevision*: int               ## Undobale revision at the time we saved the last time
   vfs*: VFS
+  vfs2*: Arc[VFS2]
   usage*: string
   preSaveHandlers*: seq[proc (self: Document): Future[void] {.async: (raises: []).}]
   onDocumentBeforeSave*: Event[Document]

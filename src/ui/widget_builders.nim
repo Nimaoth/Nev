@@ -33,15 +33,18 @@ proc resetBorderFlags() {.gcsafe.} =
     borderFlagStack = @[BorderFlags.none()]
 
 method createUI*(self: DynamicView, builder: UINodeBuilder): seq[OverlayFunction] =
-  if self.render != nil:
-    return self.render(builder)
+  if self.renderImpl != nil:
+    return self.renderImpl(self, builder)
   else:
     self.resetDirty()
   return @[]
 
 method createUI*(self: EditorView, builder: UINodeBuilder): seq[OverlayFunction] =
-  self.resetDirty()
-  self.editor.createUI(builder)
+  if self.editor.renderImpl != nil:
+    return self.editor.renderImpl(self.editor, builder)
+  else:
+    self.resetDirty()
+    return self.editor.createUI(builder)
 
 method createUI*(self: RenderView, builder: UINodeBuilder): seq[OverlayFunction] =
   builder.panel(&{FillX, FillY, FillBackground, MaskContent}, backgroundColor = color(0, 0, 0)):

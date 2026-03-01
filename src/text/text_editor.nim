@@ -401,19 +401,29 @@ func serviceName*(_: typedesc[TextDocumentEditorService]): string = "TextDocumen
 
 addBuiltinService(TextDocumentEditorService, DocumentEditorService)
 
+proc canOpenFile(self: TextDocumentFactory, path: string): bool
+proc createDocument(self: TextDocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document
+proc canEditDocument*(self: TextDocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool
+proc createEditor*(self: TextDocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor
+
 method init*(self: TextDocumentEditorService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"TextDocumentEditorService.init"
   let editors = self.services.getService(DocumentEditorService).get
-  editors.addDocumentFactory(TextDocumentFactory())
-  editors.addDocumentEditorFactory(TextDocumentEditorFactory())
+  editors.addDocumentFactory(TextDocumentFactory(
+    kind: "text",
+    canOpenFileImpl: proc(self: DocumentFactory, path: string): bool {.gcsafe, raises: [].} = canOpenFile(self.TextDocumentFactory, path),
+    createDocumentImpl: proc(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document {.gcsafe, raises: [].} = createDocument(self.TextDocumentFactory, services, path, load, options),
+  ))
+  editors.addDocumentEditorFactory(TextDocumentEditorFactory(
+    canEditDocumentImpl: proc(self: DocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool {.gcsafe, raises: [].} = canEditDocument(self.TextDocumentEditorFactory, document, options),
+    createEditorImpl: proc(self: DocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor {.gcsafe, raises: [].} = createEditor(self.TextDocumentEditorFactory, services, document, options),
+  ))
   return ok()
 
-method kind*(self: TextDocumentFactory): string = "text"
-
-method canOpenFile*(self: TextDocumentFactory, path: string): bool =
+proc canOpenFile(self: TextDocumentFactory, path: string): bool =
   return true
 
-method createDocument*(self: TextDocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document =
+proc createDocument(self: TextDocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document =
   var createLanguageServer = true
   if options != nil and options.kind == JObject:
     try:
@@ -422,10 +432,10 @@ method createDocument*(self: TextDocumentFactory, services: Services, path: stri
       discard # todo
   return newTextDocument(services, path, app=false, load=load, createLanguageServer=createLanguageServer)
 
-method canEditDocument*(self: TextDocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool =
+proc canEditDocument*(self: TextDocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool =
   return document of TextDocument
 
-method createEditor*(self: TextDocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor =
+proc createEditor*(self: TextDocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor =
   let textEditor = newTextEditor(document.TextDocument, services)
   if options != nil and options.kind == JObject:
     try:
@@ -3979,7 +3989,7 @@ proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selecti
       elif actionOrCommand.asCodeAction().getSome(codeAction):
         codeActions[].mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.CodeAction, action: codeAction, selection: selection, languageServerName: ls.name)
       else:
-        log lvlError, &"Failed to parse code action: {actionOrCommand}"
+        log lvlWarn, &"Failed to parse code action: {actionOrCommand}"
 
   self.markDirty()
 
@@ -4807,8 +4817,6 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.setDefaultMode()
 
   return self
-
-method getDocument*(self: TextDocumentEditor): Document = self.document
 
 method unregister*(self: TextDocumentEditor) =
   self.editors.unregisterEditor(self)
