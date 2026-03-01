@@ -11,7 +11,7 @@ export view
 type
   OverlayRenderFunc* = proc() {.closure, gcsafe, raises: [].}
   DynamicView* = ref object of View
-    render*: proc(builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].}
+    renderImpl*: proc(view: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].}
     closeImpl*: proc(view: DynamicView) {.gcsafe, raises: [].}
     activateImpl*: proc(view: DynamicView) {.gcsafe, raises: [].}
     deactivateImpl*: proc(view: DynamicView) {.gcsafe, raises: [].}

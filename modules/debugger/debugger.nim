@@ -150,10 +150,10 @@ when implModule:
     view.saveStateImpl = proc(self: DynamicView): JsonNode = saveState(self.T)
     view.getEventHandlersImpl = proc(self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] = getEventHandlers(self.T, inject)
 
-    proc renderDebuggerView(builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].} =
+    proc renderDebuggerView(view: T, builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].} =
       return view.renderView(builder, debugger)
 
-    view.render = renderDebuggerView
+    view.renderImpl = proc(self: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] = renderDebuggerView(self.T, builder)
     return view
 
   var gCurrentVariablesView: VariablesView = nil

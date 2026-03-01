@@ -2592,7 +2592,7 @@ when implModule:
         slot: options.slot,
       )
 
-      proc renderTerminal(builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].} =
+      proc renderTerminal(self: TerminalView, builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].} =
         if view.isInPreview and builder.currentParent.tag != "preview":
           return
         var
@@ -2603,7 +2603,7 @@ when implModule:
         result = renderTerminal(view, builder, width, height, cellWidth, cellHeight)
         view.setSize(width, height, cellWidth, cellHeight)
 
-      view.render = renderTerminal
+      view.renderImpl = proc(self: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] = renderTerminal(self.TerminalView, builder)
       view.closeImpl = proc(self: DynamicView) = closeTerminalView(self.TerminalView)
       view.activateImpl = proc(self: DynamicView) = activateTerminalView(self.TerminalView)
       view.deactivateImpl = proc(self: DynamicView) = deactivateTerminalView(self.TerminalView)
@@ -2657,7 +2657,7 @@ when implModule:
         slot: options.slot,
       )
 
-      proc renderTerminal(builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].} =
+      proc renderTerminal(self: TerminalView, builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].} =
         if view.isInPreview and builder.currentParent.tag != "preview":
           return
         var
@@ -2668,7 +2668,7 @@ when implModule:
         result = renderTerminal(view, builder, width, height, cellWidth, cellHeight)
         view.setSize(width, height, cellWidth, cellHeight)
 
-      view.render = renderTerminal
+      view.renderImpl = proc(self: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] = renderTerminal(self.TerminalView, builder)
       view.closeImpl = proc(self: DynamicView) = closeTerminalView(self.TerminalView)
       view.activateImpl = proc(self: DynamicView) = activateTerminalView(self.TerminalView)
       view.deactivateImpl = proc(self: DynamicView) = deactivateTerminalView(self.TerminalView)

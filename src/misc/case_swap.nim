@@ -54,3 +54,6 @@ proc cycleCase*(s: string): string =
   else:
     cas.succ
   return parts.joinCase(nextCase)
+
+proc toCase*(s: string, cas: IdentifierCase): string =
+  return s.splitCase().parts.joinCase(cas)

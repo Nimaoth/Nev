@@ -34,14 +34,12 @@ when implModule:
       return
 
     let s = moves.applyMove(location.toSelection.toRange, "language-word")
-    let wordText = text.content(s)
-    let regexTemplate = config.get(&"text.search-regexes.{regexName}", newJexNull())
+    let regexTemplate = config.get(&"text.search-regexes.{regexName}", newJexString("\\b[[0]]\\b"))
+    if regexTemplate == nil or regexTemplate.kind == JNull:
+      return @[]
 
-    log lvlWarn, &"gotoRegexLocation {regexTemplate}"
-    let searchString = if regexTemplate != nil and regexTemplate.kind != JNull:
-      regexTemplate.decodeRegex("").replace("[[0]]", wordText)
-    else:
-      "\\b" & wordText & "\\b"
+    let wordText = text.content(s)
+    let searchString = regexTemplate.decodeRegex("").replace("[[0]]", wordText)
 
     log lvlInfo, &"Find '{wordText}' using regex '{searchString}'"
     var customArgs = @["--only-matching"]

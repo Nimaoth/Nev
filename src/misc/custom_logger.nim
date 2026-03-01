@@ -201,18 +201,18 @@ template logCategory*(category: static string, noDebug = false): untyped =
       {.pop.}
 
   when noDebug:
-    macro debug(x: varargs[typed, `$`]): untyped {.used.} =
-      discard
+    # macro debug(x: varargs[typed, `$`]): untyped {.used.} =
+    #   discard
 
     macro debugf(x: static string): untyped {.used.} =
       discard
 
   else:
-    macro debug(x: varargs[typed, `$`]): untyped {.used.} =
-      let level = genAst(): lvlDebug
-      let arg = genAst(x):
-        x.join ""
-      return logImpl(level, nnkArgList.newTree(arg), true)
+    # macro debug(x: varargs[typed, `$`]): untyped {.used.} =
+    #   let level = genAst(): lvlDebug
+    #   let arg = genAst(x):
+    #     x.join ""
+    #   return logImpl(level, nnkArgList.newTree(arg), true)
 
     macro debugf(x: static string): untyped {.used.} =
       let level = genAst(): lvlDebug

@@ -891,6 +891,7 @@ proc newTextDocument*(
   self.services = services
   self.configService = services.getService(ConfigService).get
   self.vfs = services.getService(VFSService).get.vfs
+  self.vfs2 = services.getService(VFSService).get.vfs2
   self.editors = services.getService(DocumentEditorService).get
   self.eventBus = self.services.getService(EventService).get
   self.moveDatabase = self.services.getService(MoveDatabase).get

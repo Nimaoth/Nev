@@ -741,7 +741,7 @@ type
     edit*: Option[WorkspaceEdit]
     command*: Option[Command]
     data*: Option[JsonNode]
-    source*: string
+    source*: Option[string]
 
   CodeActionParams* = object
     textDocument*: TextDocumentIdentifier

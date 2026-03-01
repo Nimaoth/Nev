@@ -21,8 +21,6 @@ type
     id*: EditorId
   AstDocumentEditor* = object
     id*: EditorId
-  ModelDocumentEditor* = object
-    id*: EditorId
   SelectorPopup* = object
     id*: EditorId
 

@@ -1,6 +1,7 @@
-import std/[tables, options, sets, hashes]
+import std/[tables, options, sets, hashes, algorithm]
 import bumpy
 import misc/[event, custom_logger, id, custom_async, util, generational_seq, jsonex]
+import ui/node
 import events
 import component
 
@@ -32,8 +33,18 @@ type
     onDocumentChanged*: Event[tuple[old: Document]]
     config*: ConfigStore
 
+    renderImpl*: proc(self: DocumentEditor, builder: UINodeBuilder): seq[proc() {.closure, gcsafe, raises: [].}] {.gcsafe, raises: [].}
+
   DocumentFactory* = ref object of RootObj
+    priority*: int = 0
+    kind*: string
+    canOpenFileImpl*: proc(self: DocumentFactory, path: string): bool {.gcsafe, raises: [].}
+    createDocumentImpl*: proc(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document {.gcsafe, raises: [].}
+
   DocumentEditorFactory* = ref object of RootObj
+    priority*: int = 0
+    canEditDocumentImpl*: proc(self: DocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool {.gcsafe, raises: [].}
+    createEditorImpl*: proc(self: DocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor {.gcsafe, raises: [].}
 
   DocumentEditorService* = ref object of Service
     platform: Platform
@@ -77,24 +88,38 @@ proc markDirty*(self: DocumentEditor, notify: bool = true) =
 proc resetDirty*(self: DocumentEditor) =
   self.mDirty = false
 
+proc render*(self: DocumentEditor, builder: UINodeBuilder): seq[proc() {.closure, gcsafe, raises: [].}] {.gcsafe, raises: [].} =
+  if self.renderImpl != nil:
+    return self.renderImpl(self, builder)
+  return @[]
+
 func active*(self: DocumentEditor): bool = self.active
 
-proc getEditorDocument*(self: DocumentEditor): Document {.apprtl.}
-proc getDocument*(self: DocumentEditorService, id: DocumentId): Option[Document] {.apprtl.}
-proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] {.apprtl.}
-proc getDocumentByPath*(self: DocumentEditorService, path: string, usage = ""): Option[Document] {.apprtl.}
-proc getEditorsForDocument*(self: DocumentEditorService, document: Document): seq[DocumentEditor] {.apprtl.}
-proc createEditorForDocument*(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor] {.apprtl.}
-proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx): Document {.apprtl.}
-proc documentEditorSetActive(self: DocumentEditor, newActive: bool) {.apprtl.}
-proc documentEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.apprtl, gcsafe, raises: [].}
-proc documentEditorGetOrOpenDocument(self: DocumentEditorService, path: string, load: bool = true): Option[Document] {.apprtl, gcsafe, raises: [].}
+{.push apprtl.}
+proc getEditorDocument*(self: DocumentEditor): Document
+proc getDocument*(self: DocumentEditorService, id: DocumentId): Option[Document]
+proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor]
+proc getDocumentByPath*(self: DocumentEditorService, path: string, usage = ""): Option[Document]
+proc getEditorsForDocument*(self: DocumentEditorService, document: Document): seq[DocumentEditor]
+proc createEditorForDocument*(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor]
+proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx): Document
+proc documentEditorSetActive(self: DocumentEditor, newActive: bool)
+proc documentEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].}
+proc documentEditorGetOrOpenDocument(self: DocumentEditorService, path: string, load: bool = true): Option[Document] {.gcsafe, raises: [].}
+proc documentEditorAddDocumentFactory(self: DocumentEditorService, factory: DocumentFactory)
+proc documentEditorAddDocumentEditorFactory(self: DocumentEditorService, factory: DocumentEditorFactory)
+{.pop.}
 
 
 # Nice wrappers
-proc createDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx = nil): Document {.inline.} = documentEditorCreateDocument(self, kind, path, load, options)
+{.push inline.}
+proc createDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx = nil): Document = documentEditorCreateDocument(self, kind, path, load, options)
 proc getOrOpenDocument*(self: DocumentEditorService, path: string, load = true): Option[Document] = documentEditorGetOrOpenDocument(self, path, load)
+proc addDocumentFactory*(self: DocumentEditorService, factory: DocumentFactory) = documentEditorAddDocumentFactory(self, factory)
+proc addDocumentEditorFactory*(self: DocumentEditorService, factory: DocumentEditorFactory) = documentEditorAddDocumentEditorFactory(self, factory)
+
 proc `active=`*(self: DocumentEditor, newActive: bool) = documentEditorSetActive(self, newActive)
+{.pop.}
 
 when implModule:
   import std/[json]
@@ -120,12 +145,28 @@ when implModule:
     self.pinnedEditors = initHashSet[EditorIdNew]()
     return ok()
 
-  method kind*(self: DocumentFactory): string {.base, gcsafe, raises: [].} = discard
-  method canOpenFile*(self: DocumentFactory, path: string): bool {.base, gcsafe, raises: [].} = discard
-  method createDocument*(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document {.base, gcsafe, raises: [].} = discard
+  proc canOpenFile*(self: DocumentFactory, path: string): bool =
+    if self.canOpenFileImpl != nil:
+      return self.canOpenFileImpl(self, path)
+    else:
+      return false
 
-  method canEditDocument*(self: DocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool {.base, gcsafe, raises: [].} = discard
-  method createEditor*(self: DocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor {.base, gcsafe, raises: [].} = discard
+  proc createDocument*(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document =
+    if self.createDocumentImpl != nil:
+      return self.createDocumentImpl(self, services, path, load, options)
+    else:
+      return nil
+
+  proc canEditDocument*(self: DocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool {.gcsafe, raises: [].} =
+    if self.canEditDocumentImpl != nil:
+      return self.canEditDocumentImpl(self, document, options)
+    else:
+      return false
+  proc createEditor*(self: DocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor {.gcsafe, raises: [].} =
+    if self.createEditorImpl != nil:
+      return self.createEditorImpl(self, services, document, options)
+    else:
+      return nil
 
   method deinit*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
     discard
@@ -133,7 +174,7 @@ when implModule:
   method canEdit*(self: DocumentEditor, document: Document): bool {.base, gcsafe, raises: [].} =
     return false
 
-  method getDocument*(self: DocumentEditor): Document {.base, gcsafe, raises: [].} = discard
+  proc getDocument*(self: DocumentEditor): Document {.gcsafe, raises: [].} = self.currentDocument
 
   method handleAction*(self: DocumentEditor, action: string, arg: string, record: bool = true): Option[JsonNode] {.base, gcsafe, raises: [].} = discard
 
@@ -193,11 +234,13 @@ when implModule:
         return factory.createDocument(self.services, path, load, options)
     return nil
 
-  proc addDocumentFactory*(self: DocumentEditorService, factory: DocumentFactory) =
+  proc documentEditorAddDocumentFactory(self: DocumentEditorService, factory: DocumentFactory) =
     self.documentFactories.add(factory)
+    self.documentFactories.sort(proc(a, b: DocumentFactory): int = cmp(a.priority, b.priority), Descending)
 
-  proc addDocumentEditorFactory*(self: DocumentEditorService, factory: DocumentEditorFactory) =
+  proc documentEditorAddDocumentEditorFactory(self: DocumentEditorService, factory: DocumentEditorFactory) =
     self.editorFactories.add(factory)
+    self.editorFactories.sort(proc(a, b: DocumentEditorFactory): int = cmp(a.priority, b.priority), Descending)
 
   proc registerDocument*(self: DocumentEditorService, document: Document) =
     document.id = self.documents.add(document)

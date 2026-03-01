@@ -1,4 +1,6 @@
-import std/[macros, genasts, strformat]
+import std/[macros, genasts, strformat, sequtils]
+import util
+
 type
   BinaryEncoder* = object
     buffer: seq[byte]
@@ -12,7 +14,7 @@ proc resetHead*(self: var BinaryEncoder) =
   self.head = self.buffer.len
 
 template toOpenArray*(self: BinaryEncoder): openArray[uint8] =
-  self.buffer.toOpenArray(0, self.buffer.high)
+  self.buffer.toOpenArray(0, self.head - 1)
 
 macro getByte(v: typed, i: static[int]): untyped =
   let shift = i * 8
@@ -43,6 +45,17 @@ proc write*(self: var BinaryEncoder, v: float32) =
 proc write*(self: var BinaryEncoder, v: float64) =
   # todo: make this work in js
   self.write(cast[uint64](v))
+
+proc write*(self: var BinaryEncoder, T: typedesc[SomeUnsignedInt], v: T) =
+  self.write(v)
+
+proc write*(self: var BinaryEncoder, T: typedesc[float32], v: T) =
+  # todo: make this work in js
+  self.write(uint32, cast[uint32](v))
+
+proc write*(self: var BinaryEncoder, T: typedesc[float64], v: T) =
+  # todo: make this work in js
+  self.write(uint64, cast[uint64](v))
 
 proc writeLEB128*(self: var BinaryEncoder, T: typedesc[SomeUnsignedInt], v: T) =
   var v = v
@@ -86,6 +99,15 @@ proc writeString*(self: var BinaryEncoder, v: string) =
 
 proc write*[T](self: var BinaryEncoder, arr: openArray[T]) =
   self.writeLEB128(uint32, arr.len.uint32)
+  let size = arr.len * sizeof(T)
+  let startIndex = self.head
+  if self.buffer.len < startIndex + size:
+    self.buffer.setLen(startIndex + size)
+  if size > 0:
+    copyMem(self.buffer[startIndex].addr, arr.data, size)
+  self.head += size
+
+proc writeRaw*[T](self: var BinaryEncoder, arr: openArray[T]) =
   let size = arr.len * sizeof(T)
   let startIndex = self.head
   if self.buffer.len < startIndex + size:

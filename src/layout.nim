@@ -1,14 +1,15 @@
 import std/[options, json]
 import misc/[custom_async]
-import service, view, popup, selector_popup_builder
+import service, view, popup, selector_popup_builder, dynamic_view
 import document, document_editor
+import ui/node
 
 include dynlib_export
 
 type
   CreateView* = proc(config: JsonNode): View {.gcsafe, raises: [ValueError].}
   LayoutService* = ref object of Service
-  EditorView* = ref object of View
+  EditorView* = ref object of DynamicView
     path: string
     document*: Document # todo: remove
     editor*: DocumentEditor
@@ -28,6 +29,7 @@ proc layoutServiceOpenFile(self: LayoutService, path: string, slot: string = "")
 proc layoutServiceIsViewVisible(self: LayoutService, view: View): bool {.apprtl, gcsafe, raises: [].}
 proc layoutServicePromptString(self: LayoutService, title: string = ""): Future[Option[string]] {.apprtl, gcsafe, async: (raises: [])}
 proc layoutServicePrompt(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.apprtl, gcsafe, async: (raises: [])}
+proc layoutServiceTryActivateEditor(self: LayoutService, editor: DocumentEditor) {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
 proc popups*(self: LayoutService): lent seq[Popup] {.inline.} = self.layoutServicePopups()
@@ -42,6 +44,7 @@ proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[Doc
 proc isViewVisible*(self: LayoutService, view: View): bool {.inline.} = self.layoutServiceIsViewVisible(view)
 proc promptString*(self: LayoutService, title: string = ""): Future[Option[string]] {.async: (raises: [])} = await layoutServicePromptString(self, title)
 proc prompt*(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.gcsafe, async: (raises: [])} = await layoutServicePrompt(self, choices, title)
+proc tryActivateEditor*(self: LayoutService, editor: DocumentEditor) {.inline.} = layoutServiceTryActivateEditor(self, editor)
 
 proc getViews*(self: LayoutService, T: typedesc): seq[T] =
   var res = newSeq[T]()
@@ -318,6 +321,8 @@ when implModule:
 
   addBuiltinService(LayoutServiceImpl, PlatformService, ConfigService, DocumentEditorService, Workspace, VFSService, SessionService, CommandService)
 
+  proc newEditorView(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView
+
   method init*(self: LayoutServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"LayoutService.init"
     self.platform = self.services.getService(PlatformService).get.platform
@@ -354,7 +359,7 @@ when implModule:
       if config.state != nil:
         editor.restoreStateJson(config.state)
 
-      return EditorView(mId: config.id, document: document, editor: editor)
+      return newEditorView(editor, document, config.id.some)
 
     proc save(): JsonNode =
       result = newJObject()
@@ -461,17 +466,21 @@ when implModule:
         self.platform.requestRender()
         self.platform.logNextFrameTime = true
 
-  method desc*(self: EditorView): string =
+  proc editorViewRender(self: EditorView, builder: UINodeBuilder): seq[OverlayRenderFunc] =
+    self.resetDirty()
+    self.editor.render(builder)
+
+  proc editorViewDesc(self: EditorView): string =
     if self.document == nil:
       &"EditorView(pending '{self.path}')"
     else:
       &"EditorView('{self.document.filename}')"
 
-  method kind*(self: EditorView): string = "editor"
+  proc editorViewKind(self: EditorView): string = "editor"
 
-  method display*(self: EditorView): string = self.document.filename
+  proc editorViewDisplay(self: EditorView): string = self.document.filename
 
-  method saveState*(self: EditorView): JsonNode =
+  proc editorViewSaveState(self: EditorView): JsonNode =
     if self.document.filename == "":
       return nil
     if not EditorSettings.new(self.editor.config).saveInSession.get(true):
@@ -483,29 +492,51 @@ when implModule:
     result["path"] = self.document.filename.toJson
     result["state"] = self.editor.getStateJson()
 
-  method activate*(view: EditorView) =
+  proc editorViewActivate(view: EditorView) =
     view.active = true
     view.editor.active = true
 
-  method deactivate*(view: EditorView) =
+  proc editorViewDeactivate(view: EditorView) =
     view.active = true
     view.editor.active = false
 
-  method markDirty*(view: EditorView, notify: bool = true) =
+  proc editorViewMarkDirty(view: EditorView, notify: bool = true) =
     view.markDirtyBase()
     view.editor.markDirty(notify)
 
-  method getEventHandlers*(view: EditorView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  proc editorViewGetEventHandlers(view: EditorView, inject: Table[string, EventHandler]): seq[EventHandler] =
     view.editor.getEventHandlers(inject)
 
-  method getActiveEditor*(self: EditorView): Option[DocumentEditor] =
+  proc editorViewGetActiveEditor(self: EditorView): Option[DocumentEditor] =
     self.editor.some
+
+  proc newEditorView(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView =
+    let self = EditorView(editor: editor, document: document)
+    if id.isSome:
+      self.mId = id.get
+
+    self.renderImpl = proc(self: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] = editorViewRender(self.EditorView, builder)
+    # self.closeImpl = proc(self: DynamicView) = editorViewClose(self.EditorView)
+    self.activateImpl = proc(self: DynamicView) = editorViewActivate(self.EditorView)
+    self.deactivateImpl = proc(self: DynamicView) = editorViewDeactivate(self.EditorView)
+    self.getEventHandlersImpl = proc (self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] = editorViewGetEventHandlers(self.EditorView, inject)
+    self.descImpl = proc (self: DynamicView): string = editorViewDesc(self.EditorView)
+    self.kindImpl = proc (self: DynamicView): string = editorViewKind(self.EditorView)
+    self.displayImpl = proc (self: DynamicView): string = editorViewDisplay(self.EditorView)
+    self.saveStateImpl = proc (self: DynamicView): JsonNode = editorViewSaveState(self.EditorView)
+    # self.onClick = editorViewHandleClick
+    # self.onScroll = editorViewHandleScroll
+    # self.onDrag = editorViewHandleDrag
+    # self.onMove = editorViewHandleMove
+
+    return self
 
   proc anyUnsavedChanges*(self: LayoutService): bool =
     let self = self.LayoutServiceImpl
     for view in self.mAllViews:
       if view of EditorView:
         let doc = view.EditorView.document
+        assert doc != nil
         let isDirty = not doc.requiresLoad and doc.lastSavedRevision != doc.revision
         if isDirty:
           return true
@@ -627,7 +658,7 @@ when implModule:
   proc createAndAddView*(self: LayoutService, document: Document, slot: string = ""): Option[DocumentEditor] =
     let self = self.LayoutServiceImpl
     if self.editors.createEditorForDocument(document).getSome(editor):
-      var view = EditorView(document: document, editor: editor)
+      var view = newEditorView(editor, document)
       self.addView(view, slot=slot)
       return editor.some
     return DocumentEditor.none
@@ -644,7 +675,7 @@ when implModule:
 
     self.platform.requestRender()
 
-  proc tryActivateEditor*(self: LayoutService, editor: DocumentEditor) =
+  proc layoutServiceTryActivateEditor(self: LayoutService, editor: DocumentEditor) =
     let self = self.LayoutServiceImpl
     if self.mPopups.len > 0:
       return
