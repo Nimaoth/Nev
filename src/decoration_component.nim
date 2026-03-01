@@ -199,8 +199,8 @@ when implModule:
   proc decorationComponentAddOverlay(self: DecorationComponent, selection: Range[Point], text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) =
     let self = self.DecorationComponentImpl
     let location = case location
-      of Inline: overlay_map.OverlayRenderLocation.Inline
-      of Below: overlay_map.OverlayRenderLocation.Below
-      of Above: overlay_map.OverlayRenderLocation.Above
+      of OverlayRenderLocation.Inline: overlay_map.OverlayRenderLocation.Inline
+      of OverlayRenderLocation.Below: overlay_map.OverlayRenderLocation.Below
+      of OverlayRenderLocation.Above: overlay_map.OverlayRenderLocation.Above
     self.displayMap.overlay.addOverlay(selection, text, id, scope, bias, renderId, location)
     self.owner.DocumentEditor.markDirty()

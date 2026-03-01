@@ -2,12 +2,7 @@
 import std/[strformat, strutils, os, sets, tables, options, json, sequtils, uri]
 import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_process, event, response, rope_utils, arena, array_view, jsonex, myjsonutils]
 import text/language/[language_server_base, lsp_types]
-import nimsumtree/[arc, rope, buffer]
-import service, event_service, language_server_dynamic, document_editor, document, config_provider, vfs, vfs_service
-import text/[treesitter_type_conv]
-import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import workspaces/workspace as ws
-import lsp_client
+import language_server_dynamic
 
 # import std/[typedthreads]
 # import misc/[custom_unicode, id, jsonex]
@@ -15,9 +10,17 @@ import lsp_client
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
+proc getOrCreateLanguageServerLSP*(name: string): Future[Option[LanguageServerDynamic]] {.rtl, gcsafe, async: (raises: []).}
+
 when implModule:
   import language_server_component, config_component, move_component, text_component, treesitter_component, language_component
   import workspace_edit
+  import workspaces/workspace as ws
+  import lsp_client
+  import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
+  import text/[treesitter_type_conv]
+  import service, event_service, document_editor, document, config_provider, vfs, vfs_service
+  import nimsumtree/[arc, rope, buffer]
 
   logCategory "language-server-lsp"
 
@@ -589,7 +592,7 @@ when implModule:
 
     if parsedResponse.asWorkspaceSymbolSeq().getSome(symbols):
       for r in symbols:
-        let (path, location) = if r.location.asLocation().getSome(location):
+        let (path, location) = if r.location.asLocation().getSome(location) and r.location.node.hasKey("range"):
           let cursor = (line: location.range.start.line, column: location.range.start.character)
           (self.toVfsPath(location.uri), cursor.some)
         elif r.location.asUriObject().getSome(uri):
@@ -622,6 +625,80 @@ when implModule:
       log lvlWarn, &"[{self.name}] Failed to parse getWorkspaceSymbols response"
 
     return completions
+
+  proc lspResolveWorkspaceSymbol*(self: LanguageServerDynamic, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
+    let self = self.LanguageServerLSP
+
+    let resolveProvider = self.serverCapabilities.workspaceSymbolProvider
+      .asWorkspaceSymbolOptions
+      .map(proc(o: WorkspaceSymbolOptions): bool = o.resolveProvider)
+      .get(false)
+
+    if not resolveProvider:
+      return Definition.none
+
+    let response = await self.client.resolveWorkspaceSymbol(symbol)
+    if response.isError:
+      log(lvlWarn, &"[{self.name}] Error in resolveWorkspaceSymbol: {response.error}")
+      return Definition.none
+
+    if response.isCanceled:
+      return Definition.none
+
+    let resolved = response.result
+    if resolved.location.asLocation().getSome(loc):
+      return Definition(
+        filename: self.toVfsPath(loc.uri),
+        location: (loc.range.start.line, loc.range.start.character),
+      ).some
+    return Definition.none
+
+  proc lspGetWorkspaceSymbolsRaw*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.async.} =
+    let self = self.LanguageServerLSP
+    var res: seq[WorkspaceSymbolRaw]
+
+    if self.serverCapabilities.workspaceSymbolProvider.isNone:
+      return res
+
+    let response = await self.client.getWorkspaceSymbols(query)
+    if response.isError:
+      log(lvlWarn, &"[{self.name}] Error in getWorkspaceSymbolsRaw('{query}'): {response.error}")
+      return res
+
+    if response.isCanceled:
+      return res
+
+    let parsedResponse = response.result
+    if parsedResponse.asWorkspaceSymbolSeq().getSome(symbols):
+      for r in symbols:
+        let (path, location) = if r.location.asLocation().getSome(loc) and r.location.node.hasKey("range"):
+          (self.toVfsPath(loc.uri), (loc.range.start.line, loc.range.start.character).Cursor.some)
+        elif r.location.asUriObject().getSome(uri):
+          (self.toVfsPath(uri.uri), Cursor.none)
+        else:
+          log lvlWarn, fmt"[{self.name}] Failed to parse workspace symbol location: {r.location}"
+          continue
+        res.add WorkspaceSymbolRaw(symbol: r, path: path, location: location)
+
+    elif parsedResponse.asSymbolInformationSeq().getSome(symbols):
+      for r in symbols:
+        let loc = (r.location.range.start.line, r.location.range.start.character)
+        res.add WorkspaceSymbolRaw(
+          symbol: WorkspaceSymbol(
+            name: r.name,
+            kind: r.kind,
+            tags: r.tags,
+            containerName: r.containerName,
+            location: WorkspaceLocationVariant.init(r.location),
+          ),
+          path: self.toVfsPath(r.location.uri),
+          location: loc.Cursor.some,
+        )
+
+    else:
+      log lvlWarn, &"[{self.name}] Failed to parse getWorkspaceSymbolsRaw response"
+
+    return res
 
   proc lspGetDiagnostics*(self: LanguageServerDynamic, filename: string):
       Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
@@ -801,6 +878,8 @@ when implModule:
       lsp.getInlayHintsImpl = lspGetInlayHints
       lsp.getSymbolsImpl = lspGetSymbols
       lsp.getWorkspaceSymbolsImpl = lspGetWorkspaceSymbols
+      lsp.getWorkspaceSymbolsRawImpl = lspGetWorkspaceSymbolsRaw
+      lsp.resolveWorkspaceSymbolImpl = lspResolveWorkspaceSymbol
       lsp.getDiagnosticsImpl = lspGetDiagnostics
       lsp.getCompletionsImpl = lspGetCompletions
       lsp.getCodeActionsImpl = lspGetCodeActions
@@ -853,6 +932,17 @@ when implModule:
     except:
       log lvlError, &"Failed to create language server '{name}': {getCurrentExceptionMsg()}"
       return LanguageServerLSP.none
+
+  proc getOrCreateLanguageServerLSP*(name: string): Future[Option[LanguageServerDynamic]] {.gcsafe, async: (raises: []).} =
+    try:
+      let service = getServices().getService(LanguageServerLspService).getOr:
+        return LanguageServerDynamic.none
+      let res = service.getOrCreateLanguageServerLSP(name).await
+      if res.isNone:
+        return LanguageServerDynamic.none
+      return res.get.LanguageServerDynamic.some
+    except CatchableError:
+      return LanguageServerDynamic.none
 
   proc init_module_language_server_lsp*() {.cdecl, exportc, dynlib.} =
     log lvlWarn, &"init_module_language_server_lsp"

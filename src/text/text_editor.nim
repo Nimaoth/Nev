@@ -26,7 +26,7 @@ import "../../modules"/workspace_edit
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
-  Command, WorkspaceEdit, asCommand, asCodeAction
+  Command, WorkspaceEdit, asCommand, asCodeAction, asUriObject, WorkspaceSymbol
 
 import nimsumtree/[buffer, clock, static_array, rope]
 from nimsumtree/sumtree as st import summaryType, itemSummary, Bias, mapOpt
@@ -3377,19 +3377,30 @@ type
     delayedTask: DelayedTask
     filename: string
 
+proc createFinderItem(workspace: Workspace, symbol: WorkspaceSymbol, path: string, loc: Cursor, hasLoc: bool): FinderItem =
+  let relPath = workspace.getRelativePathSync(path).get(path)
+  let (folder, name) = relPath.splitPath
+  return FinderItem(
+    displayName: symbol.name,
+    details: @[$symbol.kind, name, folder],
+    data: $ %*{
+      "path": path,
+      "line": loc.line,
+      "column": loc.column,
+      "symbol": symbol.toJson,
+      "hasLoc": hasLoc,
+    },
+  )
+
 proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.async.} =
-  let symbols = self.languageServer.getWorkspaceSymbols(self.filename, self.query).await
+  let symbols = self.languageServer.getWorkspaceSymbolsRaw(self.filename, self.query).await
   var t = startTimer()
   var items = newItemList(symbols.len)
   var index = 0
-  for symbol in symbols:
-    let relPath = self.workspace.getRelativePathSync(symbol.filename).get(symbol.filename)
+  for s in symbols:
+    let loc = s.location.get((0, 0))
 
-    items[index] = FinderItem(
-      displayName: symbol.name,
-      details: @[$symbol.symbolType, relPath.splitPath[0]],
-      data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
-    )
+    items[index] = createFinderItem(self.workspace, s.symbol, s.path, loc, s.location.isSome)
     inc index
 
     if t.elapsed.ms > 5:
@@ -3421,7 +3432,7 @@ method setQuery*(self: LspWorkspaceSymbolsDataSource, query: string) =
 
   if self.delayedTask.isNil:
     asyncSpawn self.getWorkspaceSymbols()
-    self.delayedTask = startDelayedPaused(200, repeat=false):
+    self.delayedTask = startDelayedPaused(500, repeat=false):
       asyncSpawn self.getWorkspaceSymbols()
   else:
     if self.languageServer.refetchWorkspaceSymbolsOnQueryChange:
@@ -3443,8 +3454,43 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     builder.finder = finder.some
 
     builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
+      try:
+        let jsonData = item.data.parseJson
+        if jsonData.hasKey("symbol"):
+          var rawSymbol: WorkspaceSymbol = jsonData["symbol"].jsonTo(WorkspaceSymbol)
+          if rawSymbol.location.asUriObject().isSome:
+            asyncSpawn (proc(): Future[void] {.async.} =
+              let resolved = await ls.resolveWorkspaceSymbol(rawSymbol)
+              if resolved.getSome(d):
+                self.openFileAt(d.filename, d.location.toSelection.some)
+              else:
+                self.openLocationFromFinderItem(item)
+            )()
+            return true
+      except:
+        discard
       self.openLocationFromFinderItem(item)
       true
+
+    var selectionVersion = 0
+    builder.handleItemSelected = proc(popup: ISelectorPopup, item: FinderItem) =
+      try:
+        inc selectionVersion
+        let jsonData = item.data.parseJson
+        if jsonData.hasKey("symbol") and not jsonData["hasLoc"].jsonTo(bool):
+          var rawSymbol: WorkspaceSymbol = jsonData["symbol"].jsonTo(WorkspaceSymbol)
+          if rawSymbol.location.asUriObject().isSome:
+            let version = selectionVersion
+            asyncSpawn (proc(): Future[void] {.async.} =
+              let resolved = await ls.resolveWorkspaceSymbol(rawSymbol)
+              if version != selectionVersion:
+                return
+              if resolved.getSome(d):
+                let item = createFinderItem(self.workspace, rawSymbol, d.filename, d.location, hasLoc = true)
+                popup.preview(item)
+            )()
+      except:
+        discard
 
     discard self.layout.pushSelectorPopup(builder)
 

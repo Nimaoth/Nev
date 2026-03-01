@@ -107,6 +107,7 @@ type
     GetCodeActions
     Rename
     ExecuteCommand
+    ResolveWorkspaceSymbol
 
   LSPClientRequestKind* = enum
     Exit
@@ -134,6 +135,7 @@ type
     of GetCodeActions: getCodeActions*: Response[CodeActionResponse]
     of Rename: rename*: Response[JsonNode]
     of ExecuteCommand: executeCommand*: Response[JsonNode]
+    of ResolveWorkspaceSymbol: resolveWorkspaceSymbol*: Response[WorkspaceSymbol]
 
   LSPClientRequest = object
     id: int
@@ -174,6 +176,7 @@ type
     activeCodeActionRequests: Table[int, tuple[meth: string, future: Future[Response[CodeActionResponse]]]] # Main thread
     activeRenameRequests: Table[int, tuple[meth: string, future: Future[Response[JsonNode]]]] # Main thread
     activeExecuteCommandRequests: Table[int, tuple[meth: string, future: Future[Response[JsonNode]]]] # Main thread
+    activeResolveWorkspaceSymbolRequests: Table[int, tuple[meth: string, future: Future[Response[WorkspaceSymbol]]]] # Main thread
     requestsPerMethod: Table[string, seq[int]]
     canceledRequests: HashSet[int]
     idToMethod: Table[int, string]
@@ -488,6 +491,7 @@ proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
     of GetCodeActions: dispatch(client.activeCodeActionRequests, response.getCodeActions)
     of Rename: dispatch(client.activeRenameRequests, response.rename)
     of ExecuteCommand: dispatch(client.activeExecuteCommandRequests, response.executeCommand)
+    of ResolveWorkspaceSymbol: dispatch(client.activeResolveWorkspaceSymbolRequests, response.resolveWorkspaceSymbol)
 
   log lvlInfo, &"handleResponses: client gone"
 
@@ -539,6 +543,7 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
     of "textDocument/codeAction": cancel(client.activeCodeActionRequests, CodeActionResponse)
     of "textDocument/rename": cancel(client.activeRenameRequests, JsonNode)
     of "workspace/executeCommand": cancel(client.activeExecuteCommandRequests, JsonNode)
+    of "workspaceSymbol/resolve": cancel(client.activeResolveWorkspaceSymbolRequests, WorkspaceSymbol)
     else: continue
 
     client.activeRequests.del id
@@ -949,6 +954,10 @@ proc getWorkspaceSymbols*(client: LSPClient, query: string): Future[Response[Wor
 
   return await client.sendRequest(client.activeWorkspaceSymbolsRequests.addr, "workspace/symbol", params)
 
+proc resolveWorkspaceSymbol*(client: LSPClient, symbol: WorkspaceSymbol): Future[Response[WorkspaceSymbol]] {.async.} =
+  let params = symbol.toJson
+  return await client.sendRequest(client.activeResolveWorkspaceSymbolRequests.addr, "workspaceSymbol/resolve", params)
+
 proc getDiagnostics*(client: LSPClient, filename: string): Future[Response[DocumentDiagnosticResponse]] {.async.} =
   # debugf"[getDiagnostics] {filename.absolutePath}"
   client.cancelAllOf("textDocument/diagnostic")
@@ -1151,6 +1160,8 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
               id: id, kind: Rename, rename: parsedResponse.to(JsonNode)))
           of "workspace/executeCommand": await client.responseChannel.send(LSPClientResponse(
               id: id, kind: ExecuteCommand, executeCommand: parsedResponse.to(JsonNode)))
+          of "workspaceSymbol/resolve": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: ResolveWorkspaceSymbol, resolveWorkspaceSymbol: parsedResponse.to(WorkspaceSymbol)))
 
         else:
           log(lvlError, fmt"[run] error: received response with id {id} but got no active request for that id: {response}")
