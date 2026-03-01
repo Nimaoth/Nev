@@ -1,3 +1,4 @@
+import "../modules/language_server_ue_cpp.nim"
 import "../modules/debugger/debugger.nim"
 import "../modules/vcs_git.nim"
 import "../modules/vcs_perforce.nim"
@@ -11,8 +12,10 @@ import "../modules/language_server_lsp/language_server_lsp.nim"
 import "../modules/language_server_paths.nim"
 import "../modules/formatting_component.nim"
 import "../modules/angelscript_formatter.nim"
+import "../modules/language_server_ue_as.nim"
 
 proc initModules*() =
+  init_module_language_server_ue_cpp()
   init_module_debugger()
   init_module_vcs_git()
   init_module_vcs_perforce()
@@ -26,8 +29,10 @@ proc initModules*() =
   init_module_language_server_paths()
   init_module_formatting_component()
   init_module_angelscript_formatter()
+  init_module_language_server_ue_as()
 
 proc shutdownModules*() =
+  when declared(shutdown_module_language_server_ue_cpp): shutdown_module_language_server_ue_cpp()
   when declared(shutdown_module_debugger): shutdown_module_debugger()
   when declared(shutdown_module_vcs_git): shutdown_module_vcs_git()
   when declared(shutdown_module_vcs_perforce): shutdown_module_vcs_perforce()
@@ -41,3 +46,4 @@ proc shutdownModules*() =
   when declared(shutdown_module_language_server_paths): shutdown_module_language_server_paths()
   when declared(shutdown_module_formatting_component): shutdown_module_formatting_component()
   when declared(shutdown_module_angelscript_formatter): shutdown_module_angelscript_formatter()
+  when declared(shutdown_module_language_server_ue_as): shutdown_module_language_server_ue_as()
