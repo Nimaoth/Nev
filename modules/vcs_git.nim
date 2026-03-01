@@ -95,7 +95,7 @@ when implModule:
         let fullPath = self.root // filePath
 
         # Add to staged changelist if file has staged changes
-        if stagedStatus != None:
+        if stagedStatus != None and stagedStatus != Untracked:
           stagedFiles.add VCSFileInfo(
             stagedStatus: stagedStatus,
             unstagedStatus: None,
