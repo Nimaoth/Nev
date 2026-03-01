@@ -1,5 +1,6 @@
 import std/[options, sequtils, os]
 import misc/[custom_async, id, util, regex, custom_logger, event]
+import nimsumtree/arc
 import vfs, vfs_service, service
 import finder/finder
 
@@ -38,17 +39,18 @@ type
     onWorkspaceFolderRemoved*: Event[string]
     isCacheUpdateInProgress: bool = false
     vfs*: VFS
+    vfs2*: Arc[VFS2]
 
 func serviceName*(_: typedesc[Workspace]): string = "Workspace"
 
 # DLL API
 proc workspaceSearchPaths*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.apprtl, gcsafe, raises: [].}
-proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.apprtl, gcsafe, raises: [].}
+proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
 
 proc search*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.inline.} = workspaceSearchPaths(self, paths, query, maxResults, customArgs)
-proc search*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.inline.} = workspaceSearch(self, query, maxResults, customArgs)
+proc search*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.inline.} = workspaceSearch(self, query, maxResults, customArgs, additionalPaths)
 
 proc info*(self: Workspace): WorkspaceInfo =
   try:
@@ -75,6 +77,7 @@ when implModule:
   method init*(self: Workspace): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"Workspace.init"
     self.vfs = self.services.getService(VFSService).get.vfs
+    self.vfs2 = self.services.getService(VFSService).get.vfs2
 
     return ok()
 
@@ -166,6 +169,8 @@ when implModule:
       var res: seq[SearchResult]
 
       var currentFile = ""
+      if self.vfs.getFileKind(root).await == FileKind.File.some:
+        currentFile = root
       for line in output:
         if currentFile == "":
           if line.isAbsolute:
@@ -213,10 +218,12 @@ when implModule:
 
     return res
 
-  proc searchWorkspace*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
+  proc searchWorkspace*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
     var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
     futs.add self.searchWorkspaceFolder(query, self.path, maxResults, customArgs)
     for path in self.additionalPaths:
+      futs.add self.searchWorkspaceFolder(query, path, maxResults, customArgs)
+    for path in additionalPaths:
       futs.add self.searchWorkspaceFolder(query, path, maxResults, customArgs)
 
     var res: seq[SearchResult]
@@ -231,8 +238,8 @@ when implModule:
   proc workspaceSearchPaths*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.gcsafe, raises: [].} =
     searchWorkspace(self, paths, query, maxResults, customArgs)
 
-  proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.gcsafe, raises: [].} =
-    searchWorkspace(self, query, maxResults, customArgs)
+  proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.gcsafe, raises: [].} =
+    searchWorkspace(self, query, maxResults, customArgs, additionalPaths)
 
   proc getAbsolutePath*(self: Workspace, path: string): string =
     if path.isAbsolute:
@@ -318,6 +325,15 @@ when implModule:
       self.vfs.mount(&"ws{i}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
       wsVfs.mount($i, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
 
+    let (wsVfs2, _) = self.vfs2.getVFS("ws://")
+    self.vfs2.unmount(&"ws{self.additionalPaths.len + 1}://")
+    wsVfs2.unmount(&"{self.additionalPaths.len + 1}")
+
+    # rebuild vfs2
+    for i, path in @[self.path] & self.additionalPaths:
+      self.vfs2.mount(&"ws{i}://", newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
+      wsVfs2.mount($i, newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
+
     self.onWorkspaceFolderRemoved.invoke(path)
 
     if recomputeFileCache:
@@ -331,9 +347,13 @@ when implModule:
       self.additionalPaths.add path
 
     self.vfs.mount(&"ws{self.additionalPaths.len}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+    self.vfs2.mount(&"ws{self.additionalPaths.len}://", newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
 
     let (wsVfs, _) = self.vfs.getVFS("ws://")
     wsVfs.mount($self.additionalPaths.len, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+
+    let (wsVfs2, _) = self.vfs2.getVFS("ws://")
+    wsVfs2.mount($self.additionalPaths.len, newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
 
     self.onWorkspaceFolderAdded.invoke(path)
     if recomputeFileCache:

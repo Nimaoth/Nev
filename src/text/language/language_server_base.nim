@@ -66,6 +66,11 @@ type Symbol* = object
   filename*: string
   score*: Option[float]
 
+type WorkspaceSymbolRaw* = object
+  symbol*: lsp_types.WorkspaceSymbol
+  path*: string
+  location*: Option[Cursor]
+
 type InlayHint* = object
   location*: Cursor
   label*: string # | InlayHintLabelPart[] # todo
@@ -129,6 +134,8 @@ when implModule:
   method getCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.base, gcsafe, raises: [].} = Response[lsp_types.CompletionList].default.toFuture
   method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = seq[Symbol].default.toFuture
   method getWorkspaceSymbols*(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = seq[Symbol].default.toFuture
+  method getWorkspaceSymbolsRaw*(self: LanguageServer, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.base, gcsafe, raises: [].} = seq[WorkspaceSymbolRaw].default.toFuture
+  method resolveWorkspaceSymbol*(self: LanguageServer, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.base, gcsafe, raises: [].} = Option[Definition].default.toFuture
   method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base, gcsafe, raises: [].} = Option[string].default.toFuture
   method getSignatureHelp*(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.base, gcsafe, raises: [].} = Response[seq[lsp_types.SignatureHelpResponse]].default.toFuture
   method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.base, gcsafe, raises: [].} = seq[language_server_base.InlayHint].default.success.toFuture

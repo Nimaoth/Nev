@@ -157,6 +157,12 @@ method getSymbols*(self: LanguageServerList, filename: string): Future[seq[Symbo
 method getWorkspaceSymbols*(self: LanguageServerList, filename: string, query: string): Future[seq[Symbol]] {.async.} =
   return self.merge(Symbol, ls.getWorkspaceSymbols(filename, query), "getWorkspaceSymbols")
 
+method getWorkspaceSymbolsRaw*(self: LanguageServerList, filename: string, query: string): Future[seq[language_server_base.WorkspaceSymbolRaw]] {.async.} =
+  return self.merge(language_server_base.WorkspaceSymbolRaw, ls.getWorkspaceSymbolsRaw(filename, query), "getWorkspaceSymbolsRaw")
+
+method resolveWorkspaceSymbol*(self: LanguageServerList, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
+  return self.mergeOption(Definition, ls.resolveWorkspaceSymbol(symbol), "resolveWorkspaceSymbol")
+
 method getHover*(self: LanguageServerList, filename: string, location: Cursor): Future[Option[string]] {.async.} =
   return self.mergeOption(string, ls.getHover(filename, location), "getHover")
 

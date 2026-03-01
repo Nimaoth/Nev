@@ -752,7 +752,7 @@ proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, colo
           var path = font.typeface.getGlyphPath(rune)
           let rect = arrangement.selectionRects[i]
           path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
-          var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+          var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
           for paint in font.paints:
             image.fillPath(path, paint)
           platform.boxy.addImage($rune, image, genMipmaps=false)
@@ -767,7 +767,7 @@ proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, colo
           var path = font.typeface.getGlyphPath(rune)
           let rect = arrangement.selectionRects[i]
           path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
-          var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+          var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
           for paint in font.paints:
             image.fillPath(path, paint)
           platform.boxy.addImage($key, image, genMipmaps=false)
@@ -812,7 +812,7 @@ proc drawText(platform: GuiPlatform, text: string, arrangement: render_command.A
         var path = typeface.getGlyphPath(rune)
         let rect = arrangement.selectionRects[i]
         path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(fontScale)))
-        var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+        var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
         image.fillPath(path, solidPaint)
         platform.boxy.addImage($key, image, genMipmaps=false)
         platform.glyphCache[key] = $key

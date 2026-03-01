@@ -189,9 +189,9 @@ proc toJson*(self: api.SelectorPopup, opt = initToJsonOptions()): JsonNode =
 proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
-proc updatePreview(self: SelectorPopup) =
-  if self.previewer.isSome and self.finder.filteredItems.getSome(list) and list.filteredLen > 0 and list.isValidIndex(self.selected):
-    let view = self.previewer.get.get.previewItem(list[self.selected])
+proc updatePreview(self: SelectorPopup, item: FinderItem) =
+  if self.previewer.isSome:
+    let view = self.previewer.get.get.previewItem(item)
     if view != self.previewView:
       if self.previewView != nil:
         self.previewView.onMarkedDirty.unsubscribe(self.viewMarkedDirtyHandle)
@@ -203,7 +203,11 @@ proc updatePreview(self: SelectorPopup) =
           self.markDirty()
 
     if view == nil and self.previewEditor.isNotNil:
-      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
+      self.previewer.get.get.previewItem(item, self.previewEditor)
+
+proc updatePreview(self: SelectorPopup) =
+  if self.previewer.isSome and self.finder.filteredItems.getSome(list) and list.filteredLen > 0 and list.isValidIndex(self.selected):
+    self.updatePreview(list[self.selected])
 
 proc setPreviewVisible*(self: SelectorPopup, visible: bool) {.expose("popup.selector").} =
   if self.textEditor.isNil:
@@ -503,3 +507,4 @@ proc asISelectorPopup*(self: SelectorPopup): ISelectorPopup =
   result.closed = proc(): bool {.gcsafe, raises: [].} = self.closed()
   result.getSelectedItem = proc(): Option[FinderItem] {.gcsafe, raises: [].} = self.getSelectedItem()
   result.pop = proc() {.gcsafe, raises: [].} = self.pop()
+  result.preview = proc(item: FinderItem) {.gcsafe, raises: [].} = self.updatePreview(item)

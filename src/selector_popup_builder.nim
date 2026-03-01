@@ -7,6 +7,7 @@ type ISelectorPopup* = object
   closed*: proc(): bool {.gcsafe, raises: [].}
   getSelectedItem*: proc(): Option[FinderItem] {.gcsafe, raises: [].}
   pop*: proc() {.gcsafe, raises: [].}
+  preview*: proc(item: FinderItem) {.gcsafe, raises: [].}
 
 type
   SelectorPopupBuilder* = object

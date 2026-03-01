@@ -112,9 +112,16 @@ proc gatherModules(): Table[string, ModuleInfo] =
         var files = initTable[string, FileInfo]()
         var mainFile = ""
         for subPath in walkDirRec(path, skipSpecial = true):
+          if subPath.endsWith(name & ".nim"):
+            mainFile = subPath
           files[subPath] = FileInfo(modificationTime: getLastModificationTime(subPath).toUnix)
+
+        if mainFile == "":
+          echo &"Skip module {name}, no main file {name}.nim"
+          continue
         let dependencies = readDependencies(path / name & ".nim")
         result[name] = ModuleInfo(path: path / name & ".nim", dirty: true, files: files, dependencies: dependencies)
+
 
       of pcLinkToFile:
         discard

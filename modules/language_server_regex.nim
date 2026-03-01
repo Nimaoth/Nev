@@ -9,21 +9,28 @@ import workspaces/workspace
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
+type
+  LanguageServerRegex* = ref object of LanguageServerDynamic
+    services: Services
+    config: ConfigStore
+    documents: DocumentEditorService
+    vfs*: Arc[VFS2]
+    files: Table[string, string]
+    commandHistory*: seq[string]
+    workspace*: Workspace
+
+{.push rtl, gcsafe.}
+proc newLanguageServerRegex*(services: Services): LanguageServerRegex {.raises: [].}
+proc languageServerRegexGotoRegexLocation(self: LanguageServerRegex, doc: Document, location: Cursor, regexName: string): Future[seq[Definition]] {.async.}
+{.pop.}
+
+proc gotoRegexLocation*(self: LanguageServerRegex, doc: Document, location: Cursor, regexName: string): Future[seq[Definition]] {.async.} = languageServerRegexGotoRegexLocation(self, doc, location, regexName).await
+
 when implModule:
   import language_server_component, config_component, move_component, text_component, language_component
   logCategory "language_server_regex"
 
-  type
-    LanguageServerRegex* = ref object of LanguageServerDynamic
-      services: Services
-      config: ConfigStore
-      documents: DocumentEditorService
-      vfs: Arc[VFS2]
-      files: Table[string, string]
-      commandHistory*: seq[string]
-      workspace: Workspace
-
-  proc gotoRegexLocation(self: LanguageServerRegex, doc: Document, location: Cursor, regexName: string): Future[seq[Definition]] {.async.} =
+  proc languageServerRegexGotoRegexLocation(self: LanguageServerRegex, doc: Document, location: Cursor, regexName: string): Future[seq[Definition]] {.async.} =
     let moves = doc.getMoveComponent().getOr:
       return @[]
     let text = doc.getTextComponent().getOr:
@@ -31,7 +38,7 @@ when implModule:
     let config = doc.getConfigComponent().getOr:
       return @[]
     let language = doc.getLanguageComponent().getOr:
-      return
+      return @[]
 
     let s = moves.applyMove(location.toSelection.toRange, "language-word")
     let regexTemplate = config.get(&"text.search-regexes.{regexName}", newJexString("\\b[[0]]\\b"))
@@ -48,7 +55,13 @@ when implModule:
       let fileType = config.get("text.ripgrep.file-type", language.languageId)
       customArgs.add ["--type", fileType]
 
-    let searchResults = await self.workspace.search(searchString, 100, customArgs)
+    let additionalPaths = config.get("text.ripgrep.extra-paths", seq[string])
+    let noWorkspacePaths = config.get("text.ripgrep.no-workspace-paths", false)
+    let searchResults = if noWorkspacePaths:
+      await self.workspace.search(additionalPaths, searchString, 100, customArgs)
+    else:
+      await self.workspace.search(searchString, 100, customArgs, additionalPaths)
+
 
     var locations: seq[Definition]
     for info in searchResults:
@@ -185,7 +198,7 @@ when implModule:
 
     return @[]
 
-  proc newLanguageServerRegex(services: Services): LanguageServerRegex =
+  proc newLanguageServerRegex*(services: Services): LanguageServerRegex =
     result = new LanguageServerRegex
     result.name = "regex"
     result.services = services
