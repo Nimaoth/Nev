@@ -72,6 +72,8 @@
   (block_documentation_comment)
 ] @comment.documentation
 
+(block_documentation_comment (comment_content) @text.large)
+
 (interpreted_string_literal) @string
 (long_string_literal) @string
 (raw_string_literal) @string
