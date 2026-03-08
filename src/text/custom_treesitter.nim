@@ -22,40 +22,13 @@ include ../dynlib_export
 
 type TSLanguageCtor = proc(): ptr ts.TSLanguage {.stdcall.}
 
-proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree =
-  let oldTreePtr: ptr ts.TSTree = if oldTree.getSome(tree):
-    tree.impl
-  else:
-    nil
-  let tree = ts.tsParserParseString(self.impl, oldTreePtr, text.cstring, text.len.uint32)
-  return TSTree(impl: tree)
-
 type GetTextCallback* = proc(index: int, position: Cursor): (ptr char, int)
-proc getTextRangeTreesitter(payload: pointer; byteIndex: uint32; position: ts.TSPoint; bytesRead: ptr uint32): cstring {.stdcall.} =
 
-  let callback = cast[ptr GetTextCallback](payload)[]
-  let (p, len) = callback(byteIndex.int, (position.row.int, position.column.int))
-  bytesRead[] = len.uint32
-  return cast[cstring](p)
+proc treesitterParseString(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree {.apprtl, gcsafe, raises: [].}
+proc treesitterParseCallback(self: TSParser, oldTree: TSTree, text: GetTextCallback): TSTree {.apprtl, gcsafe, raises: [].}
 
-proc parseCallback*(self: TSParser, oldTree: TSTree, text: GetTextCallback): TSTree =
-  let input = ts.TSInput(
-    payload: text.addr,
-    # read: cast[typeof(ts.TSInput().read)](getTextRangeTreesitter),
-    encoding: ts.TSInputEncoding.TSInputEncodingUTF8
-  )
-
-  # Ugly hack, but on windows it complains about incompatible function pointer type because nim maps cstring to "char*"
-  # instead of "const char*"
-  {.emit: [input, ".read = (void*)(", getTextRangeTreesitter, ");"].}
-
-  let oldTreeImpl = if oldTree.isNotNil:
-    oldTree.impl
-  else:
-    nil
-
-  let tree = ts.tsParserParse(self.impl, oldTreeImpl, input)
-  return TSTree(impl: tree)
+proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree {.inline.} = treesitterParseString(self, text, oldTree)
+proc parseCallback*(self: TSParser, oldTree: TSTree, text: GetTextCallback): TSTree {.inline.} = treesitterParseCallback(self, oldTree, text)
 
 func toTsPoint*(cursor: Cursor, line: openArray[char]): ts.TSPoint = ts.TSPoint(row: cursor.line.uint32, column: line.runeIndex(cursor.column).uint32)
 template withQueryCursor*(cursor: untyped, body: untyped): untyped =
@@ -431,6 +404,40 @@ when implModule:
     log lvlInfo, fmt"Loaded {id} query '{path}' for {self.languageId}"
     return query
 
+  proc treesitterParseString(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree =
+    let oldTreePtr: ptr ts.TSTree = if oldTree.getSome(tree):
+      tree.impl
+    else:
+      nil
+    let tree = ts.tsParserParseString(self.impl, oldTreePtr, text.cstring, text.len.uint32)
+    return TSTree(impl: tree)
+
+  proc getTextRangeTreesitter(payload: pointer; byteIndex: uint32; position: ts.TSPoint; bytesRead: ptr uint32): cstring {.stdcall.} =
+
+    let callback = cast[ptr GetTextCallback](payload)[]
+    let (p, len) = callback(byteIndex.int, (position.row.int, position.column.int))
+    bytesRead[] = len.uint32
+    return cast[cstring](p)
+
+  proc treesitterParseCallback(self: TSParser, oldTree: TSTree, text: GetTextCallback): TSTree =
+    let input = ts.TSInput(
+      payload: text.addr,
+      # read: cast[typeof(ts.TSInput().read)](getTextRangeTreesitter),
+      encoding: ts.TSInputEncoding.TSInputEncodingUTF8
+    )
+
+    # Ugly hack, but on windows it complains about incompatible function pointer type because nim maps cstring to "char*"
+    # instead of "const char*"
+    {.emit: [input, ".read = (void*)(", getTextRangeTreesitter, ");"].}
+
+    let oldTreeImpl = if oldTree.isNotNil:
+      oldTree.impl
+    else:
+      nil
+
+    let tree = ts.tsParserParse(self.impl, oldTreeImpl, input)
+    return TSTree(impl: tree)
+
 proc getTsParser*(): TSParser =
   var parsers = ({.gcsafe.}: getParsers())
   var p = TSParser()
@@ -464,8 +471,10 @@ proc returnParsers*(parsers: sink seq[TSParser]) =
 
 template withParser*(p: untyped, body: untyped): untyped =
   var parsers = ({.gcsafe.}: getParsers())
+  let lock = ({.gcsafe.}: getParsersLock())
   var p = TSParser()
-  withLock getParsersLock()[]:
+
+  withLock lock[]:
     if parsers[].len > 0:
       p = parsers[].pop()
 
@@ -473,7 +482,7 @@ template withParser*(p: untyped, body: untyped): untyped =
     p = createTsParser()
   if not p.isNil:
     defer:
-      withLock getParsersLock()[]:
+      withLock lock[]:
         parsers[].add p
 
     block:
@@ -483,10 +492,25 @@ proc tsPoint*(line: int, column: RuneIndex, text: openArray[char]): TSPoint = TS
 proc tsPoint*(cursor: Cursor): TSPoint = TSPoint(row: cursor.line, column: cursor.column)
 proc tsRange*(selection: scripting_api.Selection): TSRange = TSRange(first: tsPoint(selection.first), last: tsPoint(selection.last))
 
+proc tsMalloc(a1: csize_t): pointer {.stdcall.} =
+  return allocShared0(a1)
+
+proc tsCalloc(a1: csize_t; a2: csize_t): pointer {.stdcall.} =
+  let size = a1.uint64 * a2.uint64
+  return allocShared0(size)
+
+proc tsRealloc(a1: pointer; a2: csize_t): pointer {.stdcall.} =
+  return reallocShared(a1, a2)
+
+proc tsFree(a1: pointer) {.stdcall.} =
+  deallocShared(a1)
+
+ts.tsSetAllocator(tsMalloc, tsCalloc, tsRealloc, tsFree)
+
 proc enableTreesitterMemoryTracking*() {.apprtl, gcsafe, raises: [].}
 
 when implModule:
-  proc tsMalloc(a1: csize_t): pointer {.stdcall.} =
+  proc tsDebugMalloc(a1: csize_t): pointer {.stdcall.} =
     tsAllocated += a1.uint64
     let p = allocShared0(a1 + 8)
     if p == nil:
@@ -495,7 +519,7 @@ when implModule:
     cast[ptr uint64](p)[] = a1.uint64
     return cast[pointer](cast[uint64](p) + 8)
 
-  proc tsCalloc(a1: csize_t; a2: csize_t): pointer {.stdcall.} =
+  proc tsDebugCalloc(a1: csize_t; a2: csize_t): pointer {.stdcall.} =
     let size = a1.uint64 * a2.uint64
     tsAllocated += size
     let p = allocShared0(size + 8)
@@ -505,7 +529,7 @@ when implModule:
     cast[ptr uint64](p)[] = size
     return cast[pointer](cast[uint64](p) + 8)
 
-  proc tsRealloc(a1: pointer; a2: csize_t): pointer {.stdcall.} =
+  proc tsDebugRealloc(a1: pointer; a2: csize_t): pointer {.stdcall.} =
     if a1 == nil:
       return tsMalloc(a2)
 
@@ -523,7 +547,7 @@ when implModule:
     cast[ptr uint64](p)[] = a2.uint64
     return cast[pointer](cast[uint64](p) + 8)
 
-  proc tsFree(a1: pointer) {.stdcall.} =
+  proc tsDebugFree(a1: pointer) {.stdcall.} =
     if a1 == nil:
       return
 
@@ -533,7 +557,7 @@ when implModule:
     deallocShared(original)
 
   proc enableTreesitterMemoryTracking*() =
-    ts.tsSetAllocator(tsMalloc, tsCalloc, tsRealloc, tsFree)
+    ts.tsSetAllocator(tsDebugMalloc, tsDebugCalloc, tsDebugRealloc, tsDebugFree)
 
 iterator query*(query: TSQuery, tree: TSTree, selection: Selection): seq[tuple[node: TSNode, capture: string]] =
   let range = tsRange(tsPoint(selection.first.line, selection.first.column), tsPoint(selection.last.line, selection.last.column))

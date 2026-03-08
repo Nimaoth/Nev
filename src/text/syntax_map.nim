@@ -529,7 +529,6 @@ proc collectInjections(
   # echo &"collectInjections -> {result.len} jobs"
 
 type ParseArgs = object
-  parser: ptr TSParser
   rootLanguage: TSLanguageSnapshot
   oldTree: TSTree
   text: Rope
@@ -640,17 +639,19 @@ proc parseInjections(args: ParseArgs, injections: seq[InjectionJob], outJobs: va
 proc parseTreesitterThread(args: ParseArgs): bool =
   let oldSnapshot {.cursor.} = args.res[]
 
-  if not args.parser[].setLanguage(args.rootLanguage):
-    return false
-
   # var t = startTimer()
   # defer:
   #   echo &"parseTreesitterThread took {t.elapsed.ms} ms"
 
-  args.parser[].setIncludedRanges([])
-  let rootTree = parseTreesitter(args.parser[], args.oldTree, args.text)
-  if rootTree.isNil:
-    return false
+  var rootTree = TSTree()
+  withParser parser:
+    if not parser.setLanguage(args.rootLanguage):
+      return false
+
+    parser.setIncludedRanges([])
+    rootTree = parseTreesitter(parser, args.oldTree, args.text)
+    if rootTree.isNil:
+      return false
 
   var jobs: seq[LayerJob]
   jobs.add LayerJob(
@@ -733,87 +734,84 @@ proc reparseAsync(self: SyntaxMap) {.async.} =
 
   # echo &"reparseAsync lang={self.language.languageId} rope.len={self.currentSnapshot.rope.len}"
 
-  withParser parser:
-    if self.changes.len > 0:
-      self.applyEdits()
-    self.changesAsync.setLen(0)
+  if self.changes.len > 0:
+    self.applyEdits()
+  self.changesAsync.setLen(0)
 
-    while true:
-      if self.currentContentFailedToParse:
-        return
+  while true:
+    if self.currentContentFailedToParse:
+      return
 
-      if not parser.setLanguage(self.language):
-        # echo &"reparseAsync: failed to set language {self.language.languageId}"
-        return
+    let oldLanguage = self.language
+    let rope = self.currentSnapshot.rope
 
-      let oldLanguage = self.language
-      let rope = self.currentSnapshot.rope
+    # Parse root layer
+    let hasOldRoot = self.currentSnapshot.layers.len > 0 and self.currentSnapshot.layers[0].tree.isNotNil
+    # echo &"reparseAsync: parsing root layer lang={self.language.languageId} hasOldTree={hasOldRoot}"
+    let oldRootTree: TSTree = if hasOldRoot:
+      self.currentSnapshot.layers[0].tree.clone()
+    else:
+      TSTree()
+    var newSnapshot = self.currentSnapshot
+    var requestedLanguages: seq[string] = @[]
+    let rootFlowVar = threadpool.spawn parseTreesitterThread(ParseArgs(
+      rootLanguage: self.language.snapshot,
+      oldTree: oldRootTree,
+      text: rope,
+      res: newSnapshot.addr,
+      requestedLanguages: requestedLanguages.addr,
+      highlightQuery: self.highlightQuery,
+      injectionQuery: self.injectionQuery,
+    ))
+    while not rootFlowVar.isReady:
+      await sleepAsync(1.milliseconds)
 
-      # Parse root layer
-      let hasOldRoot = self.currentSnapshot.layers.len > 0 and self.currentSnapshot.layers[0].tree.isNotNil
-      # echo &"reparseAsync: parsing root layer lang={self.language.languageId} hasOldTree={hasOldRoot}"
-      let oldRootTree: TSTree = if hasOldRoot:
-        self.currentSnapshot.layers[0].tree.clone()
-      else:
-        TSTree()
-      parser.setIncludedRanges([])
-      var newSnapshot = self.currentSnapshot
-      var requestedLanguages: seq[string] = @[]
-      let rootFlowVar = threadpool.spawn parseTreesitterThread(ParseArgs(
-        parser: parser.addr,
-        rootLanguage: self.language.snapshot,
-        oldTree: oldRootTree,
-        text: rope,
-        res: newSnapshot.addr,
-        requestedLanguages: requestedLanguages.addr,
-        highlightQuery: self.highlightQuery,
-        injectionQuery: self.injectionQuery,
-      ))
-      while not rootFlowVar.isReady:
-        await sleepAsync(1.milliseconds)
-      let ok = ^rootFlowVar
-      oldRootTree.delete()
+    let ok = ^rootFlowVar
+    oldRootTree.delete()
 
-      if self.loadInjectionLanguage != nil:
-        for language in requestedLanguages:
-          self.loadInjectionLanguage(language)
+    if self.language.isNil:
+      return
 
-      if self.language != oldLanguage:
-        # echo &"reparseAsync: language changed during parse, restarting"
-        # rootTree.delete()
-        self.changes.setLen(0)
-        self.changesAsync.setLen(0)
-        continue
+    if self.loadInjectionLanguage != nil:
+      for language in requestedLanguages:
+        self.loadInjectionLanguage(language)
 
-      if not ok:
-        # echo &"reparseAsync: root parse failed, marking as failed"
-        self.currentContentFailedToParse = true
-        return
-
-      # echo &"reparseAsync: root parse ok, iq={not self.injectionQuery.isNil}"
-
-      self.currentSnapshot = newSnapshot
-      # echo "============ NEW SNAPSHOT FROM PARSE\n", self.currentSnapshot
-      self.currentContentFailedToParse = false
-
-      if self.changesAsync.len == 0:
-        assert self.changes.len == 0
-        self.onParsed.invoke()
-        return
-
-      self.currentContentFailedToParse = false
-      for change in self.changesAsync:
-        for layer in self.currentSnapshot.layers.mitems:
-          if layer.tree.isNotNil:
-            discard layer.tree.edit(change.edit)
-          for r in layer.ranges.mitems:
-            applyEditToRange(r, change.edit)
-        self.currentSnapshot.rope = change.rope
-      self.currentSnapshot.layerIndex = buildLayerIndex(self.currentSnapshot.layers, self.currentSnapshot.rope)
-      # echo "============ NEW SNAPSHOT FROM INTERPOLATE\n", self.currentSnapshot
-      self.changesAsync.setLen(0)
+    if self.language != oldLanguage:
+      # echo &"reparseAsync: language changed during parse, restarting"
+      # rootTree.delete()
       self.changes.setLen(0)
+      self.changesAsync.setLen(0)
+      continue
+
+    if not ok:
+      # echo &"reparseAsync: root parse failed, marking as failed"
+      self.currentContentFailedToParse = true
+      return
+
+    # echo &"reparseAsync: root parse ok, iq={not self.injectionQuery.isNil}"
+
+    self.currentSnapshot = newSnapshot
+    # echo "============ NEW SNAPSHOT FROM PARSE\n", self.currentSnapshot
+    self.currentContentFailedToParse = false
+
+    if self.changesAsync.len == 0:
+      assert self.changes.len == 0
       self.onParsed.invoke()
+      return
+
+    self.currentContentFailedToParse = false
+    for change in self.changesAsync:
+      for layer in self.currentSnapshot.layers.mitems:
+        if layer.tree.isNotNil:
+          discard layer.tree.edit(change.edit)
+        for r in layer.ranges.mitems:
+          applyEditToRange(r, change.edit)
+      self.currentSnapshot.rope = change.rope
+    self.currentSnapshot.layerIndex = buildLayerIndex(self.currentSnapshot.layers, self.currentSnapshot.rope)
+    # echo "============ NEW SNAPSHOT FROM INTERPOLATE\n", self.currentSnapshot
+    self.changesAsync.setLen(0)
+    self.changes.setLen(0)
+    self.onParsed.invoke()
 
 proc reparse*(self: SyntaxMap) =
   if not self.isParsingAsync:
