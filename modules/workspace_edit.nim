@@ -1,6 +1,8 @@
-import misc/[custom_async]
-import nimsumtree/[arc]
+import misc/[custom_async, custom_unicode, rope_utils]
+import nimsumtree/[arc, rope]
 import document_editor, vfs
+
+import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
 from text/language/lsp_types import WorkspaceEdit
 
@@ -11,32 +13,32 @@ proc workspaceEditApplyWorkspaceEdit(editors: DocumentEditorService, vfs: Arc[VF
 
 proc applyWorkspaceEdit*(editors: DocumentEditorService, vfs: Arc[VFS2], wsEdit: WorkspaceEdit): Future[bool] {.async: (raises: []).} = workspaceEditApplyWorkspaceEdit(editors, vfs, wsEdit).await
 
+proc runeCursorToCursor*(rope: Rope, cursor: RuneCursor): Cursor =
+  if cursor.line < 0:
+    return (0, 0)
+
+  if cursor.line >= rope.lines:
+    return rope.endPoint.toCursor
+
+  return (cursor.line, rope.byteOffsetInLine(cursor.line, cursor.column))
+
+proc runeSelectionToSelection*(rope: Rope, cursor: RuneSelection): Selection =
+  return (rope.runeCursorToCursor(cursor.first), rope.runeCursorToCursor(cursor.last))
+
+proc lspRangeToSelection*(rope: Rope, r: lsp_types.Range): Selection =
+  let runeSelection = (
+    (r.start.line, r.start.character.RuneIndex),
+    (r.`end`.line, r.`end`.character.RuneIndex))
+  return rope.runeSelectionToSelection(runeSelection)
+
 when implModule:
   import std/[options, json, tables, uri]
-  import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils]
-  import nimsumtree/[rope]
+  import misc/[util, custom_logger, myjsonutils]
   import document, service, vfs_service
-
-  import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
   import text_component
 
   logCategory "workspace-edit"
-
-  proc runeCursorToCursor*(rope: Rope, cursor: RuneCursor): Cursor =
-    if cursor.line < 0 or cursor.line > rope.lines - 1:
-      return (0, 0)
-
-    return (cursor.line, rope.byteOffsetInLine(cursor.line, cursor.column))
-
-  proc runeSelectionToSelection*(rope: Rope, cursor: RuneSelection): Selection =
-    return (rope.runeCursorToCursor(cursor.first), rope.runeCursorToCursor(cursor.last))
-
-  proc lspRangeToSelection*(rope: Rope, r: lsp_types.Range): Selection =
-    let runeSelection = (
-      (r.start.line, r.start.character.RuneIndex),
-      (r.`end`.line, r.`end`.character.RuneIndex))
-    return rope.runeSelectionToSelection(runeSelection)
 
   proc workspaceEditApplyWorkspaceEdit(editors: DocumentEditorService, vfs: Arc[VFS2], wsEdit: WorkspaceEdit): Future[bool] {.async: (raises: []).} =
     let editors = if editors != nil:
