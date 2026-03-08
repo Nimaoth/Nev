@@ -2301,18 +2301,20 @@ when implModule:
       return
     let treesitter = document.getTreesitterComponent().getOr:
       return
-    if treesitter.currentTree.isNil:
+    let tree = treesitter.syntaxMap.tsTree
+    if tree.isNil:
       return
 
     let query = await treesitter.query("textobjects")
-    if query.isNone or treesitter.currentTree.isNil:
+    let tree2 = treesitter.syntaxMap.tsTree
+    if query.isNone or tree2.isNil:
       return
 
     let endPoint = text.content.endPoint
     var arena = initArena()
 
     var res = newSeq[string]()
-    for match in query.get.matches(treesitter.currentTree.root, visibleRange.tsRange, arena):
+    for match in query.get.matches(tree2.root, visibleRange.tsRange, arena):
       var isDecl = false
       var declRange: Range[Point]
       var nameRange: Range[Point]

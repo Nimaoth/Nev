@@ -17,10 +17,6 @@ include dynlib_export
 
 import diff
 
-{.push warning[Deprecated]:off.}
-import std/[threadpool]
-{.pop.}
-
 import nimsumtree/[buffer, clock, static_array, rope, clone]
 import nimsumtree/sumtree except Cursor, mapIt
 
@@ -170,14 +166,6 @@ declareSettings TextSettings, "text":
 
 type
 
-  TextDocumentChange = object
-    startByte: int
-    oldEndByte: int
-    newEndByte: int
-    startPoint: Point
-    oldEndPoint: Point
-    newEndPoint: Point
-
   TextDocument* = ref object of Document
     languageComponent*: LanguageComponent
     textComponent*: TextComponentImpl
@@ -191,8 +179,6 @@ type
     moveDatabase: MoveDatabase
 
     nextLineIdCounter: int32 = 0
-
-    isParsingAsync*: bool = false
 
     singleLine*: bool = false
     staged*: bool = false
@@ -215,9 +201,6 @@ type
     undoSelections*: Table[Lamport, Selections]
     redoSelections*: Table[Lamport, Selections]
 
-    changes: seq[TextDocumentChange]
-    changesAsync: seq[TextDocumentChange]
-
     configService: ConfigService
     config*: ConfigStore
     createLanguageServer*: bool = true
@@ -232,8 +215,6 @@ type
     diagnosticEndPoints*: seq[DiagnosticEndPoint]
     onDiagnosticsHandles: Table[string, (LanguageServer, Id)]
     diagnosticSnapshots: seq[BufferSnapshot] # todo: reset at appropriate times
-
-    treesitterParserCursor: RopeCursor ## Used during treesitter parsing to avoid constant seeking
 
     checkpoints: Table[TransactionId, seq[string]]
 
@@ -280,7 +261,6 @@ method getStatisticsString*(self: TextDocument): string =
 
     result.add &"Filename: {self.filename}\n"
     result.add &"Lines: {self.numLines}\n"
-    result.add &"Changes: {self.changes.len}\n"
     result.add &"VisibleText: {visibleTextStats}\n"
     result.add &"DeletedText: {deletedTextStats}\n"
     result.add &"Fragment: {fragmentStats}\n"
@@ -337,114 +317,10 @@ proc notifyTextChanged*(self: TextDocument) =
 proc notifyRequestRerender*(self: TextDocument) =
   self.onRequestRerender.invoke()
 
-proc applyTreesitterChanges(self: TextDocument, tree: TSTree, changes: var seq[TextDocumentChange]) =
-  if tree.isNotNil:
-    for change in changes:
-      let edit = (block:
-        match change:
-          Replace(startByte, oldEndByte, newEndByte, startPoint, oldEndPoint, newEndPoint):
-            TSInputEdit(
-              startIndex: startByte,
-              oldEndIndex: oldEndByte,
-              newEndIndex: newEndByte,
-              startPosition: TSPoint(row: startPoint.row.int, column: startPoint.column.int),
-              oldEndPosition: TSPoint(row: oldEndPoint.row.int, column: oldEndPoint.column.int),
-              newEndPosition: TSPoint(row: newEndPoint.row.int, column: newEndPoint.column.int),
-            )
-      )
-
-      discard tree.edit(edit)
-
-  changes.setLen 0
-
-proc parseTreesitterThread(parser: ptr TSParser, oldTree: TSTree, text: sink Rope): TSTree =
-  var ropeCursor = text.cursor()
-  let newTree = parser[].parseCallback(oldTree):
-    proc(byteIndex: int, cursor: Cursor): (ptr char, int) =
-      if byteIndex < ropeCursor.offset:
-        ropeCursor.resetCursor()
-
-      assert not ropeCursor.rope.tree.isNil
-      ropeCursor.seekForward(byteIndex)
-      if ropeCursor.chunk.getSome(chunk):
-        let byteIndexRel = byteIndex - ropeCursor.chunkStartPos
-        return (chunk.chars[byteIndexRel].addr, chunk.chars.len - byteIndexRel)
-
-      return (nil, 0)
-
-  return newTree
-
-proc tsLanguage(self: TextDocument): lent TSLanguage = self.treesitterComponent.tsLanguage
-
-proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
-  self.isParsingAsync = true
-  defer:
-    self.isParsingAsync = false
-
-  if self.tsLanguage.isNotNil:
-    withParser parser:
-      self.applyTreesitterChanges(self.treesitterComponent.currentTree, self.changes)
-      self.changesAsync.setLen(0)
-
-      while true:
-        if self.treesitterComponent.currentContentFailedToParse:
-          # We already tried to parse the current content and it failed, don't try again
-          return
-
-        if not parser.setLanguage(self.tsLanguage):
-          return
-
-        var oldLanguage = self.tsLanguage
-        let oldBufferId = self.buffer.remoteId
-        let oldVersion = self.buffer.version
-        let oldTree: TSTree = if self.treesitterComponent.currentTree.isNotNil:
-          self.treesitterComponent.currentTree.clone()
-        else:
-          TSTree()
-
-        let flowVar = spawn parseTreesitterThread(parser.addr, oldTree, self.rope.clone())
-
-        while not flowVar.isReady:
-          await sleepAsync(1.milliseconds)
-
-        if not self.isInitialized:
-          return
-
-        let newTree = ^flowVar
-
-        oldTree.delete()
-        self.treesitterComponent.currentTree.delete()
-
-        if self.buffer.remoteId != oldBufferId or self.tsLanguage != oldLanguage:
-          newTree.delete()
-          self.changes.setLen(0)
-          self.changesAsync.setLen(0)
-          continue
-
-        self.treesitterComponent.currentTree = newTree
-        self.treesitterComponent.currentContentFailedToParse = self.treesitterComponent.currentTree.isNil
-        self.notifyRequestRerender()
-
-        if self.buffer.version == oldVersion:
-          assert self.changes.len == 0
-          assert self.changesAsync.len == 0
-          return
-
-        self.treesitterComponent.currentContentFailedToParse = false
-        self.applyTreesitterChanges(self.treesitterComponent.currentTree, self.changesAsync)
-        self.changes.setLen(0)
-
-proc reparseTreesitter*(self: TextDocument) =
-  if self.isParsingAsync:
-    return
-
-  asyncSpawn self.reparseTreesitterAsync()
+proc tsLanguage*(self: TextDocument): lent TSLanguage = self.treesitterComponent.tsLanguage
 
 proc tsTree*(self: TextDocument): TsTree =
-  if self.changes.len > 0 or self.treesitterComponent.currentTree.isNil:
-    self.applyTreesitterChanges(self.treesitterComponent.currentTree, self.changes)
-    self.reparseTreesitter()
-  return self.treesitterComponent.currentTree
+  return self.treesitterComponent.syntaxMap.tsTree
 
 proc languageId*(self: TextDocument): string =
   if self.languageComponent != nil:
@@ -473,10 +349,7 @@ proc `content=`*(self: TextDocument, value: sink Rope) =
 
   self.textComponent.initBuffer(self.buffer.timestamp.replicaId, content = value, remoteId = getNextBufferId())
 
-  self.treesitterComponent.currentContentFailedToParse = false
-  self.treesitterComponent.currentTree.delete()
-  self.changes.setLen(0)
-  self.changesAsync.setLen(0)
+  self.treesitterComponent.syntaxMap.resetTree(self.rope)
 
   self.onBufferChanged.invoke (self,)
 
@@ -501,10 +374,7 @@ proc `content=`*(self: TextDocument, value: sink string) =
 
     self.textComponent.initBuffer(content = value[index..^1], remoteId = getNextBufferId())
 
-  self.treesitterComponent.currentContentFailedToParse = false
-  self.treesitterComponent.currentTree.delete()
-  self.changes.setLen(0)
-  self.changesAsync.setLen(0)
+  self.treesitterComponent.syntaxMap.resetTree(self.rope)
 
   self.onBufferChanged.invoke (self,)
 
@@ -530,6 +400,7 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
 
   var ranges = newSeqOfCap[(Range[int], S)](selections.len)
   var newSelections = newSeqOfCap[(int, Selection)](selections.len)
+  var tsChanges = newSeqOfCap[tuple[startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point]](selections.len)
   for i, sortedSelection in sortedSelections:
     var selection = sortedSelection[1]
 
@@ -566,7 +437,7 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
     edits.add (selection, newSelection)
 
     if not self.tsLanguage.isNil:
-      self.addTreesitterChange(oldByteRange[0], oldByteRange[1], newByteRangeEnd, oldPointRange[0], oldPointRange[1], newPointRangeEnd)
+      tsChanges.add (oldByteRange[0], oldByteRange[1], newByteRangeEnd, oldPointRange[0], oldPointRange[1], newPointRangeEnd)
 
     pointDiff = newPointRangeEnd - selection.last.toPoint
     byteDiff = newByteRangeEnd - endByte
@@ -580,6 +451,9 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
 
   let op = self.buffer.edit(ranges)
   self.recordSnapshotForDiagnostics()
+
+  for tsChange in tsChanges:
+    self.addTreesitterChange(tsChange.startByte, tsChange.oldEndByte, tsChange.newEndByte, tsChange.startPoint, tsChange.oldEndPoint, tsChange.newEndPoint)
 
   let last {.cursor.} = self.buffer.history.undoStack[^1]
   if self.nextCheckpoints.len > 0:
@@ -597,7 +471,7 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
   if oldSelections.len > 0:
     self.undoSelections[op.timestamp] = @oldSelections
   self.redoSelections[op.timestamp] = result.mapIt(it.last.toSelection)
-  self.treesitterComponent.currentContentFailedToParse = false
+  self.treesitterComponent.syntaxMap.currentContentFailedToParse = false
 
   if notify:
     self.notifyTextChanged()
@@ -695,8 +569,10 @@ func runeAt*(self: TextDocument, cursor: Cursor): Rune =
   return c.currentRune
 
 proc runeCursorToCursor*(self: TextDocument, cursor: RuneCursor): Cursor =
-  if cursor.line < 0 or cursor.line > self.numLines - 1:
+  if cursor.line < 0:
     return (0, 0)
+  if cursor.line >= self.rope.lines:
+    return self.rope.endPoint.toCursor
 
   return (cursor.line, self.rope.byteOffsetInLine(cursor.line, cursor.column))
 
@@ -752,14 +628,12 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     return
 
   # log lvlInfo, &"loadTreesitterLanguage {prevLanguageId}: Loaded language, apply"
-  self.treesitterComponent.currentContentFailedToParse = false
   self.treesitterComponent.tsLanguage = language.get
-  self.treesitterComponent.currentTree.delete()
 
   # todo: this awaits, check if still current request afterwards
   # todo: allow specifying queries in home and workspace config
   let highlightQueryPath = &"app://languages/{treesitterLanguageName}/queries/highlights.scm"
-  let highlightQuery = language.get.queryFile(self.vfs, "highlight", highlightQueryPath).await
+  let highlightQuery = language.get.queryFile(self.vfs, "highlights", highlightQueryPath).await
   if highlightQuery.isSome:
     if prevLanguageId != self.languageId:
       return
@@ -794,6 +668,12 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   if prevLanguageId != self.languageId:
     return
 
+  let injectionQueryPath = &"app://languages/{treesitterLanguageName}/queries/injections.scm"
+  let injectionQuery = language.get.queryFile(self.vfs, "injections", injectionQueryPath, cacheOnFail = false).await
+  if prevLanguageId != self.languageId:
+    return
+
+  self.treesitterComponent.syntaxMap.setLanguage(language.get, self.treesitterComponent.highlightQuery, injectionQuery.get(nil), self.rope)
   self.notifyRequestRerender()
 
 proc tsQuery*(self: TextDocument, name: string): Future[Option[TSQuery]] {.async.} =
@@ -924,6 +804,9 @@ proc newTextDocument*(
 
   self.treesitterComponent = newTreesitterComponent(self.vfs)
   self.addComponent(self.treesitterComponent)
+  discard self.treesitterComponent.syntaxMap.onParsed.subscribe(proc() =
+    self.notifyRequestRerender()
+  )
 
   self.formattingComponent = newFormattingComponent(services.getService(VFSService).get.vfs2, self.config)
   self.addComponent(self.formattingComponent)
@@ -1331,7 +1214,7 @@ proc setCurrentDiagnostics(self: TextDocument, languageServer: LanguageServer, d
       let runeSelection = (
         (d.`range`.start.line, d.`range`.start.character.RuneIndex),
         (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
-      let selection = self.runeSelectionToSelection(runeSelection)
+      let selection = self.runeSelectionToSelection(runeSelection).normalized
 
       diagnosticsData.currentDiagnostics[i] = language_server_base.Diagnostic(
         selection: selection,
@@ -1670,8 +1553,14 @@ proc updateCursorAfterDelete*(self: TextDocument, location: Cursor, deleted: Sel
   return res.some
 
 proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point) =
-  self.changes.add(TextDocumentChange(startByte: startByte, oldEndByte: oldEndByte, newEndByte: newEndByte, startPoint: startPoint, oldEndPoint: oldEndPoint, newEndPoint: newEndPoint))
-  self.changesAsync.add(TextDocumentChange(startByte: startByte, oldEndByte: oldEndByte, newEndByte: newEndByte, startPoint: startPoint, oldEndPoint: oldEndPoint, newEndPoint: newEndPoint))
+  self.treesitterComponent.syntaxMap.addEdit(TSInputEdit(
+    startIndex: startByte,
+    oldEndIndex: oldEndByte,
+    newEndIndex: newEndByte,
+    startPosition: TSPoint(row: startPoint.row.int, column: startPoint.column.int),
+    oldEndPosition: TSPoint(row: oldEndPoint.row.int, column: oldEndPoint.column.int),
+    newEndPosition: TSPoint(row: newEndPoint.row.int, column: newEndPoint.column.int),
+  ), self.buffer.visibleText)
 
 proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
   var co = oldText.cursorT(Point)

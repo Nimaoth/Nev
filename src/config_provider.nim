@@ -975,15 +975,17 @@ when implModule:
       return settingDescriptionsTemp
     getSettingDescriptions = getSettingDescriptionsImpl
 
+    proc markdown(s: string): string = s
+
     proc generateDocs() =
-      var text = """
-  # List of (most) settings
+      var text = markdown"""
+# List of (most) settings
 
-  For examples and default values see [here](../config/settings.json)
+For examples and default values see [here](../config/settings.json)
 
-  | Key | Type | Default | Description |
-  | ----------- | --- | --- | ------ |
-  """
+| Key | Type | Default | Description |
+| ----------- | --- | --- | ------ |
+"""
 
       var sortedDescriptions = descriptions
       let typeNames = settingToJsonTypeNames

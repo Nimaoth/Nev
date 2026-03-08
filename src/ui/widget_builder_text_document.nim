@@ -766,6 +766,9 @@ proc drawChunk(chunk: DisplayChunk, state: var LineDrawerState, commands: var Re
     of overlay_map.OverlayRenderLocation.Above:
       state.customRendererChunksAbove.add(chunk.diffChunk.inputChunk.inputChunk.inputChunk)
 
+  # buildCommands(commands):
+  #   drawRect(chunkBounds, color(1, 0, 0))
+
   return LineDrawerResult.Continue
 
 proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: var DisplayChunkIterator, line: int): Option[Vec2] =
@@ -884,17 +887,16 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
     let renderBelow = case state.diagnosticsLocation
       of DiagnosticsLocation.Below: true
       of DiagnosticsLocation.LineEnd: false
-      of DiagnosticsLocation.LineEndOrBelow: state.lastPoint.row.int == state.cursorLine
+      of DiagnosticsLocation.LineEndOrBelow: line == state.cursorLine
 
     if renderBelow:
       for diagnosticsData in state.diagnosticsPerLS[].mitems:
-        diagnosticsData.diagnosticsPerLine.withValue(state.lastPoint.row.int, val):
+        diagnosticsData.diagnosticsPerLine.withValue(line, val):
           for i in val[].mitems:
             let i = i
             let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[i]
             let nlIndex = diagnostic.message.find("\n")
-            var maxIndex = if nlIndex != -1: nlIndex else: diagnostic.message.len
-            maxIndex = min(maxIndex, max(((state.bounds.w - state.lineNumberWidth) / state.builder.charWidth).int - 3, 0))
+            var maxIndex = min(diagnostic.message.len, 500)
             var message = "     ■ " & diagnostic.message[0..<maxIndex]
             if maxIndex < diagnostic.message.len:
               message.add "..."
@@ -905,19 +907,19 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
             of lsp_types.DiagnosticSeverity.Information: state.informationColor
             of lsp_types.DiagnosticSeverity.Hint: state.hintColor
             commands.drawText(message, rect(state.lineNumberWidth, height, width, state.builder.textHeight), color, 0.UINodeFlags)
-            height += state.builder.textHeight
+            height += state.builder.textHeight * message.countLines.float
             state.chunkBoundsPerLine[^1].dontCenter = true
     else:
       # Show only the first diagnostic inline at the end of the line; height is not increased
       block lineEndDiag:
         for diagnosticsData in state.diagnosticsPerLS[].mitems:
-          diagnosticsData.diagnosticsPerLine.withValue(state.lastPoint.row.int, val):
+          diagnosticsData.diagnosticsPerLine.withValue(line, val):
             if val[].len == 0:
               continue
             for i in val[]:
               let i = i
               let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[i]
-              if diagnostic.selection.first.line != state.lastPoint.row.int:
+              if diagnostic.selection.first.line != line:
                 continue
               let nlIndex = diagnostic.message.find("\n")
               var maxIndex = if nlIndex != -1: nlIndex else: diagnostic.message.len
@@ -1197,8 +1199,10 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
   proc createIter(): DisplayChunkIterator =
     var highlighter = Highlighter.none
-    if self.document.tsTree.isNotNil and self.document.treesitterComponent.highlightQuery.isNotNil and highlight:
-      highlighter = Highlighter(query: self.document.treesitterComponent.highlightQuery, tree: self.document.tsTree, rainbowParens: rainbowParens).some
+    let sm = self.document.treesitterComponent.syntaxMap
+    if highlight:
+      if sm.snapshot.layers.len > 0:
+        highlighter = Highlighter(snapshot: sm.snapshot.addr, rainbowParens: rainbowParens).some
     var res = self.displayMap.iter(highlighter, builder.theme)
     res.styledChunks.diagnosticEndPoints = self.document.diagnosticEndPoints # todo: don't copy everything here
     if indentGuide:
@@ -1208,8 +1212,10 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
   proc createDiffIter(): DisplayChunkIterator =
     var highlighter = Highlighter.none
-    if self.diffDocument.tsTree.isNotNil and self.diffDocument.treesitterComponent.highlightQuery.isNotNil and highlight:
-      highlighter = Highlighter(query: self.diffDocument.treesitterComponent.highlightQuery, tree: self.diffDocument.tsTree, rainbowParens: rainbowParens).some
+    let sm = self.diffDocument.treesitterComponent.syntaxMap
+    if highlight:
+      if sm.snapshot.layers.len > 0:
+        highlighter = Highlighter(snapshot: sm.snapshot.addr, rainbowParens: rainbowParens).some
     var res = self.diffDisplayMap.iter(highlighter, builder.theme)
     return res
 
