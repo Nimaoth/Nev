@@ -102,6 +102,14 @@
             }
         },
         {
+            "name": "character.special",
+            "scope": "character.special",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#8ed08c"
+            }
+        },
+        {
             "name": "charset",
             "scope": "charset",
             "settings": {
@@ -703,6 +711,57 @@
             "scope": "indentGuide",
             "settings": {
                 "foreground": "#d3869b",
+            }
+        },
+
+
+        {
+            "name": "text.literal",
+            "scope": "text.literal",
+            "settings": {
+                "fontStyle": "",
+                "fontStyle": "",
+                "foreground": "#fe8019",
+            }
+        },
+        {
+            "name": "text.strong",
+            "scope": "text.strong",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00000000",
+            }
+        },
+        {
+            "name": "text.emphasis",
+            "scope": "text.emphasis",
+            "settings": {
+                "fontStyle": "italic",
+                "foreground": "#00000000",
+            }
+        },
+        {
+            "name": "text.uri",
+            "scope": "text.uri",
+            "settings": {
+                "fontStyle": "bold,italic",
+                "foreground": "#0080ff",
+            }
+        },
+        {
+            "name": "text.reference",
+            "scope": "text.reference",
+            "settings": {
+                "fontStyle": "",
+                "foreground": "#f0f000",
+            }
+        },
+        {
+            "name": "text.escape",
+            "scope": "text.escape",
+            "settings": {
+                "fontStyle": "",
+                "foreground": "#00f0f0",
             }
         },
     ]

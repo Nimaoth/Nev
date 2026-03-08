@@ -62,7 +62,7 @@ when implModule:
     self.requestedLanguages.add languageName
     let language = await getTreesitterLanguage(self.vfs, languageName)
     if language.isNone:
-      log lvlError, &"loadInjectionLanguageAsync: Failed to load language '{languageName}'"
+      log lvlWarn, &"loadInjectionLanguageAsync: Failed to load language '{languageName}'"
       return
     let lang = language.get
     # Load highlights and injections queries for the newly loaded language so

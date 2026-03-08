@@ -56,5 +56,10 @@
 ] @punctuation.special
 
 [
+  "|"
+  "-"
+] @punctuation.delimiter
+
+[
   (backslash_escape)
 ] @string.escape

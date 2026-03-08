@@ -10,3 +10,4 @@
 ([(minus_metadata) (plus_metadata)] @injection.content (#set! injection.language "yml"))
 
 ((inline) @injection.content (#set! injection.language "markdown_inline"))
+((pipe_table_cell) @injection.content (#set! injection.language "markdown_inline"))
