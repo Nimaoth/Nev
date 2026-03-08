@@ -35,7 +35,7 @@ when implModule:
   from scripting_api import SshOptions, LineNumbers
   import finder/[finder, previewer]
   import view, dynamic_view, events, config_provider, layout, theme, vterm, input, input_api, channel, selector_popup_builder, vfs, vfs_service
-  import text_editor_component, config_component
+  import text_editor_component, config_component, register
   import types_impl
   import render
 
@@ -1799,38 +1799,44 @@ when implModule:
     var exitCode = int.none
 
     proc handleInput(state: ptr TerminalThreadState) {.async.} =
-      while not state.terminateRequested:
-        await state.handles.inputEventSignal.wait()
-        try:
-          state[].handleInputEvents()
-          if state.dirty:
-            state.dirty = false
-            state.outputChannel[].send OutputEvent(
-              kind: OutputEventKind.TerminalBuffer,
-              buffer: state[].createTerminalBuffer(),
-              sixels: state.sixels,
-              placements: state.kitty.createPlacements(),
-            )
-        except CatchableError as e:
-          echo "async error handle input events ", e.msg
-          discard
+      try:
+        while not state.terminateRequested:
+          await state.handles.inputEventSignal.wait()
+          try:
+            state[].handleInputEvents()
+            if state.dirty:
+              state.dirty = false
+              state.outputChannel[].send OutputEvent(
+                kind: OutputEventKind.TerminalBuffer,
+                buffer: state[].createTerminalBuffer(),
+                sixels: state.sixels,
+                placements: state.kitty.createPlacements(),
+              )
+          except CatchableError as e:
+            echo "async error handle input events 1 ", e.msg
+            discard
+      except CatchableError as e:
+        echo "async error handle input events 2 ", e.msg
 
     proc handleOutput(state: ptr TerminalThreadState) {.async.} =
-      while not state.terminateRequested:
-        await state.readChannel.get.signal.wait()
-        try:
-          state[].handleProcessOutput(state.processStdoutBuffer)
-          if state.dirty:
-            state.dirty = false
-            state.outputChannel[].send OutputEvent(
-              kind: OutputEventKind.TerminalBuffer,
-              buffer: state[].createTerminalBuffer(),
-              sixels: state.sixels,
-              placements: state.kitty.createPlacements(),
-            )
-        except CatchableError as e:
-          echo "async error handle process output ", e.msg
-          discard
+      try:
+        while not state.terminateRequested:
+          await state.readChannel.get.signal.wait()
+          try:
+            state[].handleProcessOutput(state.processStdoutBuffer)
+            if state.dirty:
+              state.dirty = false
+              state.outputChannel[].send OutputEvent(
+                kind: OutputEventKind.TerminalBuffer,
+                buffer: state[].createTerminalBuffer(),
+                sixels: state.sixels,
+                placements: state.kitty.createPlacements(),
+              )
+          except CatchableError as e:
+            echo "async error handle process output 1 ", e.msg
+            discard
+      except CatchableError as e:
+        echo "async error handle process output 2 ", e.msg
 
     chronosDontSkipCallbacksAtStart = true
     if state.useChannels:
@@ -2503,7 +2509,7 @@ when implModule:
     self.layout = self.services.getService(LayoutService).get
     self.config = self.services.getService(ConfigService).get
     self.themes = self.services.getService(ThemeService).get
-  #   self.registers = self.services.getService(Registers).get
+    self.registers = self.services.getService(Registers).get
     self.commands = self.services.getService(CommandService).get
     discard self.themes.onThemeChanged.subscribe proc(theme: Theme) = self.handleThemeChanged(theme)
 
@@ -2541,10 +2547,12 @@ when implModule:
   proc handleClick*(view: TerminalView, button: input.MouseButton, pressed: bool, modifiers: Modifiers, col: int, row: int) =
     view.terminal.sendEvent(InputEvent(kind: InputEventKind.MouseClick, button: button, pressed: pressed, row: row, col: col, modifiers: modifiers))
     view.terminal.lastEventTime = startTimer()
+    view.terminals.layout.tryActivateView(view)
 
   proc handleDrag*(view: TerminalView, button: input.MouseButton, col: int, row: int, modifiers: Modifiers) =
     view.terminal.sendEvent(InputEvent(kind: InputEventKind.MouseMove, row: row, col: col, modifiers: modifiers))
     view.terminal.lastEventTime = startTimer()
+    view.terminals.layout.tryActivateView(view)
 
   proc handleMove*(view: TerminalView, col: int, row: int) =
     view.terminal.sendEvent(InputEvent(kind: InputEventKind.MouseMove, row: row, col: col))
@@ -2719,19 +2727,16 @@ when implModule:
     self.markDirtyBase()
     self.terminals.updateModeEventHandlers(self)
 
-  # todo
-  # proc pasteAsync*(self: TerminalServiceImpl, view: TerminalView, registerName: string): Future[void] {.async.} =
-  #   log lvlInfo, fmt"paste register from '{registerName}'"
-
-  #   var register: Register
-  #   if not self.registers.getRegisterAsync(registerName, register.addr).await:
-  #     return
-
-  #   case register.kind
-  #   of RegisterKind.Text:
-  #     self.handlePaste(view, register.text)
-  #   of RegisterKind.Rope:
-  #     self.handlePaste(view, $register.rope) # todo: send the rope to the terminal thread instead of converting to string
+  proc pasteAsync*(self: TerminalServiceImpl, view: TerminalView, registerName: string): Future[void] {.async.} =
+    log lvlInfo, fmt"paste register from '{registerName}'"
+    var register: Register
+    if not self.registers.getRegisterAsync(registerName, register.addr).await:
+      return
+    case register.kind
+    of RegisterKind.Text:
+      self.handlePaste(view, register.text)
+    of RegisterKind.Rope:
+      self.handlePaste(view, $register.rope)
 
   proc setTerminalMode*(self: TerminalServiceImpl, mode: string) =
     if self.getActiveView().getSome(view):
@@ -2818,9 +2823,9 @@ when implModule:
       self.handleKey(view, INPUT_ENTER, {})
     self.layout.addView(view, slot=options.slot, focus=options.focus)
 
-  # proc pasteTerminal*(self: TerminalServiceImpl, register: string = "") {.expose("terminal").} =
-  #   if self.getActiveView().getSome(view):
-  #     asyncSpawn self.pasteAsync(view, register)
+  proc pasteTerminal*(self: TerminalServiceImpl, register: string = "") =
+    if self.getActiveView().getSome(view):
+      asyncSpawn self.pasteAsync(view, register)
 
   # proc enableTerminalDebugLog*(self: TerminalServiceImpl, enable: bool) {.expose("terminal").} =
   #   if self.getActiveView().getSome(view):
@@ -3096,6 +3101,10 @@ when implModule:
     proc editTerminalBuffer() {.command.} =
       service.editTerminalBuffer()
     registerCommand("edit-terminal-buffer", "...", @[], "void", editTerminalBufferJson)
+
+    proc pasteTerminal(register: string = "") {.command.} =
+      service.pasteTerminal(register)
+    registerCommand("paste", "Paste from register into terminal", @[("register", "string")], "void", pasteTerminalJson)
 
   proc shutdown_module_terminal*() {.cdecl, exportc, dynlib.} =
     let services = getServices()
