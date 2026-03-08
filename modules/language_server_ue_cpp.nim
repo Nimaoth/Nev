@@ -22,23 +22,28 @@
 #     `class X : ClassName` patterns
 #   - Workspace symbols: merged from clangd + angel-lsp
 
-import std/[options, json, strutils]
-import nimsumtree/arc
-import misc/[custom_logger, util, event, custom_async, response, rope_utils, jsonex]
-import text/language/[language_server_base, lsp_types]
-import service, event_service, language_server_dynamic, document_editor, config_provider
-import language_server_lsp/language_server_lsp, language_server_regex
+import language_server_dynamic
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-proc getLanguageServerUECpp*(): LanguageServerDynamic {.rtl, gcsafe, raises: [].}
+when defined(appLspUeCpp):
+  proc getLanguageServerUECpp*(): LanguageServerDynamic {.rtl, gcsafe, raises: [].}
 
-when implModule:
-  import nimsumtree/rope
+else:
+  static:
+    echo "DONT build lsp ue cpp"
+
+when implModule and defined(appLspUeCpp):
+  import std/[options, json, strutils]
+  import nimsumtree/[arc, rope]
+  import misc/[custom_logger, util, event, custom_async, response, rope_utils, jsonex]
   import workspaces/workspace
   import vfs, vfs_service
   import document, language_server_component, config_component, language_component, move_component, text_component
+  import language_server_lsp/language_server_lsp, language_server_regex
+  import service, event_service, document_editor, config_provider
+  import text/language/[language_server_base, lsp_types]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   logCategory "language-server-ue-cpp"
 

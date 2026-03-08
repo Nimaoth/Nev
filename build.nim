@@ -240,7 +240,7 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
     for (name, m) in modules.pairs:
       let path = m.path.replace("\\", "/")
       imports.add &"import \"../{path}\"\n"
-      inits.add &"  init_module_{name}()\n"
+      inits.add &"  when declared(init_module_{name}): init_module_{name}()\n"
       deinits.add &"  when declared(shutdown_module_{name}): shutdown_module_{name}()\n"
 
     if not dry:

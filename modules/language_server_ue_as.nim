@@ -12,19 +12,25 @@
 #     with clangd results filtered for generated files; raw and resolved forms
 #   - Symbol resolution: routes to angel-lsp for .as files, clangd otherwise
 
-import std/[options, json, strutils]
-import nimsumtree/[arc, rope]
-import misc/[custom_logger, util, event, custom_async, response, rope_utils, jsonex]
-import text/language/[language_server_base, lsp_types]
-import service, event_service, language_server_dynamic, document_editor, config_provider
-import language_server_lsp/language_server_lsp, language_server_regex
+import language_server_dynamic
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-proc getLanguageServerUEAs*(): LanguageServerDynamic {.rtl, gcsafe, raises: [].}
+when defined(appLspUeAs):
+  proc getLanguageServerUEAs*(): LanguageServerDynamic {.rtl, gcsafe, raises: [].}
 
-when implModule:
+else:
+  static:
+    echo "DONT build lsp ue as"
+
+when implModule and defined(appLspUeAs):
+  import std/[options, json, strutils]
+  import nimsumtree/[arc, rope]
+  import misc/[custom_logger, util, event, custom_async, response, rope_utils, jsonex]
+  import text/language/[language_server_base, lsp_types]
+  import service, event_service, document_editor, config_provider
+  import language_server_lsp/language_server_lsp, language_server_regex
   import workspaces/workspace
   import vfs, vfs_service
   import document, language_server_component, config_component, language_component, move_component, text_component
