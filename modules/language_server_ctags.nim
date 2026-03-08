@@ -47,6 +47,7 @@ type
     workspaceSymbols: seq[Symbol]
 
 when implModule:
+  import std/sugar
   import language_server_component, config_component, move_component, text_component, treesitter_component, language_component
 
   proc c_malloc*(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>".}
@@ -249,11 +250,16 @@ when implModule:
         self.importMap.withValue(f, paths):
           for path in paths[]:
             importedFilePaths.incl path
-            maybeSleep()
 
     var res: seq[CompletionItem] = newSeqOfCap[lsp_types.CompletionItem](total)
-    for (path, file) in self.files.pairs:
+    let paths = collect:
+      for k in self.files.keys:
+        k
+    for path in paths:
       maybeSleep()
+      if path notin self.files:
+        continue
+      let file {.cursor.} = self.files[path]
 
       res.add file.moduleCompletions
       if importedFilePaths.len > 0 and not importedFilePaths.contains(path):
