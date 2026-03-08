@@ -1031,4 +1031,9 @@
             },
         },
     },
+
+    "unsaved": {
+        "interval": 60,
+        "behaviour": "none",
+    }
 }

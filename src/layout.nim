@@ -142,11 +142,14 @@ when implModule:
     log lvlError, &"Missing or invalid id for {config}"
     return nil
 
-  proc registerView*(self: LayoutService, view: View) =
+  proc registerView*(self: LayoutService, view: View, last = true) =
     assert view != nil
     let self = self.LayoutServiceImpl
     if view notin self.mAllViews:
-      self.mAllViews.incl view
+      if last:
+        self.mAllViews.add view
+      else:
+        self.mAllViews.insert view, 0
       discard view.onMarkedDirty.subscribe () => self.platform.requestRender()
 
   proc getOrCreateView(self: LayoutService, config: JsonNode): View =
@@ -345,11 +348,12 @@ when implModule:
     self.addViewFactory "editor", proc(config: JsonNode): View {.raises: [ValueError].} =
       type Config = object
         id: Id
+        documentId: Option[Id]
         path: string
         state: JsonNode
       let config = config.jsonTo(Config, Joptions(allowExtraKeys: true, allowMissingKeys: true))
 
-      let document = self.editors.getOrOpenDocument(config.path).getOr:
+      let document = self.editors.getOrOpenDocument(config.path, id = config.documentId).getOr:
         log(lvlError, fmt"Failed to restore file '{config.path}' from session")
         return nil
 
@@ -483,14 +487,13 @@ when implModule:
   proc editorViewDisplay(self: EditorView): string = self.document.filename
 
   proc editorViewSaveState(self: EditorView): JsonNode =
-    if self.document.filename == "":
-      return nil
     if not EditorSettings.new(self.editor.config).saveInSession.get(true):
       return nil
 
     result = newJObject()
     result["kind"] = self.kind.toJson
     result["id"] = self.id.toJson
+    result["documentId"] = self.document.uniqueId.toJson
     result["path"] = self.document.filename.toJson
     result["state"] = self.editor.getStateJson()
 

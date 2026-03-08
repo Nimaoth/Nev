@@ -60,7 +60,7 @@ when implModule:
       return
 
     let tableQuery = await language.query("markdown_table", "(pipe_table) @table")
-    if tableQuery.isNone:
+    if tableQuery.isNone or self.owner.isNil or editor.isNil or editor.currentDocument.isNil:
       return
 
     let syntaxMap = treesitter.syntaxMap.snapshot

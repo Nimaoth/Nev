@@ -177,6 +177,8 @@ proc nameImpl*(self: Arc[VFS2]): string {.gcsafe, raises: [].} =
   else:
     &"VFS({self.get.prefix})"
 
+proc name*(self: Arc[VFS2]): string {.gcsafe, raises: [].} = self.nameImpl
+
 proc normalizeImpl*(self: Arc[VFS2], path: string): string {.gcsafe, raises: [].} =
   if self.get.normalizeImpl != nil:
     self.get.normalizeImpl(self, path)

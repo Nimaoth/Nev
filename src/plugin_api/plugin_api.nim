@@ -357,7 +357,7 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin, state
   )
   if self.host.terminals != nil:
     let view = self.host.terminals.createTerminalView(instanceData.get.stdin, instanceData.get.stdout, options)
-    self.host.layout.registerView(view)
+    self.host.layout.registerView(view, last = false)
 
   return instance
 

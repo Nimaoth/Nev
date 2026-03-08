@@ -314,7 +314,7 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
 
   self.builder = newCellBuilder(idNone().LanguageId)
 
-method save*(self: ModelDocument, filename: string = "", app: bool = false) =
+method save*(self: ModelDocument, filename: string = "", app: bool = false): Future[void] {.async: (raises: []).} =
   self.filename = if filename.len > 0: filename else: self.filename
   if self.filename.len == 0:
     log lvlError, &"save: Missing filename"
@@ -324,7 +324,7 @@ method save*(self: ModelDocument, filename: string = "", app: bool = false) =
   let serialized = $self.model.toJson
 
   if self.workspace.getSome(ws):
-    asyncSpawn ws.saveFile(self.filename, serialized)
+    await ws.saveFile(self.filename, serialized)
   elif self.appFile:
     self.fs.saveApplicationFile(self.filename, serialized)
   else:

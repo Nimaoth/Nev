@@ -12,7 +12,7 @@ import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
 import service, layout, session, command_service, toast, plugin_service
-
+import event_service
 import nimsumtree/[rope]
 
 import misc/async_process
@@ -1055,6 +1055,9 @@ proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
 proc saveAppState*(self: App) {.expose("editor").} =
   var state = EditorState()
 
+  let eventBus = getServices().getServiceChecked(EventService)
+  eventBus.emit(&"app/shutdown", "")
+
   if self.backend == api.Backend.Terminal:
     state.fontSize = self.loadedFontSize
     state.lineDistance = self.loadedLineDistance
@@ -1210,7 +1213,7 @@ proc writeFile*(self: App, path: string = "", appFile: bool = false) {.expose("e
 
   if self.getActiveEditor().getSome(editor) and editor.getDocument().isNotNil:
     try:
-      editor.getDocument().save(path, appFile)
+      discard editor.getDocument().save(path, appFile)
     except CatchableError:
       log(lvlError, fmt"Failed to write file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())

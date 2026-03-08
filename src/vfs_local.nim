@@ -688,23 +688,67 @@ proc vfsLocalWrite*(self: Arc[VFS2], path: string, content: sink RopeSlice[int])
 
 proc vfsLocalDelete*(self: Arc[VFS2], path: string): Future[bool] {.gcsafe, async: (raises: []).} =
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
-  discard
+  if not path.isAbsolute:
+    return false
+
+  logScope lvlInfo, &"[deleteFile] '{path}'"
+  if dirExists(path):
+    try:
+      removeDir(path)
+      return true
+    except:
+      return false
+  return tryRemoveFile(path)
 
 proc vfsLocalCreateDir*(self: Arc[VFS2], path: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
-  discard
+  if not path.isAbsolute:
+    raise newException(IOError, &"Path not absolute '{path}'")
+
+  try:
+    createDir(path)
+  except:
+    raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
 proc vfsLocalGetFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.gcsafe, async: (raises: []).} =
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
-  discard
+  if fileExists(path):
+    return FileKind.File.some
+  if dirExists(path):
+    return FileKind.Directory.some
+
+  return FileKind.none
 
 proc vfsLocalGetFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.gcsafe, async: (raises: []).} =
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
-  discard
+  try:
+    let permissions = path.getFilePermissions()
+    # log lvlInfo, &"[isFileReadOnly] Permissions for '{path}': {permissions}"
+    return FileAttributes(writable: fpUserWrite in permissions, readable: fpUserRead in permissions).some
+  except:
+    return FileAttributes.none
 
 proc vfsLocalSetFileAttributes*(self: Arc[VFS2], path: string, attributes: FileAttributes): Future[void] {.gcsafe, async: (raises: [IOError]).} =
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
-  discard
+  try:
+    var permissions = path.getFilePermissions()
+
+    if attributes.writable:
+      permissions.incl {fpUserWrite}
+    else:
+      permissions.excl {fpUserWrite}
+
+    if attributes.readable:
+      permissions.incl {fpUserRead}
+    else:
+      permissions.excl {fpUserRead}
+
+    log lvlInfo, fmt"Try to change file permissions of '{path}' to {permissions}"
+    path.setFilePermissions(permissions)
+
+  except:
+    raise newException(IOError, fmt"Failed to change file permissions of '{path}': " & getCurrentExceptionMsg(), getCurrentException())
+
 {.pop.}
 
 proc vfsLocalGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).} =
@@ -743,7 +787,12 @@ proc vfsLocalGetVFS*(self: Arc[VFS2], path: openArray[char], maxDepth: int = int
 
 proc vfsLocalCopyFile*(self: Arc[VFS2], src: string, dest: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
-  discard
+  try:
+    let dir = dest.splitPath.head
+    createDir(dir)
+    copyFileWithPermissions(src, dest)
+  except Exception as e:
+    raise newException(IOError, &"Failed to copy file '{src}' to '{dest}': {e.msg}", e)
 
 proc vfsLocalNormalize*(self: Arc[VFS2], path: string): string {.gcsafe, raises: [].} =
   # let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)

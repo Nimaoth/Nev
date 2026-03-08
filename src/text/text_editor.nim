@@ -402,7 +402,7 @@ func serviceName*(_: typedesc[TextDocumentEditorService]): string = "TextDocumen
 addBuiltinService(TextDocumentEditorService, DocumentEditorService)
 
 proc canOpenFile(self: TextDocumentFactory, path: string): bool
-proc createDocument(self: TextDocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document
+proc createDocument(self: TextDocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil, id = Id.none): Document
 proc canEditDocument*(self: TextDocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool
 proc createEditor*(self: TextDocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor
 
@@ -412,7 +412,7 @@ method init*(self: TextDocumentEditorService): Future[Result[void, ref Catchable
   editors.addDocumentFactory(TextDocumentFactory(
     kind: "text",
     canOpenFileImpl: proc(self: DocumentFactory, path: string): bool {.gcsafe, raises: [].} = canOpenFile(self.TextDocumentFactory, path),
-    createDocumentImpl: proc(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document {.gcsafe, raises: [].} = createDocument(self.TextDocumentFactory, services, path, load, options),
+    createDocumentImpl: proc(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil, id = Id.none): Document {.gcsafe, raises: [].} = createDocument(self.TextDocumentFactory, services, path, load, options, id),
   ))
   editors.addDocumentEditorFactory(TextDocumentEditorFactory(
     canEditDocumentImpl: proc(self: DocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool {.gcsafe, raises: [].} = canEditDocument(self.TextDocumentEditorFactory, document, options),
@@ -423,14 +423,14 @@ method init*(self: TextDocumentEditorService): Future[Result[void, ref Catchable
 proc canOpenFile(self: TextDocumentFactory, path: string): bool =
   return true
 
-proc createDocument(self: TextDocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document =
+proc createDocument(self: TextDocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil, id = Id.none): Document =
   var createLanguageServer = true
   if options != nil and options.kind == JObject:
     try:
       createLanguageServer = options["createLanguageServer"].jsonTo(bool)
     except CatchableError:
       discard # todo
-  return newTextDocument(services, path, app=false, load=load, createLanguageServer=createLanguageServer)
+  return newTextDocument(services, path, app=false, load=load, createLanguageServer=createLanguageServer, id = id)
 
 proc canEditDocument*(self: TextDocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool =
   return document of TextDocument
@@ -1154,7 +1154,36 @@ proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) {.raises: 
 proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor.text".} =
   self.document.enableAutoReload(enabled)
 
-proc setLanguage(self: TextDocumentEditor, language: string) {.expose: "editor.text".} =
+proc setLanguageAsync(self: TextDocumentEditor) {.async.} =
+  var builder = SelectorPopupBuilder()
+  builder.scope = "text-languages".some
+  builder.scaleX = 0.85
+  builder.scaleY = 0.8
+
+  let languages = self.config.get("lang")
+  if languages.kind != JObject:
+    return
+
+  var res = newSeq[FinderItem]()
+  for language in languages.fields.keys:
+    res.add FinderItem(
+      displayName: language,
+    )
+
+  let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
+  builder.finder = finder.some
+
+  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    if self.document.isNotNil:
+      self.document.languageId = item.displayName
+    true
+
+  discard self.layout.pushSelectorPopup(builder)
+
+proc changeLanguage(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncSpawn self.setLanguageAsync()
+
+proc setLanguage(self: TextDocumentEditor, language: string = "") {.expose: "editor.text".} =
   self.document.languageId = language
 
 proc getFileName*(self: TextDocumentEditor): string =
@@ -2630,7 +2659,7 @@ proc checkoutFileAsync*(self: TextDocumentEditor, saveAfterwards: bool = false) 
   log lvlInfo, &"Checkout result: {res}"
 
   self.document.setReadOnly(self.vfs.getFileAttributes(path).await.mapIt(not it.writable).get(false))
-  self.document.save()
+  asyncSpawn self.document.save()
   self.markDirty()
 
 proc checkoutFile*(self: TextDocumentEditor, saveAfterwards: bool = false) {.expose("editor.text").} =
