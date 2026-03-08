@@ -708,12 +708,14 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
     self.handleLanguageServerAttached(self.document, ls)
 
   if self.document.createLanguageServer:
-    self.completionEngine.addProvider newCompletionProviderSnippet(self.config, self.document)
-      .withMergeStrategy(MergeStrategy(kind: TakeAll))
-      .withPriority(1)
-    self.completionEngine.addProvider newCompletionProviderDocument(self.document)
-      .withMergeStrategy(MergeStrategy(kind: FillN, min: 5, max: 20))
-      .withPriority(0)
+    if self.config.get("text.completion.document.snippet", true):
+      self.completionEngine.addProvider newCompletionProviderSnippet(self.config, self.document)
+        .withMergeStrategy(MergeStrategy(kind: TakeAll))
+        .withPriority(1)
+    if self.config.get("text.completion.document.enable", true):
+      self.completionEngine.addProvider newCompletionProviderDocument(self.document)
+        .withMergeStrategy(MergeStrategy(kind: FillN, min: 5, max: 20))
+        .withPriority(0)
 
   self.onDocumentChanged.invoke((oldDocument.Document,))
   self.handleDocumentChanged()
