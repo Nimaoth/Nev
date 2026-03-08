@@ -2,20 +2,22 @@ import std/[options, tables]
 import misc/[custom_async]
 import component
 import text/treesitter_types
+import text/syntax_map
 
 export component
 export treesitter_types
+export syntax_map
 
 include dynlib_export
 
 type
   TreesitterComponent* = ref object of Component
     tsLanguage*: TSLanguage
-    currentTree*: TSTree
     highlightQuery*: TSQuery
     textObjectsQuery*: TSQuery
     errorQuery*: TSQuery
     tsQueries*: Table[string, Option[TSQuery]]
+    syntaxMap*: SyntaxMap
 
 # DLL API
 var TreesitterComponentId* {.apprtl.}: ComponentTypeId
@@ -29,7 +31,7 @@ proc query*(self: TreesitterComponent, name: string): Future[Option[TSQuery]] = 
 # Implementation
 when implModule:
   import std/[strformat]
-  import misc/[util, custom_logger]
+  import misc/[util, custom_logger, array_set]
   import text/custom_treesitter
   import vfs
 
@@ -40,7 +42,7 @@ when implModule:
   type
     TreesitterComponentImpl* = ref object of TreesitterComponent
       vfs: VFS
-      currentContentFailedToParse*: bool
+      requestedLanguages: seq[string]
 
   proc clear*(self: TreeSitterComponent) =
     let self = self.TreesitterComponentImpl
@@ -48,20 +50,40 @@ when implModule:
     self.highlightQuery = nil
     self.textObjectsQuery = nil
     self.errorQuery = nil
-    self.currentContentFailedToParse = false
     self.tsLanguage = nil
-    if not self.currentTree.isNil:
-      self.currentTree.delete()
+    self.syntaxMap.clear()
 
   proc getTreesitterComponent*(self: ComponentOwner): Option[TreesitterComponent] {.gcsafe, raises: [].} =
     return self.getComponent(TreesitterComponentId).mapIt(it.TreesitterComponent)
 
+  proc loadInjectionLanguageAsync(self: TreesitterComponentImpl, languageName: string) {.async.} =
+    if languageName in self.requestedLanguages:
+      return
+    self.requestedLanguages.add languageName
+    let language = await getTreesitterLanguage(self.vfs, languageName)
+    if language.isNone:
+      log lvlError, &"loadInjectionLanguageAsync: Failed to load language '{languageName}'"
+      return
+    let lang = language.get
+    # Load highlights and injections queries for the newly loaded language so
+    # subsequent parses can use them directly from lang.queries.
+    let highlightsPath = &"app://languages/{languageName}/queries/highlights.scm"
+    discard await lang.queryFile(self.vfs, "highlights", highlightsPath, cacheOnFail = false)
+    let injectionsPath = &"app://languages/{languageName}/queries/injections.scm"
+    discard await lang.queryFile(self.vfs, "injections", injectionsPath, cacheOnFail = false)
+    # Retrigger parsing now that the language (and its queries) are available
+    self.syntaxMap.reparse()
+
   proc newTreesitterComponent*(vfs: VFS): TreesitterComponentImpl =
-    return TreesitterComponentImpl(
+    let sm = newSyntaxMap()
+    let comp = TreesitterComponentImpl(
       typeId: TreesitterComponentId,
-      currentTree: TSTree(),
+      syntaxMap: sm,
       vfs: vfs,
     )
+    sm.loadInjectionLanguage = proc(languageName: string) {.gcsafe, raises: [].} =
+      asyncSpawn comp.loadInjectionLanguageAsync(languageName)
+    return comp
 
   proc treesitterComponentQuery*(self: TreesitterComponent, name: string): Future[Option[TSQuery]] {.async.} =
     let self = self.TreesitterComponentImpl

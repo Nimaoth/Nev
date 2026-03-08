@@ -1619,9 +1619,10 @@ proc printTreesitterTree*(self: TextDocumentEditor) {.expose("editor.text").} =
     log lvlError, "No tree available."
     return
 
-  let tree = self.document.tsTree
+  for layer in self.document.treesitterComponent.syntaxMap.snapshot.layers:
+    let tree = layer.tree
 
-  log lvlInfo, $tree.root
+    log lvlInfo, $tree.root
 
 proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.document.tsTree.isNil:
@@ -1629,11 +1630,16 @@ proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.expose("editor.
     return
 
   let selectionRange = self.selection.tsRange
-  let node = self.document.tsTree.root.descendantForRange(selectionRange)
+  let byteIndex = self.document.rope.toOffset(selectionRange.last.toPoint)
+  var message = ""
+  for tree in self.document.treesitterComponent.syntaxMap.snapshot.treesOverlapping(byteIndex...byteIndex):
+    let node = tree.root.descendantForRange(selectionRange)
+    message.add $node
+    message.add "\n"
 
   if self.services.getService(ToastService).getSome(toasts):
-    toasts.showToast("Treesitter tree", $node, "info")
-  log lvlInfo, $node
+    toasts.showToast("Treesitter tree", message, "info")
+  log lvlInfo, message
 
 # todo
 proc selectParentCurrentTs*(self: TextDocumentEditor, includeAfter: bool = true) {.expose("editor.text").} =

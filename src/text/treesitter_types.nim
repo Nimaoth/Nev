@@ -1,4 +1,4 @@
-import std/[tables, options]
+import std/[tables, options, strformat]
 import misc/[custom_async, array_view, arena]
 import treesitter/api as ts
 
@@ -10,6 +10,13 @@ type TSLanguage* = ref object
   impl*: ptr ts.TSLanguage
   queries*: Table[string, Option[TSQuery]]
   queryFutures*: Table[string, Future[Option[TSQuery]]]
+
+type TSLanguageSnapshot* = object
+  languageId*: string
+  impl*: ptr ts.TSLanguage
+  queries*: Table[string, Option[TSQuery]]
+
+proc snapshot*(language: TSLanguage): TSLanguageSnapshot = TSLanguageSnapshot(languageId: language.languageId, impl: language.impl, queries: language.queries)
 
 type TSParser* = object
   impl*: ptr ts.TSParser
@@ -43,6 +50,8 @@ type TSPoint* = object
 type TSRange* = object of RootObj
   first*: TSPoint
   last*: TSPoint
+  startByte*: int
+  endByte*: int
 
 type TSInputEdit* = object
   startIndex*: int
@@ -72,6 +81,9 @@ func `=destroy`(t: TsTree) {.raises: [].} = discard
 func setLanguage*(self: TSParser, language: TSLanguage): bool =
   return ts.tsParserSetLanguage(self.impl, language.impl)
 
+func setLanguage*(self: TSParser, language: TSLanguageSnapshot): bool =
+  return ts.tsParserSetLanguage(self.impl, language.impl)
+
 func isNil*(self: TSParser): bool = self.impl.isNil
 func isNil*(self: TSTree): bool = self.impl.isNil
 
@@ -95,7 +107,7 @@ proc deinit*(self: TSQuery) =
   ts.tsQueryDelete(self.impl)
 
 when defined(mallocImport):
-  proc c_free(p: pointer): void {.importc: "host_free", header: "<stdlib.h>", used.}
+  proc c_free(p: pointer): void {.importc: "host_free", dynlib: "nev.exe", cdecl.}
 else:
   proc c_free(p: pointer): void {.importc: "free", header: "<stdlib.h>", used.}
 
@@ -111,7 +123,8 @@ proc startPoint*(node: TSNode): TSPoint =
 proc endPoint*(node: TSNode): TSPoint =
   let point = node.impl.tsNodeEndPoint
   return TSPoint(row: point.row.int, column: point.column.int)
-proc getRange*(node: TSNode): TSRange = TSRange(first: node.startPoint, last: node.endPoint)
+proc getRange*(node: TSNode): TSRange =
+  TSRange(first: node.startPoint, last: node.endPoint, startByte: node.startByte, endByte: node.endByte)
 proc tsPoint*(line: int, column: int): TSPoint = TSPoint(row: line, column: column)
 proc tsRange*(first: TSPoint, last: TSPoint): TSRange = TSRange(first: first, last: last)
 
@@ -292,3 +305,17 @@ proc predicatesForPattern*(self: TSQuery, patternIndex: int, arena: var Arena): 
       predicateName = ""
       predicateArgs.setLen 0
       argIndex = 0
+
+proc setIncludedRanges*(self: TSParser, ranges: openArray[TSRange]) =
+  if ranges.len == 0:
+    discard ts.tsParserSetIncludedRanges(self.impl, nil, 0)
+  else:
+    var cRanges = newSeqOfCap[ts.TSRange](ranges.len)
+    for r in ranges:
+      cRanges.add ts.TSRange(
+        startPoint: r.first.toTsPoint,
+        endPoint: r.last.toTsPoint,
+        startByte: r.startByte.uint32,
+        endByte: r.endByte.uint32,
+      )
+    discard ts.tsParserSetIncludedRanges(self.impl, cRanges[0].addr, cRanges.len.uint32)

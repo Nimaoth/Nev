@@ -100,7 +100,7 @@ For examples and default values see [here](../config/settings.json)
 | `text.signature-help-move` | string | "(ts 'call.inner') (overlapping) (last)" | Which move to use to find the beginning of the argument list when showing signature help. |
 | `text.signature-help-trigger-chars` | (string \| string[])[] | ["("] | Which characters trigger signature help when inserted. |
 | `text.signature-help-trigger-on-edit-in-args` | bool | true | Trigger signature help when editing inside an argument list, as defined by 'signature-help-move' |
-| `text.signs.max-width` | int \| null | 2 | If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width. |
+| `text.signs.max-width` | int | 2 | If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width. |
 | `text.signs.show` | "auto" \| "yes" \| "no" \| "number" | "number" | Defines how the sign column is displayed. - auto: Signs are next to line numbers, width is based on amount of signs in a line. - yes: Signs are next to line numbers and sign column is always visible. Width is defined in `max-width` - no: Don't show the sign column - number: Show signs instead of the line number, no extra sign column. |
 | `text.single-click-command` | string | "" | Command to run after single clicking on some text. |
 | `text.single-click-command-args` | any | [] | Arguments to the command which is run when single clicking on some text. |
@@ -120,6 +120,7 @@ For examples and default values see [here](../config/settings.json)
 | `ui.background.transparent` | bool | false | If true the background is transparent. |
 | `ui.cursor-trail-length` | int | 2 | How long the cursor trail is. Set to 0 to disable cursor trail. |
 | `ui.cursor-trail-speed` | float | 100.0 | How fast to interpolate the cursor trail position when moving the cursor. Higher means faster. |
+| `ui.diagnostics-location` | "line-end" \| "below" \| "line-end-or-below" | "line-end" | Where diagnostics are displayed relative to their source line. "below" renders them on a separate line below. "line-end" renders the first diagnostic inline at the end of the line. "line-end-or-below" renders below on the cursor line, at line-end elsewhere (default). |
 | `ui.font-family` | string | "app://fonts/DejaVuSansMono.ttf" | Full path to regular font file. |
 | `ui.font-family-bold` | string | "app://fonts/DejaVuSansMono-Bold.ttf" | Full path to bold font file. |
 | `ui.font-family-bold-italic` | string | "app://fonts/DejaVuSansMono-BoldOblique.ttf" | Full path to bold italic font file. |
