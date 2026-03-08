@@ -12,8 +12,9 @@
 #     with clangd results filtered for generated files; raw and resolved forms
 #   - Symbol resolution: routes to angel-lsp for .as files, clangd otherwise
 
-import std/[options, json]
-import misc/[custom_logger, util, event, custom_async, response, rope_utils]
+import std/[options, json, strutils]
+import nimsumtree/[arc, rope]
+import misc/[custom_logger, util, event, custom_async, response, rope_utils, jsonex]
 import text/language/[language_server_base, lsp_types]
 import service, event_service, language_server_dynamic, document_editor, config_provider
 import language_server_lsp/language_server_lsp, language_server_regex
@@ -21,7 +22,11 @@ import language_server_lsp/language_server_lsp, language_server_regex
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
+proc getLanguageServerUEAs*(): LanguageServerDynamic {.rtl, gcsafe, raises: [].}
+
 when implModule:
+  import workspaces/workspace
+  import vfs, vfs_service
   import document, language_server_component, config_component, language_component, move_component, text_component
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   logCategory "language-server-ue-as"
@@ -32,10 +37,12 @@ when implModule:
       config: ConfigStore
       documents: DocumentEditorService
       eventBus: EventService
-      clangdDiagnosticsHandle: Id
+      angelLsDiagnosticsHandle: Id
       clangd: LanguageServerDynamic
       angelLs: LanguageServerDynamic
       regexLs: LanguageServerRegex
+      vfs*: Arc[VFS2]
+      workspace*: Workspace
 
   proc getClangd(self: LanguageServerDynamic): Future[Option[LanguageServerDynamic]] {.async.} =
     let self = self.LanguageServerUEAs
@@ -48,6 +55,11 @@ when implModule:
     result = await getOrCreateLanguageServerLSP("angel-lsp")
     if result.isSome and result.get != self.angelLs:
       self.angelLs = result.get
+      if self.angelLs != nil:
+        self.angelLs.onDiagnostics.unsubscribe(self.angelLsDiagnosticsHandle)
+      self.angelLs = result.get
+      self.angelLsDiagnosticsHandle = self.angelLs.onDiagnostics.subscribe proc(params: lsp_types.PublicDiagnosticsParams) =
+        self.onDiagnostics.invoke params
 
   proc symbolNameMatches(symbolName: string, wordText: string): bool =
     let baseName = symbolName.split('(')[0].replace("::", ".")
@@ -89,13 +101,68 @@ when implModule:
           res.add Definition(filename: sym.path)
     return res
 
-  proc ueGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
-    let angelLs = (await self.getAngelLs()).getOr: return @[]
-    let res = await angelLs.getDefinition(filename, location)
-    if res.len > 0:
-      return res
+  proc getDefinitionCppRegex*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+    ## Searches C++ header files in the workspace for declarations matching the
+    ## word under the cursor. Uses different regexes depending on the kind of
+    ## symbol: function, type/class, or field/variable.
+    let self = self.LanguageServerUEAs
 
-    return await self.getDefinitionCpp(filename, location)
+    let doc = self.documents.getDocumentByPath(filename).getOr:
+      return @[]
+    let moves = doc.getMoveComponent().getOr:
+      return @[]
+    let text = doc.getTextComponent().getOr:
+      return @[]
+    let config = doc.getConfigComponent().getOr:
+      return @[]
+
+    let wordRange = moves.applyMove(location.toSelection.toRange, "language-word")
+    let wordText = text.content(wordRange)
+    if wordText.len == 0:
+      return @[]
+
+    let nextChar = text.content(wordRange.b...wordRange.b, inclusiveEnd = true)
+    let prevCharCursor = if wordRange.a.column > 0: point(wordRange.a.row, wordRange.a.column - 1) else: wordRange.a
+    let prevChar = text.content(prevCharCursor...prevCharCursor, inclusiveEnd = true)
+    let isType = wordText.len >= 2 and wordText[0].isUpperAscii and wordText[1].isUpperAscii and wordText[0] in {'F', 'T', 'U', 'A', 'E', 'I'}
+
+    let regexTemplate = if nextChar == "(":
+      config.get("lsp.ue-as.definition-cpp-regex-function", newJexString(r"\b[[0]]\b\s*\("))
+    elif isType:
+      config.get("lsp.ue-as.definition-cpp-regex-type", newJexString(r"^(class|struct|enum class|enum)\s+(\w+_API\s+)?\b[[0]]\b"))
+    elif prevChar == ":":
+      config.get("lsp.ue-as.definition-cpp-regex-enum-value", newJexString(r"\b[[0]]\b"))
+    else:
+      config.get("lsp.ue-as.definition-cpp-regex-field", newJexString(r"\b[[0]]\b\s*[;=({]"))
+
+    let searchString = regexTemplate.decodeRegex("").replace("[[0]]", wordText)
+
+    let cppPath = self.vfs.localize("ws0://")
+    let enginePath = self.vfs.localize("D:/GlazeEngine/Engine/Source/")
+    let searchResults = await self.workspace.search(@[cppPath, enginePath], searchString, 100, @["--glob=*.h"])
+
+    var res: seq[Definition]
+    for info in searchResults:
+      if info.path.endsWith(".generated.h") or info.path.endsWith(".gen.cpp"):
+        continue
+      if isType and info.text.strip().endsWith(";"):
+        # Looking for a type, skip things which are most likely forward declarations
+        continue
+      res.add Definition(filename: "local://" // info.path, location: (info.line - 1, info.column - 1))
+    return res
+
+  proc ueGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+    let angelLs = await self.getAngelLs()
+    if angelLs.isSome:
+      let angelDef = await angelLs.get.getDefinition(filename, location)
+      if angelDef.len > 0:
+        return angelDef
+
+    return await self.getDefinitionCppRegex(filename, location)
+    # let cppFut = self.getDefinitionCpp(filename, location)
+    # let regexFut = self.getDefinitionCppRegex(filename, location)
+    # await allFutures(cppFut, regexFut)
+    # return cppFut.read.catch(@[]) & regexFut.read.catch(@[])
 
   proc ueGetDeclaration*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return @[]
@@ -218,12 +285,15 @@ when implModule:
 
   proc newLanguageServerClangdUE(services: Services): LanguageServerUEAs =
     result = new LanguageServerUEAs
+    result.capabilities.completionProvider = lsp_types.CompletionOptions().some
     result.regexLs = newLanguageServerRegex(services)
     result.name = "ue-as"
     result.services = services
     result.documents = services.getService(DocumentEditorService).get
     result.eventBus = services.getService(EventService).get
     result.config = services.getService(ConfigService).get.runtime
+    result.vfs = services.getService(VFSService).get.vfs2
+    result.workspace = services.getService(Workspace).get
     result.refetchWorkspaceSymbolsOnQueryChange = true
     result.connectImpl = ueConnect
     result.disconnectImpl = ueDisconnect
@@ -247,6 +317,12 @@ when implModule:
     result.renameImpl = ueRename
     result.executeCommandImpl = ueExecuteCommand
 
+  var gls: LanguageServerUEAs = nil
+
+  proc getLanguageServerUEAs*(): LanguageServerDynamic {.gcsafe, raises: [].} =
+    {.gcsafe.}:
+      return gls
+
   proc init_module_language_server_ue_as*() {.cdecl, exportc, dynlib.} =
     let services = getServices()
     if services == nil:
@@ -254,6 +330,8 @@ when implModule:
       return
 
     var ls = newLanguageServerClangdUE(services)
+    {.gcsafe.}:
+      gls = ls
 
     let events = services.getService(EventService)
     let documents = services.getService(DocumentEditorService).get

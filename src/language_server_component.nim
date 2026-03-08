@@ -1,6 +1,6 @@
 import std/[options, json]
 import misc/[event, custom_async, response]
-import component
+import component, language_server_dynamic
 import text/language/[language_server_base, lsp_types]
 export component
 from scripting_api import Cursor, Selection
@@ -10,6 +10,7 @@ include dynlib_export
 type LanguageServerComponent* = ref object of Component
   onLanguageServerAttached*: Event[tuple[component: LanguageServerComponent, languageServer: LanguageServer]]
   onLanguageServerDetached*: Event[tuple[component: LanguageServerComponent, languageServer: LanguageServer]]
+  languageServer*: LanguageServerDynamic
 
 # DLL API
 var LanguageServerComponentId* {.apprtl.}: ComponentTypeId
@@ -114,7 +115,7 @@ when implModule:
     return self.getComponent(LanguageServerComponentId).mapIt(it.LanguageServerComponent)
 
   proc newLanguageServerComponent*(languageServer: LanguageServerList): LanguageServerComponent =
-    return LanguageServerComponentImpl(typeId: LanguageServerComponentId, languageServerList: languageServer)
+    return LanguageServerComponentImpl(typeId: LanguageServerComponentId, languageServer: languageServer, languageServerList: languageServer)
 
   proc languageServerComponentGetDefinition(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.async: (raises: []).} =
     try:
