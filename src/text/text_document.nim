@@ -756,7 +756,8 @@ proc newTextDocument*(
     language: Option[string] = string.none,
     languageServer: Option[LanguageServer] = LanguageServer.none,
     load: bool = false,
-    createLanguageServer: bool = true): TextDocument =
+    createLanguageServer: bool = true,
+    id = Id.none): TextDocument =
 
   # log lvlInfo, &"Creating new text document '{filename}', (lang: {language}, app: {app}, ls: {createLanguageServer})"
   new(result)
@@ -765,6 +766,10 @@ proc newTextDocument*(
     allTextDocuments.add result
 
   var self = result
+  if id.isSome:
+    self.uniqueId = id.get
+  else:
+    self.uniqueId = newId()
   self.isInitialized = true
   self.appFile = app
   self.workspace = services.getService(Workspace).get
@@ -932,7 +937,7 @@ proc saveAsync*(self: TextDocument) {.async.} =
   except IOError as e:
     log lvlError, &"Failed to save file '{self.filename}': {e.msg}"
 
-method save*(self: TextDocument, filename: string = "", app: bool = false) =
+method save*(self: TextDocument, filename: string = "", app: bool = false): Future[void] {.async: (raises: []).} =
   self.filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
 
   if self.filename.len == 0:
@@ -944,7 +949,10 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
 
   self.appFile = app
 
-  asyncSpawn self.saveAsync()
+  try:
+    await self.saveAsync()
+  except CatchableError:
+    discard
 
 proc autoDetectIndentStyle(self: TextDocument) =
   if not self.settings.indentDetection.enable.get():
@@ -1031,24 +1039,26 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]
 
   return @[((0, 0), (self.rope.endPoint.toCursor))]
 
-proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
+proc loadAsync*(self: TextDocument, isReload: bool, filename: string, temp: bool = false): Future[void] {.async.} =
   logScope lvlInfo, &"loadAsync '{self.filename}', reload = {isReload}"
 
-  self.isBackedByFile = true
-  self.isLoadingAsync = true
-  self.readOnly = true
+  if not temp:
+    self.isBackedByFile = true
+    self.isLoadingAsync = true
+    self.readOnly = true
 
   var rope: Rope = Rope.new()
   try:
-    await self.vfs.readRope(self.filename, rope.addr)
+    await self.vfs.readRope(filename, rope.addr)
 
     if not self.isInitialized:
       return
   except InvalidUtf8Error as e:
-    log lvlWarn, &"[loadAsync] Failed to load file {self.filename}: {e.msg}"
+    log lvlWarn, &"[loadAsync] Failed to load file {filename}: {e.msg}"
     rope = Rope.new(e.msg)
   except IOError as e:
-    log lvlError, &"[loadAsync] Failed to load file {self.filename}: {e.msg}"
+    log lvlError, &"[loadAsync] Failed to load file {filename}: {e.msg}"
+    self.readOnly = false
     return
 
   if not self.isInitialized:
@@ -1067,12 +1077,13 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
   else:
     self.fileWatchHandle.unwatch()
 
-  if self.vfs.getFileAttributes(self.filename).await.mapIt(it.writable).get(true):
+  if self.vfs.getFileAttributes(filename).await.mapIt(it.writable).get(true):
     self.readOnly = false
 
   self.autoDetectIndentStyle()
 
-  self.lastSavedRevision = self.undoableRevision
+  if not temp:
+    self.lastSavedRevision = self.undoableRevision
   self.isLoadingAsync = false
   self.onLoaded.invoke (self, changedRegions)
   self.onDocumentLoaded.invoke self
@@ -1097,7 +1108,7 @@ proc enableAutoReload*(self: TextDocument, enabled: bool) =
         of Modify:
           # if self.services.getService(ToastService).getSome(toasts):
           #   toasts.showToast(self.filename, &"Auto reloaded", "info")
-          asyncSpawn self.loadAsync(true)
+          asyncSpawn self.loadAsync(true, self.filename)
           break
 
         else:
@@ -1134,7 +1145,7 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
   self.onDocumentLoaded.invoke self
   self.eventBus.emit(&"document/{self.id}/loaded", $self.id)
 
-method load*(self: TextDocument, filename: string = "") =
+method load*(self: TextDocument, filename: string = "", temp: bool = false) =
   let filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
   if filename.len == 0:
     log lvlError, &"save: Missing filename"
@@ -1144,12 +1155,12 @@ method load*(self: TextDocument, filename: string = "") =
     self.reloadTreesitterLanguage()
 
   let isReload = self.isBackedByFile and filename == self.filename and not self.requiresLoad
-  self.filename = filename
-  self.isBackedByFile = true
+  if not temp:
+    self.filename = filename
+    self.isBackedByFile = true
   self.requiresLoad = false
 
-
-  asyncSpawn self.loadAsync(isReload)
+  asyncSpawn self.loadAsync(isReload, filename, temp)
 
 proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.} =
   try:

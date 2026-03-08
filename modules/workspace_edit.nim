@@ -107,7 +107,7 @@ when implModule:
           texts.add(edit.newText)
 
         discard text.edit(selections, @[], texts, checkpoint = "insert")
-        doc.save()
+        asyncSpawn doc.save()
 
       return true
 

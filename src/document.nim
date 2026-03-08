@@ -1,5 +1,5 @@
 import std/hashes
-import misc/[util, event, custom_async]
+import misc/[util, event, custom_async, id]
 import nimsumtree/[arc]
 import vfs, component
 
@@ -16,6 +16,7 @@ proc `$`*(vr: DocumentId): string {.borrow.}
 type Document* = ref object of ComponentOwner
   isInitialized*: bool
   id*: DocumentId
+  uniqueId*: Id
   appFile*: bool                        ## Whether this is an application file (e.g. stored in local storage on the browser)
   isBackedByFile*: bool = false
   requiresLoad*: bool = false           ## Whether the document content has not been scheduled for loading yet.
@@ -37,8 +38,8 @@ type Document* = ref object of ComponentOwner
 proc documentLocalizedPath*(self: Document): string {.apprtl, gcsafe, raises: [].}
 proc localizedPath*(self: Document): string {.inline.} = documentLocalizedPath(self)
 
-proc documentSave(self: Document, filename: string = "") {.apprtl, gcsafe, raises: [].}
-proc documentLoad(self: Document, filename: string = "") {.apprtl, gcsafe, raises: [].}
+proc documentSave(self: Document, filename: string = ""): Future[void] {.apprtl, gcsafe, async: (raises: []).}
+proc documentLoad(self: Document, filename: string = "", temp: bool = false) {.apprtl, gcsafe, raises: [].}
 
 proc setReadOnly*(self: Document, readOnly: bool) =
   ## Sets the interal readOnly flag, but doesn't not changed permission of the underlying file
@@ -58,8 +59,8 @@ proc isReady*(self: Document): bool =
 
 when implModule:
   method `$`*(document: Document): string {.base, gcsafe, raises: [].} = return ""
-  method save*(self: Document, filename: string = "", app: bool = false) {.base, gcsafe, raises: [].} = discard
-  method load*(self: Document, filename: string = "") {.base, gcsafe, raises: [].} = discard
+  method save*(self: Document, filename: string = "", app: bool = false): Future[void] {.base, gcsafe, async: (raises: []).} = return
+  method load*(self: Document, filename: string = "", temp: bool = false) {.base, gcsafe, raises: [].} = discard
   method deinit*(self: Document) {.base, gcsafe, raises: [].} = discard
   method getStatisticsString*(self: Document): string {.base, gcsafe, raises: [].} = discard
 
@@ -68,9 +69,9 @@ when implModule:
 
   proc documentLocalizedPath*(self: Document): string {.gcsafe, raises: [].} = self.vfs.localize(self.filename)
 
-  proc documentSave(self: Document, filename: string = "") = self.save(filename)
-  proc documentLoad(self: Document, filename: string = "") = self.load(filename)
+  proc documentSave(self: Document, filename: string = ""): Future[void] {.async: (raises: []).} = await self.save(filename)
+  proc documentLoad(self: Document, filename: string = "", temp: bool = false) = self.load(filename, temp)
 
 else:
-  proc save*(self: Document, filename: string = "") = documentSave(self, filename)
-  proc load*(self: Document, filename: string = "") = documentLoad(self, filename)
+  proc save*(self: Document, filename: string = ""): Future[void] {.async: (raises: []).} = await documentSave(self, filename)
+  proc load*(self: Document, filename: string = "", temp: bool = false) = documentLoad(self, filename, temp)

@@ -39,7 +39,7 @@ type
     priority*: int = 0
     kind*: string
     canOpenFileImpl*: proc(self: DocumentFactory, path: string): bool {.gcsafe, raises: [].}
-    createDocumentImpl*: proc(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document {.gcsafe, raises: [].}
+    createDocumentImpl*: proc(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil, id = Id.none): Document {.gcsafe, raises: [].}
 
   DocumentEditorFactory* = ref object of RootObj
     priority*: int = 0
@@ -102,10 +102,10 @@ proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEd
 proc getDocumentByPath*(self: DocumentEditorService, path: string, usage = ""): Option[Document]
 proc getEditorsForDocument*(self: DocumentEditorService, document: Document): seq[DocumentEditor]
 proc createEditorForDocument*(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor]
-proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx): Document
+proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx, id = Id.none): Document
 proc documentEditorSetActive(self: DocumentEditor, newActive: bool)
 proc documentEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].}
-proc documentEditorGetOrOpenDocument(self: DocumentEditorService, path: string, load: bool = true): Option[Document] {.gcsafe, raises: [].}
+proc documentEditorGetOrOpenDocument(self: DocumentEditorService, path: string, load: bool = true, id = Id.none): Option[Document] {.gcsafe, raises: [].}
 proc documentEditorAddDocumentFactory(self: DocumentEditorService, factory: DocumentFactory)
 proc documentEditorAddDocumentEditorFactory(self: DocumentEditorService, factory: DocumentEditorFactory)
 {.pop.}
@@ -113,8 +113,8 @@ proc documentEditorAddDocumentEditorFactory(self: DocumentEditorService, factory
 
 # Nice wrappers
 {.push inline.}
-proc createDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx = nil): Document = documentEditorCreateDocument(self, kind, path, load, options)
-proc getOrOpenDocument*(self: DocumentEditorService, path: string, load = true): Option[Document] = documentEditorGetOrOpenDocument(self, path, load)
+proc createDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx = nil, id = Id.none): Document = documentEditorCreateDocument(self, kind, path, load, options, id)
+proc getOrOpenDocument*(self: DocumentEditorService, path: string, load = true, id = Id.none): Option[Document] = documentEditorGetOrOpenDocument(self, path, load, id)
 proc addDocumentFactory*(self: DocumentEditorService, factory: DocumentFactory) = documentEditorAddDocumentFactory(self, factory)
 proc addDocumentEditorFactory*(self: DocumentEditorService, factory: DocumentEditorFactory) = documentEditorAddDocumentEditorFactory(self, factory)
 
@@ -151,9 +151,9 @@ when implModule:
     else:
       return false
 
-  proc createDocument*(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil): Document =
+  proc createDocument*(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil, id = Id.none): Document =
     if self.createDocumentImpl != nil:
-      return self.createDocumentImpl(self, services, path, load, options)
+      return self.createDocumentImpl(self, services, path, load, options, id)
     else:
       return nil
 
@@ -228,10 +228,10 @@ when implModule:
 
   proc getEditorDocument*(self: DocumentEditor): Document = self.getDocument()
 
-  proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx): Document =
+  proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx, id = Id.none): Document =
     for factory in self.documentFactories:
       if factory.kind == kind and factory.canOpenFile(path):
-        return factory.createDocument(self.services, path, load, options)
+        return factory.createDocument(self.services, path, load, options, id)
     return nil
 
   proc documentEditorAddDocumentFactory(self: DocumentEditorService, factory: DocumentFactory) =
@@ -263,9 +263,9 @@ when implModule:
     for it in self.allEditors:
       result.incl it.getDocument
 
-  proc getDocument*(self: DocumentEditorService, path: string, usage = ""): Option[Document] =
+  proc getDocument*(self: DocumentEditorService, path: string, usage = "", id = Id.none): Option[Document] =
     for document in self.documents:
-      if document.filename != "" and document.filename == path and document.usage == usage:
+      if document.filename != "" and document.filename == path and document.usage == usage and (id.isNone or id.get == document.uniqueId):
         return document.some
 
     return Document.none
@@ -292,14 +292,14 @@ when implModule:
   proc getEditorForId*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] =
     return self.getEditor(id)
 
-  proc openDocument*(self: DocumentEditorService, path: string, load = true): Option[Document] =
+  proc openDocument*(self: DocumentEditorService, path: string, load = true, id = Id.none): Option[Document] =
     try:
       log lvlInfo, &"Open new document '{path}'"
 
       var document: Document = nil
       for factory in self.documentFactories:
         if factory.canOpenFile(path):
-          document = factory.createDocument(self.services, path, load)
+          document = factory.createDocument(self.services, path, load, nil, id)
           break
 
       if document == nil:
@@ -311,12 +311,12 @@ when implModule:
       log(lvlError, fmt"[openDocument] Failed to load file '{path}': {getCurrentExceptionMsg()}")
       return Document.none
 
-  proc documentEditorGetOrOpenDocument(self: DocumentEditorService, path: string, load = true): Option[Document] =
-    result = self.getDocument(path)
+  proc documentEditorGetOrOpenDocument(self: DocumentEditorService, path: string, load = true, id = Id.none): Option[Document] =
+    result = self.getDocument(path, id = id)
     if result.isSome:
       return
 
-    return self.openDocument(path, load)
+    return self.openDocument(path, load, id)
 
   proc getPlatform*(self: DocumentEditorService): Platform =
     if self.platform == nil:
