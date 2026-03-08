@@ -1,6 +1,6 @@
 
 import std/[options, json]
-import misc/[custom_logger, util, response, custom_async, myjsonutils]
+import misc/[response, custom_async, myjsonutils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
 import document
@@ -127,7 +127,6 @@ when implModule:
           )
         return resRaw
       except CatchableError as e:
-        echo &"error: {e.msg}"
         return @[]
     else:
       return @[]
