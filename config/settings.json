@@ -158,7 +158,9 @@
 
         "typescript-language-server": {
             "languages": ["typescript", "javascript"],
-            "command": ["typescript-language-server"],
+            "command": ["typescript-language-server", "--stdio"],
+            "initialization-options-name": "settings",
+            "settings": {},
         },
 
         "vscode-json-languageserver": {
@@ -1005,4 +1007,28 @@
 
     "selector.min-score": -0.5,
 
+    "+debugger": {
+        "+type": {
+            "angelscript-stdio": {
+                "connection": "stdio",
+                "path": "node",
+                "args": ["debugAdapter.js"]
+            },
+            "lldb-stdio": {
+                "connection": "stdio",
+                "path": "lldb-dap"
+            },
+            "lldb-tcp": {
+                "connection": "tcp",
+                "port": 0,
+                "path": "lldb-dap"
+            },
+            "node": {
+                "connection": "tcp",
+                "path": "node",
+                "port": 8123,
+                "args": ["dapDebugServer.js"]
+            },
+        },
+    },
 }
