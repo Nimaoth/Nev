@@ -215,8 +215,8 @@ elif defined(windows):
       SignalHandlerInstalled
 
     PDispatcher* = ptr object of PDispatcherBase
-      ioPort: HANDLE
-      handles: HashSet[AsyncFD]
+      ioPort*: HANDLE
+      handles*: HashSet[AsyncFD]
       connectEx*: WSAPROC_CONNECTEX
       acceptEx*: WSAPROC_ACCEPTEX
       getAcceptExSockAddrs*: WSAPROC_GETACCEPTEXSOCKADDRS

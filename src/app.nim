@@ -588,106 +588,6 @@ proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[st
     self.loadKeybindings(root, loadConfigFileFrom, changedFiles)
   )
 
-# import asynchttpserver, asyncnet
-
-# proc processClient(client: AsyncSocket) {.async.} =
-#   log lvlInfo, &"Process client"
-#   let self: App = ({.gcsafe.}: gEditor)
-
-#   try:
-#     while not client.isClosed:
-#       let line = await client.recvLine()
-#       if line.len == 0:
-#         break
-
-#       log lvlInfo, &"Run command from client: '{line}'"
-#       let command = line
-#       let (action, arg) = parseAction(command)
-#       let response = self.handleAction(action, arg, record=true)
-#       if response.getSome(r):
-#         await client.send($r & "\n")
-#       else:
-#         await client.send("\n")
-
-#   except:
-#     log lvlError, &"Failed to read data from connection: {getCurrentExceptionMsg()}"
-
-# proc serve(port: Port, savePort: bool) {.async.} =
-#   var server: AsyncSocket
-
-#   try:
-#     server = newAsyncSocket()
-#     server.setSockOpt(OptReuseAddr, true)
-#     server.bindAddr(port)
-#     server.listen()
-#     let actualPort = server.getLocalAddr()[1]
-#     log lvlInfo, &"Listen for connections on port {actualPort.int}"
-#     if savePort:
-#       let fileName = getTempDir() / (appName & "_port_" & $os.getCurrentProcessId())
-#       log lvlInfo, &"Write port to {fileName}"
-#       self.vfs.write(fileName, $actualPort.int)
-#   except:
-#     log lvlError, &"Failed to create server on port {port.int}: {getCurrentExceptionMsg()}"
-#     return
-
-#   while true:
-#     let client = await server.accept()
-
-#     asyncSpawn processClient(client)
-
-# proc listenForConnection*(self: App, port: Port) {.async.} =
-#   await serve(port, self.config.getFlag("command-server.save-file", false))
-
-# proc listenForIpc(self: App, id: int) {.async.} =
-#   try:
-#     let ipcName = appName & "-" & $id
-#     log lvlInfo, &"Listen for ipc commands through {ipcName}"
-#     let  ipc = createIpc(ipcName).catch:
-#       log lvlWarn, &"Ipc port 0 already occupied"
-#       return
-
-#     var inBuffer: array[1024, char]
-
-#     defer: ipc.close()
-
-#     let readHandle = open(ipcName, sideReader)
-#     defer: readHandle.close()
-
-#     while not self.closeRequested:
-#       let c = await readHandle.readInto(cast[pointer](inBuffer[0].addr), inBuffer.len)
-#       # todo: handle arbitrary message size
-#       if c > 0:
-#         let message = inBuffer[0..<c].join()
-#         log lvlInfo, &"Run command from client: '{message}'"
-
-#         try:
-#           if message.startsWith("-r:") or message.startsWith("-R:"):
-#             let (action, arg) = parseAction(message[3..^1])
-#             # todo: send response
-#             discard self.handleAction(action, arg, record=true)
-#           elif message.startsWith("-p:"):
-#             let setting = message[3..^1]
-#             let i = setting.find("=")
-#             if i == -1:
-#               log lvlError, &"Invalid setting '{setting}', expected 'path.to.setting=value'"
-#               continue
-
-#             let path = setting[0..<i]
-#             let value = setting[(i + 1)..^1].parseJson.catch:
-#               log lvlError, &"Failed to parse value as json for '{setting}': {getCurrentExceptionMsg()}"
-#               continue
-
-#             log lvlInfo, &"Set {setting}"
-#             self.config.runtime.set(path, value)
-#           else:
-#             discard self.layout.openFile(message)
-
-#         except:
-#           log lvlError, &"Failed to run ipc command: {getCurrentExceptionMsg()}"
-
-#   except:
-#     log lvlError, &"Failed to open/read ipc messages: {getCurrentExceptionMsg()}"
-
 proc applySettingsFromAppOptions(self: App) =
   log lvlInfo, &"Apply settings provided through command line"
   for setting in self.appOptions.settings:
@@ -944,14 +844,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     )
 
   self.setupConfigChangeHandlers()
-
-  # if self.runtime.get("command-server.port", Port.none).getSome(port):
-  #   asyncSpawn self.listenForConnection(port)
-
-  # todo
-  # asyncSpawn self.listenForIpc(0)
-  # asyncSpawn self.listenForIpc(os.getCurrentProcessId())
-
   self.runLateCommandsFromAppOptions()
 
   try:

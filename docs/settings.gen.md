@@ -39,9 +39,6 @@ For examples and default values see [here](../config/settings.json)
 | `plugins.watch-plugin-directories` | bool | true | Whether to watch the plugin directories for changes and load new plugins |
 | `selector.base-mode` | string | "popup.selector" |  |
 | `selector.min-score` | float | 0 |  |
-| `terminal.base-mode` | string | "terminal" | Input mode which is always active while a terminal view is active. |
-| `terminal.default-mode` | string | "" | Input mode to activate when creating a new terminal, if no mode is specified otherwise. |
-| `terminal.idle-threshold` | int | 500 | After how many milliseconds of no data received from a terminal it is considered idle, and can be reused for running more commands. |
 | `text.auto-insert-close` | bool | true | Automatically insert closing parenthesis, braces, brackets and quotes. |
 | `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes). |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
