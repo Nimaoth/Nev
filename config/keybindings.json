@@ -129,7 +129,6 @@
         "<LEADER>g": { "description": "Global pickers" },
         "<LEADER>a": { "description": "Debugger" },
         "<LEADER>o": { "description": "Options" },
-        "<LEADER>ff": { "description": "Rendering" },
         "<LEADER>w": { "description": "Window" },
         "<LEADER>wf": { "description": "Change font size" },
         "<LEADER>wk": { "description": "Split size ratio" },
@@ -482,6 +481,8 @@
                 "group": "scratch",
             }
         ],
+
+        "<SPACE>ft": ["create-file", "scratch"],
     },
 
     "vim": {

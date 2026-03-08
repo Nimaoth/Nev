@@ -120,6 +120,12 @@
       "commit": "ee2d92bde86ce87b32bc46db18bfcf91ab84193d",
       "version": ""
     },
+    "asynctools.Nimaoth.github.com": {
+      "dir": "$deps\\asynctools.Nimaoth.github.com",
+      "url": "https://github.com/Nimaoth/asynctools",
+      "commit": "a314fb8d18a08954fc7ea43e40673acb348ce7cc",
+      "version": ""
+    },
     "zippy.Nimaoth.github.com": {
       "dir": "$deps\\zippy.Nimaoth.github.com",
       "url": "https://github.com/Nimaoth/zippy",
@@ -264,6 +270,7 @@
     "--path:\"deps/nimtreesitter-api.Nimaoth.github.com\"",
     "--path:\"deps/nimwasmtime.Nimaoth.github.com/src\"",
     "--path:\"deps/nimsumtree.Nimaoth.github.com/src\"",
+    "--path:\"deps/asynctools.Nimaoth.github.com\"",
     "--path:\"deps/zippy.Nimaoth.github.com/src\"",
     "--path:\"deps/libssh2\"",
     "--path:\"deps/ssh2/src\"",
@@ -327,6 +334,7 @@
       "requires \"https://github.com/Nimaoth/nimtreesitter-api#893dd71\"",
       "requires \"https://github.com/Nimaoth/nimwasmtime#8e0fe14\"",
       "requires \"https://github.com/Nimaoth/nimsumtree#ee2d92b\"",
+      "requires \"https://github.com/Nimaoth/asynctools\"",
       "requires \"https://github.com/Nimaoth/zippy >= 0.10.17\"",
       "requires \"libssh2 >= 0.1.9\"",
       "requires \"ssh2 >= 0.1.9\"",

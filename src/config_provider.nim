@@ -139,6 +139,11 @@ proc extendJson*(a: var JsonNodeEx, b: JsonNodeEx) =
     a = b
 
 proc configStoreGet(self: ConfigStore, key: string): JsonNodeEx {.apprtl, gcsafe, raises: [].}
+proc configStoreSet(self: ConfigStore, key: string, jsonValue: JsonNodeEx) {.apprtl, gcsafe, raises: [].}
+
+proc set*[T](self: ConfigStore, key: string, value: T) =
+  let jsonValue = when T is JsonNodeEx: value else: value.toJsonEx(defaultToJsonOptions)
+  configStoreSet(self, key, jsonValue)
 
 proc getValue*(self: ConfigStore, key: string): JsonNodeEx =
   result = self.configStoreGet(key)
@@ -747,8 +752,8 @@ when implModule:
 
     self.onConfigChanged.invoke(key)
 
-  proc set*[T](self: ConfigStore, key: string, value: T) =
-    # log lvlInfo, &"Set setting '{key}' to {value} in {self.desc()}"
+  proc configStoreSet(self: ConfigStore, key: string, jsonValue: JsonNodeEx) =
+    # log lvlInfo, &"Set setting '{key}' to {jsonValue} in {self.desc()}"
 
     var prevI = 0
     var i = key.find('.')
@@ -777,7 +782,6 @@ when implModule:
         return
 
       if i == key.len:
-        let jsonValue = when T is JsonNodeEx: value else: value.toJsonEx(defaultToJsonOptions)
         if subKey in node.fields:
           if node.fields[subKey] == jsonValue:
             return

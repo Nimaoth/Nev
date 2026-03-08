@@ -16,8 +16,6 @@ import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
 import text/custom_treesitter
 
-# proc tryAttach(opts: AppOptions, processId: int)
-
 when enableGui:
   static:
     echo "GUI backend enabled"
@@ -81,6 +79,9 @@ Examples:
   nev -p:ui.background.transparent=true            Set setting
   nev "-r:.lsp-log-verbose true"                   Enable debug logging for LSP immediately
 """
+
+import std/terminal
+import command_server
 
 block: ## Parse command line options
   var optParser = initOptParser("")
@@ -189,12 +190,12 @@ block: ## Parse command line options
 
     of cmdEnd: assert(false) # cannot happen
 
-  # if attach.getSome(attach):
-  #   if attach:
-  #     tryAttach(gAppOptions, attachProcessId)
-  # else:
-  #   if not stdout.isatty() or ownsConsole():
-  #     tryAttach(gAppOptions, 0)
+  if attach.getSome(attach):
+    if attach:
+      tryAttach(gAppOptions, attachProcessId)
+  elif gAppOptions.fileToOpen.isSome:
+    if not stdout.isatty() or ownsConsole():
+      tryAttach(gAppOptions, 0)
 
 if backend.isNone:
   echo "Error: No backend selected"
@@ -214,45 +215,6 @@ import misc/[timer, custom_async]
 import platform/[platform]
 import ui/widget_builders
 import app, platform_service
-
-# import asynctools/asyncipc
-
-# proc tryAttach(gAppOptions: AppOptions, processId: int) =
-#   if processId == 0:
-#     # todo: find process by name
-#     # return
-#     discard
-
-#   let ipcName = appName & "-" & $processId
-#   let writeHandle = open(ipcName, sideWriter).catch:
-#     if processId == 0:
-#       echo &"No existing editor, open new"
-#       return
-#     else:
-#       echo &"No existing editor with process id {processId}"
-#       quit(0)
-
-#   defer: writeHandle.close()
-
-#   proc send(msg: string) =
-#     echo "Send ", msg
-#     waitFor writeHandle.write(cast[pointer](msg[0].addr), msg.len)
-
-#   # todo: instead of sending -p:... etc, translate the settings to set-option command syntax,
-#   # pass the commands through as is and traslate fileToOpen to corresponding command.
-#   for setting in gAppOptions.settings:
-#     send("-p:" & setting)
-
-#   for command in gAppOptions.earlyCommands:
-#     send("-r:" & command)
-
-#   for command in gAppOptions.lateCommands:
-#     send("-R:" & command)
-
-#   if gAppOptions.fileToOpen.getSome(file):
-#     send(file)
-
-#   quit(0)
 
 when enableTerminal:
   import platform/terminal_platform
