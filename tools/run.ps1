@@ -5,6 +5,7 @@ while (($exitCode -eq 123) -or ($exitCode -eq 124)) {
     if ($exitCode -eq 124) {
         Write-Host "Copy nev.exe to nev-temp.exe"
         &cp nev.exe nev-temp.exe
+        &cp nev.pdb nev-temp.pdb
     }
     $argString = $args -join " "
     # $argString = "-p:editor.prompt-before-quit=true -p:editor.watch-app-config=false -p:editor.watch-user-config=false -p:editor.watch-workspace-config=false $argString"
