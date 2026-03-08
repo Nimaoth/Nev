@@ -237,7 +237,7 @@ method previewItem*(self: FilePreviewer, item: FinderItem, editor: DocumentEdito
     self.currentDiff = false
     self.currentStaged = false
 
-  log lvlInfo, &"[previewItem] Request preview for '{path}' at {location}"
+  # log lvlInfo, &"[previewItem] Request preview for '{path}' at {location}"
 
   self.currentPath = path
   self.currentLocation = location

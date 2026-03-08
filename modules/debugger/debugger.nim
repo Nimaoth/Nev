@@ -184,7 +184,6 @@ when implModule:
   proc initWatchScope(self: Debugger) =
     ## Populates dummy scope/variable entries so watches show before a session starts.
     ## Cleans up the dummy entries if watchExpressions is empty.
-    echo "initWatchScope"
     if self.watchExpressions.len == 0:
       if self.threads.len > 0 and self.threads[0].id == dummyThreadId:
         self.threads.setLen(0)

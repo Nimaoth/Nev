@@ -1,13 +1,12 @@
 import std/[strutils, tables, options]
 import nimsumtree/rope
-import scripting/[expose]
-import misc/[custom_logger, custom_async, util, rope_utils, array_set]
-import clipboard, service, dispatch_tables
+import misc/custom_async
+import service
+
+include dynlib_export
 
 {.push gcsafe.}
 {.push raises: [].}
-
-logCategory "register"
 
 type
   RegisterKind* {.pure.} = enum Text, Rope
@@ -45,124 +44,139 @@ type
     bIsReplayingKeys*: bool = false
     bIsReplayingCommands*: bool = false
 
-
 func serviceName*(_: typedesc[Registers]): string = "Registers"
 
-addBuiltinService(Registers)
+# DLL API
+proc registersSetRegisterText*(self: Registers, text: string, register: string = "") {.apprtl, gcsafe, raises: [].}
+proc registersGetRegisterText*(self: Registers, register: string): string {.apprtl, gcsafe, raises: [].}
+proc registersGetRegisterAsync*(self: Registers, register: string, res: ptr Register): Future[bool] {.apprtl, gcsafe, raises: [].}
 
-method init*(self: Registers): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  self.registers = initTable[string, Register]()
-  return ok()
+# Nice wrappers
+proc setRegisterText*(self: Registers, text: string, register: string = "") {.inline.} = registersSetRegisterText(self, text, register)
+proc getRegisterText*(self: Registers, register: string): string {.inline.} = registersGetRegisterText(self, register)
+proc getRegisterAsync*(self: Registers, register: string, res: ptr Register): Future[bool] {.inline.} = registersGetRegisterAsync(self, register, res)
 
-proc setRegisterTextAsync*(self: Registers, text: string, register: string = ""): Future[void] {.async.} =
-  self.registers[register] = Register(kind: RegisterKind.Text, text: text)
-  if register.len == 0:
-    setSystemClipboardText(text)
+when implModule:
+  import scripting/[expose]
+  import misc/[custom_logger, util, rope_utils, array_set]
+  import clipboard, dispatch_tables
 
-proc getRegisterTextAsync*(self: Registers, register: string = ""): Future[string] {.async.} =
-  if register.len == 0:
-    let text = getSystemClipboardText().await
-    if text.isSome:
-      return text.get
+  logCategory "register"
+  addBuiltinService(Registers)
 
-  if self.registers.contains(register):
-    return self.registers[register].getText()
+  method init*(self: Registers): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+    self.registers = initTable[string, Register]()
+    return ok()
 
-  return ""
+  proc setRegisterTextAsync*(self: Registers, text: string, register: string = ""): Future[void] {.async.} =
+    self.registers[register] = Register(kind: RegisterKind.Text, text: text)
+    if register.len == 0:
+      setSystemClipboardText(text)
 
-proc setRegisterAsync*(self: Registers, register: string, value: sink Register): Future[void] {.async.} =
-  if register.len == 0:
-    setSystemClipboardText(value.getText())
-  self.registers[register] = value.move
+  proc getRegisterTextAsync*(self: Registers, register: string = ""): Future[string] {.async.} =
+    if register.len == 0:
+      let text = getSystemClipboardText().await
+      if text.isSome:
+        return text.get
 
-proc getRegisterAsync*(self: Registers, register: string, res: ptr Register): Future[bool] {.async.} =
-  if register.len == 0:
-    var text = getSystemClipboardText().await
-    if text.isSome:
-      if text.get.len > 1024:
-        var rope: Rope
-        let errorIndex = createRopeAsync(text.get.addr, rope.addr).await
-        if errorIndex.isSome:
-          log lvlWarn, &"Large clipboard contains invalid utf8 at index {errorIndex.get}, can't use rope"
-          res[] = Register(kind: RegisterKind.Text, text: text.get.move)
-        else:
-          res[] = Register(kind: RegisterKind.Rope, rope: rope.move)
+    if self.registers.contains(register):
+      return self.registers[register].getText()
 
-      else:
-        res[] = Register(kind: RegisterKind.Text, text: text.get.move)
-      return true
-
-  if self.registers.contains(register):
-    res[] = self.registers[register].clone()
-    return true
-
-  return false
-
-proc recordCommand*(self: Registers, command: string, registers: openArray[string] = []) =
-  if self.bIsReplayingCommands:
-    return
-
-  template iterate(commands: untyped) =
-    for register in commands:
-      if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
-        self.registers[register] = Register(kind: RegisterKind.Text, text: "")
-      if self.registers[register].text.len > 0:
-        self.registers[register].text.add "\n"
-      self.registers[register].text.add command
-
-  if registers.len > 0:
-    iterate(registers)
-  else:
-    iterate(self.recordingCommands)
-
-###########################################################################
-
-proc getRegisters(): Option[Registers] =
-  {.gcsafe.}:
-    if getServices().isNil: return Registers.none
-    return getServices().getService(Registers)
-
-static:
-  addInjector(Registers, getRegisters)
-
-proc setRegisterText*(self: Registers, text: string, register: string = "") {.expose("registers").} =
-  if register.len == 0:
-    setSystemClipboardText(text)
-  self.registers[register] = Register(kind: RegisterKind.Text, text: text)
-
-proc getRegisterText*(self: Registers, register: string): string {.expose("registers").} =
-  if register.len == 0:
-    log lvlError, fmt"getRegisterText: Register name must not be empty. Use getRegisterTextAsync() instead."
     return ""
 
-  if self.registers.contains(register):
-    return self.registers[register].getText()
+  proc setRegisterAsync*(self: Registers, register: string, value: sink Register): Future[void] {.async.} =
+    if register.len == 0:
+      setSystemClipboardText(value.getText())
+    self.registers[register] = value.move
 
-  return ""
+  proc registersGetRegisterAsync*(self: Registers, register: string, res: ptr Register): Future[bool] {.async.} =
+    if register.len == 0:
+      var text = getSystemClipboardText().await
+      if text.isSome:
+        if text.get.len > 1024:
+          var rope: Rope
+          let errorIndex = createRopeAsync(text.get.addr, rope.addr).await
+          if errorIndex.isSome:
+            log lvlWarn, &"Large clipboard contains invalid utf8 at index {errorIndex.get}, can't use rope"
+            res[] = Register(kind: RegisterKind.Text, text: text.get.move)
+          else:
+            res[] = Register(kind: RegisterKind.Rope, rope: rope.move)
 
-proc startRecordingKeys*(self: Registers, register: string) {.expose("registers").} =
-  log lvlInfo, &"Start recording keys into '{register}'"
-  self.recordingKeys.incl register
+        else:
+          res[] = Register(kind: RegisterKind.Text, text: text.get.move)
+        return true
 
-proc stopRecordingKeys*(self: Registers, register: string) {.expose("registers").} =
-  log lvlInfo, &"Stop recording keys into '{register}'"
-  self.recordingKeys.excl register
+    if self.registers.contains(register):
+      res[] = self.registers[register].clone()
+      return true
 
-proc startRecordingCommands*(self: Registers, register: string) {.expose("registers").} =
-  log lvlInfo, &"Start recording commands into '{register}'"
-  self.recordingCommands.incl register
+    return false
 
-proc stopRecordingCommands*(self: Registers, register: string) {.expose("registers").} =
-  log lvlInfo, &"Stop recording commands into '{register}'"
-  self.recordingCommands.excl register
+  proc recordCommand*(self: Registers, command: string, registers: openArray[string] = []) =
+    if self.bIsReplayingCommands:
+      return
 
-proc isReplayingCommands*(self: Registers): bool {.expose("registers").} =
-  self.bIsReplayingCommands
+    template iterate(commands: untyped) =
+      for register in commands:
+        if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
+          self.registers[register] = Register(kind: RegisterKind.Text, text: "")
+        if self.registers[register].text.len > 0:
+          self.registers[register].text.add "\n"
+        self.registers[register].text.add command
 
-proc isReplayingKeys*(self: Registers): bool {.expose("registers").} =
-  self.bIsReplayingKeys
+    if registers.len > 0:
+      iterate(registers)
+    else:
+      iterate(self.recordingCommands)
 
-proc isRecordingCommands*(self: Registers, registry: string): bool {.expose("registers").} =
-  self.recordingCommands.contains(registry)
+  ###########################################################################
 
-addGlobalDispatchTable "registers", genDispatchTable("registers")
+  proc getRegisters(): Option[Registers] =
+    {.gcsafe.}:
+      if getServices().isNil: return Registers.none
+      return getServices().getService(Registers)
+
+  static:
+    addInjector(Registers, getRegisters)
+
+  proc registersSetRegisterText*(self: Registers, text: string, register: string = "") {.expose("registers").} =
+    if register.len == 0:
+      setSystemClipboardText(text)
+    self.registers[register] = Register(kind: RegisterKind.Text, text: text)
+
+  proc registersGetRegisterText*(self: Registers, register: string): string {.expose("registers").} =
+    if register.len == 0:
+      log lvlError, fmt"getRegisterText: Register name must not be empty. Use getRegisterTextAsync() instead."
+      return ""
+
+    if self.registers.contains(register):
+      return self.registers[register].getText()
+
+    return ""
+
+  proc startRecordingKeys*(self: Registers, register: string) {.expose("registers").} =
+    log lvlInfo, &"Start recording keys into '{register}'"
+    self.recordingKeys.incl register
+
+  proc stopRecordingKeys*(self: Registers, register: string) {.expose("registers").} =
+    log lvlInfo, &"Stop recording keys into '{register}'"
+    self.recordingKeys.excl register
+
+  proc startRecordingCommands*(self: Registers, register: string) {.expose("registers").} =
+    log lvlInfo, &"Start recording commands into '{register}'"
+    self.recordingCommands.incl register
+
+  proc stopRecordingCommands*(self: Registers, register: string) {.expose("registers").} =
+    log lvlInfo, &"Stop recording commands into '{register}'"
+    self.recordingCommands.excl register
+
+  proc isReplayingCommands*(self: Registers): bool {.expose("registers").} =
+    self.bIsReplayingCommands
+
+  proc isReplayingKeys*(self: Registers): bool {.expose("registers").} =
+    self.bIsReplayingKeys
+
+  proc isRecordingCommands*(self: Registers, registry: string): bool {.expose("registers").} =
+    self.recordingCommands.contains(registry)
+
+  addGlobalDispatchTable "registers", genDispatchTable("registers")

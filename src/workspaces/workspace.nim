@@ -46,11 +46,15 @@ func serviceName*(_: typedesc[Workspace]): string = "Workspace"
 # DLL API
 proc workspaceSearchPaths*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.apprtl, gcsafe, raises: [].}
 proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.apprtl, gcsafe, raises: [].}
+proc workspaceSetWorkspaceFolder*(self: Workspace, path: string) {.apprtl, gcsafe, raises: [].}
+proc workspaceAddWorkspaceFolder(self: Workspace, path: string, recomputeFileCache: bool = true) {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
 
 proc search*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.inline.} = workspaceSearchPaths(self, paths, query, maxResults, customArgs)
 proc search*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.inline.} = workspaceSearch(self, query, maxResults, customArgs, additionalPaths)
+proc setWorkspaceFolder*(self: Workspace, path: string) {.inline.} = workspaceSetWorkspaceFolder(self, path)
+proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) = workspaceAddWorkspaceFolder(self, path, recomputeFileCache)
 
 proc info*(self: Workspace): WorkspaceInfo =
   try:
@@ -339,7 +343,7 @@ when implModule:
     if recomputeFileCache:
       self.recomputeFileCache()
 
-  proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) =
+  proc workspaceAddWorkspaceFolder(self: Workspace, path: string, recomputeFileCache: bool = true) =
     if self.path.len == 0:
       self.path = path
       self.loadDefaultIgnoreFile()
@@ -358,6 +362,19 @@ when implModule:
     self.onWorkspaceFolderAdded.invoke(path)
     if recomputeFileCache:
       self.recomputeFileCache()
+
+  proc workspaceSetWorkspaceFolder(self: Workspace, path: string) =
+    let allPaths = @[self.path] & self.additionalPaths
+    let (wsVfs, _) = self.vfs.getVFS("ws://")
+    for i, p in allPaths:
+      self.onWorkspaceFolderRemoved.invoke(p)
+      self.vfs.unmount(&"ws{i}://")
+      wsVfs.unmount(&"{i}")
+
+    self.additionalPaths = @[]
+    self.path = ""
+
+    self.addWorkspaceFolder(path)
 
   proc restore*(self: Workspace, settings: JsonNode) =
     try:

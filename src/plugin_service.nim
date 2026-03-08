@@ -172,10 +172,10 @@ proc loadPlugin*(self: PluginService, plugin: Plugin, state: seq[uint8] = @[]) {
         return
     except IOError as e:
       plugin.state = Failed
-      log lvlError, &"Plugin {plugin.desc} could not be loaded: {e.msg}"
+      log lvlWarn, &"Plugin {plugin.desc} could not be loaded: {e.msg}"
 
   plugin.state = Failed
-  log lvlError, &"Plugin {plugin.desc} could not be loaded."
+  log lvlWarn, &"Plugin {plugin.desc} could not be loaded."
 
 proc unloadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
   if plugin.state != PluginState.Loaded:
@@ -268,7 +268,7 @@ proc registerPluginCommands(self: PluginService, plugin: Plugin) =
                   return self.commands.executeCommand(name & " " & args).get("")
                 return ""
               except CatchableError as e:
-                log lvlError, &"Failed to wait for plugin to load: {e.msg}"
+                log lvlWarn, &"Failed to wait for plugin to load: {e.msg}"
                 return ""
 
             of AsyncOrWait:
@@ -280,7 +280,7 @@ proc registerPluginCommands(self: PluginService, plugin: Plugin) =
 proc createPlugin(self: PluginService, manifest: sink PluginManifest) =
   log lvlInfo, &"Register plugin {manifest}"
   if self.idToPlugin.contains(manifest.id):
-    log lvlError, &"Failed to register plugin manifest\n{manifest}\nPlugin with same id already exists:\n{self.idToPlugin[manifest.id].manifest}"
+    log lvlWarn, &"Failed to register plugin manifest\n{manifest}\nPlugin with same id already exists:\n{self.idToPlugin[manifest.id].manifest}"
     return
 
   let plugin = Plugin(

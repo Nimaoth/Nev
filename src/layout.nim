@@ -1,5 +1,5 @@
 import std/[options, json]
-import misc/[custom_async]
+import misc/[custom_async, id]
 import service, view, popup, selector_popup_builder, dynamic_view
 import document, document_editor
 import ui/node
@@ -30,6 +30,8 @@ proc layoutServiceIsViewVisible(self: LayoutService, view: View): bool {.apprtl,
 proc layoutServicePromptString(self: LayoutService, title: string = ""): Future[Option[string]] {.apprtl, gcsafe, async: (raises: [])}
 proc layoutServicePrompt(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.apprtl, gcsafe, async: (raises: [])}
 proc layoutServiceTryActivateEditor(self: LayoutService, editor: DocumentEditor) {.apprtl, gcsafe, raises: [].}
+proc layoutServiceTryActivateView(self: LayoutService, view: View) {.apprtl, gcsafe, raises: [].}
+proc layoutServiceNewEditorView(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
 proc popups*(self: LayoutService): lent seq[Popup] {.inline.} = self.layoutServicePopups()
@@ -45,6 +47,8 @@ proc isViewVisible*(self: LayoutService, view: View): bool {.inline.} = self.lay
 proc promptString*(self: LayoutService, title: string = ""): Future[Option[string]] {.async: (raises: [])} = await layoutServicePromptString(self, title)
 proc prompt*(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.gcsafe, async: (raises: [])} = await layoutServicePrompt(self, choices, title)
 proc tryActivateEditor*(self: LayoutService, editor: DocumentEditor) {.inline.} = layoutServiceTryActivateEditor(self, editor)
+proc tryActivateView*(self: LayoutService, view: View) = layoutServiceTryActivateView(self, view)
+proc newEditorView*(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView {.inline.} = layoutServiceNewEditorView(editor, document, id)
 
 proc getViews*(self: LayoutService, T: typedesc): seq[T] =
   var res = newSeq[T]()
@@ -321,8 +325,6 @@ when implModule:
 
   addBuiltinService(LayoutServiceImpl, PlatformService, ConfigService, DocumentEditorService, Workspace, VFSService, SessionService, CommandService)
 
-  proc newEditorView(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView
-
   method init*(self: LayoutServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"LayoutService.init"
     self.platform = self.services.getService(PlatformService).get.platform
@@ -510,7 +512,7 @@ when implModule:
   proc editorViewGetActiveEditor(self: EditorView): Option[DocumentEditor] =
     self.editor.some
 
-  proc newEditorView(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView =
+  proc layoutServiceNewEditorView(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView =
     let self = EditorView(editor: editor, document: document)
     if id.isSome:
       self.mId = id.get
@@ -663,7 +665,7 @@ when implModule:
       return editor.some
     return DocumentEditor.none
 
-  proc tryActivateView*(self: LayoutService, view: View) =
+  proc layoutServiceTryActivateView(self: LayoutService, view: View) =
     let self = self.LayoutServiceImpl
     if self.mPopups.len > 0:
       return
