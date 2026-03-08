@@ -4,7 +4,7 @@ import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, my
 import ui/node
 import platform/[tui]
 import nimsumtree/[rope, arc]
-import dynamic_view, events, config_provider, layout, theme, vterm, input, input_api, channel
+import dynamic_view, events, config_provider, layout, theme, vterm, input, input_api, channel, register
 from scripting_api import SshOptions
 import types
 
@@ -379,7 +379,7 @@ type
     config*: ConfigService
     layout*: LayoutService
     themes*: ThemeService
-    # registers*: Registers
+    registers*: Registers
     commands*: CommandService
     idCounter*: int = 0
     settings*: TerminalSettings
