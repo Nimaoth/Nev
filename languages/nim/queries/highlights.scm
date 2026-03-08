@@ -11,9 +11,13 @@
 ; Special
 (blank_identifier) @variable.builtin
 
+; Expressions
+(dot_expression
+  right: (identifier) @variable.member)
+
 ; Currently #match? and friends on nodes which exist a lot (like identifiers) are quite expensive, so disable them for now.
-; ((identifier) @type
-;   (#match? @type "^([A-Z].*|openArray|typedesc)$"))
+((identifier) @type
+  (#match? @type "^([A-Z].*|openArray|typedesc)$"))
 
 ; Declarations
 (exported_symbol "*" @type.qualifier)
@@ -56,10 +60,6 @@
       operator: "as"
       right: (identifier) @variable)
   ]))
-
-; Expressions
-(dot_expression
-  right: (identifier) @field)
 
 ; Literal/comments
 [
@@ -180,6 +180,8 @@
     (identifier) @function.call
     (dot_expression
       right: (identifier) @function.call)
+    (bracket_expression
+      left: (identifier) @function.call)
   ])
 (generalized_string
   function: [

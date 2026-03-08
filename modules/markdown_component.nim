@@ -14,9 +14,9 @@ include module_base
 # Implementation
 when implModule:
   import std/[tables]
-  import nimsumtree/buffer
+  import nimsumtree/[buffer, sumtree]
   import misc/[util, custom_logger, rope_utils, delayed_task, custom_async, arena, array_view, id]
-  import text/[display_map, overlay_map, treesitter_types, treesitter_type_conv, custom_treesitter]
+  import text/[display_map, overlay_map, syntax_map, treesitter_types, treesitter_type_conv, custom_treesitter]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import service, event_service, document_editor, document, decoration_component, treesitter_component, text_component, language_component
 
@@ -42,11 +42,8 @@ when implModule:
       return
     let treesitter = editor.currentDocument.getTreesitterComponent().getOr:
       return
-    if treesitter.tsLanguage.isNil or treesitter.tsLanguage.languageId != "markdown":
-      return
-    let tree = treesitter.syntaxMap.tsTree
-    if tree.isNil:
-      return
+    # if treesitter.tsLanguage.isNil or treesitter.tsLanguage.languageId != "markdown":
+    #   return
 
     let text = editor.currentDocument.getTextComponent().getOr:
       return
@@ -58,74 +55,98 @@ when implModule:
       if not b:
         return
 
-    let tableQuery = await treesitter.tsLanguage.query("markdown_table", "(pipe_table) @table")
+    let language = getLoadedLanguage("markdown")
+    if language.isNil:
+      return
+
+    let tableQuery = await language.query("markdown_table", "(pipe_table) @table")
     if tableQuery.isNone:
+      return
+
+    let syntaxMap = treesitter.syntaxMap.snapshot
+    if syntaxMap.layerIndex.isNil:
       return
 
     decorations.clearOverlays(7)
 
-    var arena = initArena(16 * 1024)
-    for match in tableQuery.get.matches(tree.root, fullRange, arena):
-      var langName = ""
-      for capture in match.captures:
-        capture.node.withTreeCursor(c):
-          var node = c.currentNode
-          checkRes c.gotoFirstChild()
+    var cursor = syntaxMap.layerIndex.initCursor(SyntaxLayerRefSummary)
+    cursor.next()
+    while cursor.item.getSome(item):
+      defer:
+        cursor.next()
+      if item.depth > 0 and item.index == 0:
+        continue
+      let layer {.cursor.} = syntaxMap.layers[item.index]
+      if layer.language != "markdown":
+        continue
 
-          type Cell = object
-            node: TSNode
-            width: int
-            text: string
-            range: Range[Point]
+      var arena = initArena(16 * 1024)
+      for match in tableQuery.get.matches(layer.tree.root, fullRange, arena):
+        var langName = ""
+        for capture in match.captures:
+          capture.node.withTreeCursor(c):
+            var node = c.currentNode
+            checkRes c.gotoFirstChild()
 
-          var rows: seq[seq[Cell]] = @[]
-          var row: seq[Cell] = @[]
-          var maxWidths: seq[int] = @[]
+            type Cell = object
+              node: TSNode
+              width: int
+              text: string
+              range: Range[Point]
+              isDelimiter: bool
 
-          while true:
-            node = c.currentNode
+            var rows: seq[seq[Cell]] = @[]
+            var row: seq[Cell] = @[]
+            var maxWidths: seq[int] = @[]
 
-            proc parseRow(c: var TSTreeCursor, offset: int): seq[Cell] =
-              if c.gotoFirstChild():
-                defer:
-                  discard c.gotoParent()
-                while true:
-                  let node = c.currentNode
-                  let r = node.getRange.toRange
-                  if node.isNamed:
-                    result.add Cell(node: node, width: (r.b  - r.a).toPoint.column.int + offset, text: $content[r], range: r)
-                  if not c.gotoNextSibling():
-                    break
+            while true:
+              node = c.currentNode
 
-            case node.nodeType
-            of "pipe_table_header":
-              rows.add c.parseRow(0)
-            of "pipe_table_delimiter_row":
-              rows.add c.parseRow(-1)
-            of "pipe_table_row":
-              rows.add c.parseRow(0)
-            else:
-              discard
+              proc parseRow(c: var TSTreeCursor, offset: int, isDelimiter: bool): seq[Cell] =
+                var cellStartColumn = 0
+                if c.gotoFirstChild():
+                  defer:
+                    discard c.gotoParent()
+                  while true:
+                    let node = c.currentNode
+                    let r = node.getRange.toRange
+                    if node.isNamed:
+                      result.add Cell(node: node, width: r.b.column.int - cellStartColumn + offset, text: $content[r], range: r, isDelimiter: isDelimiter)
+                    else:
+                      cellStartColumn = r.b.column.int
+                    if not c.gotoNextSibling():
+                      break
 
-            if not c.gotoNextSibling():
-              break
+              case node.nodeType
+              of "pipe_table_header":
+                rows.add c.parseRow(0, false)
+              of "pipe_table_delimiter_row":
+                rows.add c.parseRow(1, true)
+              of "pipe_table_row":
+                rows.add c.parseRow(0, false)
+              else:
+                discard
 
-          for column in 0..int.high:
-            var maxWidth = -1
-            for row in rows:
-              if column >= row.len:
-                continue
-              maxWidth = max(maxWidth, row[column].width)
-            if maxWidth < 0:
-              break
-            maxWidths.add(maxWidth)
+              if not c.gotoNextSibling():
+                break
 
-          for row in rows.mitems:
-            for i, cell in row:
-              let overlayWidth = maxWidths[i] - cell.width
-              if overlayWidth > 0:
-                let text = " ".repeat(overlayWidth)
-                decorations.addOverlay(cell.range.b...cell.range.b, text, 7, "comment", Bias.Right)
+            for column in 0..int.high:
+              var maxWidth = -1
+              for row in rows:
+                if column >= row.len:
+                  continue
+                maxWidth = max(maxWidth, row[column].width)
+              if maxWidth < 0:
+                break
+              maxWidths.add(maxWidth)
+
+            for row in rows.mitems:
+              for i, cell in row:
+                let overlayWidth = maxWidths[i] - cell.width
+                if overlayWidth > 0:
+                  let ch = if cell.isDelimiter: "-" else: " "
+                  let text = ch.repeat(overlayWidth)
+                  decorations.addOverlay(cell.range.b...cell.range.b, text, 7, "comment", Bias.Right)
 
   proc update(self: MarkdownComponent) =
     asyncSpawn self.updateAsync()

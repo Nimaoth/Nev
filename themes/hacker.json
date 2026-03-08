@@ -660,5 +660,59 @@
         //         "foreground": "#6868af"
         //     }
         // },
+        {
+            "name": "header1",
+            "scope": "header1",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00ff00",
+                "fontScale": 2.5,
+            }
+        },
+        {
+            "name": "header2",
+            "scope": "header2",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00ff00",
+                "fontScale": 2,
+            }
+        },
+        {
+            "name": "header3",
+            "scope": "header3",
+            "settings": {
+                "fontStyle": "bold",
+                "foreground": "#00ff00",
+                "fontScale": 1.8,
+            }
+        },
+        {
+            "name": "header4",
+            "scope": "header4",
+            "settings": {
+                "fontStyle": "bold,italic",
+                "foreground": "#00ff00",
+                "fontScale": 1.6,
+            }
+        },
+        {
+            "name": "header5",
+            "scope": "header5",
+            "settings": {
+                "fontStyle": "bold,italic",
+                "foreground": "#00ff00",
+                "fontScale": 1.4,
+            }
+        },
+        {
+            "name": "header6",
+            "scope": "header6",
+            "settings": {
+                "fontStyle": "bold,italic",
+                "foreground": "#00ff00",
+                "fontScale": 1.2,
+            }
+        },
     ]
 }

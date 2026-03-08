@@ -53,6 +53,7 @@
         "<LEADER>wy": ["open-next-view"],
         "<LEADER>ws": ["wrap-layout", "vertical-temp"],
         "<LEADER>wv": ["wrap-layout", "horizontal-temp"],
+        "<LEADER>ww": ["toggle-flag", "text.wrap-lines"],
 
         "<A-n>": "focus-view-left",
         "<A-t>": "focus-view-right",
@@ -63,10 +64,10 @@
         "<A-x>": "hide-active-view",
         "<A-w>": ["move-view", "#new-tab"], // new tab in default layout
         "<A-c>": ["move-view", ".center.*+?"], // new split in center of current tab
-        "<A-LEFT>": ["move-view", ".left"],
-        "<A-RIGHT>": ["move-view", ".right"],
-        "<A-UP>": ["move-view", ".top"],
-        "<A-DOWN>": ["move-view", ".bottom"],
+        // "<A-LEFT>": ["move-view", ".left"],
+        // "<A-RIGHT>": ["move-view", ".right"],
+        // "<A-UP>": ["move-view", ".top"],
+        // "<A-DOWN>": ["move-view", ".bottom"],
         "<A-m>": ["toggle-maximize-view"],
         "<A-v>": ["wrap-layout", {"kind": "vertical", "temporary": true, "max-children": 2}],
         "<A-l>": ["wrap-layout", {"kind": "horizontal", "temporary": true, "max-children": 2}],
@@ -137,6 +138,8 @@
 
           // addCommandBlockDesc "editor", "<LEADER>log", "Show log file": logs(slot = "#default", focus = false, scrollToBottom = true)
 
+        "<LEADER>aw": ["add-watch-prompt"],
+        "<LEADER>as": ["add-watch-from-selection"],
         "<F9>": ["toggle-breakpoint"],
         "<F10>": ["step-over"],
         "<F11>": ["step-in"],
@@ -277,6 +280,7 @@
         "<END>": "select-last-variable",
         "<BACKSPACE>": "delete-last-variable-filter-char",
         "<ESCAPE>": "clear-variable-filter",
+        "<DELETE>": "remove-watch-at-cursor",
     },
 
     "debugger.threads": {
