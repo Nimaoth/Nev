@@ -67,3 +67,5 @@
 ./plugin_api/v0/text_editor.nim
 ./plugin_api/v0/types.nim
 ./plugin_api/v0/vfs.nim
+./modules2
+./deps
