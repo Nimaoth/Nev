@@ -180,6 +180,7 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
   var numBuilt = 0
   var numFailed = 0
   var numSkipped = 0
+  var failedModules: seq[string] = @[]
   var cmds: seq[tuple[fv: FlowVar[tuple[output: string, exitCode: int]], module: string]] = @[]
   for (name, m) in modules.pairs:
     echo name, ": ", m
@@ -207,9 +208,11 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
           inc numBuilt
         else:
           inc numFailed
+          failedModules.add(name)
     except CatchableError as e:
       echo &"Failed to build {name}: {e.msg}"
       inc numFailed
+      failedModules.add(name)
 
   while cmds.len > 0:
     for i in countdown(cmds.high, 0):
@@ -219,6 +222,7 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
           inc numBuilt
         else:
           inc numFailed
+          failedModules.add(cmds[i].module)
         echo &"=========================================== Build output for {cmds[i].module} ================================"
         echo output
         cmds.del(i)
@@ -228,6 +232,8 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
   try:
     echo &"==========================================================================="
     echo &"Skipped: {numSkipped}, Built: {numBuilt}, Failed: {numFailed}"
+    for module in failedModules:
+      echo module, " FAILED"
     if not dry:
       writeFile("build.json", modules.toJson.pretty)
   except CatchableError as e:
