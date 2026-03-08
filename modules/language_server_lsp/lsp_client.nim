@@ -338,7 +338,9 @@ proc parseResponse(client: LSPClient): Future[JsonNode] {.async.} =
       debugf"[recv] {data[0..min(data.high, 500)]}"
     return parseJson(data)
 
-  except CatchableError:
+  except CatchableError as e:
+    log(lvlError, &"[parseResponse] Exception: {e.msg}")
+    log(lvlError, &"[parseResponse] Exception: {e.getStackTrace()}")
     return newJNull()
 
 proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int]) {.gcsafe, async.} =
@@ -701,11 +703,14 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
   #   return (int, int).none
 
 proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
-  while process.isAlive:
-    let line = await process.recvErrorLine
-    if logServerDebug:
-      let l = line.strip(chars = {'\n'})
-      log(lvlDebug, fmt"[server] {l}")
+  try:
+    while process.isAlive:
+      let line = await process.recvErrorLine
+      if logServerDebug:
+        let l = line.strip(chars = {'\n'})
+        log(lvlDebug, fmt"[server] {l}")
+  except CatchableError:
+    discard
 
 proc sendInitializationRequest(client: LSPClient) {.async, gcsafe.} =
   log(lvlInfo, "Initializing client...")
@@ -1064,7 +1069,7 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
     let response = await client.parseResponse()
     if response.isNil or response.kind != JObject:
       log(lvlError, fmt"[run] Bad response: {response}")
-      continue
+      break
 
     if logVerbose:
       debugf"[run] Got response: {response}"

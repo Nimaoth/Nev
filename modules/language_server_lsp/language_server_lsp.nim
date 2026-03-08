@@ -827,13 +827,17 @@ when implModule:
 
     try:
       if self.languageServers.contains(name):
-        let ls = self.languageServers[name]
+        try:
+          let ls = self.languageServers[name]
 
-        let initialized = await ls.initializedFuture
-        if not initialized:
+          let initialized = await ls.initializedFuture
+          if not initialized:
+            return LanguageServerLSP.none
+
+          return ls.some
+        except:
+          log lvlWarn, &"Failed to get language server '{name}': {getCurrentExceptionMsg()}"
           return LanguageServerLSP.none
-
-        return ls.some
 
       let config = self.config.runtime.get("lsp." & name, newJexNull())
       if config.isNil or config.kind != JObject:

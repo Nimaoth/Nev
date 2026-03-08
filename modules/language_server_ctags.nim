@@ -181,18 +181,20 @@ when implModule:
 
   proc getImportedFiles*(treesitter: TreesitterComponent, text: TextComponent): Future[Option[seq[string]]] {.async.} =
     result = seq[string].none
-    if treesitter.currentTree.isNil:
+    let tree = treesitter.syntaxMap.tsTree
+    if tree.isNil:
       return
 
     let query = await treesitter.query("imports")
-    if query.isNone or treesitter.currentTree.isNil:
+    let tree2 = treesitter.syntaxMap.tsTree
+    if query.isNone or tree2.isNil:
       return
 
     let endPoint = text.content.endPoint
     var arena = initArena()
 
     var res = newSeq[string]()
-    for match in query.get.matches(treesitter.currentTree.root, tsRange(tsPoint(0, 0), tsPoint(endPoint.row.int, endPoint.column.int)), arena):
+    for match in query.get.matches(tree2.root, tsRange(tsPoint(0, 0), tsPoint(endPoint.row.int, endPoint.column.int)), arena):
       for capture in match.captures:
         var sel = capture.node.getRange().toRange
         if capture.name == "import":

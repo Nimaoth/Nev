@@ -32,6 +32,8 @@ import language_server_lsp/language_server_lsp, language_server_regex
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
+proc getLanguageServerUECpp*(): LanguageServerDynamic {.rtl, gcsafe, raises: [].}
+
 when implModule:
   import nimsumtree/rope
   import workspaces/workspace
@@ -109,14 +111,9 @@ when implModule:
     if result.isSome and result.get != self.angelLs:
       self.angelLs = result.get
 
-  proc ueGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc getDefinitionClangd*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let clangd = (await self.getClangd()).getOr: return @[]
     result = await clangd.getDefinition(filename, location)
-    result = result.filterGenerated()
-
-  proc ueGetDeclaration*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
-    let clangd = (await self.getClangd()).getOr: return @[]
-    result = await clangd.getDeclaration(filename, location)
     result = result.filterGenerated()
 
   proc getImplementationClangd*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
@@ -169,6 +166,17 @@ when implModule:
     if self.documents.getDocumentByPath(filename).getSome(doc):
       return await self.regexLs.gotoRegexLocation(doc, location, "goto-implementation")
     return @[]
+
+  proc ueGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+    let cppDefinitionsFut = self.getDefinitionClangd(filename, location)
+    let angelscriptDefinitions1Fut = self.getImplementationAngelscript(filename, location)
+    await allFutures(cppDefinitionsFut, angelscriptDefinitions1Fut)
+    return cppDefinitionsFut.read & angelscriptDefinitions1Fut.read
+
+  proc ueGetDeclaration*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+    let clangd = (await self.getClangd()).getOr: return @[]
+    result = await clangd.getDeclaration(filename, location)
+    result = result.filterGenerated()
 
   proc ueGetImplementation*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let cppDefinitionsFut = self.getImplementationClangd(filename, location)
@@ -441,8 +449,9 @@ when implModule:
       clangd.disconnect(document)
     asyncSpawn doDisconnect()
 
-  proc newLanguageServerClangdUE(services: Services): LanguageServerUECpp =
+  proc newLanguageServerUECpp(services: Services): LanguageServerUECpp =
     result = new LanguageServerUECpp
+    result.capabilities.completionProvider = lsp_types.CompletionOptions().some
     result.regexLs = newLanguageServerRegex(services)
     result.name = "ue-cpp"
     result.services = services
@@ -474,13 +483,21 @@ when implModule:
     result.renameImpl = ueRename
     result.executeCommandImpl = ueExecuteCommand
 
+  var gls: LanguageServerUECpp = nil
+
+  proc getLanguageServerUECpp*(): LanguageServerDynamic {.gcsafe, raises: [].} =
+    {.gcsafe.}:
+      return gls
+
   proc init_module_language_server_ue_cpp*() {.cdecl, exportc, dynlib.} =
     let services = getServices()
     if services == nil:
       log lvlWarn, "Failed to initialize language_server_ue_cpp: no services found"
       return
 
-    var ls = newLanguageServerClangdUE(services)
+    var ls = newLanguageServerUECpp(services)
+    {.gcsafe.}:
+      gls = ls
 
     let events = services.getService(EventService)
     let documents = services.getService(DocumentEditorService).get
