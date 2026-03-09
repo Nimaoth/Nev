@@ -416,6 +416,16 @@
       "checksums": {
         "sha1": "4b7c430159be2e8b2dc4b663a9b19f7678b58f87"
       }
+    },
+    "asynctools": {
+      "version": "0.1.1",
+      "vcsRevision": "a1a17d06713727d97810cad291e29dd7c672738f",
+      "url": "https://github.com/Nimaoth/asynctools",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "3f7096335282f45ebab49b939b20a1ed52cdec31"
+      }
     }
   },
   "tasks": {}
