@@ -20,7 +20,7 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 import lisp
 import view
-import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, text_component
+import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, snippet_component, text_component
 
 import "../../modules"/workspace_edit
 
@@ -192,6 +192,9 @@ declareSettings TextEditorSettings, "text":
   ## Mode to activate while hover window is open.
   declare hoverMode, string, "editor.text.hover"
 
+  ## Mode to activate while hover window is open.
+  declare tabStopMode, string, "editor.text.tab-stop"
+
   ## Command to execute when the mode of the text editor changes
   declare modeChangedHandlerCommand, string, ""
 
@@ -251,6 +254,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   inlayHints: InlayHintComponent
   hoverComponent*: HoverComponent
   commandComponent*: CommandComponent
+  snippetComponent*: SnippetComponent
 
   document*: TextDocument
   snapshot: BufferSnapshot
@@ -319,6 +323,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   mEventHandlers: seq[EventHandler]
   eventHandlerOverrides: Table[string, proc(config: EventHandlerConfig): EventHandler {.gcsafe, raises: [].}]
   completionEventHandler: EventHandler
+  tabStopEventHandler: EventHandler
   hoverEventHandler: EventHandler
   commandCount*: int
   commandCountRestore*: int
@@ -355,8 +360,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   completionsDrawnInReverse*: bool = false
 
   lastEndDisplayPoint: DisplayPoint
-
-  currentSnippetData*: Option[SnippetData]
 
   onBufferChangedHandle: Id
   textChangedHandle: Id
@@ -642,7 +645,7 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.hoverComponent.showHover = false
     self.showSignatureHelp = false
     self.scrollOffset = vec2(0, 0)
-    self.currentSnippetData = SnippetData.none
+    self.snippetComponent.currentSnippetData = SnippetData.none
     self.onDocumentChanged.invoke((document.Document,))
 
     self.editors.tryCloseDocument(document)
@@ -802,6 +805,21 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
 
   if inject.contains("above-mode"):
     result.add inject["above-mode"]
+
+  if self.snippetComponent.currentSnippetData.isSome:
+    let tabStopMode = self.settings.tabStopMode.get()
+    if self.tabStopEventHandler == nil or self.tabStopEventHandler.config.context != tabStopMode:
+      let config = self.events.getEventHandlerConfig(tabStopMode)
+      assignEventHandler(self.tabStopEventHandler, config):
+        onAction:
+          if self.handleAction(action, arg, record=true).isSome:
+            Handled
+          else:
+            Ignored
+        onInput:
+          self.handleInput input, record=true
+
+    result.add self.tabStopEventHandler
 
   if self.hoverComponent.showHover and self.hoverComponent.hoverView != nil:
     result.add self.hoverComponent.hoverView.getEventHandlers(inject)
@@ -2891,35 +2909,35 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
 
     of "next-tab-stop":
       result = @selections
-      if self.currentSnippetData.isNone:
+      if self.snippetComponent.currentSnippetData.isNone:
         return
 
       var foundTabStop = false
-      while self.currentSnippetData.get.currentTabStop < self.currentSnippetData.get.highestTabStop:
-        self.currentSnippetData.get.currentTabStop.inc
-        self.currentSnippetData.get.tabStopAnchors.withValue(self.currentSnippetData.get.currentTabStop, val):
+      while self.snippetComponent.currentSnippetData.get.currentTabStop < self.snippetComponent.currentSnippetData.get.highestTabStop:
+        self.snippetComponent.currentSnippetData.get.currentTabStop.inc
+        self.snippetComponent.currentSnippetData.get.tabStopAnchors.withValue(self.snippetComponent.currentSnippetData.get.currentTabStop, val):
           result = self.resolveAnchors(val[])
           foundTabStop = true
           break
 
       if not foundTabStop:
-        self.currentSnippetData.get.currentTabStop = 0
-        result = self.resolveAnchors(self.currentSnippetData.get.tabStopAnchors[0])
+        self.snippetComponent.currentSnippetData.get.currentTabStop = 0
+        result = self.resolveAnchors(self.snippetComponent.currentSnippetData.get.tabStopAnchors[0])
 
     of "prev-tab-stop":
       result = @selections
-      if self.currentSnippetData.isNone:
+      if self.snippetComponent.currentSnippetData.isNone:
         return
 
-      if self.currentSnippetData.get.currentTabStop == 0:
-        self.currentSnippetData.get.currentTabStop = self.currentSnippetData.get.highestTabStop
-        self.currentSnippetData.get.tabStopAnchors.withValue(self.currentSnippetData.get.currentTabStop, val):
+      if self.snippetComponent.currentSnippetData.get.currentTabStop == 0:
+        self.snippetComponent.currentSnippetData.get.currentTabStop = self.snippetComponent.currentSnippetData.get.highestTabStop
+        self.snippetComponent.currentSnippetData.get.tabStopAnchors.withValue(self.snippetComponent.currentSnippetData.get.currentTabStop, val):
           result = self.resolveAnchors(val[])
         return
 
-      while self.currentSnippetData.get.currentTabStop > 1:
-        self.currentSnippetData.get.currentTabStop.dec
-        self.currentSnippetData.get.tabStopAnchors.withValue(self.currentSnippetData.get.currentTabStop, val):
+      while self.snippetComponent.currentSnippetData.get.currentTabStop > 1:
+        self.snippetComponent.currentSnippetData.get.currentTabStop.dec
+        self.snippetComponent.currentSnippetData.get.tabStopAnchors.withValue(self.snippetComponent.currentSnippetData.get.currentTabStop, val):
           result = self.resolveAnchors(val[])
           break
 
@@ -3648,10 +3666,10 @@ proc selectNextCompletionVisual*(self: TextDocumentEditor) {.expose("editor.text
     self.selectNextCompletion()
 
 proc hasTabStops*(self: TextDocumentEditor): bool =
-  return self.currentSnippetData.isSome
+  return self.snippetComponent.currentSnippetData.isSome
 
 proc clearTabStops*(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.currentSnippetData = SnippetData.none
+  self.snippetComponent.currentSnippetData = SnippetData.none
 
 proc applyAutoIndent(self: TextDocumentEditor, edits: var seq[Selection], texts: var seq[string]) =
   while texts.len < edits.len:
@@ -3854,7 +3872,7 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
     discard self.document.edit(editSelections, self.selections, insertTexts)
 
   if snippetData.isSome:
-    self.currentSnippetData = snippetData
+    self.snippetComponent.currentSnippetData = snippetData
     self.move("(next-tab-stop)")
 
   if completion.item.showCompletionsAgain.get(false):
@@ -4881,6 +4899,8 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.debugSettings = DebugSettings.new(self.config)
   self.settings = TextEditorSettings.new(self.config)
 
+  self.snippetComponent = newSnippetComponent()
+  self.addComponent(self.snippetComponent)
   self.commandComponent = newCommandComponent()
   self.addComponent(self.commandComponent)
 

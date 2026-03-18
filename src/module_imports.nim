@@ -12,6 +12,7 @@ import "../modules/workspace_edit.nim"
 import "../modules/language_server_document_completion.nim"
 import "../modules/markdown_component.nim"
 import "../modules/command_component.nim"
+import "../modules/snippet_component.nim"
 import "../modules/terminal/terminal.nim"
 import "../modules/language_server_lsp/language_server_lsp.nim"
 import "../modules/language_server_paths.nim"
@@ -34,6 +35,7 @@ proc initModules*() =
   when declared(init_module_language_server_document_completion): init_module_language_server_document_completion()
   when declared(init_module_markdown_component): init_module_markdown_component()
   when declared(init_module_command_component): init_module_command_component()
+  when declared(init_module_snippet_component): init_module_snippet_component()
   when declared(init_module_terminal): init_module_terminal()
   when declared(init_module_language_server_lsp): init_module_language_server_lsp()
   when declared(init_module_language_server_paths): init_module_language_server_paths()
@@ -56,6 +58,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_language_server_document_completion): shutdown_module_language_server_document_completion()
   when declared(shutdown_module_markdown_component): shutdown_module_markdown_component()
   when declared(shutdown_module_command_component): shutdown_module_command_component()
+  when declared(shutdown_module_snippet_component): shutdown_module_snippet_component()
   when declared(shutdown_module_terminal): shutdown_module_terminal()
   when declared(shutdown_module_language_server_lsp): shutdown_module_language_server_lsp()
   when declared(shutdown_module_language_server_paths): shutdown_module_language_server_paths()

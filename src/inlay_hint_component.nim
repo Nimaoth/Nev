@@ -111,7 +111,7 @@ when implModule:
     let visibleRangeHalf = te.visibleTextRange(screenLineCount div 2)
     let visibleRange = te.visibleTextRange(screenLineCount)
     let snapshot = text.buffer.snapshot.clone()
-    let inlayHints: Response[seq[language_server_base.InlayHint]] = await lsComp.getInlayHints(document.filename, visibleRange)
+    let inlayHints: Response[seq[language_server_base.InlayHint]] = await lsComp.getInlayHints(document.filename, visibleRange.toSelection)
     if self.document.isNil:
       return
 
@@ -125,8 +125,8 @@ when implModule:
       self.inlayHints = inlayHints.result.mapIt (snapshot.anchorAt(it.location.toPoint, it.getBias), it)
       self.lastInlayHintTimestamp = snapshot.version
       self.updateInlayHintsAfterChange(snapshot)
-      self.lastInlayHintDisplayRange = visibleRange.toRange
-      self.lastInlayHintBufferRange = visibleRangeHalf.toRange
+      self.lastInlayHintDisplayRange = visibleRange
+      self.lastInlayHintBufferRange = visibleRangeHalf
 
       self.displayMap.overlay.clear(overlayIdInlayHint)
       for hint in self.inlayHints:
@@ -165,7 +165,7 @@ when implModule:
 
     let snapshot = text.buffer.snapshot.clone()
     self.updateInlayHintsAfterChange(snapshot)
-    let visibleRange = te.visibleTextRange.toRange
+    let visibleRange = te.visibleTextRange
     let bufferRange = self.lastInlayHintBufferRange
     if visibleRange.a < bufferRange.a or visibleRange.b > bufferRange.b:
       self.inlayHintComponentUpdateInlayHints()
