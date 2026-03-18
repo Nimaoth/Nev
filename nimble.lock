@@ -302,12 +302,12 @@
     },
     "nimsumtree": {
       "version": "0.5.6",
-      "vcsRevision": "ee2d92bde86ce87b32bc46db18bfcf91ab84193d",
+      "vcsRevision": "42f6182179aca10cb3d7cd4d4ff84a3e7cd88db8",
       "url": "https://github.com/Nimaoth/nimsumtree",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "24bd7034d55792091dda85ed051633e4b1262615"
+        "sha1": "9f6ba377f2d57a13ba6e750770b5300326576b2a"
       }
     },
     "nimtreesitter": {
@@ -322,12 +322,12 @@
     },
     "nimwasmtime": {
       "version": "0.2.1",
-      "vcsRevision": "8e0fe14b52013f35a8ef3ef4231a6db698c7af3d",
+      "vcsRevision": "2a33f8bc6193307c7b17f04e14f8aaec5e1f966d",
       "url": "https://github.com/Nimaoth/nimwasmtime",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "0b8efd562c97dc6cf71e5556b1018a95b3331b15"
+        "sha1": "f326ea1ed2111ed6b7570e969171cf9b709b2201"
       }
     },
     "npeg": {
@@ -419,12 +419,12 @@
     },
     "asynctools": {
       "version": "0.1.1",
-      "vcsRevision": "a1a17d06713727d97810cad291e29dd7c672738f",
+      "vcsRevision": "214b057fc7d875687932874a86672b2142cb722b",
       "url": "https://github.com/Nimaoth/asynctools",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "3f7096335282f45ebab49b939b20a1ed52cdec31"
+        "sha1": "44d7a80cd4d16a382dc8e7a0c96f824e76032d65"
       }
     }
   },
