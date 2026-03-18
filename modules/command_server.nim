@@ -5,14 +5,20 @@ import service, app_options
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-# DLL API
-proc commandServerTryAttach(options: AppOptions, processId: int) {.rtl, gcsafe, raises: [].}
+when defined(appCommandServer):
+  # DLL API
+  proc commandServerTryAttach(options: AppOptions, processId: int) {.rtl, gcsafe, raises: [].}
 
-# Nice wrappers
-proc tryAttach*(options: AppOptions, processId: int) = commandServerTryAttach(options, processId)
+  # Nice wrappers
+  proc tryAttach*(options: AppOptions, processId: int) = commandServerTryAttach(options, processId)
+
+when not defined(appCommandServer):
+  static:
+    echo "DONT build command server"
+  proc tryAttach*(options: AppOptions, processId: int) = discard
 
 # Implementation
-when implModule:
+when implModule and defined(appCommandServer):
   import std/[json, strutils, strformat, sequtils, os]
   import misc/[custom_logger, util, myjsonutils]
   import asynctools/asyncipc
