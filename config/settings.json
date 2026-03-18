@@ -580,6 +580,25 @@
                 ]
             }
         },
+        "kotlin": {
+            "+text": {
+                "treesitter.repository": "fwcd/tree-sitter-kotlin",
+                "tab-width": 4,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/"
+                ]
+            }
+        },
         "zig": {
             "+text": {
                 "treesitter.repository": "maxxnino/tree-sitter-zig",
@@ -622,6 +641,23 @@
                     "["
                 ],
                 "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/",
+                ],
+            },
+        },
+        "xml": {
+            "+text": {
+                "treesitter.repository": "tree-sitter-grammars/tree-sitter-xml/xml",
+                "tab-width": 4,
+                "indent": "tabs",
+                "indent-after": [
+                    ">",
+                    "<",
+                    "\"",
+                ],
+                // "line-comment": "//",
                 "block-comment": [
                     "/*",
                     "*/",

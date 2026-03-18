@@ -9,6 +9,7 @@
     "text.modes": ["vscode"],
     "text.default-mode": "vscode",
     "text.completion-mode": "vscode.completion",
+    "text.tab-stop-mode": "vscode.tab-stop",
 
     "input": {
         "vscode.handle-inputs": true,

@@ -315,8 +315,8 @@
         "<C-e>": ["terminal.edit-terminal-buffer"],
         "<C-u>": "terminal.scroll 50",
         "<C-d>": "terminal.scroll -50",
-        "<C-v>": "terminal.paste-terminal",
-        "p": "terminal.paste-terminal",
+        "<C-v>": "terminal.paste",
+        "p": "terminal.paste",
     },
     "terminal": {
         "<CS-UP>": "terminal.scroll 2",

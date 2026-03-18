@@ -107,6 +107,7 @@ For examples and default values see [here](../config/settings.json)
 | `text.signs.show` | "auto" \| "yes" \| "no" \| "number" | "number" | Defines how the sign column is displayed. - auto: Signs are next to line numbers, width is based on amount of signs in a line. - yes: Signs are next to line numbers and sign column is always visible. Width is defined in `max-width` - no: Don't show the sign column - number: Show signs instead of the line number, no extra sign column. |
 | `text.single-click-command` | string | "" | Command to run after single clicking on some text. |
 | `text.single-click-command-args` | any | [] | Arguments to the command which is run when single clicking on some text. |
+| `text.tab-stop-mode` | string | "editor.text.tab-stop" | Mode to activate while hover window is open. |
 | `text.tab-width` | int | 4 | How many characters wide a tab is. |
 | `text.treesitter.enable` | bool | true | Enable parsing code into ASTs using treesitter. Also requires a treesitter parser for a specific language. |
 | `text.treesitter.language` | string \| null | null | Override the language name used for choosing the treesitter parser. If not set then the documents language id is used. |
