@@ -157,7 +157,6 @@ when implModule:
     let edit = editor.getTextEditorComponent().getOr:
       return
 
-    # decorations.clearOverlays(7)
     var overlaysToAdd: seq[OverlayDef] = @[]
 
     var cursor = syntaxMap.layerIndex.initCursor(SyntaxLayerRefSummary)

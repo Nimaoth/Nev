@@ -128,16 +128,19 @@ when implModule:
       self.lastInlayHintDisplayRange = visibleRange
       self.lastInlayHintBufferRange = visibleRangeHalf
 
-      self.displayMap.overlay.clear(overlayIdInlayHint)
+      var overlaysToAdd: seq[OverlayDef] = @[]
       for hint in self.inlayHints:
         let point = hint.hint.location.toPoint
         let bias = hint.hint.getBias
         if hint.hint.paddingLeft:
-          self.displayMap.overlay.addOverlay(point...point, " " & hint.hint.label, overlayIdInlayHint, "comment", bias)
+          overlaysToAdd.add (point...point, " " & hint.hint.label, "comment", bias, 0, OverlayRenderLocation.Inline)
         elif hint.hint.paddingRight:
-          self.displayMap.overlay.addOverlay(point...point, hint.hint.label & " ", overlayIdInlayHint, "comment", bias)
+          overlaysToAdd.add (point...point, hint.hint.label & " ", "comment", bias, 0, OverlayRenderLocation.Inline)
         else:
-          self.displayMap.overlay.addOverlay(point...point, hint.hint.label, overlayIdInlayHint, "comment", bias)
+          overlaysToAdd.add (point...point, hint.hint.label, "comment", bias, 0, OverlayRenderLocation.Inline)
+
+      if overlaysToAdd.len > 0:
+        self.displayMap.overlay.addOverlays(overlayIdInlayHint, replace = true, overlaysToAdd)
 
     self.owner.DocumentEditor.markDirty()
 
