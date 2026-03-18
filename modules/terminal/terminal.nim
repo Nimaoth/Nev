@@ -2472,6 +2472,8 @@ when implModule:
     ).toJson
 
   proc setTheme(self: Terminal, theme: Theme) =
+    if theme == nil:
+      return
     let colors1 = @[
       theme.color("terminal.ansiBlack", color(0.5, 0.5, 0.5)),
       theme.color("terminal.ansiRed", color(1.0, 0.5, 0.5)),
