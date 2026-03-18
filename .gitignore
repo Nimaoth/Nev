@@ -138,3 +138,10 @@ paper.json
 test
 editing-trace.js
 nimbledeps
+interned_string.nim
+scratch
+modules2
+plugins/harpoon
+moves.md
+debugger.md
+unsaved
