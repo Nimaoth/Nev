@@ -1,5 +1,5 @@
 import std/[options]
-import nimsumtree/[rope]
+import nimsumtree/[rope, buffer]
 import misc/[event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import component
@@ -9,18 +9,25 @@ export component
 include dynlib_export
 
 type TextEditorComponent* = ref object of Component
-  # onEdit*: Event[Patch[Point]]
+  onSelectionsChanged2*: Event[tuple[editor: TextEditorComponent, old: seq[Range[Point]]]]
+  onScroll*: Event[void]
+  onOverlaysChanged*: Event[tuple[ids: seq[int]]]
+  onEdit*: Event[tuple[oldText: Rope, patch: Patch[Point]]]
 
 # DLL API
 var TextEditorComponentId* {.apprtl.}: ComponentTypeId
 
-proc textEditorComponentSelections(self: TextEditorComponent): lent seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
-proc textEditorComponentSetSelections(self: TextEditorComponent, selections: sink seq[Range[Point]]) {.apprtl, gcsafe, raises: [].}
-proc textEditorComponentSetTargetSelections(self: TextEditorComponent, selections: sink seq[Range[Point]]) {.apprtl, gcsafe, raises: [].}
+{.push apprtl, gcsafe, raises: [].}
+proc textEditorComponentSelections(self: TextEditorComponent): lent seq[Range[Point]]
+proc textEditorComponentSetSelections(self: TextEditorComponent, selections: sink seq[Range[Point]])
+proc textEditorComponentSetTargetSelections(self: TextEditorComponent, selections: sink seq[Range[Point]])
 
-proc getTextEditorComponent*(self: ComponentOwner): Option[TextEditorComponent] {.apprtl, gcsafe, raises: [].}
-proc textEditorComponentCenterCursor(self: TextEditorComponent, point: Point, relativePosition: float = 0.5, snap: bool = false) {.apprtl, gcsafe, raises: [].}
-proc textEditorComponentScrollToCursor(self: TextEditorComponent, point: Point, scrollBehaviour: ScrollBehaviour, snap: bool = false) {.apprtl, gcsafe, raises: [].}
+proc getTextEditorComponent*(self: ComponentOwner): Option[TextEditorComponent]
+proc textEditorComponentCenterCursor(self: TextEditorComponent, point: Point, relativePosition: float = 0.5, snap: bool = false)
+proc textEditorComponentScrollToCursor(self: TextEditorComponent, point: Point, scrollBehaviour: ScrollBehaviour, snap: bool = false)
+proc textEditorVisibleTextRange(self: TextEditorComponent, buffer: int = 0): Range[Point]
+proc textEditorToDisplayPoint(self: TextEditorComponent, point: Point, bias: Bias = Bias.Right): Point
+{.pop.}
 
 # Nice wrappers
 proc selection*(self: TextEditorComponent): Range[Point] {.inline.} = textEditorComponentSelections(self)[0]
@@ -34,6 +41,8 @@ proc `targetSelections=`*(self: TextEditorComponent, selections: sink seq[Range[
 proc `targetSelection=`*(self: TextEditorComponent, selection: Range[Point]) {.inline.} = textEditorComponentSetTargetSelections(self, @[selection])
 proc centerCursor*(self: TextEditorComponent, point: Point, relativePosition: float = 0.5, snap: bool = false) {.inline.} = textEditorComponentCenterCursor(self, point, relativePosition, snap)
 proc scrollToCursor*(self: TextEditorComponent, point: Point, scrollBehaviour: ScrollBehaviour, snap: bool = false) {.inline.} = textEditorComponentScrollToCursor(self, point, scrollBehaviour, snap)
+proc visibleTextRange*(self: TextEditorComponent, buffer: int = 0): Range[Point] = textEditorVisibleTextRange(self, buffer)
+proc toDisplayPoint*(self: TextEditorComponent, point: Point, bias: Bias = Bias.Right): Point = textEditorToDisplayPoint(self, point, bias)
 
 # Implementation
 when implModule:
@@ -104,11 +113,14 @@ when implModule:
       return
     let self = self.TextEditorComponentImpl
     var old = seq[Selection].default
+    var old2 = seq[Range[Point]].default
     swap(old, self.mSelectionsOld)
+    swap(old2, self.mSelections)
     self.mSelectionsOld = selections.ensureMove
     self.mSelections = self.mSelectionsOld.mapIt(it.toRange)
     self.handleSelectionsChanged(old, addToHistory)
     self.onSelectionsChanged.invoke((self.TextEditorComponent, old))
+    self.onSelectionsChanged2.invoke((self.TextEditorComponent, old2))
 
   proc textEditorComponentSelections(self: TextEditorComponent): lent seq[Range[Point]] =
     return self.TextEditorComponentImpl.mSelections
@@ -118,11 +130,14 @@ when implModule:
       return
     let self = self.TextEditorComponentImpl
     var old = seq[Selection].default
+    var old2 = seq[Range[Point]].default
     swap(old, self.mSelectionsOld)
+    swap(old2, self.mSelections)
     self.mSelections = selections.ensureMove
     self.mSelectionsOld = self.mSelections.mapIt(it.toSelection)
     self.handleSelectionsChanged(old)
     self.onSelectionsChanged.invoke((self.TextEditorComponent, old))
+    self.onSelectionsChanged2.invoke((self.TextEditorComponent, old2))
 
   proc textEditorComponentSetTargetSelections(self: TextEditorComponent, selections: sink seq[Range[Point]]) =
     let self = self.TextEditorComponentImpl
@@ -176,8 +191,12 @@ when implModule:
 
     return displayPoint(0, 0)...displayPoint(0, 0)
 
-  proc visibleTextRange*(self: TextEditorComponent, buffer: int = 0): Selection =
+  proc textEditorVisibleTextRange(self: TextEditorComponent, buffer: int = 0): Range[Point] =
     let self = self.TextEditorComponentImpl
     let displayRange = self.visibleDisplayRange(buffer)
-    result.first = self.displayMap.toPoint(displayRange.a).toCursor
-    result.last = self.displayMap.toPoint(displayRange.b).toCursor
+    result.a = self.displayMap.toPoint(displayRange.a)
+    result.b = self.displayMap.toPoint(displayRange.b)
+
+  proc textEditorToDisplayPoint(self: TextEditorComponent, point: Point, bias: Bias = Bias.Right): Point =
+    let self = self.TextEditorComponentImpl
+    return self.displayMap.toDisplayPoint(point, bias).Point

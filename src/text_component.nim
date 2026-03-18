@@ -8,7 +8,7 @@ export component
 include dynlib_export
 
 type TextComponent* = ref object of Component
-  onEdit*: Event[Patch[Point]]
+  onEdit*: Event[tuple[oldText: Rope, patch: Patch[Point]]]
 
 # DLL API
 var TextComponentId* {.apprtl.}: ComponentTypeId

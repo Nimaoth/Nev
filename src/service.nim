@@ -153,8 +153,8 @@ proc getServiceAsync*(self: Services, T: typedesc): Future[Option[T]] {.gcsafe, 
       return service.get.T.some
   return T.none
 
-proc addService*[T: Service](self: Services, service: T) {.gcsafe, raises: [].} =
-  self.addService(T.serviceName, service)
+proc addService*[T: Service](self: Services, service: T, dependencies: seq[string] = @[]) {.gcsafe, raises: [].} =
+  self.addService(T.serviceName, service, dependencies)
 
 macro addBuiltinServiceImpl(T: typed, name: static string, dependencies: static seq[string]) =
   var dependencyNames = nnkBracket.newTree()

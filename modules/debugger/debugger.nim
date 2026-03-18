@@ -1900,7 +1900,7 @@ when implModule:
         return
       let id = document.onDocumentSaved.subscribe proc(document: Document) =
         self.flushBreakpointsForFileDelayed(document.filename, 1000)
-      let id2 = text.onEdit.subscribe proc(patch: auto) =
+      let id2 = text.onEdit.subscribe proc(args: tuple[oldText: Rope, patch: Patch[Point]]) =
         self.updateBreakpointsForFile(document.filename)
       self.documentCallbacks[document.filename] = (document, id, id2)
 

@@ -770,7 +770,7 @@ when implModule:
     else:
       asyncSpawn self.client.notifyOpenedTextDocumentMain(language.languageId, document.localizedPath, $text.content)
 
-    let onEditHandle = text.onEdit.subscribe proc(patch: Patch[Point]): void {.gcsafe, raises: [].} =
+    let onEditHandle = text.onEdit.subscribe proc(args: tuple[oldText: Rope, patch: Patch[Point]]): void {.gcsafe, raises: [].} =
       # debugf"TEXT INSERTED {args.document.localizedPath}:{args.location}: {args.text}"
       # todo: we should batch these, as onEdit can be called multiple times per frame
       # especially for full document sync
@@ -782,7 +782,7 @@ when implModule:
       else:
         var c = text.content.cursorT(Point)
         # todo: currently relies on edits being sorted
-        let changes = patch.edits.mapIt(block:
+        let changes = args.patch.edits.mapIt(block:
           c.seekForward(it.new.a)
           let text = c.slice(it.new.b)
           var oldAdjusted: rope.Range[Point]

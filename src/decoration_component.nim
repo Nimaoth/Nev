@@ -34,6 +34,8 @@ type
   DecorationComponent* = ref object of Component
     settings*: SignColumnSettings
 
+  OverlayDef* = tuple[range: Range[Point], text: string, scope: string = "", bias: Bias = Bias.Left, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline]
+
 # DLL API
 var DecorationComponentId* {.apprtl.}: ComponentTypeId
 
@@ -43,6 +45,7 @@ proc decorationComponentClearCustomHighlights(self: DecorationComponent, id: Id)
 proc decorationComponentAddCustomHighlight(self: DecorationComponent, id: Id, selection: Range[Point], color: string, tint: Color = color(1, 1, 1)) {.apprtl, gcsafe, raises: [].}
 proc decorationComponentClearOverlays(self: DecorationComponent, id: int = -1) {.apprtl, gcsafe, raises: [].}
 proc decorationComponentAddOverlay(self: DecorationComponent, selection: Range[Point], text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) {.apprtl, gcsafe, raises: [].}
+proc decorationComponentAddOverlays(self: DecorationComponent, id: int, replace: bool, overlays: sink seq[OverlayDef]) {.apprtl, gcsafe, raises: [].}
 
 proc getDecorationComponent*(self: ComponentOwner): Option[DecorationComponent] {.apprtl, gcsafe, raises: [].}
 
@@ -53,10 +56,11 @@ proc clearCustomHighlights*(self: DecorationComponent, id: Id) {.inline.} = deco
 proc addCustomHighlight*(self: DecorationComponent, id: Id, selection: Range[Point], color: string, tint: Color = color(1, 1, 1)) {.inline.} = decorationComponentAddCustomHighlight(self, id, selection, color, tint)
 proc clearOverlays*(self: DecorationComponent, id: int = -1) {.inline.} = decorationComponentClearOverlays(self, id)
 proc addOverlay*(self: DecorationComponent, selection: Range[Point], text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) {.inline.} = decorationComponentAddOverlay(self, selection, text, id, scope, bias, renderId, location)
+proc addOverlays*(self: DecorationComponent, id: int, replace: bool, overlays: sink seq[OverlayDef]) = decorationComponentAddOverlays(self, id, replace, overlays)
 
 # Implementation
 when implModule:
-  import std/[tables]
+  import std/[tables, sequtils]
   import misc/[util, custom_logger, rope_utils]
   import document_editor
   import text/[display_map, overlay_map]
@@ -196,11 +200,19 @@ when implModule:
     self.displayMap.overlay.clear(id)
     self.owner.DocumentEditor.markDirty()
 
-  proc decorationComponentAddOverlay(self: DecorationComponent, selection: Range[Point], text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) =
-    let self = self.DecorationComponentImpl
-    let location = case location
+  proc toInternal(location: OverlayRenderLocation): overlay_map.OverlayRenderLocation =
+    case location
       of OverlayRenderLocation.Inline: overlay_map.OverlayRenderLocation.Inline
       of OverlayRenderLocation.Below: overlay_map.OverlayRenderLocation.Below
       of OverlayRenderLocation.Above: overlay_map.OverlayRenderLocation.Above
+
+  proc decorationComponentAddOverlay(self: DecorationComponent, selection: Range[Point], text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) =
+    let self = self.DecorationComponentImpl
+    let location = location.toInternal
     self.displayMap.overlay.addOverlay(selection, text, id, scope, bias, renderId, location)
     self.owner.DocumentEditor.markDirty()
+
+  proc decorationComponentAddOverlays(self: DecorationComponent, id: int, replace: bool, overlays: sink seq[OverlayDef]) =
+      let self = self.DecorationComponentImpl
+      self.displayMap.overlay.addOverlays(id, replace, overlays.mapIt((it.range, it.text, it.scope, it.bias, it.renderId, it.location.toInternal)))
+      self.owner.DocumentEditor.markDirty()

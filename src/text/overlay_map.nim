@@ -1,12 +1,16 @@
-import std/[options, strutils, atomics, strformat, tables]
+import std/[options, strutils, atomics, strformat, tables, sets, algorithm]
 import nimsumtree/[rope, sumtree, buffer, clock, static_array]
-import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
+import misc/[custom_async, custom_unicode, util, timer, event, rope_utils, array_set]
 import syntax_map, theme, chroma
 
 var debugOverlayMap* = false
 
 {.push gcsafe.}
 {.push raises: [].}
+
+{.push warning[Deprecated]:off.}
+import std/[threadpool]
+{.pop.}
 
 const debugOverlayMapUpdates* = false
 var debugOverlayMapUpdatesRT* = true
@@ -139,9 +143,19 @@ type
     buffer*: InputMapSnapshot
     version*: int
 
+  OverlayMapOperation* = object
+    id*: int
+    buffer*: BufferSnapshot
+    replace*: bool
+    newOverlays*: seq[OverlayDef]
+
+  OverlayDef* = tuple[range: Range[Point], text: string, scope: string = "", bias: Bias = Bias.Left, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline]
+
   OverlayMap* = ref object
     snapshot*: OverlayMapSnapshot
-    onUpdated*: Event[tuple[map: OverlayMap, old: OverlayMapSnapshot, patch: Patch[OverlayPoint]]]
+    onUpdated*: Event[tuple[map: OverlayMap, old: OverlayMapSnapshot, patch: Patch[OverlayPoint], ids: seq[int]]]
+    pendingOperations*: seq[OverlayMapOperation]
+    isApplyingOps: bool = false
 
   OverlayChunkIterator* = object
     styledChunks*: InputChunkIterator
@@ -160,6 +174,16 @@ type
     ropeIter: ChunkIterator
 
     theme: Theme
+
+proc `=copy`*(a: var OverlayMapOperation, b: OverlayMapOperation) =
+  if a.addr == b.addr:
+    return
+  a.id = b.id
+  a.buffer = b.buffer.clone()
+  a.replace = b.replace
+  a.newOverlays = b.newOverlays
+
+proc applyOpsAsync(self: OverlayMap) {.async: (raises: []).}
 
 func clone*(self: OverlayMapSnapshot): OverlayMapSnapshot =
   OverlayMapSnapshot(map: self.map.clone(), buffer: self.buffer.clone(), version: self.version)
@@ -617,36 +641,39 @@ proc clear*(self: var OverlayMapSnapshot, id: int = -1): Patch[OverlayPoint] =
         lastEmpty = false
 
       if c.item.getSome(item):
+        let dst = newMap.summary.dst
         var skipNext = false
         if lastEmpty or (c.prevItem.getSome(prevItem) and prevItem.kind == OverlayMapChunkKind.Empty):
           lastEmpty = true
           newMap.updateLast proc(chunk: var OverlayMapChunk) =
             chunk.src += item.src
             chunk.srcBytes += item.srcBytes
-            chunk.dst += item.dst
-            chunk.dstBytes += item.dstBytes
+            chunk.dst += item.src.OverlayPoint
+            chunk.dstBytes += item.srcBytes
 
             if c.nextItem.getSome(nextItem) and nextItem.kind == OverlayMapChunkKind.Empty:
               chunk.src += nextItem.src
               chunk.srcBytes += nextItem.srcBytes
-              chunk.dst += nextItem.dst
-              chunk.dstBytes += nextItem.dstBytes
+              chunk.dst += nextItem.src.OverlayPoint
+              chunk.dstBytes += nextItem.srcBytes
               skipNext = true
 
         elif item.src != point(0, 0):
           newMap.add OverlayMapChunk(src: item.src, dst: item.src.OverlayPoint, srcBytes: item.srcBytes, dstBytes: item.srcBytes)
           lastEmpty = item.kind == OverlayMapChunkKind.Empty
 
-        patch.add initEdit(c.startPos.dst...c.endPos.dst, c.startPos.src.OverlayPoint...c.endPos.src.OverlayPoint)
+        let change = c.endPos.src - c.startPos.src
+        patch.add initEdit(c.startPos.dst...c.endPos.dst, dst...(dst + change))
         c.next()
         if skipNext:
           c.next()
 
       else:
-        debugEcho &"  aaaaaaaaaa {c.startPos}...{c.endPos}"
+        assert false
 
     newMap.append c.suffix()
 
+  assert patch.isValid
   self = OverlayMapSnapshot(
     map: newMap,
     buffer: self.buffer.clone(),
@@ -655,34 +682,37 @@ proc clear*(self: var OverlayMapSnapshot, id: int = -1): Patch[OverlayPoint] =
 
   return patch
 
+proc enqueueOperation*(self: OverlayMap, op: sink OverlayMapOperation)
+
 proc clear*(self: OverlayMap, id: int = -1) =
   let idCounts = self.snapshot.map.summary.idCounts
   if id notin 0..<idCounts.len or idCounts[id] == 0:
     return
-  let old = self.snapshot.clone()
-  let patch = self.snapshot.clear(id)
-  self.onUpdated.invoke (self, old, patch)
+  self.enqueueOperation(OverlayMapOperation(
+    id: id,
+    buffer: self.snapshot.buffer.clone(),
+    replace: true,
+    newOverlays: @[]
+  ))
 
-proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, scope: string = "", bias: Bias = Bias.Left, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) =
-  logOverlayMapUpdate &"OverlayMap.add {range}, '{text}', {id}, '{scope}', bias, {self.snapshot.desc}"
+proc addOverlay*(self: var OverlayMapSnapshot, range: Range[Point], text: string, id: int, scope: string = "", bias: Bias = Bias.Left, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline): Patch[OverlayPoint] =
+  logOverlayMapUpdate &"OverlayMap.add {range}, '{text}', {id}, '{scope}', bias, {self.desc}"
 
   template log(msg: untyped) =
     when false:
       debugEcho msg
 
 
-  log &"OverlayMap.addOverlay {range}, '{text}'\n{self.snapshot}"
+  log &"OverlayMap.addOverlay {range}, '{text}'\n{self}"
   let newSummary = TextSummary.init(text)
   var newMap = SumTree[OverlayMapChunk].new()
 
-  var patch: Patch[OverlayPoint]
+  let byteRange = self.buffer.visibleText.pointToOffset(range.a)...self.buffer.visibleText.pointToOffset(range.b)
 
-  let byteRange = self.snapshot.buffer.visibleText.pointToOffset(range.a)...self.snapshot.buffer.visibleText.pointToOffset(range.b)
-
-  var c = self.snapshot.map.initCursor(OverlayMapChunkSummary)
+  var c = self.map.initCursor(OverlayMapChunkSummary)
   newMap.append c.slice(range.a.OverlayMapChunkSrc, Bias.Left)
   # Skip over left aligned overlays at the current position
-  while c.endPos.src < self.snapshot.map.summary.src and range.a == c.endPos.src and (
+  while c.endPos.src < self.map.summary.src and range.a == c.endPos.src and (
     (c.item.get[].kind != Empty and c.item.get[].bias == Bias.Left) or (c.nextItem().getSome(item) and item[].kind != Empty and item[].bias == Bias.Left)):
     log &"Overlay biased left, at border {range}, {c.endPos}"
     log &"-> chunk {c.item.get[]}"
@@ -706,7 +736,7 @@ proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, s
 
   let overlayRangeOld = self.toOverlayPoint(range.a)...self.toOverlayPoint(range.b)
   let overlayRangeNew = overlayRangeOld.a...(overlayRangeOld.a + newSummary.lines.OverlayPoint)
-  patch.add initEdit(overlayRangeOld, overlayRangeNew)
+  result.add initEdit(overlayRangeOld, overlayRangeNew)
 
   if range.b < c.endPos.src or (currentEmpty and bias == Bias.Left):
     if c.item.getSome(item):
@@ -720,15 +750,144 @@ proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, s
 
   c.next()
   newMap.append c.suffix()
-  let newSnapshot = OverlayMapSnapshot(
+
+  self = OverlayMapSnapshot(
     map: newMap,
-    buffer: self.snapshot.buffer.clone(),
-    version: self.snapshot.version + 1,
+    buffer: self.buffer.clone(),
+    version: self.version + 1,
   )
-  # log newSnapshot
-  let old = self.snapshot.clone()
-  self.snapshot = newSnapshot
-  self.onUpdated.invoke (self, old, patch)
+
+proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, scope: string = "", bias: Bias = Bias.Left, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) =
+  logOverlayMapUpdate &"OverlayMap.add {range}, '{text}', {id}, '{scope}', bias, {self.snapshot.desc}"
+  self.enqueueOperation(OverlayMapOperation(
+    id: id,
+    buffer: self.snapshot.buffer.clone(),
+    replace: false,
+    newOverlays: @[(range, text, scope, bias, renderId, location)]
+  ))
+
+proc enqueueOperation*(self: OverlayMap, op: sink OverlayMapOperation) =
+  if op.replace:
+    if op.id == -1:
+      self.pendingOperations.setLen(0)
+    else:
+      for i in countdown(self.pendingOperations.high, 0):
+        if self.pendingOperations[i].id == op.id:
+          self.pendingOperations.removeShift(i)
+  self.pendingOperations.add(op)
+  if not self.isApplyingOps:
+    asyncSpawn self.applyOpsAsync()
+
+proc addOverlays*(self: OverlayMap, id: int, replace: bool, overlays: sink seq[OverlayDef]) =
+  self.enqueueOperation(OverlayMapOperation(
+    id: id,
+    buffer: self.snapshot.buffer.clone(),
+    replace: replace,
+    newOverlays: overlays,
+  ))
+
+proc applyOps*(self: var OverlayMapSnapshot, operations: sink seq[OverlayMapOperation]): Patch[OverlayPoint] =
+  var num = 0
+  for op in operations:
+    if op.buffer.version != self.buffer.version:
+      continue
+    num += op.newOverlays.len
+    if op.replace:
+      if op.id == -1:
+        result = result.compose self.clear().edits
+      else:
+        let idCounts = self.map.summary.idCounts
+        if op.id in 0..<idCounts.len and idCounts[op.id] != 0:
+          result = result.compose self.clear(op.id).edits
+
+    var t2 = startTimer()
+    var l = result.edits.len
+    for overlay in op.newOverlays:
+      result = result.compose(self.addOverlay(overlay.range, overlay.text, op.id, overlay.scope, overlay.bias, overlay.renderId, overlay.location).edits)
+  assert result.isValid
+
+proc dismissSupersededOperations(operations: sink seq[OverlayMapOperation]): seq[OverlayMapOperation] =
+  var replacedIds = initHashSet[int]()
+  var dismissAll = false
+
+  for i in countdown(operations.high, 0):
+    let op = operations[i]
+    if dismissAll:
+      continue
+
+    if op.replace:
+      if op.id == -1:
+        dismissAll = true
+        result.add op
+        continue
+
+      if op.id in replacedIds:
+        continue
+
+      replacedIds.incl op.id
+      result.add op
+      continue
+
+    if op.id in replacedIds:
+      continue
+
+    result.add op
+
+  result.reverse()
+
+proc applyOpsThread(snapshot: ptr OverlayMapSnapshot, operations: ptr seq[OverlayMapOperation]): Patch[OverlayPoint] =
+  var ops = operations[]
+  return snapshot[].applyOps(ops)
+
+proc applyOpsAsync(self: OverlayMap) {.async: (raises: []).} =
+  if self.isApplyingOps:
+    return
+  self.isApplyingOps = true
+  defer:
+    self.isApplyingOps = false
+
+  template log(msg: untyped) =
+    when false:
+      debugEcho msg
+
+  try:
+    while true:
+      if self.pendingOperations.len == 0:
+        return
+
+      let oldSnapshot = self.snapshot.clone()
+      var snapshot = self.snapshot.clone()
+      var operations = self.pendingOperations
+      self.pendingOperations.setLen(0)
+
+      let flowVar = spawn applyOpsThread(snapshot.addr, operations.addr)
+      var i = 0
+      while not flowVar.isReady:
+        let sleepTime = if i < 5: 1 else: 10
+        await sleepAsync(sleepTime.milliseconds)
+        inc i
+
+      let patch = ^flowVar
+      # await sleepAsync(150.milliseconds)
+
+      # If text changed while applying ops, retry operations on the newer snapshot.
+      if self.snapshot.buffer.remoteId != snapshot.buffer.remoteId or self.snapshot.buffer.version != snapshot.buffer.version:
+        self.pendingOperations = dismissSupersededOperations(operations & self.pendingOperations)
+        # debugEcho &"dismiss, {self.pendingOperations} new ops"
+        continue
+
+      self.snapshot = snapshot.clone()
+      var ids: seq[int] = @[]
+      for op in operations:
+        ids.incl op.id
+      if patch.edits.len > 0:
+        self.onUpdated.invoke (self, oldSnapshot, patch, ids)
+
+      if self.pendingOperations.len == 0:
+        return
+
+  except CatchableError:
+    discard
 
 var debugOverlayMapNext* = false
 template logIter(msg: untyped) =
@@ -930,6 +1089,9 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
     else:
       discard
 
+  if self.styledChunk.isNone:
+    return OverlayChunk.none
+
   let currentChunk = self.styledChunk.get
   let currentPoint = currentChunk.point + Point(column: self.localOffset.uint32)
   logIter &"  currentChunk: {currentChunk}, currentPoint: {currentPoint}, {self.overlayMapCursor.startPos.src}, {self.overlayMapCursor.endPos.src}, local offset: {self.localOffset}"
@@ -940,7 +1102,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
       self.overlayMapCursor.next()
       echo &"  OverlayChunkIterator.next3 {self.overlayPoint} -> {self.overlayMapCursor.toOverlayPoint(currentPoint)}"
       self.overlayPoint = self.overlayMapCursor.toOverlayPoint(currentPoint)
-      assert false
+      return OverlayChunk.none
 
   let startOffset = self.localOffset
   let map = (
@@ -1026,7 +1188,7 @@ proc renderString*(self: OverlayMapSnapshot): string =
       result.add c
 
 when isMainModule:
-  let content = "abc\ndef"
+  let content = "abcdefghijkl"
   var b = initBuffer(content = content)
   assert $b.visibleText == content
 
@@ -1037,8 +1199,17 @@ when isMainModule:
   echo "---------- initial overlay map"
   echo om.snapshot.renderString()
   echo "----------"
-  om.addOverlay(point(0, 3)...point(0, 3), " = 123", 1, "", Bias.Left)
+  echo om.snapshot.addOverlay(point(0, 3)...point(0, 3), "123", 1, "", Bias.Left)
+  echo om.snapshot.addOverlay(point(0, 6)...point(0, 6), "XYZ", 2, "", Bias.Left)
+  echo om.snapshot.addOverlay(point(0, 9)...point(0, 9), "456", 1, "", Bias.Left)
+  echo "======================================================="
+  echo &"snapshot: {om.snapshot}"
+  echo "---------- overlay map"
+  echo om.snapshot.renderString()
+  echo "----------"
 
+  let p = om.snapshot.clear(1)
+  echo p
   echo "======================================================="
   echo &"snapshot: {om.snapshot}"
   echo "---------- overlay map"

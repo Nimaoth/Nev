@@ -20,7 +20,7 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 import lisp
 import view
-import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component
+import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, text_component
 
 import "../../modules"/workspace_edit
 
@@ -361,6 +361,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   onBufferChangedHandle: Id
   textChangedHandle: Id
   onEditHandle: Id
+  onEditHandle2: Id
   onRequestRerenderHandle: Id
   onRequestRerenderDiffHandle: Id
   loadedHandle: Id
@@ -621,6 +622,7 @@ proc clearDocument*(self: TextDocumentEditor) =
     # log lvlInfo, &"[clearDocument] ({self.id}): '{self.document.filename}'"
     self.document.onBufferChanged.unsubscribe(self.onBufferChangedHandle)
     self.document.onEdit.unsubscribe(self.onEditHandle)
+    self.document.textComponent.onEdit.unsubscribe(self.onEditHandle2)
     self.document.textChanged.unsubscribe(self.textChangedHandle)
     self.document.onRequestRerender.unsubscribe(self.onRequestRerenderHandle)
     self.document.onLoaded.unsubscribe(self.loadedHandle)
@@ -667,6 +669,9 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
 
   self.onEditHandle = document.onEdit.subscribe (arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) =>
     self.handleEdits(arg.edits)
+
+  self.onEditHandle2 = document.textComponent.onEdit.subscribe (args: tuple[oldText: Rope, patch: Patch[Point]]) =>
+    self.textEditorComponent.onEdit.invoke(args)
 
   self.textChangedHandle = document.textChanged.subscribe (_: TextDocument) =>
     self.handleTextDocumentTextChanged()
@@ -1026,10 +1031,12 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
         elif targetColumnX + charWidth > self.lastContentBounds.w - marginX:
           self.scrollOffset.x = self.lastContentBounds.w - marginX - charWidth - displayPoint.column.float * charWidth
 
+  self.textEditorComponent.onScroll.invoke()
   self.markDirty()
 
 proc scrollToTop*(self: TextDocumentEditor) =
   self.scrollBox.scrollXToY(0, 0)
+  self.textEditorComponent.onScroll.invoke()
 
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5, snap: bool = false) =
   if snap:
@@ -1037,6 +1044,7 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: f
   else:
     self.scrollToCursor(cursor, scrollBehaviour = CenterAlways.some, relativePosition = relativePosition)
   # self.scrollBox.scrollTo(self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int, center = true)
+  self.textEditorComponent.onScroll.invoke()
 
 proc isThickCursor*(self: TextDocumentEditor): bool =
   if not self.platform.supportsThinCursor:
@@ -2133,12 +2141,14 @@ proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.tex
     return
   self.scrollOffset.y += amount
   self.scrollBox.scrollWithMomentum(amount)
+  self.textEditorComponent.onScroll.invoke()
   self.markDirty()
 
 proc scrollTextHorizontal*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:
     return
   self.scrollOffset.x += amount * self.platform.charWidth
+  self.textEditorComponent.onScroll.invoke()
   self.markDirty()
 
 proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").} =
@@ -2149,6 +2159,7 @@ proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").
 
   self.scrollOffset.y += self.platform.totalLineHeight * amount.float
   self.scrollBox.scrollWithMomentum(self.platform.totalLineHeight * amount.float)
+  self.textEditorComponent.onScroll.invoke()
 
   self.markDirty()
 
@@ -4664,7 +4675,8 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
       return
 
     # todo: this can scale up pretty quickly, could be done in a background thread
-    self.displayMap.overlay.clear(overlayIdColorHighlight)
+    # self.displayMap.overlay.clear(overlayIdColorHighlight)
+    var overlays: seq[overlay_map.OverlayDef] = @[]
     for r in colorRanges:
       let text = rope[r]
       let color = case kind
@@ -4692,7 +4704,10 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
           c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat / 255.0
         "#" & c.toHex
 
-      self.displayMap.overlay.addOverlay(r.a...r.a, " ■ ", overlayIdColorHighlight, color, renderId = 1)
+      # self.displayMap.overlay.addOverlay(r.a...r.a, " ■ ", overlayIdColorHighlight, color, renderId = 1)
+      overlays.add (r.a...r.a, " ■ ", color, Bias.Left, 1, overlay_map.OverlayRenderLocation.Inline)
+
+    self.displayMap.overlay.addOverlays(overlayIdColorHighlight, true, overlays)
 
   except Exception as e:
     log lvlError, &"Failed to find colors: {e.msg}"
@@ -4850,6 +4865,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.commands = self.services.getService(CommandServiceImpl).get
   self.displayMap = DisplayMap.new()
   self.diffDisplayMap = DisplayMap.new()
+  discard self.displayMap.overlay.onUpdated.subscribe (args: (OverlayMap, OverlayMapSnapshot, Patch[OverlayPoint], seq[int])) => self.textEditorComponent.onOverlaysChanged.invoke((args[3],))
   discard self.displayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
   discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
   discard self.displayMap.onUpdated.subscribe (args: (DisplayMap, DisplayMapSnapshot)) => self.handleDisplayMapUpdated(args[0], args[1])

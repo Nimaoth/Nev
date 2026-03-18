@@ -86,7 +86,7 @@ func clone*(self: DisplayMapSnapshot): DisplayMapSnapshot =
     diffMap: self.diffMap.clone(),
   )
 
-proc handleOverlayMapUpdated(self: DisplayMap, overlay: OverlayMap, old: OverlayMapSnapshot, patch: Patch[OverlayPoint])
+proc handleOverlayMapUpdated(self: DisplayMap, overlay: OverlayMap, old: OverlayMapSnapshot, patch: Patch[OverlayPoint], ids: seq[int])
 proc handleTabMapUpdated(self: DisplayMap, tabMap: TabMap, old: TabMapSnapshot, patch: Patch[TabPoint])
 proc handleWrapMapUpdated(self: DisplayMap, wrapMap: WrapMap, old: WrapMapSnapshot)
 proc handleDiffMapUpdated(self: DisplayMap, diffMap: DiffMap, old: DiffMapSnapshot)
@@ -99,7 +99,7 @@ proc new*(_: typedesc[DisplayMap]): DisplayMap =
     diffMap: DiffMap.new(),
   )
   let self = result
-  discard result.overlay.onUpdated.subscribe (a: (OverlayMap, OverlayMapSnapshot, Patch[OverlayPoint])) => self.handleOverlayMapUpdated(a[0], a[1], a[2])
+  discard result.overlay.onUpdated.subscribe (a: (OverlayMap, OverlayMapSnapshot, Patch[OverlayPoint], seq[int])) => self.handleOverlayMapUpdated(a[0], a[1], a[2], a[3])
   discard result.tabMap.onUpdated.subscribe (a: (TabMap, TabMapSnapshot, Patch[TabPoint])) => self.handleTabMapUpdated(a[0], a[1], a[2])
   discard result.wrapMap.onUpdated.subscribe (a: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(a[0], a[1])
   discard result.diffMap.onUpdated.subscribe (a: (DiffMap, DiffMapSnapshot)) => self.handleDiffMapUpdated(a[0], a[1])
@@ -188,7 +188,7 @@ func snapshot*(self: DisplayMap): DisplayMapSnapshot =
     diffMap: self.diffMap.snapshot.clone(),
   )
 
-proc handleOverlayMapUpdated(self: DisplayMap, overlay: OverlayMap, old: OverlayMapSnapshot, patch: Patch[OverlayPoint]) =
+proc handleOverlayMapUpdated(self: DisplayMap, overlay: OverlayMap, old: OverlayMapSnapshot, patch: Patch[OverlayPoint], ids: seq[int]) =
   assert overlay == self.overlay
   if self.overlay.snapshot.buffer.remoteId != old.buffer.remoteId:
     assert false

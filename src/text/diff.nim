@@ -1,7 +1,7 @@
 import std/[options, atomics]
 import std/[random]
 import nimsumtree/[buffer, rope, sumtree]
-import misc/[custom_unicode]
+import misc/[custom_unicode, util]
 
 type
   LineMapping* = object
@@ -100,12 +100,12 @@ type
     modified: seq[bool]
     len: int
 
-  Operation[T] = object
+  Operation*[T] = object
     old*: Range[int]
     new*: Range[int]
     items*: seq[T]
 
-  Diff[T] = object
+  Diff*[T] = object
     ops*: seq[Operation[T]]
 
   RopeEdit*[T] = tuple
@@ -329,12 +329,6 @@ proc lcs[T, C1, C2](dataA: var DiffData[T, C1], lowerA, upperA: int, dataB: var 
         return
 
     lcs(dataA, x, upperA, dataB, y, upperB, downVector, upVector, cancel, enableCancel)
-
-template data[T](a: openArray[T]): ptr UncheckedArray[T] =
-  if a.len > 0:
-    cast[ptr UncheckedArray[T]](a[0].addr)
-  else:
-    nil
 
 proc diff*[T](a, b: openArray[T], eq: proc(a, b: T): bool {.gcsafe, raises: [].} = nil): Diff[T] =
   var dataA = initDiffData[T, SeqCursor[T]](SeqCursor[T](data: a.data, dataLen: a.len, eq: eq))

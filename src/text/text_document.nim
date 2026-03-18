@@ -191,7 +191,7 @@ type
     onSaved*: Event[void]
     textChanged*: Event[TextDocument]
     onEdit*: Event[tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]]
-    onOperation*: Event[tuple[document: TextDocument, op: Operation]]
+    onOperation*: Event[tuple[document: TextDocument, op: buffer.Operation]]
     onBufferChanged*: Event[tuple[document: TextDocument]]
     onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
     onLanguageServerDetached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
@@ -449,6 +449,7 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
   self.revision.inc
   self.undoableRevision.inc
 
+  let oldText = self.rope
   let op = self.buffer.edit(ranges)
   self.recordSnapshotForDiagnostics()
 
@@ -466,7 +467,7 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
   var patch = Patch[Point]()
   for e in edits:
     patch.edits.add initEdit(e.old.toRange, e.new.toRange)
-  self.textComponent.onEdit.invoke patch
+  self.textComponent.onEdit.invoke (oldText, patch)
 
   if oldSelections.len > 0:
     self.undoSelections[op.timestamp] = @oldSelections
@@ -515,7 +516,7 @@ proc recordSnapshotForDiagnostics(self: TextDocument) =
   while self.diagnosticSnapshots.len > diagnosticHistoryMaxLength:
     self.diagnosticSnapshots.removeShift(0)
 
-proc applyRemoteChanges*(self: TextDocument, ops: sink seq[Operation]) =
+proc applyRemoteChanges*(self: TextDocument, ops: sink seq[buffer.Operation]) =
   let oldText = self.buffer.snapshot().visibleText.clone()
   let numPatchesBefore = self.buffer.patches.len
 
@@ -1602,7 +1603,7 @@ proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
       self.addTreesitterChange(edit.new.a.int, edit.new.a.int + edit.old.len.int, edit.new.b.int, startPosOld, endPosOld, endPosNew)
 
   self.onEdit.invoke (self, edits)
-  self.textComponent.onEdit.invoke pointPatch
+  self.textComponent.onEdit.invoke (oldText, pointPatch)
 
 proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   result = seq[Selection].none
