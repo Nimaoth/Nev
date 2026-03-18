@@ -19,6 +19,7 @@ var dry = false
 var force = false
 var parallel = true
 var modulesToBuild = initHashSet[string]()
+var debug = true
 
 type IdentifierCase* = enum Camel, Pascal, Kebab, Snake, ScreamingSnake
 
@@ -197,7 +198,8 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
 
     try:
       let dependencies = m.dependencies.join(",")
-      let cmd = &"nim c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependencies} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:none --lineDir:off -d:mallocImport {m.path}"
+      let opt = if debug: "none" else: "speed"
+      let cmd = &"nim c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependencies} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:{opt} --lineDir:off -d:mallocImport {m.path}"
       if parallel:
         let v = runCmdAsync(cmd)
         if v != nil:
@@ -273,6 +275,8 @@ proc main() =
         parallel = false
       of "force", "f":
         force = true
+      of "rel", "r":
+        debug = false
       of "dry":
         dry = true
     of cmdEnd: assert(false) # cannot happen
