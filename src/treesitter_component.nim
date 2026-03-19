@@ -23,10 +23,10 @@ type
 var TreesitterComponentId* {.apprtl.}: ComponentTypeId
 
 proc getTreesitterComponent*(self: ComponentOwner): Option[TreesitterComponent] {.apprtl, gcsafe, raises: [].}
-proc treesitterComponentQuery*(self: TreesitterComponent, name: string): Future[Option[TSQuery]] {.apprtl, gcsafe, raises: [].}
+proc treesitterComponentQuery*(self: TreesitterComponent, name: string, language: string = ""): Future[Option[TSQuery]] {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
-proc query*(self: TreesitterComponent, name: string): Future[Option[TSQuery]] = self.treesitterComponentQuery(name)
+proc query*(self: TreesitterComponent, name: string, language: string = ""): Future[Option[TSQuery]] = self.treesitterComponentQuery(name, language)
 
 # Implementation
 when implModule:
@@ -85,26 +85,32 @@ when implModule:
       asyncSpawn comp.loadInjectionLanguageAsync(languageName)
     return comp
 
-  proc treesitterComponentQuery*(self: TreesitterComponent, name: string): Future[Option[TSQuery]] {.async.} =
+  proc treesitterComponentQuery*(self: TreesitterComponent, name: string, language: string = ""): Future[Option[TSQuery]] {.async.} =
     let self = self.TreesitterComponentImpl
-    self.tsQueries.withValue(name, q):
+    let language = if language == "":
+      if self.tsLanguage.isNil: "" else: self.tsLanguage.languageId
+    else:
+      language
+
+    let key = &"{language}/{name}"
+    let tsLanguage = getLoadedLanguage(language)
+
+    self.tsQueries.withValue(key, q):
       if q[].isSome:
         return q[].get.some
       return TSQuery.none
 
-    if self.tsLanguage.isNil:
+    if tsLanguage.isNil:
       return TSQuery.none
 
-    let prevLanguageId = self.tsLanguage.languageId
+    let prevLanguageId = tsLanguage.languageId
     # todo
-    # let treesitterLanguageName = self.settings.treesitter.language.get().get(self.tsLanguage.languageId)
-    let treesitterLanguageName = self.tsLanguage.languageId
+    # let treesitterLanguageName = self.settings.treesitter.language.get().get(tsLanguage.languageId)
+    let treesitterLanguageName = tsLanguage.languageId
     let path = &"app://languages/{treesitterLanguageName}/queries/{name}.scm"
-    let query = self.tsLanguage.queryFile(self.vfs, name, path).await
-    if prevLanguageId != self.tsLanguage.languageId:
-      return TSQuery.none
+    let query = tsLanguage.queryFile(self.vfs, name, path).await
 
-    self.tsQueries[name] = query
+    self.tsQueries[key] = query
     if query.isSome:
       return query.get.some
     return TSQuery.none

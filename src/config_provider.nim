@@ -42,6 +42,7 @@ type
     cache*: Option[T]
     revision*: int
     key*: string
+    defaultValue*: T
 
   SettingGroupDescription* = object
     settings*: seq[int]
@@ -116,8 +117,23 @@ proc decodeRegex*(value: JsonNodeEx, default: string = ""): string =
 proc decodeRegex*(value: RegexSetting, default: string = ""): string =
   return value.impl.decodeRegex(default)
 
-proc setting*(self: ConfigStore, key: string, T: typedesc): Setting[T] =
-  return Setting[T](store: self, key: key)
+proc setting*(self: ConfigStore, key: string, T: typedesc, def: JsonNodeEx = nil): Setting[T] {.gcsafe.} =
+  # if def != nil:
+  #   echo &"setting '{key}' with def {def}"
+  let def = try:
+    if def != nil:
+      when T is JsonNodeEx:
+        def
+      elif T is JsonNode:
+        def.toJson()
+      else:
+        def.jsonTo(T)
+    else:
+      T.default
+  except CatchableError:
+    T.default
+
+  return Setting[T](store: self, key: key, defaultValue: def)
 
 proc extendJson*(a: var JsonNodeEx, b: JsonNodeEx) =
   if not b.extend:
@@ -193,7 +209,7 @@ proc get*[T](self: Setting[T], default: T): lent T =
   return self.cache.get
 
 proc get*[T](self: Setting[T]): lent T =
-  return self.get(T.default)
+  return self.get(self.defaultValue)
 
 proc set*[T](self: Setting[T], value: T) =
   self.store.set(self.key, value)
@@ -299,7 +315,7 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
   typeNode[0][2][2] = nnkRecList.newTree()
 
   var newNode = genAst(name, store, res, prefix = prefixArg, defaultPrefix = prefix):
-    proc new*(_: typedesc[name], store: ConfigStore, prefix: string = defaultPrefix): name =
+    proc new*(_: typedesc[name], store: ConfigStore, prefix: string = defaultPrefix): name {.gcsafe.} =
       var res = name()
       # result.foo = store.setting("foo", int)
 
@@ -341,8 +357,8 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
       typeNode[0][2][2].add nnkIdentDefs.newTree(name.postfix("*"), nnkBracketExpr.newTree(bindSym"Setting", typ), newEmptyNode())
 
       newNode[6].add block:
-        genAst(fieldName = name, settingName, typ, store, res, prefixArg):
-          res.fieldName = store.setting(joinSettingKey(prefixArg, settingName), typ)
+        genAst(fieldName = name, settingName, typ, store, res, prefixArg, default):
+          res.fieldName = ({.gcsafe.}: store.setting(joinSettingKey(prefixArg, settingName), typ, default.toJsonEx(defaultToJsonOptions)))
 
       if default.repr != "nil":
         setDefaultNodes.add block:
@@ -436,7 +452,7 @@ when implModule:
   addBuiltinService(ConfigService)
 
   var nextConfigStoreId = 1
-  proc new*(_: typedesc[ConfigStore], name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore =
+  proc new*(_: typedesc[ConfigStore], name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore {.gcsafe.} =
     let id = block:
       {.gcsafe.}:
         let id = nextConfigStoreId

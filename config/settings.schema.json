@@ -154,6 +154,54 @@
             }
         },
 
+        "^\\+?context-lines$": {
+            "type": "object",
+            "description": "Context lines settings for showing parent nodes (like function, class) at the top of the editor.",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show lines containing parent nodes (like function, type, if/for etc) at the top of the window."
+                },
+                "style": {
+                    "type": "string",
+                    "enum": ["full", "breadcrumb"],
+                    "default": "full",
+                    "description": "How to render context lines: 'full' shows entire lines, 'breadcrumb' shows only names on one line."
+                },
+                "separator": {
+                    "type": "string",
+                    "default": ">",
+                    "description": "Separator between items in breadcrumb style."
+                },
+                "showConditionals": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show if/elif/else/for/while statements in context lines."
+                },
+                "showClasses": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show classes and structs in context lines."
+                },
+                "showFunctions": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show functions and procedures in context lines."
+                },
+                "showMethods": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show methods in context lines."
+                },
+                "showModules": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show modules and imports in context lines."
+                }
+            }
+        },
+
         "^\\+?snippets$": {
             "type": "object",
             "description": "Configure snippets per language. Properties are language ids.",

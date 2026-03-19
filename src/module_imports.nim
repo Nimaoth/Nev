@@ -4,6 +4,7 @@ import "../modules/vcs_git.nim"
 import "../modules/command_server.nim"
 import "../modules/vcs_perforce.nim"
 import "../modules/hover_component.nim"
+import "../modules/contextline_component.nim"
 import "../modules/language_server_ctags.nim"
 import "../modules/language_server_regex.nim"
 import "../modules/lsp_server.nim"
@@ -27,6 +28,7 @@ proc initModules*() =
   when declared(init_module_command_server): init_module_command_server()
   when declared(init_module_vcs_perforce): init_module_vcs_perforce()
   when declared(init_module_hover_component): init_module_hover_component()
+  when declared(init_module_contextline_component): init_module_contextline_component()
   when declared(init_module_language_server_ctags): init_module_language_server_ctags()
   when declared(init_module_language_server_regex): init_module_language_server_regex()
   when declared(init_module_lsp_server): init_module_lsp_server()
@@ -50,6 +52,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_command_server): shutdown_module_command_server()
   when declared(shutdown_module_vcs_perforce): shutdown_module_vcs_perforce()
   when declared(shutdown_module_hover_component): shutdown_module_hover_component()
+  when declared(shutdown_module_contextline_component): shutdown_module_contextline_component()
   when declared(shutdown_module_language_server_ctags): shutdown_module_language_server_ctags()
   when declared(shutdown_module_language_server_regex): shutdown_module_language_server_regex()
   when declared(shutdown_module_lsp_server): shutdown_module_lsp_server()

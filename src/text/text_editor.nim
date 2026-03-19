@@ -20,7 +20,7 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 import lisp
 import view
-import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, snippet_component, text_component
+import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, snippet_component, text_component, contextline_component
 
 import "../../modules"/workspace_edit
 
@@ -140,9 +140,6 @@ declareSettings TextEditorSettings, "text":
   ## How many characters from the right edge to start wrapping text.
   declare wrapMargin, int, 1
 
-  ## Show lines containing parent nodes (like function, type, if/for etc) at the top of the window.
-  declare contextLines, bool, true
-
   ## Default mode to set when opening/creating text documents.
   declare defaultMode, string, ""
 
@@ -253,6 +250,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   decorations*: DecorationComponentImpl
   inlayHints: InlayHintComponent
   hoverComponent*: HoverComponent
+  contextLineComponent*: ContextLineComponent
   commandComponent*: CommandComponent
   snippetComponent*: SnippetComponent
 
@@ -1686,7 +1684,7 @@ proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.expose("editor.
     log lvlError, "No tree available."
     return
 
-  let selectionRange = self.selection.tsRange
+  let selectionRange = self.selection.normalized.tsRange
   let byteIndex = self.document.rope.toOffset(selectionRange.last.toPoint)
   var message = ""
   for tree in self.document.treesitterComponent.syntaxMap.snapshot.treesOverlapping(byteIndex...byteIndex):
@@ -4003,27 +4001,6 @@ proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
 
   self.markDirty()
 
-proc getContextLines*(self: TextDocumentEditor, cursor: Cursor): seq[int] =
-  if self.document.tsTree.isNil:
-    return @[]
-
-  let tree = self.document.tsTree
-
-  var node = tree.root.descendantForRange(cursor.toSelection.tsRange)
-  var lastColumn = int.high
-  while node != tree.root:
-    var r = node.getRange.toSelection
-    # echo &"getContextLines {cursor}, last: {lastColumn}, node: {r.first}, -> {result}"
-    let indent = self.document.getIndentLevelForLine(r.first.line, self.document.tabWidth())
-    if r.first.line != cursor.line and (result.len == 0 or r.first.line != result.last):
-      if result.len > 0 and indent == lastColumn:
-        result[result.high] = r.first.line
-      elif (result.len > 0 and result.last != r.first.line) or indent < lastColumn:
-        result.add r.first.line
-        lastColumn = indent
-
-    node = node.parent
-
 proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor, languageServer: LanguageServer): seq[lsp_types.Diagnostic] =
   let codeActions = self.codeActions.mgetOrPut(languageServer.name).addr
   let visibleRange = self.visibleTextRange(0)
@@ -4920,6 +4897,9 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
 
   self.hoverComponent = newHoverComponent(self.settings.hover)
   self.addComponent(self.hoverComponent)
+
+  self.contextLineComponent = newContextLineComponent(ContextLineSettings.new(self.config))
+  self.addComponent(self.contextLineComponent)
 
   self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =
     self.applyMoveFallback(move, selections, count, args, env)

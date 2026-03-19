@@ -167,6 +167,9 @@ proc nodeType*(node: TSNode): string = $tsNodeType(node.impl)
 proc symbol*(node: TSNode): ts.TSSymbol = tsNodeSymbol(node.impl)
 proc isNull*(node: TSNode): bool = tsNodeIsNull(node.impl)
 proc isNamed*(node: TSNode): bool = tsNodeIsNamed(node.impl)
+proc childByFieldName*(node: TSNode, name: string): TSNode = TSNode(impl: ts.tsNodeChildByFieldName(node.impl, name.cstring, name.len.uint32))
+proc namedChild*(node: TSNode, index: Natural): TSNode = TSNode(impl: ts.tsNodeNamedChild(node.impl, index.uint32))
+proc namedChildCount*(node: TSNode): int = ts.tsNodeNamedChildCount(node.impl).int
 # proc path*(node: TSNode): seq[int] =
 #   var n = node
 

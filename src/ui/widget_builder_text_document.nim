@@ -1,4 +1,4 @@
-import std/[strformat, tables, strutils, math, options, json, algorithm]
+import std/[strformat, tables, strutils, math, options, json, algorithm, sequtils]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer, generational_seq, render_command, arena, array_view]
 import text/text_editor
@@ -9,7 +9,7 @@ import app, document_editor, theme, config_provider, layout
 import text/language/[lsp_types]
 import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]
 import view
-import scroll_box, treesitter_component, decoration_component, hover_component
+import scroll_box, treesitter_component, decoration_component, hover_component, contextline_component
 
 import ui/node
 
@@ -771,7 +771,7 @@ proc drawChunk(chunk: DisplayChunk, state: var LineDrawerState, commands: var Re
 
   return LineDrawerResult.Continue
 
-proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: var DisplayChunkIterator, line: int): Option[Vec2] =
+proc drawLine*(state: var LineDrawerState, commands: var RenderCommands, iter: var DisplayChunkIterator, line: int, columnRange: Option[rope.Range[int]] = rope.Range[int].none): Option[Vec2] =
   if line < 0 or line > state.displayMap.endDisplayPoint.row.int:
     return Vec2.none
   if state.chunkBoundsPerLine.len >= state.chunkBoundsPerLine.cap:
@@ -784,9 +784,12 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
   )
 
   # When drawing lines upwards we have to reset the iterator because it can iterate backwards
-  if iter.displayPoint.row.int != line or not iter.didSeek:
+  if iter.displayPoint.row.int != line or not iter.didSeek or columnRange.isSome:
     iter = state.createIter()
-    iter.seekLine(line)
+    if columnRange.isSome:
+      iter.seek(displayPoint(line, columnRange.get.a))
+    else:
+      iter.seekLine(line)
     discard iter.next()
     if iter.displayChunk.isSome:
       state.lastDisplayEndPoint = iter.displayChunk.get.displayPoint
@@ -808,18 +811,20 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
   let firstDisplayLineInRealLine = firstDisplayLine.row.int == line
 
   # Do some things (like line numbers) only on the first display line for a real line
+  let hasLineNumbers = state.lineNumbers != LineNumbers.None
+  let lineNumberWidth = if hasLineNumbers: state.lineNumberWidth else: 0
+  var doDrawLineNumber = hasLineNumbers
   var drawDiagnostics = false
   if firstDisplayLineInRealLine:
     drawDiagnostics = true
 
-    var doDrawLineNumber = true
     state.chunkBoundsPerLine[^1].lineNumberRenderCommandIndex = commands.commands.len
     commands.startTransform(vec2(0))
 
     # Draw signs
     if state.signs != nil:
       state.signs[].withValue(chunk.point.row.int, value):
-        var bounds = rect(state.lineNumberWidth - state.signColumnPixelWidth, 0, state.signColumnPixelWidth, state.builder.textHeight)
+        var bounds = rect(lineNumberWidth - state.signColumnPixelWidth, 0, state.signColumnPixelWidth, state.builder.textHeight)
         if state.signShow == SignColumnShowKind.Number:
           doDrawLineNumber = false
           bounds = rect(vec2(state.builder.charWidth, 0), state.lineNumberBounds)
@@ -846,8 +851,10 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
     commands.endTransform()
 
   # Iterate through chunks and render them until we reach the end or get a chunk which is on the next display line.
-  state.offset = state.bounds.xy + vec2(state.lineNumberWidth, 0)
+  state.offset = state.bounds.xy + vec2(lineNumberWidth, 0)
   state.lastDisplayEndPoint = displayPoint(line, 0)
+  if columnRange.isSome:
+    state.lastDisplayEndPoint.column = columnRange.get.a.uint32
   state.customRendererChunksBelow.setLen(0)
   state.customRendererChunksAbove.setLen(0)
   state.lineBounds = rect(0, 0, 0, 0)
@@ -862,6 +869,8 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
       break
     let res = drawChunk(iter.displayChunk.get, state, commands)
     discard iter.next()
+    if columnRange.isSome and state.lineBounds.w >= columnRange.get.len.float * state.builder.charWidth:
+      break
     case res
     of Continue: discard
     of ContinueNextLine: break
@@ -874,7 +883,7 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
     let customRenderId = customRenderChunk.renderId
     let cb = state.customOverlayRenderers[].tryGet(customRenderId.CustomRendererId)
     if cb.isSome:
-      let bounds = rect(state.bounds.x + state.lineNumberWidth, height, floor(state.bounds.w - state.lineNumberWidth), state.builder.textHeight)
+      let bounds = rect(state.bounds.x + lineNumberWidth, height, floor(state.bounds.w - lineNumberWidth), state.builder.textHeight)
       commands.startTransform(bounds.xy)
       let fun = (cb.get)
       let actualBounds = fun(customRenderId, bounds.wh, customRenderChunk.localOffset, commands)
@@ -906,7 +915,7 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
             of lsp_types.DiagnosticSeverity.Warning: state.warningColor
             of lsp_types.DiagnosticSeverity.Information: state.informationColor
             of lsp_types.DiagnosticSeverity.Hint: state.hintColor
-            commands.drawText(message, rect(state.lineNumberWidth, height, width, state.builder.textHeight), color, 0.UINodeFlags)
+            commands.drawText(message, rect(lineNumberWidth, height, width, state.builder.textHeight), color, 0.UINodeFlags)
             height += state.builder.textHeight * message.countLines.float
             state.chunkBoundsPerLine[^1].dontCenter = true
     else:
@@ -923,7 +932,7 @@ proc drawLine(state: var LineDrawerState, commands: var RenderCommands, iter: va
                 continue
               let nlIndex = diagnostic.message.find("\n")
               var maxIndex = if nlIndex != -1: nlIndex else: diagnostic.message.len
-              let xPos = max(state.lineBounds.w, state.lineNumberWidth)
+              let xPos = max(state.lineBounds.w, lineNumberWidth)
               let availableChars = max(((state.bounds.xw - xPos) / state.builder.charWidth).int - 2, 0)
               maxIndex = min(maxIndex, availableChars)
               if maxIndex <= 0:
@@ -1110,7 +1119,7 @@ proc drawDiffLines(state: var LineDrawerState, commands: var RenderCommands, bac
 
   commands.endScissor()
 
-proc drawContextLines(state: var LineDrawerState, commands: var RenderCommands, backgroundCommands: var RenderCommands, contextLines: openArray[int]) =
+proc drawContextLines(state: var LineDrawerState, commands: var RenderCommands, backgroundCommands: var RenderCommands, contextLines: openArray[ContextLineEntry]) =
 
   let contextBackgroundColor = state.builder.theme.color(@["breadcrumbPicker.background"], state.backgroundColor.lighten(0.05))
 
@@ -1122,8 +1131,8 @@ proc drawContextLines(state: var LineDrawerState, commands: var RenderCommands, 
 
   var iter = state.createIter()
   var y = 0.0
-  for i, line in contextLines:
-    let startDisplayPoint = state.displayMap.toDisplayPoint(point(line, 0))
+  for i, entry in contextLines:
+    let startDisplayPoint = state.displayMap.toDisplayPoint(point(entry.line, 0))
 
     var head = commands.commands.len
     commands.fillRect(rect(0, 0, 0, 0), contextBackgroundColor)
@@ -1139,6 +1148,66 @@ proc drawContextLines(state: var LineDrawerState, commands: var RenderCommands, 
       commands.commands[transformIndex] = RenderCommand(kind: RenderCommandKind.TransformStart, bounds: rect(0, y, 0, 0))
     fixupRenderCommandsAndChunkBounds(state, i, commands, lineBounds)
     y += size.get.y
+
+proc drawContextBreadcrumbs*(state: var LineDrawerState, commands: var RenderCommands, backgroundCommands: var RenderCommands, entries: openArray[ContextLineEntry], separator: string, maxEntryLength: int) =
+  let contextBackgroundColor = state.builder.theme.color(@["breadcrumbPicker.background"], state.backgroundColor.lighten(0.05))
+  let backgroundColor = contextBackgroundColor.darken(0.05)
+  let separatorColor = state.builder.theme.color(@["breadcrumb.foreground"], state.textColor.darken(0.3))
+
+  if entries.len == 0:
+    return
+
+  let bounds = rect(state.bounds.xy, vec2(state.bounds.w, state.builder.textHeight))
+  let backgroundCommandIndex = commands.commands.len
+  commands.fillRect(bounds, backgroundColor)
+
+  var entryState = state
+  let maxNumLines = entries.len
+  entryState.chunkBoundsPerLine = entryState.builder.arena.allocEmptyArray(maxNumLines, LineBounds)
+  let maxNumCharsPerLine = max(ceil(entryState.bounds.w / entryState.builder.charWidth).int + 5, 1)
+  entryState.charBounds = entryState.builder.arena.allocEmptyArray(maxNumLines * maxNumCharsPerLine, Rect)
+  entryState.diagnosticsPerLS = nil
+  entryState.signs = nil
+
+  var x = 0.0
+  var y = 0.0
+  var h = 0.0
+  var iter = entryState.createIter()
+  for i, entry in entries:
+    let startDisplayPoint = entryState.displayMap.toDisplayPoint(entry.lineRange.a)
+
+    var head = commands.commands.len
+    commands.fillRect(rect(0, 0, 0, 0), contextBackgroundColor)
+
+    let columnRange = startDisplayPoint.column.int...(startDisplayPoint.column.int + maxEntryLength)
+
+    entryState.lineNumbers = if i == 0: state.lineNumbers else: LineNumbers.None # Only draw line numbers on first line
+    let size = drawLine(entryState, commands, iter, startDisplayPoint.row.int, columnRange.some)
+    if size.isNone:
+      continue
+
+    if x + entryState.lineBounds.w > entryState.bounds.w:
+      x = state.lineNumberWidth
+      y += h
+      h = 0
+
+    let lineBounds = rect(vec2(x, 0), entryState.lineBounds.wh)
+    let padding = (state.builder.charWidth * 0.5).floor
+    commands.commands[head].bounds = rect(x - padding, y, entryState.lineBounds.w + padding * 2, entryState.lineBounds.h)
+    let transformIndex = head + 1
+    if transformIndex in 0..commands.commands.high and commands.commands[transformIndex].kind == RenderCommandKind.TransformStart:
+      commands.commands[transformIndex] = RenderCommand(kind: RenderCommandKind.TransformStart, bounds: rect(x, y, 0, 0))
+    fixupRenderCommandsAndChunkBounds(entryState, i, commands, lineBounds)
+    h = max(h, entryState.lineBounds.h)
+    x += entryState.lineBounds.w
+
+    if i < entries.high:
+      let sepText = " " & separator & " "
+      let sepWidth = entryState.builder.textWidth(sepText)
+      commands.drawText(sepText, rect(vec2(x, bounds.y + y), vec2(sepWidth, entryState.builder.textHeight)), separatorColor, 0.UINodeFlags)
+      x += sepWidth
+
+  commands.commands[backgroundCommandIndex].bounds.h = y + h
 
 proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode,
     selectionsNode: UINode, backgroundColor: Color, textColor: Color, sizeToContentX: bool,
@@ -1173,13 +1242,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   self.scrollOffset.x = clamp(self.scrollOffset.x, -float.high, 0)
 
   let inclusive = self.config.get("text.inclusive-selection", false)
-
   let isThickCursor = self.isThickCursor
-
   let renderDiff = self.diffDocument.isNotNil and self.diffChanges.isSome
-
-  # ↲ ↩ ⤦ ⤶ ⤸ ⮠
-  let showContextLines = not renderDiff and self.settings.contextLines.get()
+  let showContextLines = not renderDiff and self.contextLineComponent.settings.enabled.get()
 
   let selectionColor = builder.theme.color("selection.background", color(200/255, 200/255, 200/255))
   let insertedTextBackgroundColor = builder.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
@@ -1343,19 +1408,14 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     drawDiffLines(diffState, currentNode.renderCommands, selectionsNode.renderCommands, self.scrollBox)
 
   elif showContextLines and self.scrollBox.items.len > 0:
-    let startLine = self.scrollBox.items[0].index
-    var contextLines: seq[int]
-    for i in 0..10:
-      let displayPoint = displayPoint(startLine + i + 2, 0)
-      if displayPoint.row.int >= self.numDisplayLines:
-        break
-      let s = self.displayMap.toPoint(displayPoint)
-      contextLines = self.getContextLines(s.toCursor)
-      if contextLines.len <= i:
-        break
-    contextLines.reverse()
-
-    drawContextLines(state, currentNode.renderCommands, selectionsNode.renderCommands, contextLines)
+    let style = self.contextLineComponent.settings.style.get()
+    let contextLines = self.contextLineComponent.getContextLines()
+    if style == "breadcrumb":
+      let separator = self.contextLineComponent.settings.separator.get()
+      const maxEntryLength = 50
+      drawContextBreadcrumbs(state, currentNode.renderCommands, selectionsNode.renderCommands, contextLines, separator, maxEntryLength)
+    else:
+      drawContextLines(state, currentNode.renderCommands, selectionsNode.renderCommands, contextLines)
 
   # Store rendered chunk ranges for e.g. choose-cursor command
   self.lastRenderedChunks.setLen(0)
