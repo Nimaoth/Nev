@@ -519,14 +519,9 @@ Context lines show the names of surrounding functions, classes etc at the top.
 
 ![Context for current cursor](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/context_lines.gif)
 
+*Switching between **breadcrumb** and **full** mode*:
+
 ![Switching between breadcrumb and full mode](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/context_lines2.gif)
-*Switching between **breadcrumb** and **full** mode*
-
-
-<figure>
-  <img src="https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/context_lines2.gif" alt="Switching between breadcrumb and full mode" width="400">
-  <figcaption>Figure 1: My caption here</figcaption>
-</figure>
 
 ### Configuration
 
