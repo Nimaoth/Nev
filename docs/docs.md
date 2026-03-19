@@ -512,3 +512,85 @@ With this configuration you can then do the following:
   }
 }
 ```
+
+## Context Lines
+
+Context lines show the names of surrounding functions, classes etc at the top.
+
+**Breadcrumb** mode:
+[Context for current cursor](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/context_lines.gif)
+
+**Full** mode:
+[Switching between breadcrumb and full mode](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/context_lines2.gif)
+
+### Configuration
+
+```json
+// ~/.nev/settings.json
+{
+    // Enable or disable context lines
+    "context-lines.enabled": true,
+
+    // Display style: "breadcrumb" or "full"
+    "context-lines.style": "breadcrumb",
+
+    // Separator between breadcrumb entries
+    "context-lines.separator": "»",
+
+    // Regex filter for which node types to show
+    "context-lines.show": "(definition\\.(function|macro|class|struct|type|method))|(controlflow.*)",
+}
+```
+
+Settings can be overridden per language:
+
+```json
+{
+    // Don't show conditionals for Python
+    "lang.python.context-lines.show": "definition\\.(function|macro|class|struct|type|method)", // Don't show control flow for python
+}
+```
+
+### Language Support via `tags.scm`
+
+Context lines use tree-sitter **tag queries** to identify which AST nodes to display.
+Each language can provide a query file at `languages/<lang>/queries/tags.scm`.
+
+#### Query Format
+
+A tags query uses standard tree-sitter query syntax. Each pattern captures:
+- `@name` - (optional) the node representing the identifier (function name, class name, etc.)
+- A qualified capture like `@definition.function`, `@definition.class`, `@controlflow.if` - The captures which are shown as context lines are specified using `context-lines.show`
+
+#### Example (`languages/nim/queries/tags.scm`)
+
+```query
+(proc_declaration name: (_) @name) @definition.function
+(func_declaration name: (_) @name) @definition.function
+(method_declaration name: (_) @name) @definition.method
+(template_declaration name: (_) @name) @definition.macro
+(macro_declaration name: (_) @name) @definition.macro
+(when condition: (_) @name) @controlflow.if
+```
+
+#### Adding support for a new Language
+
+1. Create `languages/<lang>/queries/tags.scm`.
+2. Write patterns for the node types you want to appear in context lines.
+3. Use captures like `@definition.function`, `@definition.class`,
+   `@definition.method`, `@definition.macro`, `@controlflow.if`, etc.
+
+#### Filtering with `show`
+
+The `context-lines.show` setting is a regex applied to each capture name.
+The default value:
+
+```regex
+(definition\.(function|macro|class|struct|type|method))|(controlflow.*)
+```
+
+This means only `definition.function`, `definition.class`, `definition.method`,
+`definition.macro`, `definition.struct`, `definition.type`, and any
+`controlflow.*` capture will be shown. You can narrow or widen this per language
+using settings overrides.
+
