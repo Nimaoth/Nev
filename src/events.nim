@@ -273,10 +273,8 @@ when implModule:
         return true
     return false
 
-  proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool, allowHandlingEvent: bool, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]]): EventResponse {.gcsafe.} =
+  proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool, allowHandlingEvent: bool, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]], debug: bool = false): EventResponse {.gcsafe.} =
     if input != 0:
-      # debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}, handleInput: {handleUnknownAsInput}"
-
       # only handle if no modifier or only shift is pressed, because if any other modifiers are pressed
       # (ctrl, alt, win) then it doesn't produce input
       let prevStates = handler.states
@@ -285,7 +283,7 @@ when implModule:
         return Ignored
       handler.states = newStates
 
-      if debugEventHandlers:
+      if debugEventHandlers or debug:
         debugf"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}, {handleUnknownAsInput}, {allowHandlingEvent}\n  {prevStates}\n  -> {handler.states}, inProgress: {handler.inProgress}, anyTerminal: {handler.states.anyIt(handler.dfa.isTerminal(it.current))}"
         # debugf"handleEvent {handler.config.context} {(inputToString(input, modifiers))}"
 
@@ -293,7 +291,7 @@ when implModule:
         if input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and allowHandlingEvent:
           # if we have delayed inputs we're allowed to handle the current event as input
           if delayedInputs.len > 0:
-            if debugEventHandlers:
+            if debugEventHandlers or debug:
               debugf"flush delayed inputs"
             for (handler, input, modifiers) in delayedInputs:
               discard handler.handleInput(inputToString(input, {}))
@@ -354,7 +352,7 @@ when implModule:
 
       else:
         if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and handler.config.handleInputs:
-          if debugEventHandlers:
+          if debugEventHandlers or debug:
             debugf"delay input {inputToString(input, modifiers)}"
           delayedInputs.add (handler, input, modifiers)
 
@@ -363,12 +361,12 @@ when implModule:
         return Progress
 
     else:
-      return Failed
+      return Ignored
 
-  proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]]): EventResponse {.gcsafe.} =
+  proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]], debug: bool = false): EventResponse {.gcsafe.} =
     let anyInProgress = handlers.anyInProgress
 
-    if debugEventHandlers:
+    if debugEventHandlers or debug:
       debugf"handleEvent {inputToString(input, modifiers)}: {handlers.mapIt(it.config.context)}"
 
     var anyProgressed = false
@@ -380,12 +378,12 @@ when implModule:
       let handlerIndex = handlers.len - i - 1
       var handler = handlers[handlerIndex]
       let response = if (anyInProgress and handler.inProgress) or (not anyInProgress and not handler.inProgress):
-        handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput, not anyInProgressAbove, delayedInputs)
+        handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput, not anyInProgressAbove, delayedInputs, debug)
       else:
         Ignored
 
-      if debugEventHandlers:
-        debugf"-> {response}"
+      if debugEventHandlers or debug:
+        debugf"-> {handler.config.context}: {response}"
 
       case response
       of Handled:

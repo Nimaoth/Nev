@@ -2802,7 +2802,9 @@ proc scheduleHandleDelayedInput*(self: App) =
     self.insertInputTask.reschedule()
 
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
-  # debugf"handleKeyPress {inputToString(input, modifiers)}"
+  let debugInput = self.config.runtime.get("debug.input", false)
+  if debugInput:
+    debugf"handleKeyPress {inputToString(input, modifiers)}"
   self.logNextFrameTime = true
 
   for register in self.registers.recordingKeys:
@@ -2812,7 +2814,7 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
 
   try:
     while true:
-      case self.currentEventHandlers.handleEvent(input, modifiers, self.delayedInputs)
+      case self.currentEventHandlers.handleEvent(input, modifiers, self.delayedInputs, debugInput)
       of Progress:
         if self.delayedInputs.len > 0:
           self.scheduleHandleDelayedInput()
@@ -2852,18 +2854,21 @@ proc handleModsChanged*(self: App, old: Modifiers, new: Modifiers) =
   self.updateNextPossibleInputs()
 
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
-  var mods = modifiers
-  mods.incl Modifier.Release
-  self.handleKeyPress(input, mods)
+  if input != 0:
+    var mods = modifiers
+    mods.incl Modifier.Release
+    self.handleKeyPress(input, mods)
 
 proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
-  # debugf"handleRune {inputToString(input, modifiers)}"
+  let debugInput = self.config.runtime.get("debug.input", false)
+  if debugInput:
+    debugf"handleRune {inputToString(input, modifiers)}"
   self.logNextFrameTime = true
 
   try:
     let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
     while true:
-      case self.currentEventHandlers.handleEvent(input, modifiers, self.delayedInputs):
+      case self.currentEventHandlers.handleEvent(input, modifiers, self.delayedInputs, debugInput):
       of Progress:
         if self.delayedInputs.len > 0:
           self.scheduleHandleDelayedInput()

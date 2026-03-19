@@ -542,6 +542,37 @@ proc toInput(button: Button): int64 =
   of NumpadSubtract: ord '-'
   of NumpadMultiply: ord '*'
   of NumpadDivide: ord '/'
+  of NumpadDecimal: ord '.'
+  of NumpadEnter: INPUT_ENTER
+  of NumpadEqual: ord '='
+
+  of KeyBacktick: ord '`'
+  of KeyMinus: ord '-'
+  of KeyEqual: ord '='
+  of KeyLeftBracket: ord '['
+  of KeyRightBracket: ord ']'
+  of KeyBackslash: ord '\\'
+  of KeySemicolon: ord ':'
+  of KeyApostrophe: ord '\''
+  of KeyComma: ord ','
+  of KeyPeriod: ord '.'
+  of KeySlash: ord '/'
+
+  of KeyLeftShift: 0
+  of KeyCapsLock: 0
+  of KeyRightShift: 0
+  of KeyLeftControl: 0
+  of KeyLeftSuper: 0
+  of KeyLeftAlt: 0
+  of KeyRightAlt: 0
+  of KeyRightSuper: 0
+  of KeyMenu: 0
+  of KeyRightControl: 0
+  of KeyPrintScreen: 0
+  of KeyScrollLock: 0
+  of KeyPause: 0
+  of KeyNumLock: 0
+  of KeyInsert: 0
   else: 0
 
 proc centerWindowOnMonitor*(window: Window, monitor: int) =
