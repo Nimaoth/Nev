@@ -10,6 +10,7 @@ import platform/platform, platform_service
 import config_provider, command_service, command_service_api, compilation_config
 import plugin_service, document_editor, vfs, vfs_service, channel, register, move_database, popup, event_service, session
 import "../../modules/terminal"/terminal
+import decoration_component
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 import lisp
 import vmath
@@ -374,7 +375,7 @@ method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
     self.host.commands.unregisterCommand(commandId)
 
   for cmd in instanceData.get.customRenderers:
-    cmd.editor.removeCustomRenderer(cmd.id)
+    cmd.editor.decorations.removeCustomRenderer(cmd.id)
 
   instanceData.getMutUnsafe.resources.dropResources(instanceData.get.store.context, callDestroy = true)
   instanceData.get.store.delete()
@@ -885,7 +886,7 @@ proc textEditorAddCustomRenderCallback*(instance: ptr InstanceData; editor: Text
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    let id = editor.TextDocumentEditor.addCustomRenderer proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 =
+    let id = editor.TextDocumentEditor.decorations.addCustomRenderer proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 =
       try:
         let ret = instance.funcs.handleTextOverlayRender(fun, data, id, size.toWasm, localOffset.int32).okOr(err):
           log lvlWarn, "Failed to call custom render callback: " & err.msg
@@ -914,7 +915,7 @@ proc textEditorRemoveCustomRenderCallback*(instance: ptr InstanceData; editor: T
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.removeCustomRenderer(cb.CustomRendererId)
+    editor.TextDocumentEditor.decorations.removeCustomRenderer(cb.CustomRendererId)
     for i in 0..instance.customRenderers.high:
       if instance.customRenderers[i].editor == editor.TextDocumentEditor and instance.customRenderers[i].id.int64 == cb:
         instance.customRenderers.removeSwap(i)

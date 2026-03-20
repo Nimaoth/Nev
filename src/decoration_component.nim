@@ -1,7 +1,7 @@
 import std/[options]
-import chroma
+import chroma, vmath
 import nimsumtree/rope
-import misc/[event, myjsonutils]
+import misc/[event, myjsonutils, generational_seq, render_command]
 import config_provider
 import component
 
@@ -10,6 +10,9 @@ export component
 include dynlib_export
 
 type
+  CustomOverlayRenderer* = proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 {.gcsafe, raises: [].}
+  CustomRendererId* = distinct uint64
+
   SignColumnShowKind* {.pure.} = enum Auto = "auto", Yes = "yes", No = "no", Number = "number"
 
 proc typeNameToJson*(T: typedesc[SignColumnShowKind]): string =
@@ -46,6 +49,8 @@ proc decorationComponentAddCustomHighlight(self: DecorationComponent, id: Id, se
 proc decorationComponentClearOverlays(self: DecorationComponent, id: int = -1) {.apprtl, gcsafe, raises: [].}
 proc decorationComponentAddOverlay(self: DecorationComponent, selection: Range[Point], text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) {.apprtl, gcsafe, raises: [].}
 proc decorationComponentAddOverlays(self: DecorationComponent, id: int, replace: bool, overlays: sink seq[OverlayDef]) {.apprtl, gcsafe, raises: [].}
+proc decorationComponentAddCustomRenderer(self: DecorationComponent, impl: CustomOverlayRenderer): CustomRendererId {.apprtl, gcsafe, raises: [].}
+proc decorationComponentRemoveCustomRenderer(self: DecorationComponent, id: CustomRendererId) {.apprtl, gcsafe, raises: [].}
 
 proc getDecorationComponent*(self: ComponentOwner): Option[DecorationComponent] {.apprtl, gcsafe, raises: [].}
 
@@ -57,6 +62,8 @@ proc addCustomHighlight*(self: DecorationComponent, id: Id, selection: Range[Poi
 proc clearOverlays*(self: DecorationComponent, id: int = -1) {.inline.} = decorationComponentClearOverlays(self, id)
 proc addOverlay*(self: DecorationComponent, selection: Range[Point], text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) {.inline.} = decorationComponentAddOverlay(self, selection, text, id, scope, bias, renderId, location)
 proc addOverlays*(self: DecorationComponent, id: int, replace: bool, overlays: sink seq[OverlayDef]) = decorationComponentAddOverlays(self, id, replace, overlays)
+proc addCustomRenderer*(self: DecorationComponent, impl: CustomOverlayRenderer): CustomRendererId {.inline.} = decorationComponentAddCustomRenderer(self, impl)
+proc removeCustomRenderer*(self: DecorationComponent, id: CustomRendererId) {.inline.} = decorationComponentRemoveCustomRenderer(self, id)
 
 # Implementation
 when implModule:
@@ -74,6 +81,7 @@ when implModule:
     displayMap: DisplayMap
     signs*: Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color, color: string, width: int]]]
     customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string, tint: Color]]]
+    customOverlayRenderers*: GenerationalSeq[CustomOverlayRenderer, CustomRendererId]
 
   proc getDecorationComponent*(self: ComponentOwner): Option[DecorationComponent] {.gcsafe, raises: [].} =
     return self.getComponent(DecorationComponentId).mapIt(it.DecorationComponent)
@@ -216,3 +224,11 @@ when implModule:
       let self = self.DecorationComponentImpl
       self.displayMap.overlay.addOverlays(id, replace, overlays.mapIt((it.range, it.text, it.scope, it.bias, it.renderId, it.location.toInternal)))
       self.owner.DocumentEditor.markDirty()
+
+  proc decorationComponentAddCustomRenderer(self: DecorationComponent, impl: CustomOverlayRenderer): CustomRendererId =
+    let self = self.DecorationComponentImpl
+    return self.customOverlayRenderers.add(impl)
+
+  proc decorationComponentRemoveCustomRenderer(self: DecorationComponent, id: CustomRendererId) =
+    let self = self.DecorationComponentImpl
+    self.customOverlayRenderers.del(id)

@@ -1124,6 +1124,10 @@ proc drawContextLines(state: var LineDrawerState, commands: var RenderCommands, 
   let contextBackgroundColor = state.builder.theme.color(@["breadcrumbPicker.background"], state.backgroundColor.lighten(0.05))
 
   var state = state
+  state.diagnosticsPerLS = nil
+  state.signs = nil
+  state.customOverlayRenderers = nil
+
   let maxNumLines = contextLines.len
   state.chunkBoundsPerLine = state.builder.arena.allocEmptyArray(maxNumLines, LineBounds)
   let maxNumCharsPerLine = max(ceil(state.bounds.w / state.builder.charWidth).int + 5, 1)
@@ -1168,6 +1172,7 @@ proc drawContextBreadcrumbs*(state: var LineDrawerState, commands: var RenderCom
   entryState.charBounds = entryState.builder.arena.allocEmptyArray(maxNumLines * maxNumCharsPerLine, Rect)
   entryState.diagnosticsPerLS = nil
   entryState.signs = nil
+  entryState.customOverlayRenderers = nil
 
   var x = 0.0
   var y = 0.0
@@ -1315,7 +1320,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     renderDiff: renderDiff,
     diffChanges: if self.diffChanges.isSome: self.diffChanges.get.addr else: nil,
 
-    customOverlayRenderers: self.customOverlayRenderers.addr,
+    customOverlayRenderers: self.decorations.customOverlayRenderers.addr,
     signs: self.decorations.signs.addr,
     diagnosticsPerLS: self.document.diagnosticsPerLS.addr,
 

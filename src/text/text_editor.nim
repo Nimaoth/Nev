@@ -224,9 +224,6 @@ type
     of CodeActionKind.CodeAction:
       action: lsp_types.CodeAction
 
-type CustomOverlayRenderer* = proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 {.gcsafe, raises: [].}
-type CustomRendererId* = distinct uint64
-
 type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
   editors*: DocumentEditorService
@@ -389,8 +386,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   settings*: TextEditorSettings
 
   moveFallbacks: MoveFunction
-
-  customOverlayRenderers*: GenerationalSeq[CustomOverlayRenderer, CustomRendererId]
 
 type
   TextDocumentEditorService* = ref object of Service
@@ -2444,12 +2439,6 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
 
   self.cursorHistories.setLen(0)
   self.markDirty()
-
-proc addCustomRenderer*(self: TextDocumentEditor, impl: CustomOverlayRenderer): CustomRendererId =
-  return self.customOverlayRenderers.add(impl)
-
-proc removeCustomRenderer*(self: TextDocumentEditor, id: CustomRendererId) =
-  self.customOverlayRenderers.del(id)
 
 proc rerender*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.markDirty()
