@@ -1050,12 +1050,14 @@ proc scrollToTop*(self: TextDocumentEditor) =
   self.textEditorComponent.onScroll.invoke()
 
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5, snap: bool = false) =
-  if snap:
-    self.scrollBox.scrollXToY(self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int, self.scrollBox.size.y * 0.5)
+  let displayPoint = self.displayMap.toDisplayPoint(cursor.toPoint)
+  if snap and self.scrollBox.size.y > 0:
+    self.scrollBox.scrollXToY(displayPoint.row.int, self.scrollBox.size.y * 0.5)
   else:
-    self.scrollToCursor(cursor, scrollBehaviour = CenterAlways.some, relativePosition = relativePosition)
-  # self.scrollBox.scrollTo(self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int, center = true)
+    self.scrollBox.scrollTo(displayPoint.row.int, center = true, centerOffscreen = false, snap = snap)
+
   self.textEditorComponent.onScroll.invoke()
+  self.markDirty()
 
 proc isThickCursor*(self: TextDocumentEditor): bool =
   if not self.platform.supportsThinCursor:
@@ -4734,11 +4736,11 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
   if self.document.isNil:
     return
 
-  # debugf"handleTextDocumentLoaded {self.id}, {self.usage}, '{self.document.filename}': targetSelectionsInternal: {self.targetSelectionsInternal}"
+  # debugf"DocumentLoaded {self.id}, {self.usage}, '{self.document.filename}': targetSelections: {self.textEditorComponent.mTargetSelections}"
 
   if self.textEditorComponent.mTargetSelections.getSome(s):
     self.textEditorComponent.selections = s
-    self.centerCursor()
+    self.centerCursor(snap=true)
     self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
   elif self.settings.scrollToChangeOnReload.get().getSome(scrollToChangeOnReload):

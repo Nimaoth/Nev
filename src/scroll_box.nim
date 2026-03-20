@@ -21,6 +21,7 @@ type
     margin*: float = 100
     extra*: float = 0
     maxIndex*: int = 0
+    defaultItemHeight*: float = 0
 
     items*: seq[tuple[index: int, bounds: bumpy.Rect]]
     up*: bool
@@ -261,6 +262,18 @@ proc scrollTo*(sv: var ScrollBox, index: int, center: bool = false, centerOffscr
       sv.scrollIntoView = true
     sv.scrollCenter = center or centerOffscreen
   elif index > lastIndex:
+    let itemHeight = if sv.defaultItemHeight > 0: sv.defaultItemHeight
+      elif sv.items.len > 0: sv.items[^1].bounds.h
+      else: 0
+
+    if itemHeight > 0 and sv.items.len > 0:
+      let lastItem = sv.items[^1]
+      let estimatedY = lastItem.bounds.yh + (index - lastIndex - 1).float * itemHeight
+      let estimatedBottom = estimatedY + itemHeight
+
+      if estimatedBottom <= sv.size.y - sv.margin:
+        return
+
     sv.index = index
     sv.offset = sv.size.y - sv.margin
     sv.pivot = 0

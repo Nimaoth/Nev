@@ -1391,6 +1391,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
   self.scrollBox.smoothScroll = self.uiSettings.smoothScroll.get()
   self.scrollBox.enableScrolling = not self.disableScrolling
+  self.scrollBox.defaultItemHeight = builder.textHeight
   if self.disableScrolling:
     self.scrollBox.index = 0
     self.scrollBox.offset = 0
