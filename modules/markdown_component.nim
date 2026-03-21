@@ -13,9 +13,9 @@ include module_base
 
 # Implementation
 when implModule:
-  import std/[tables, sets, strutils, sequtils]
+  import std/[tables, sets, strutils, sequtils, algorithm]
   import nimsumtree/[buffer, sumtree]
-  import misc/[util, custom_logger, rope_utils, delayed_task, custom_async, arena, array_view, id, timer]
+  import misc/[util, custom_logger, rope_utils, delayed_task, custom_async, arena, array_view, id, timer, render_command]
   import text/[display_map, syntax_map, treesitter_types, treesitter_type_conv, custom_treesitter, snippet]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import service, event_service, document_editor, document, decoration_component, treesitter_component, text_component, language_component, text_editor_component, command_component, move_component, snippet_component, config_component
@@ -31,6 +31,7 @@ when implModule:
   type MarkdownComponent* = ref object of Component
     updateTask: DelayedTask
     updateDelimitersTask: DelayedTask
+    updateHeadersTask: DelayedTask
     documentChangedHandle: Id
     editHandle: Id
     languageChangedHandle: Id
@@ -39,6 +40,10 @@ when implModule:
     isUpdatingDelimiterHiding: bool = false
     updateDelimiterRequestNum: int = 0
     queries: Table[string, Option[TSQuery]]
+    headerMarkerRendererId: CustomRendererId
+    tableOverlayId: Option[int]
+    delimiterOverlayId: Option[int]
+    headerOverlayId: Option[int]
 
   type MarkdownOverlayArgs = object
     syntaxMap: SyntaxMapSnapshot
@@ -123,11 +128,14 @@ when implModule:
               let lastDelimiter = mergedDelimiterRanges[^1]
               if lastDelimiter != firstDelimiter:
                 result.add(lastDelimiter)
+    result.sort proc(a, b: Range[Point]): int = cmp(a.a, b.a)
 
   proc getMarkdownComponent*(self: ComponentOwner): Option[MarkdownComponent] {.gcsafe, raises: [].} =
     return self.getComponent(MarkdownComponentId).mapIt(it.MarkdownComponent)
 
   proc updateAsync(self: MarkdownComponent): Future[void] {.async.} =
+    if self.owner == nil or self.tableOverlayId.isNone:
+      return
     let editor = self.owner.DocumentEditor
     if editor.currentDocument.isNil:
       return
@@ -241,7 +249,7 @@ when implModule:
                   let text = ch.repeat(overlayWidth)
                   overlaysToAdd.add (cell.range.b...cell.range.b, text, "comment", Bias.Right, 0, OverlayRenderLocation.Inline)
     if overlaysToAdd.len > 0:
-      decorations.addOverlays(7, replace = true, overlaysToAdd)
+      decorations.addOverlays(self.tableOverlayId.get, replace = true, overlaysToAdd)
 
   proc updateCursorLines(self: MarkdownComponent): bool =
     let editor = self.owner.DocumentEditor
@@ -259,6 +267,9 @@ when implModule:
     return false
 
   proc updateDelimiterHidingAsync(self: MarkdownComponent): Future[void] {.async.} =
+    if self.delimiterOverlayId.isNone:
+      return
+
     inc self.updateDelimiterRequestNum
     if self.isUpdatingDelimiterHiding:
       return
@@ -319,11 +330,81 @@ when implModule:
           if overlayRange.a.row.int in self.currentLines:
             continue
           visibleOverlays.add (overlayRange, "", "comment", Bias.Right, 0, OverlayRenderLocation.Inline)
-        decorations.addOverlays(8, replace = true, visibleOverlays)
+        decorations.addOverlays(self.delimiterOverlayId.get, replace = true, visibleOverlays)
         asyncSpawn self.updateAsync()
 
       lastUpdateDelimiterRequestNum = self.updateDelimiterRequestNum
       break
+
+  proc collectHeaderOverlaysThread(args: MarkdownOverlayArgs): seq[Range[Point]] =
+    var arena = initArena(128 * 1024)
+    var cursor = args.syntaxMap.layerIndex.initCursor(SyntaxLayerRefSummary)
+    cursor.next()
+    while cursor.item.getSome(item):
+      defer:
+        cursor.next()
+      if item.depth > 0 and item.index == 0:
+        continue
+      let layer {.cursor.} = args.syntaxMap.layers[item.index]
+      if layer.language != args.languageId:
+        continue
+
+      arena.restoreCheckpoint(0)
+
+      for match in args.tableQuery.matches(layer.tree.root, args.fullRange, arena):
+        for capture in match.captures:
+          let r = capture.node.getRange.toRange
+          if r.a != r.b:
+            result.add(r.a...point(r.b.row, r.b.column + 1))
+
+  proc updateHeaderHidingAsync(self: MarkdownComponent): Future[void] {.async.} =
+    if self.headerOverlayId.isNone:
+      return
+    let editor = self.owner.DocumentEditor
+    if editor.currentDocument.isNil:
+      return
+    let decorations = editor.getDecorationComponent().getOr:
+      return
+    let treesitter = editor.currentDocument.getTreesitterComponent().getOr:
+      return
+
+    let text = editor.currentDocument.getTextComponent().getOr:
+      return
+
+    let edit = editor.getTextEditorComponent().getOr:
+      return
+
+    let headerQuery = await self.query("markdown", "markdown_header", "[(atx_h1_marker) (atx_h2_marker) (atx_h3_marker) (atx_h4_marker) (atx_h5_marker) (atx_h6_marker)] @marker")
+    if headerQuery.isNone or self.owner.isNil or editor.isNil or editor.currentDocument.isNil:
+      return
+
+    let content = text.content
+    let fullRange = (point(0, 0)...content.endPoint).tsRange
+
+    let syntaxMap = treesitter.syntaxMap.snapshot
+    if syntaxMap.layerIndex.isNil:
+      return
+
+    var overlays: seq[Range[Point]] = @[]
+    let overlaysFlowVar = threadpool.spawn collectHeaderOverlaysThread(MarkdownOverlayArgs(
+      syntaxMap: syntaxMap,
+      fullRange: fullRange,
+      languageId: "markdown",
+      currentLines: self.currentLines,
+      tableQuery: headerQuery.get,
+    ))
+    while not overlaysFlowVar.isReady:
+      await sleepAsync(1.milliseconds)
+
+    overlays = ^overlaysFlowVar
+
+    let visibleRange = edit.visibleTextRange(10)
+    var visibleOverlays = newSeqOfCap[OverlayDef](overlays.len)
+    for overlayRange in overlays:
+      if overlayRange.a.row.int in self.currentLines:
+        continue
+      visibleOverlays.add (overlayRange, "", "comment", Bias.Left, self.headerMarkerRendererId.uint64.int, OverlayRenderLocation.Below)
+    decorations.addOverlays(self.headerOverlayId.get, replace = true, visibleOverlays)
 
   proc toggleStyle*(self: MarkdownComponent, nodeType: string, delimiters: openArray[string]) =
     let editor = self.owner.DocumentEditor
@@ -536,41 +617,74 @@ when implModule:
         self.updateTask.schedule()
       if self.updateDelimitersTask.isNotNil:
         self.updateDelimitersTask.schedule()
+      if self.updateHeadersTask.isNotNil:
+        self.updateHeadersTask.schedule()
     self.languageChangedHandle = language.onLanguageChanged.subscribe proc(l: LanguageComponent) =
       if self.updateTask.isNotNil:
         self.updateTask.schedule()
       if self.updateDelimitersTask.isNotNil:
         self.updateDelimitersTask.schedule()
+      if self.updateHeadersTask.isNotNil:
+        self.updateHeadersTask.schedule()
     self.parsedHandle = treesitter.syntaxMap.onParsed.subscribe proc() =
       if self.updateTask.isNotNil:
         self.updateTask.schedule()
       if self.updateDelimitersTask.isNotNil:
         self.updateDelimitersTask.schedule()
+      if self.updateHeadersTask.isNotNil:
+        self.updateHeadersTask.schedule()
     if self.updateTask.isNotNil:
       self.updateTask.schedule()
     if self.updateDelimitersTask.isNotNil:
       self.updateDelimitersTask.schedule()
+    if self.updateHeadersTask.isNotNil:
+      self.updateHeadersTask.schedule()
 
   proc newMarkdownComponent*(editor: DocumentEditor): MarkdownComponent =
     var res = MarkdownComponent(
       typeId: MarkdownComponentId,
     )
+
+    res.deinitializeImpl = proc(self: Component) =
+      let self = self.MarkdownComponent
+      if editor.getDecorationComponent().getSome(decorations):
+        if self.tableOverlayId.isSome:
+          decorations.releaseOverlayId(self.tableOverlayId.get)
+        if self.delimiterOverlayId.isSome:
+          decorations.releaseOverlayId(self.delimiterOverlayId.get)
+        if self.headerOverlayId.isSome:
+          decorations.releaseOverlayId(self.headerOverlayId.get)
+
+    if editor.getDecorationComponent().getSome(decorations):
+      res.tableOverlayId = decorations.allocateOverlayId()
+      res.delimiterOverlayId = decorations.allocateOverlayId()
+      res.headerOverlayId = decorations.allocateOverlayId()
+      res.headerMarkerRendererId = decorations.addCustomRenderer proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 =
+        commands.fillRect(rect(5, -2, size.x - 10, 1), color(0.7, 0.7, 0.7, 0.2))
+        return vec2(size.x, 0)
+
     res.updateTask = startDelayedPaused(1, false):
       res.update()
 
     res.updateDelimitersTask = startDelayedPaused(1, false):
       asyncSpawn res.updateDelimiterHidingAsync()
 
+    res.updateHeadersTask = startDelayedPaused(1, false):
+      asyncSpawn res.updateHeaderHidingAsync()
+
     if editor.getTextEditorComponent().getSome(edit):
       discard edit.onSelectionsChanged2.subscribe proc(arg: tuple[editor: TextEditorComponent, old: seq[Range[Point]]]) =
         if res.updateCursorLines():
           asyncSpawn res.updateDelimiterHidingAsync()
+          if res.updateHeadersTask.isNotNil:
+            res.updateHeadersTask.schedule()
       discard edit.onScroll.subscribe proc() =
         if res.updateDelimitersTask.isNotNil:
           res.updateDelimitersTask.schedule()
+        if res.updateHeadersTask.isNotNil:
+          res.updateHeadersTask.schedule()
       discard edit.onOverlaysChanged.subscribe proc(args: tuple[ids: seq[int]]) =
-        echo &"overlays changed {args.ids}"
-        if -1 in args.ids or (7 notin args.ids):
+        if -1 in args.ids or res.tableOverlayId.isNone or res.tableOverlayId.get notin args.ids:
           if res.updateTask.isNotNil:
             res.updateTask.schedule()
 

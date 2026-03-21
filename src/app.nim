@@ -1637,6 +1637,8 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
     return true
 
+  var prefixOverlayId: Option[int]
+
   popup.handleItemSelected = proc(item: FinderItem) =
     let store = state.stores[state.index]
     let path = if item.displayName.len == 0 and not state.merged and store.originalText.len > 0:
@@ -1653,8 +1655,10 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
     prefix.add if state.merged: "(merged) " else: "(raw) "
     prefix.add store.filename
     prefix.add "."
-    popup.textEditor.clearOverlays(overlayIdPrefix)
-    popup.textEditor.addOverlay(((0, 0), (0, 0)), prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
+    if prefixOverlayId.isNone:
+      prefixOverlayId = popup.textEditor.displayMap.overlay.allocateId()
+    popup.textEditor.clearOverlays(prefixOverlayId.get)
+    popup.textEditor.addOverlay(((0, 0), (0, 0)), prefix, prefixOverlayId.get, scope = "comment", bias = Bias.Left)
 
   popup.addCustomCommand "reload-store", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
