@@ -249,22 +249,27 @@ proc visualLineMode(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.setMode "vim.visual-line"
   editor.selectLine()
 
-proc applyVimMove(editor: TextEditor, move: string, suffix: string, count: int = 0): tuple[updateTargetColumn: bool] =
+proc getFlag(str: var string, flag: string): bool =
+  result = str.find(flag) != -1
+  str = str.replace(flag, "")
+
+proc applyVimMove(editor: TextEditor, move: string, suffix: string, count: int = 0): tuple[updateTargetColumn: bool, inclusive: Option[bool]] =
+  # debugf"applyVimMove '{move}' '{suffix}' * {count}"
   result.updateTargetColumn = true
+  var adjustedMove = move
+  if getFlag(adjustedMove, ";inclusive"):
+    result.inclusive = true.some
+  elif getFlag(adjustedMove, ";exclusive"):
+    result.inclusive = false.some
+  if getFlag(adjustedMove, ";dont-update-target-column"):
+    result.updateTargetColumn = false
   if move.startsWith("("):
-    const targetColumnSuffix = "(dont-update-target-column)"
-    var adjustedMove = move
-    if adjustedMove.endsWith(targetColumnSuffix):
-      adjustedMove.removeSuffix(targetColumnSuffix)
-      result.updateTargetColumn = false
     adjustedMove = adjustedMove & " " &  suffix
-    # debugf"applyVimMove '{move}' -> '{adjustedMove}'"
-    for i in 0..<max(count, 1):
-      editor.setSelections editor.multiMove(editor.selections, adjustedMove.ws, count, wrap=false, includeEol=editor.vimState.cursorIncludeEol)
+    editor.setSelections editor.multiMove(editor.selections, adjustedMove.ws, count, wrap=false, includeEol=editor.vimState.cursorIncludeEol)
 
   else:
     # log lvlWarn, &"applyVimMove old '{move}'"
-    let (action, arg) = move.parseAction
+    let (action, arg) = adjustedMove.parseAction
     for i in 0..<max(count, 1):
       discard editor.command(action.ws, arg.ws)
 
@@ -310,11 +315,11 @@ proc redo(editor: TextEditor, enterNormalModeBefore: bool) {.exposeActive(editor
     else:
       editor.setMode "vim.normal"
 
-proc copySelection(editor: TextEditor, register: string = ""): seq[Selection] =
+proc copySelection(editor: TextEditor, register: string = "", inclusive: bool = true): seq[Selection] =
   ## Copies the selected text
   ## If line selection mode is enabled then it also extends the selection so that deleting it will also delete the line itself
   yankedLines = editor.vimState.selectLines
-  editor.copy(register.ws, inclusiveEnd=true)
+  editor.copy(register.ws, inclusiveEnd=inclusive)
   let selections = editor.selections
   if editor.vimState.selectLines:
     editor.setSelections editor.selections.mapIt (
@@ -336,37 +341,41 @@ proc copySelection(editor: TextEditor, register: string = ""): seq[Selection] =
 
   return selections.mapIt(it.normalized.first.toSelection)
 
-proc deleteSelection(editor: TextEditor, forceInclusiveEnd: bool, oldSelections: Option[seq[Selection]] = seq[Selection].none) {.exposeActive(editorContext).} =
-  let newSelections = editor.copySelection(getVimDefaultRegister())
+proc deleteSelection(editor: TextEditor, forceInclusiveEnd: bool, oldSelections: Option[seq[Selection]] = seq[Selection].none, forceExclusive: bool = false) {.exposeActive(editorContext).} =
+  var inclusive = (not editor.vimState.selectLines) and (editor.vimState.deleteInclusiveEnd or forceInclusiveEnd)
+  if forceExclusive:
+    inclusive = false
+  let newSelections = editor.copySelection(getVimDefaultRegister(), inclusive)
   let selectionsToDelete = editor.selections
   if oldSelections.isSome:
     editor.setSelections oldSelections.get
   editor.addNextCheckpoint(ws"insert")
-  let inclusiveEnd = (not editor.vimState.selectLines) and (editor.vimState.deleteInclusiveEnd or forceInclusiveEnd)
-  editor.setSelections editor.edit(selectionsToDelete, @@[ws""], inclusive = inclusiveEnd)
+  editor.setSelections editor.edit(selectionsToDelete, @@[ws""], inclusive = inclusive)
   editor.scrollToCursor()
   editor.vimState.deleteInclusiveEnd = true
   editor.setMode "vim.normal"
 
-proc changeSelection*(editor: TextEditor, forceInclusiveEnd: bool, oldSelections: Option[seq[Selection]] = seq[Selection].none) {.exposeActive(editorContext).} =
-  let newSelections = editor.copySelection(getVimDefaultRegister())
+proc changeSelection*(editor: TextEditor, forceInclusiveEnd: bool, oldSelections: Option[seq[Selection]] = seq[Selection].none, forceExclusive: bool = false) {.exposeActive(editorContext).} =
+  var inclusive = editor.vimState.deleteInclusiveEnd or forceInclusiveEnd
+  if forceExclusive:
+    inclusive = false
+  let newSelections = editor.copySelection(getVimDefaultRegister(), inclusive)
   let selectionsToDelete = editor.selections
   if oldSelections.isSome:
     editor.setSelections oldSelections.get
   editor.addNextCheckpoint(ws"insert")
-  let inclusive = editor.vimState.deleteInclusiveEnd or forceInclusiveEnd
   editor.setSelections editor.edit(selectionsToDelete, @@[ws""], inclusive = inclusive)
   editor.scrollToCursor()
   editor.vimState.deleteInclusiveEnd = true
   editor.setMode "vim.insert"
 
-proc yankSelection*(editor: TextEditor) {.exposeActive(editorContext).} =
-  let selections = editor.copySelection(getVimDefaultRegister())
+proc yankSelection*(editor: TextEditor, inclusive: bool = true) {.exposeActive(editorContext).} =
+  let selections = editor.copySelection(getVimDefaultRegister(), inclusive)
   editor.setSelections selections
   editor.setMode "vim.normal"
 
-proc yankSelectionClipboard*(editor: TextEditor) {.exposeActive(editorContext).} =
-  let selections = editor.copySelection()
+proc yankSelectionClipboard*(editor: TextEditor, inclusive: bool = true) {.exposeActive(editorContext).} =
+  let selections = editor.copySelection(inclusive = inclusive)
   editor.setSelections selections
   editor.setMode "vim.normal"
 
@@ -381,21 +390,17 @@ template mergeSelections*(a, b: WitList[Selection], body: untyped): seq[Selectio
 
 proc vimReplace(editor: TextEditor, input: string) {.exposeActive(editorContext).} =
   let content = editor.content
-  debugf"vimReplace '{input}'"
+  # debugf"vimReplace '{input}'"
   # let selections = mergeSelections(editor.selections, editor.multiMove(editor.selections, ws"column", 1, true, true)):
     # (it1.first, it2.last).toSelection
   let selections = editor.selections
 
-  debugf"{selections}"
   let texts = selections.mapIt(block:
     let selection = it
-    debugf"slice selection {selection}"
     let selectedText = content.sliceSelection(selection, inclusive=true)
-    debugf"'{selectedText.text}'"
     var newText = newStringOfCap(selectedText.bytes.int * input.len.int)
     var lastIndex = 0
     var index = selectedText.find(ws"\n", 0)
-    debugf"nl: {index}, {selectedText.runes.int}"
     if index.isNone:
       newText.add input.repeat(selectedText.runes.int)
     else:
@@ -408,12 +413,9 @@ proc vimReplace(editor: TextEditor, input: string) {.exposeActive(editorContext)
 
       let lineLen = selectedText.slice(lastIndex, selectedText.bytes.int - 1).runes.int
       newText.add input.repeat(lineLen)
-    debugf"'{newText}'"
 
     stackWitString(newText)
   )
-
-  debugf"replace {editor.selections} with '{input}' -> {texts}"
 
   editor.addNextCheckpoint ws"insert"
   editor.setSelections editor.edit(editor.selections, @@texts, inclusive=true).mapIt(it.first.toSelection)
@@ -429,7 +431,8 @@ proc selectMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive
 proc deleteMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
   let oldSelections = @(editor.selections)
   let res = editor.applyVimMove(move, "(merge)", count)
-  editor.deleteSelection(false, oldSelections=oldSelections.some)
+  let inclusive = res.inclusive.get(true)
+  editor.deleteSelection(inclusive, oldSelections=oldSelections.some, forceExclusive = not inclusive)
   if res.updateTargetColumn:
     editor.updateTargetColumn()
   editor.recordCurrentCommandInPeriodMacro()
@@ -437,7 +440,8 @@ proc deleteMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive
 proc changeMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
   let oldSelections = @(editor.selections)
   let res = editor.applyVimMove(move, "(merge)", count)
-  editor.changeSelection(false, oldSelections=oldSelections.some)
+  let inclusive = res.inclusive.get(true)
+  editor.changeSelection(inclusive, oldSelections=oldSelections.some, forceExclusive = not inclusive)
   if res.updateTargetColumn:
     editor.updateTargetColumn()
   editor.recordCurrentCommandInPeriodMacro()
@@ -445,8 +449,9 @@ proc changeMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive
     editor.recordCurrentCommand(WitList[WitString]())
 
 proc yankMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
-  discard editor.applyVimMove(move, "(merge)", count)
-  editor.yankSelection()
+  let res = editor.applyVimMove(move, "(merge)", count)
+  let inclusive = res.inclusive.get(true)
+  editor.yankSelection(inclusive)
 
 proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
   var lineLen = editor.lineLength(cursor.line)
@@ -454,7 +459,7 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
   result = (cursor.line, min(cursor.column, lineLen))
 
 proc vimMotionParagraphInner*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} =
-  debugf"vimMotionParagraphInner {data}, {selections}, {count}, {includeEol}"
+  # debugf"vimMotionParagraphInner {data}, {selections}, {count}, {includeEol}"
   selections.mapIt:
     let isEmpty = text.lineLength(it.last.line) == 0
 
@@ -510,7 +515,7 @@ iterator enumerateTextObjects*(editor: TextEditor, cursor: Cursor, move: string,
     inc i
 
 proc selectTextObject(editor: TextEditor, textObject: string, count: int = 1, textObjectRange: VimTextObjectRange = Inner) {.exposeActive(editorContext).} =
-  debugf"selectTextObject({textObject}, {textObjectRange}, {count})"
+  # debugf"selectTextObject({textObject}, {textObjectRange}, {count})"
 
   editor.setSelections editor.selections.mapIt(block:
       var res = it.last
@@ -518,7 +523,6 @@ proc selectTextObject(editor: TextEditor, textObject: string, count: int = 1, te
       # debugf"-> {resultSelection}"
 
       for i, selection in enumerateTextObjects(editor, res, textObject, false):
-        debugf"{i}: {res} -> {selection}"
         resultSelection = resultSelection or selection
         if i == max(count, 1) - 1:
           break
@@ -534,7 +538,7 @@ proc selectTextObject(editor: TextEditor, textObject: string, count: int = 1, te
   editor.updateTargetColumn()
 
 proc selectSurrounding(editor: TextEditor, textObject: string, count: int = 1, textObjectRange: VimTextObjectRange = Inner) {.exposeActive(editorContext).} =
-  debugf"selectSurrounding({textObject}, {textObjectRange}, {count})"
+  # debugf"selectSurrounding({textObject}, {textObjectRange}, {count})"
 
   let selections = editor.selections
   let newSelections = mergeSelections(selections, editor.multiMove(selections, ws(textObject), count, wrap = false, includeEol = editor.vimState.cursorIncludeEol)):
@@ -699,7 +703,7 @@ proc moveFirst(editor: TextEditor, move: string) {.exposeActive(editorContext).}
 
 proc moveLast(editor: TextEditor, move: string, count: int = 1, wrap: bool = false) {.exposeActive(editorContext).} =
   let cursorSelector = editor.getSetting(editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
-  debugf"moveLast '{move}', {editor.vimState.cursorIncludeEol}"
+  # debugf"moveLast '{move}', {editor.vimState.cursorIncludeEol}"
   editor.setSelections editor.selections.mapIt(
     editor.applyMove(it.last, move, 1, wrap = wrap, includeEol = editor.vimState.cursorIncludeEol).last.toSelection(it, cursorSelector)
   )
@@ -846,7 +850,6 @@ proc addCursorBelow(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.scrollToCursor()
 
 proc enter(editor: TextEditor) {.exposeActive(editorContext).} =
-  debugf"vim.enter"
   editor.addNextCheckpoint ws"insert"
   editor.insertText ws("\n"), autoIndent=true
 
@@ -1033,12 +1036,12 @@ proc moveLastSelectionToNextSearchResult(editor: TextEditor) {.exposeActive(edit
 
 proc setSearchQueryOrAddCursor(editor: TextEditor) {.exposeActive(editorContext).} =
   let selections = editor.selections
-  debugf"setSearchQueryOrAddCursor {selections}, {selections.last}"
+  # debugf"setSearchQueryOrAddCursor {selections}, {selections.last}"
   if selections.len == 1:
     let selectedText = editor.content.sliceSelection(selections.last, inclusive=true)
     let textEscaped = ($selectedText.text).escapeRegex
     let currentSearchQuery = $editor.getSearchQuery()
-    debugf"{selectedText.bytes}, '{selectedText.text}' -> '{textEscaped}' -> '{currentSearchQuery}'"
+    # debugf"{selectedText.bytes}, '{selectedText.text}' -> '{textEscaped}' -> '{currentSearchQuery}'"
     if textEscaped != currentSearchQuery and r"\b" & textEscaped & r"\b" != currentSearchQuery:
       if editor.setSearchQuery(selectedText.text, escapeRegex=true, prefix=ws"", suffix=ws""):
         return
@@ -1110,7 +1113,7 @@ proc gotoMark(editor: TextEditor, name: string) {.exposeActive(editorContext).} 
       editor.setSelections newSelections
 
     editor.updateTargetColumn()
-    editor.scrollToCursor()
+    editor.centerCursor()
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc deleteWordBack(editor: TextEditor) {.exposeActive(editorContext).} =

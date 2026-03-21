@@ -290,6 +290,9 @@ when pluginWorld == "plugin":
   proc scrollToCursor*(editor: TextEditor) =
     editor.scrollToCursor(ScrollBehaviour.none, 0.5)
 
+  proc centerCursor*(editor: TextEditor) =
+    editor.scrollToCursor(ScrollBehaviour.CenterAlways.some, 0.5)
+
   proc addCustomTextMove*(name: string, move: MoveHandler) =
     defineMove(name.ws, cast[uint32](move), 0)
 
