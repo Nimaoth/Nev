@@ -4,6 +4,14 @@ For examples and default values see [here](../config/settings.json)
 
 | Key | Type | Default | Description |
 | ----------- | --- | --- | ------ |
+| `context-lines.enabled` | bool | true |  |
+| `context-lines.separator` | string | "»" |  |
+| `context-lines.show` | regex | "(definition\\.(function\|macro\|class\|struct\|type\|method))\|(controlflow.*)" |  |
+| `context-lines.show-classes` | bool | true |  |
+| `context-lines.show-conditionals` | bool | true |  |
+| `context-lines.show-functions` | bool | true |  |
+| `context-lines.show-modules` | bool | true |  |
+| `context-lines.style` | string | "breadcrumb" |  |
 | `debug.draw-text-chunks` | bool | false | GUI only: Highlight text chunks |
 | `debug.log-text-render-time` | bool | false | Log how long it takes to generate the render commands for a text editor. |
 | `debug.log-to-internal-document` | bool | false | Write logs to an internal document which can be opened using the `logs` command. |
@@ -53,7 +61,6 @@ For examples and default values see [here](../config/settings.json)
 | `text.color-highlight.regex` | regex | "#([0-9a-fA-F]{6})\|#([0-9a-fA-F]{8})" | Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kind. |
 | `text.completion-mode` | string | "editor.text.completion" | Mode to activate while completion window is open. |
 | `text.completion-word-chars` | (string \| string[])[] | [["a","z"],["A","Z"],["0","9"],"_"] |  |
-| `text.context-lines` | bool | true | Show lines containing parent nodes (like function, type, if/for etc) at the top of the window. |
 | `text.control-click-command` | string | "goto-definition" | Command to run after control clicking on some text. |
 | `text.control-click-command-args` | any | [] | Arguments to the command which is run when control clicking on some text. |
 | `text.cursor-margin` | float | 0.15 | How far from the edge to keep the cursor, either percentage of screen height (0-1) or number of lines, depending on `text.cursor-margin-relative`. |
