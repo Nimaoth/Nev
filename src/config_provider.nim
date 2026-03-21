@@ -358,7 +358,7 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
 
       newNode[6].add block:
         genAst(fieldName = name, settingName, typ, store, res, prefixArg, default):
-          res.fieldName = ({.gcsafe.}: store.setting(joinSettingKey(prefixArg, settingName), typ, default.toJsonEx(defaultToJsonOptions)))
+          res.fieldName = ({.gcsafe.}: store.setting(joinSettingKey(prefixArg, settingName), typ, when typeof(default) is JsonNodeEx: default else: default.toJsonEx(defaultToJsonOptions)))
 
       if default.repr != "nil":
         setDefaultNodes.add block:
