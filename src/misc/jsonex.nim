@@ -490,6 +490,8 @@ proc delete*(obj: JsonNodeEx, key: string) =
 
 proc copy*(p: JsonNodeEx): JsonNodeEx =
   ## Performs a deep copy of `p`.
+  if p == nil:
+    return nil
   case p.kind
   of JsonexNodeKind.JString:
     result = newJexString(p.str)

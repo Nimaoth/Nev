@@ -254,6 +254,15 @@ proc buildLayerIndex*(layers: openArray[SyntaxLayer], text: Rope): SumTree[Synta
   result = SumTree[SyntaxLayerRef].new()
   if layers.len == 0:
     return
+
+  template ensure(cond: untyped): untyped =
+    if not cond:
+      echo astToStr(cond), ": Failed"
+      echo text.len, ", ", text.endPoint
+      for i, l in layers:
+        echo "  layer ", i, ": ", l.ranges
+      writeStackTrace()
+
   # echo &"buildLayerIndex {layers.len}"
   var layerStartByte = 0
   var lastLayerDepth = 0
@@ -263,6 +272,7 @@ proc buildLayerIndex*(layers: openArray[SyntaxLayer], text: Rope): SumTree[Synta
     # echo &"  [{i}] layerStart={layerStartByte} lastDepth={lastLayerDepth} last={lastPoint} {lastByte} layer={layer}"
     if layer.depth > lastLayerDepth:
       if lastByte < text.len:
+        ensure text.endPoint >= lastPoint
         result.add(SyntaxLayerRef(
           index: 0,
           depth: lastLayerDepth,
@@ -280,6 +290,8 @@ proc buildLayerIndex*(layers: openArray[SyntaxLayer], text: Rope): SumTree[Synta
     let startPoint = if layer.ranges.len > 0: layer.ranges[0].first.toPoint else: point(0, 0)
     let endPoint = if layer.ranges.len > 0: layer.ranges[^1].last.toPoint else: point(0, 0)
     if startByte > lastByte:
+      ensure startPoint >= lastPoint
+      ensure endPoint >= startPoint
       result.add(SyntaxLayerRef(
         index: 0,
         depth: layer.depth,
@@ -289,6 +301,7 @@ proc buildLayerIndex*(layers: openArray[SyntaxLayer], text: Rope): SumTree[Synta
       lastByte = startByte
       lastPoint = startPoint
 
+    ensure endPoint >= startPoint
     result.add(SyntaxLayerRef(
       index: i,
       depth: layer.depth,
@@ -299,6 +312,7 @@ proc buildLayerIndex*(layers: openArray[SyntaxLayer], text: Rope): SumTree[Synta
     lastPoint = endPoint
 
   if lastByte < text.len:
+    ensure text.endPoint >= lastPoint
     result.add(SyntaxLayerRef(
       index: 0,
       depth: lastLayerDepth,

@@ -357,8 +357,12 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
       typeNode[0][2][2].add nnkIdentDefs.newTree(name.postfix("*"), nnkBracketExpr.newTree(bindSym"Setting", typ), newEmptyNode())
 
       newNode[6].add block:
-        genAst(fieldName = name, settingName, typ, store, res, prefixArg, default):
-          res.fieldName = ({.gcsafe.}: store.setting(joinSettingKey(prefixArg, settingName), typ, when typeof(default) is JsonNodeEx: default else: default.toJsonEx(defaultToJsonOptions)))
+        if default.repr == "nil":
+          genAst(fieldName = name, settingName, typ, store, res, prefixArg):
+            res.fieldName = ({.gcsafe.}: store.setting(joinSettingKey(prefixArg, settingName), typ))
+        else:
+          genAst(fieldName = name, settingName, typ, store, res, prefixArg, default):
+            res.fieldName = ({.gcsafe.}: store.setting(joinSettingKey(prefixArg, settingName), typ, when typeof(default) is JsonNodeEx: copy(default) else: default.toJsonEx(defaultToJsonOptions)))
 
       if default.repr != "nil":
         setDefaultNodes.add block:

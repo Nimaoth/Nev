@@ -72,8 +72,6 @@ when implModule:
       let nodeType = node.nodeType
       if nodeType.contains("delimiter"):
         return true
-      if nodeType.len > 0 and nodeType.allIt(it in {'*', '_', '`', '~'}):
-        return true
       return false
 
     var arena = initArena(128 * 1024)
