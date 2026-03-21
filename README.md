@@ -20,6 +20,7 @@ There is a [Discord server](https://discord.gg/eJjBMcgP2V) where you can ask que
 - Basic git integration (list/diff/add/stage/unstage/revert changed files)
 - [Builtin terminal emulator](docs/docs.md#Terminal) support multiple shells (e.g `bash`, `powershell`, `wsl`)
 - [Flexible layout system](docs/docs.md#Layout)
+- [Nice looking markdown](docs/markdown.md)
 - And many more smaller features...
 
 ## Planned features
@@ -51,6 +52,8 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 - [Finders](docs/finders.md)
 - [Plugin API](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html).
 - [Virtual filesystem](docs/virtual_file_system.md)
+- [Moves](docs/moves.md)
+- [Markdown](docs/markdown.md)
 
 ## Screenshots
 

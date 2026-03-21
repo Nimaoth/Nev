@@ -8,6 +8,8 @@ This file contains documentation about features that don't fit into any of the o
 - [Finders](docs/finders.md)
 - [Plugin API](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html).
 - [Virtual filesystem](docs/virtual_file_system.md)
+- [Moves](docs/moves.md)
+- [Markdown](docs/markdown.md)
 
 ## Layout
 
