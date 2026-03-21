@@ -885,6 +885,24 @@ proc clearOverlays*(editor: TextEditor; id: int64): void {.nodestroy.} =
   arg1 = id
   textEditorClearOverlaysImported(arg0, arg1)
 
+proc textEditorAllocateOverlayIdImported(a0: uint64): int64 {.
+    wasmimport("allocate-overlay-id", "nev:plugins/text-editor").}
+proc allocateOverlayId*(editor: TextEditor): int64 {.nodestroy.} =
+  var arg0: uint64
+  arg0 = editor.id
+  let res = textEditorAllocateOverlayIdImported(arg0)
+  result = convert(res, int64)
+
+proc textEditorReleaseOverlayIdImported(a0: uint64; a1: int64): void {.
+    wasmimport("release-overlay-id", "nev:plugins/text-editor").}
+proc releaseOverlayId*(editor: TextEditor; id: int64): void {.nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int64
+  arg0 = editor.id
+  arg1 = id
+  textEditorReleaseOverlayIdImported(arg0, arg1)
+
 proc textEditorAddCustomRenderCallbackImported(a0: uint64; a1: uint32;
     a2: uint32): int64 {.wasmimport("add-custom-render-callback",
                                     "nev:plugins/text-editor").}

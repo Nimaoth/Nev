@@ -48,11 +48,13 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   editor.disableScrolling = true
   editor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   editor.document.setReadOnly(false)
-  editor.clearOverlays(overlayIdPrefix)
+  if self.prefixOverlayId.isSome:
+    editor.clearOverlays(self.prefixOverlayId.get)
   editor.setDefaultMode()
   if self.prefix != "":
-    editor.clearOverlays(overlayIdPrefix)
-    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
+    if self.prefixOverlayId.isNone:
+      self.prefixOverlayId = editor.displayMap.overlay.allocateId()
+    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, self.prefixOverlayId.get, scope = "comment", bias = Bias.Left)
 
   if self.services.getService(EventHandlerService).getSome(events):
     events.rebuildCommandToKeysMap()
@@ -61,6 +63,10 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
 proc exitCommandLine*(self: CommandService) {.expose("commands").} =
   let self = self.CommandServiceImpl
   let editor = self.commandLineEditor.TextDocumentEditor
+  if self.prefixOverlayId.isSome:
+    editor.clearOverlays(self.prefixOverlayId.get)
+    editor.displayMap.overlay.releaseId(self.prefixOverlayId.get)
+    self.prefixOverlayId = int.none
   editor.document.content = ""
   editor.hideCompletions()
   editor.disableScrolling = true
@@ -180,8 +186,8 @@ proc selectPreviousCommandInHistory*(self: CommandService) {.expose("commands").
   editor.document.content = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]
   editor.move("(file) (end)")
   if self.prefix != "":
-    editor.clearOverlays(overlayIdPrefix)
-    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
+    editor.clearOverlays(self.prefixOverlayId.get)
+    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, self.prefixOverlayId.get, scope = "comment", bias = Bias.Left)
   self.requestRender()
 
 proc selectNextCommandInHistory*(self: CommandService) {.expose("commands").} =
@@ -202,8 +208,8 @@ proc selectNextCommandInHistory*(self: CommandService) {.expose("commands").} =
   editor.document.content = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]
   editor.move("(file) (end)")
   if self.prefix != "":
-    editor.clearOverlays(overlayIdPrefix)
-    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
+    editor.clearOverlays(self.prefixOverlayId.get)
+    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, self.prefixOverlayId.get, scope = "comment", bias = Bias.Left)
   self.requestRender()
 
 proc runProcessAndShowResultAsync(self: CommandService, command: string, options: RunShellCommandOptions) {.async.} =

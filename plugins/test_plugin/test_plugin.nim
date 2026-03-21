@@ -295,7 +295,9 @@ defineCommand(ws"add-custom-overlay-renderer",
         textEditor = editor
         let id = editor.addCustomRender(customOverlayRender)
         overlays[id] = (location, imageId.TextureId, width, height, 10)
-        editor.addOverlay(editor.getSelection, text.ws, 5, "comment", Bias.Right, id, location)
+        let overlayId = editor.allocateOverlayId()
+        if overlayId != -1:
+          editor.addOverlay(editor.getSelection, text.ws, overlayId, "comment", Bias.Right, id, location)
     except CatchableError as e:
       log lvlError, &"[guest] err: {e.msg}"
     return ws""

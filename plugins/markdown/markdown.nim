@@ -6,9 +6,6 @@ import api
 import regex
 import gif
 
-# todo: this can easily conflict with other overlay uses
-const markdownOverlayId = 5
-
 type
   RequestKind = enum ScanFile, UpdateRemaps, ClearImageCache, ActiveGifs
   Request = object
@@ -78,6 +75,7 @@ proc sendRequest(request: Request) {.raises: [].}
 
 var renderBuffer = BinaryEncoder()
 var overlays: Table[int64, OverlayInstance]
+var overlayIds: Table[TextEditor, Option[int64]]
 var lastRenderedOverlays = initHashSet[int64]()
 var currentRenderedOverlays = initHashSet[int64]()
 proc drawOverlayImage(id: int64, overlaySize: Vec2f, localOffset: int): (pointer, int) {.cdecl, raises: [].} =
@@ -238,17 +236,26 @@ proc fromJsonHook*(id: var TextureId, json: JsonNode) =
   else:
     id = 0.TextureId
 
+proc getMarkdownOverlayId(editor: TextEditor): Option[int64] =
+  if editor notin overlayIds:
+    let id = editor.allocateOverlayId()
+    overlayIds[editor] = if id != -1: id.some else: int64.none
+  return overlayIds[editor]
+
 proc handleResponse(response: Response) =
   case response.kind
   of UpdateImages:
     let currentPath = $response.editor.getDocument().mapIt(it.path()).get("")
     if currentPath != response.path:
       return
-    response.editor.clearOverlays(markdownOverlayId)
+    let markdownOverlayId = response.editor.getMarkdownOverlayId()
+    if markdownOverlayId.isNone:
+      return
+    response.editor.clearOverlays(markdownOverlayId.get)
     for overlay in response.images:
       let id = response.editor.addCustomRender(drawOverlayImage)
       let r = overlay.range
-      response.editor.addOverlay(Selection(first: r.first, last: r.first), "*", markdownOverlayId, "comment", Bias.Right, id, Inline)
+      response.editor.addOverlay(Selection(first: r.first, last: r.first), "*", markdownOverlayId.get, "comment", Bias.Right, id, Inline)
 
       overlays[id] = OverlayInstance(
         editor: response.editor,

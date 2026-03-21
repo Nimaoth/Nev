@@ -15,7 +15,6 @@ type InlayHintComponent* = ref object of Component
 
 # DLL API
 var InlayHintComponentId* {.apprtl.}: ComponentTypeId
-const overlayIdInlayHint* = 14
 
 proc inlayHintComponentUpdateInlayHints(self: InlayHintComponent, now: bool = false) {.apprtl, gcsafe, raises: [].}
 
@@ -47,6 +46,7 @@ when implModule:
     lastInlayHintDisplayRange: Range[Point]
     lastInlayHintBufferRange: Range[Point]
     documentChangedHandle: Id
+    overlayId: Option[int]
 
   proc getInlayHintComponent*(self: ComponentOwner): Option[InlayHintComponent] {.gcsafe, raises: [].} =
     return self.getComponent(InlayHintComponentId).mapIt(it.InlayHintComponent)
@@ -71,6 +71,10 @@ when implModule:
         let self = self.InlayHintComponentImpl
         if self.inlayHintsTask.isNotNil:
           self.inlayHintsTask.pause()
+        if self.overlayId.isSome:
+          self.displayMap.overlay.clear(self.overlayId.get)
+          self.displayMap.overlay.releaseId(self.overlayId.get)
+          self.overlayId = int.none
       ),
     )
 
@@ -140,7 +144,10 @@ when implModule:
           overlaysToAdd.add (point...point, hint.hint.label, "comment", bias, 0, OverlayRenderLocation.Inline)
 
       if overlaysToAdd.len > 0:
-        self.displayMap.overlay.addOverlays(overlayIdInlayHint, replace = true, overlaysToAdd)
+        if self.overlayId.isNone:
+          self.overlayId = self.displayMap.overlay.allocateId()
+        if self.overlayId.isSome:
+          self.displayMap.overlay.addOverlays(self.overlayId.get, replace = true, overlaysToAdd)
 
     self.owner.DocumentEditor.markDirty()
 

@@ -110,6 +110,7 @@ when implModule:
 
       shellCommandOutput*: Rope
       prefix*: string
+      prefixOverlayId*: Option[int]
 
       scopedCommandHandlers: Table[string, proc(command: string): Option[string] {.gcsafe, raises: [].}]
       prefixCommandHandlers: seq[tuple[prefix: string, execute: proc(command: string): Option[string] {.gcsafe, raises: [].}]]

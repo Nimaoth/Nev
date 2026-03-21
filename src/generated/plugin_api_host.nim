@@ -795,6 +795,9 @@ proc textEditorAddOverlay*(instance: ptr InstanceData; editor: TextEditor;
                            location: OverlayRenderLocation): void
 proc textEditorClearOverlays*(instance: ptr InstanceData; editor: TextEditor;
                               id: int64): void
+proc textEditorAllocateOverlayId*(instance: ptr InstanceData; editor: TextEditor): int64
+proc textEditorReleaseOverlayId*(instance: ptr InstanceData; editor: TextEditor;
+                                 id: int64): void
 proc textEditorAddCustomRenderCallback*(instance: ptr InstanceData;
                                         editor: TextEditor; fun: uint32;
                                         data: uint32): int64
@@ -3517,6 +3520,33 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         editor.id = convert(parameters[0].i64, uint64)
         id = convert(parameters[1].i64, int64)
         textEditorClearOverlays(instance, editor, id)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64],
+          [WasmValkind.I64])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "allocate-overlay-id", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        let res = textEditorAllocateOverlayId(instance, editor)
+        parameters[0].i64 = cast[int64](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I64], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "release-overlay-id", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        var id: int64
+        editor.id = convert(parameters[0].i64, uint64)
+        id = convert(parameters[1].i64, int64)
+        textEditorReleaseOverlayId(instance, editor, id)
     if e.isErr:
       return e
   block:

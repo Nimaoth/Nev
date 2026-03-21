@@ -41,10 +41,6 @@ logCategory "texted"
 let searchResultsId = newId()
 let wordHighlightId = newId()
 
-const overlayIdPrefix* = 12
-const overlayIdColorHighlight* = 13
-const overlayIdInlayHint* = 14
-const overlayIdChooseCursor* = 15
 
 type
   ColorType* = enum Hex = "hex", Float1 = "float1", Float255 = "float255"
@@ -270,6 +266,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   completionsId*: Id
   signatureHelpId*: Id
   diagnosticsId*: Id
+  overlayIdColorHighlight*: Option[int]
   lastCursorLocationBounds*: Option[Rect]
   lastHoverLocationBounds*: Option[Rect]
   lastSignatureHelpLocationBounds*: Option[Rect]
@@ -4365,13 +4362,16 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
   let keys = self.assignKeys(cursors)
   var config = self.events.getEventHandlerConfig(mode)
 
+  let overlayId = self.displayMap.overlay.allocateId().getOr:
+    return
+
   for i in 0..min(cursors.high, keys.high):
     config.addCommand("", keys[i] & "<SPACE>", action & " " & $cursors[i].toJson)
 
   var progress = ""
 
   proc updateStyledTextOverrides() =
-    self.displayMap.overlay.clear(overlayIdChooseCursor)
+    self.displayMap.overlay.clear(overlayId)
     try:
 
       var options: seq[Cursor] = @[]
@@ -4380,16 +4380,17 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
           continue
 
         if progress.len > 0:
-          self.displayMap.overlay.addOverlay(cursors[i].toPoint...point(cursors[i].line, cursors[i].column + progress.len), progress, overlayIdChooseCursor, "string")
+          self.displayMap.overlay.addOverlay(cursors[i].toPoint...point(cursors[i].line, cursors[i].column + progress.len), progress, overlayId, "string")
 
         let cursor = (line: cursors[i].line, column: cursors[i].column + progress.len)
         let text = keys[i][progress.len..^1]
-        self.displayMap.overlay.addOverlay(cursor.toPoint...point(cursor.line, cursor.column + text.len), text, overlayIdChooseCursor, "constant.numeric")
+        self.displayMap.overlay.addOverlay(cursor.toPoint...point(cursor.line, cursor.column + text.len), text, overlayId, "constant.numeric")
 
         options.add cursors[i]
 
       if options.len == 1:
-        self.displayMap.overlay.clear(overlayIdChooseCursor)
+        self.displayMap.overlay.clear(overlayId)
+        self.displayMap.overlay.releaseId(overlayId)
         self.document.notifyTextChanged()
         self.markDirty()
         self.removeMode(mode)
@@ -4409,7 +4410,8 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
   self.eventHandlerOverrides[mode] = proc(config: EventHandlerConfig): EventHandler =
     assignEventHandler(result, config):
       onAction:
-        weakSelf.displayMap.overlay.clear(overlayIdChooseCursor)
+        weakSelf.displayMap.overlay.clear(overlayId)
+        weakSelf.displayMap.overlay.releaseId(overlayId)
         weakSelf.document.notifyTextChanged()
         weakSelf.markDirty()
         weakSelf.removeMode(mode)
@@ -4426,7 +4428,8 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
         updateStyledTextOverrides()
 
       onCanceled:
-        weakSelf.displayMap.overlay.clear(overlayIdChooseCursor)
+        weakSelf.displayMap.overlay.clear(overlayId)
+        weakSelf.displayMap.overlay.releaseId(overlayId)
         weakSelf.removeMode(mode)
 
   self.cursorVisible = true
@@ -4723,8 +4726,16 @@ proc updateMatchingWordHighlight(self: TextDocumentEditor) =
 
 proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
   if not self.settings.colorHighlight.enable.get():
-    self.displayMap.overlay.clear(overlayIdColorHighlight)
+    if self.overlayIdColorHighlight.isSome:
+      self.displayMap.overlay.clear(self.overlayIdColorHighlight.get)
+      self.displayMap.overlay.releaseId(self.overlayIdColorHighlight.get)
+      self.overlayIdColorHighlight = int.none
     return
+
+  if self.overlayIdColorHighlight.isNone:
+    self.overlayIdColorHighlight = self.displayMap.overlay.allocateId()
+    if self.overlayIdColorHighlight.isNone:
+      return
 
   let regex = self.settings.colorHighlight.regex.getRegex()
   let kind = self.settings.colorHighlight.kind.get()
@@ -4737,7 +4748,7 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
       return
 
     # todo: this can scale up pretty quickly, could be done in a background thread
-    # self.displayMap.overlay.clear(overlayIdColorHighlight)
+    # self.displayMap.overlay.clear(self.overlayIdColorHighlight.get)
     var overlays: seq[overlay_map.OverlayDef] = @[]
     for r in colorRanges:
       let text = rope[r]
@@ -4769,7 +4780,8 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
       # self.displayMap.overlay.addOverlay(r.a...r.a, " ■ ", overlayIdColorHighlight, color, renderId = 1)
       overlays.add (r.a...r.a, " ■ ", color, Bias.Left, 1, overlay_map.OverlayRenderLocation.Inline)
 
-    self.displayMap.overlay.addOverlays(overlayIdColorHighlight, true, overlays)
+    if self.overlayIdColorHighlight.isSome:
+      self.displayMap.overlay.addOverlays(self.overlayIdColorHighlight.get, true, overlays)
 
   except Exception as e:
     log lvlError, &"Failed to find colors: {e.msg}"
@@ -4927,7 +4939,9 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.commands = self.services.getService(CommandServiceImpl).get
   self.displayMap = DisplayMap.new()
   self.diffDisplayMap = DisplayMap.new()
-  discard self.displayMap.overlay.onUpdated.subscribe (args: (OverlayMap, OverlayMapSnapshot, Patch[OverlayPoint], seq[int])) => self.textEditorComponent.onOverlaysChanged.invoke((args[3],))
+  discard self.displayMap.overlay.onUpdated.subscribe proc(args: (OverlayMap, OverlayMapSnapshot, Patch[OverlayPoint], seq[int])) =
+    if not self.textEditorComponent.isNil:
+      self.textEditorComponent.onOverlaysChanged.invoke((args[3],))
   discard self.displayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
   discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
   discard self.displayMap.onUpdated.subscribe (args: (DisplayMap, DisplayMapSnapshot)) => self.handleDisplayMapUpdated(args[0], args[1])

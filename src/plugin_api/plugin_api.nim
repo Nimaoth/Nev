@@ -933,6 +933,20 @@ proc textEditorClearOverlays*(instance: ptr InstanceData; editor: TextEditor; id
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.clearOverlays(id.int)
 
+proc textEditorAllocateOverlayId*(instance: ptr InstanceData; editor: TextEditor): int64 =
+  if instance.host == nil:
+    return -1
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let overlay = editor.TextDocumentEditor.displayMap.overlay
+    return overlay.allocateId().get(-1).int64
+  return -1
+
+proc textEditorReleaseOverlayId*(instance: ptr InstanceData; editor: TextEditor; id: int64): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.displayMap.overlay.releaseId(id.int)
+
 proc typesNewSharedBuffer*(instance: ptr InstanceData, size: int64): SharedBufferResource =
   return SharedBufferResource(buffer: SharedBuffer.new(size))
 

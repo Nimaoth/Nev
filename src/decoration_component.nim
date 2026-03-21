@@ -51,6 +51,8 @@ proc decorationComponentAddOverlay(self: DecorationComponent, selection: Range[P
 proc decorationComponentAddOverlays(self: DecorationComponent, id: int, replace: bool, overlays: sink seq[OverlayDef]) {.apprtl, gcsafe, raises: [].}
 proc decorationComponentAddCustomRenderer(self: DecorationComponent, impl: CustomOverlayRenderer): CustomRendererId {.apprtl, gcsafe, raises: [].}
 proc decorationComponentRemoveCustomRenderer(self: DecorationComponent, id: CustomRendererId) {.apprtl, gcsafe, raises: [].}
+proc decorationComponentAllocateOverlayId(self: DecorationComponent): Option[int] {.apprtl, gcsafe, raises: [].}
+proc decorationComponentReleaseOverlayId(self: DecorationComponent, id: int) {.apprtl, gcsafe, raises: [].}
 
 proc getDecorationComponent*(self: ComponentOwner): Option[DecorationComponent] {.apprtl, gcsafe, raises: [].}
 
@@ -64,6 +66,8 @@ proc addOverlay*(self: DecorationComponent, selection: Range[Point], text: strin
 proc addOverlays*(self: DecorationComponent, id: int, replace: bool, overlays: sink seq[OverlayDef]) = decorationComponentAddOverlays(self, id, replace, overlays)
 proc addCustomRenderer*(self: DecorationComponent, impl: CustomOverlayRenderer): CustomRendererId {.inline.} = decorationComponentAddCustomRenderer(self, impl)
 proc removeCustomRenderer*(self: DecorationComponent, id: CustomRendererId) {.inline.} = decorationComponentRemoveCustomRenderer(self, id)
+proc allocateOverlayId*(self: DecorationComponent): Option[int] {.inline.} = decorationComponentAllocateOverlayId(self)
+proc releaseOverlayId*(self: DecorationComponent, id: int) {.inline.} = decorationComponentReleaseOverlayId(self, id)
 
 # Implementation
 when implModule:
@@ -232,3 +236,11 @@ when implModule:
   proc decorationComponentRemoveCustomRenderer(self: DecorationComponent, id: CustomRendererId) =
     let self = self.DecorationComponentImpl
     self.customOverlayRenderers.del(id)
+
+  proc decorationComponentAllocateOverlayId(self: DecorationComponent): Option[int] =
+    let self = self.DecorationComponentImpl
+    return self.displayMap.overlay.allocateId()
+
+  proc decorationComponentReleaseOverlayId(self: DecorationComponent, id: int) =
+    let self = self.DecorationComponentImpl
+    self.displayMap.overlay.releaseId(id)

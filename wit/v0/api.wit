@@ -382,6 +382,8 @@ interface text-editor {
 
   add-overlay: func(editor: text-editor, selections: selection, text: string, id: s64, scope: string, bias: bias, render-id: s64, location: overlay-render-location);
   clear-overlays: func(editor: text-editor, id: s64);
+  allocate-overlay-id: func(editor: text-editor) -> s64;
+  release-overlay-id: func(editor: text-editor, id: s64);
 
   /// Sets the callback which will be called when rendering text overlays with a renderId.
   /// Returns the renderId which can be used in add-overlay.

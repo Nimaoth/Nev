@@ -47,9 +47,9 @@ converter toOverlayPoint*(diff: PointDiff): OverlayPoint = diff.toPoint.OverlayP
 
 type
   OverlayMapChunkKind* {.pure.} = enum
-    Empty
-    String
-    Rope
+    Identity    # Chunk represents raw underlying text
+    String      # An inserted string. Can be empty. Replaces the underlying text.
+    Rope        # An inserted rope. Can be empty. Replaces the underlying text.
     # DisplayMap
 
   OverlayRenderLocation* {.pure.} = enum
@@ -65,7 +65,7 @@ type
     dstBytes*: int
     bias*: Bias
     case kind*: OverlayMapChunkKind
-    of OverlayMapChunkKind.Empty: discard
+    of OverlayMapChunkKind.Identity: discard
     of OverlayMapChunkKind.String:
       text*: string
       scope*: string
@@ -88,7 +88,7 @@ type
 # Make OverlayMapChunk an Item
 func clone*(self: OverlayMapChunk): OverlayMapChunk =
   case self.kind
-  of OverlayMapChunkKind.Empty: OverlayMapChunk(kind: OverlayMapChunkKind.Empty, id: self.id, src: self.src, dst: self.dst, srcBytes: self.srcBytes, dstBytes: self.dstBytes, bias: self.bias)
+  of OverlayMapChunkKind.Identity: OverlayMapChunk(kind: OverlayMapChunkKind.Identity, id: self.id, src: self.src, dst: self.dst, srcBytes: self.srcBytes, dstBytes: self.dstBytes, bias: self.bias)
   of OverlayMapChunkKind.String: OverlayMapChunk(kind: OverlayMapChunkKind.String, id: self.id, src: self.src, dst: self.dst, srcBytes: self.srcBytes, dstBytes: self.dstBytes, text: self.text, scope: self.scope, bias: self.bias, renderId: self.renderId, location: self.location)
   of OverlayMapChunkKind.Rope: OverlayMapChunk(kind: OverlayMapChunkKind.Rope, id: self.id, src: self.src, dst: self.dst, srcBytes: self.srcBytes, dstBytes: self.dstBytes, r: self.r.clone(), bias: self.bias)
 
@@ -156,6 +156,7 @@ type
     onUpdated*: Event[tuple[map: OverlayMap, old: OverlayMapSnapshot, patch: Patch[OverlayPoint], ids: seq[int]]]
     pendingOperations*: seq[OverlayMapOperation]
     isApplyingOps: bool = false
+    allocatedIds*: array[16, bool]
 
   OverlayChunkIterator* = object
     styledChunks*: InputChunkIterator
@@ -190,6 +191,17 @@ func clone*(self: OverlayMapSnapshot): OverlayMapSnapshot =
 
 proc new*(_: typedesc[OverlayMap]): OverlayMap =
   result = OverlayMap(snapshot: OverlayMapSnapshot(map: SumTree[OverlayMapChunk].new([OverlayMapChunk()])))
+
+proc allocateId*(self: OverlayMap): Option[int] =
+  for i in 1..<self.allocatedIds.len:
+    if not self.allocatedIds[i]:
+      self.allocatedIds[i] = true
+      return i.some
+  return int.none
+
+proc releaseId*(self: OverlayMap, id: int) =
+  if id >= 0 and id < self.allocatedIds.len:
+    self.allocatedIds[id] = false
 
 proc desc*(self: OverlayMapSnapshot): string =
   &"OverlayMap(@{self.version}, {self.map.summary}, {self.buffer.remoteId}@{self.buffer.version})"
@@ -296,7 +308,7 @@ proc toOverlayBytes*(self: OverlayMapChunkCursor, overlay: OverlayMapSnapshot, o
     return self.endPos.dstBytes
   let item = self.item.get
   let offset = case item.kind
-  of OverlayMapChunkKind.Empty:
+  of OverlayMapChunkKind.Identity:
     let point = self.toPoint(overlayPoint)
     let bytes = overlay.buffer.visibleText.pointToOffset(point)
     let offset = bytes - self.startPos.srcBytes
@@ -410,10 +422,10 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch
     # Skip over left aligned overlays at the current position
     while true:
       let nextItem = c.nextItem()
-      let nextItemEmpty = nextItem.mapIt(it.kind == Empty).get(false)
+      let nextItemEmpty = nextItem.mapIt(it.kind == Identity).get(false)
       let beforeEnd = c.endPos.src < self.map.summary.src or nextItemEmpty
       let editAtEndOfChunk = e.old.a == c.endPos.src
-      let currentNonEmptyOrNextNonEmptyLeftBiased = (c.item.get[].kind != Empty) or (nextItem.getSome(item) and item[].kind != Empty and item[].bias == Bias.Left)
+      let currentNonEmptyOrNextNonEmptyLeftBiased = (c.item.get[].kind != Identity) or (nextItem.getSome(item) and item[].kind != Identity and item[].bias == Bias.Left)
       if beforeEnd and editAtEndOfChunk and currentNonEmptyOrNextNonEmptyLeftBiased:
         logEdit &"Overlay biased left, at border {e}, {c.endPos}"
         logEdit &"-> chunk {c.item.get[]}"
@@ -449,7 +461,7 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch
 
     if delete:
       logEdit &"delete {e}, {chunk}, {c.startPos}...{c.endPos}"
-      if chunk.kind == Empty:
+      if chunk.kind == Identity:
         chunk.src += editClampedRel.old.a - editClampedRel.old.b
         chunk.srcBytes += byteEditClamped.old.a - byteEditClamped.old.b
         chunk.dst += editClampedRel.old.a - editClampedRel.old.b
@@ -473,7 +485,7 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch
 
     if insert:
       logEdit &"insert {e}, {chunk}, {c.startPos}...{c.endPos}"
-      if chunk.kind == Empty:
+      if chunk.kind == Identity:
         chunk.src += (editRel.new.b - editRel.new.a)
         chunk.srcBytes += byteEdit.new.b - byteEdit.new.a
         chunk.dst += (editRel.new.b - editRel.new.a)
@@ -517,7 +529,7 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch
           old: (editClamped.old.a - c.startPos.src).toPoint...(editClamped.old.b - c.startPos.src).toPoint,
           new: (editClamped.new.a - c.startPos.src).toPoint...(editClamped.new.b - c.startPos.src).toPoint)
 
-        if chunk.kind == Empty:
+        if chunk.kind == Identity:
           chunk.src += editClampedRel.old.a - editClampedRel.old.b
           chunk.srcBytes += byteEditClamped.old.a - byteEditClamped.old.b
           chunk.dst += editClampedRel.old.a - editClampedRel.old.b
@@ -557,7 +569,7 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch
   logEdit &"  patch: {result}"
 
   if newMap.isEmpty:
-    logEdit &"Empty map, add default"
+    logEdit &"Identity map, add default"
     let endOffset = buffer.visibleText.summary.bytes
     let endPoint = buffer.visibleText.summary.lines
     let chunk = OverlayMapChunk(src: endPoint, dst: endPoint.OverlayPoint, srcBytes: endOffset, dstBytes: endOffset)
@@ -610,7 +622,7 @@ proc update*(self: OverlayMap, buffer: sink InputMapSnapshot, force: bool = fals
   )
 
 proc clear*(self: var OverlayMapSnapshot, id: int = -1): Patch[OverlayPoint] =
-  logOverlayMapUpdate &"OverlayMap.clear {id}, {self.desc}"
+  logOverlayMapUpdate &"OverlayMapSnapshot.clear {id}, {self.desc}"
   var newMap = SumTree[OverlayMapChunk].new()
   var patch: Patch[OverlayPoint]
 
@@ -622,7 +634,7 @@ proc clear*(self: var OverlayMapSnapshot, id: int = -1): Patch[OverlayPoint] =
     var c = self.map.initCursor(OverlayMapChunkSummary)
     c.next()
     while c.item.getSome(item):
-      if item.kind != OverlayMapChunkKind.Empty:
+      if item.kind != OverlayMapChunkKind.Identity:
         patch.add initEdit(c.startPos.dst...c.endPos.dst, c.startPos.src.OverlayPoint...c.endPos.src.OverlayPoint)
       c.next()
 
@@ -643,7 +655,7 @@ proc clear*(self: var OverlayMapSnapshot, id: int = -1): Patch[OverlayPoint] =
       if c.item.getSome(item):
         let dst = newMap.summary.dst
         var skipNext = false
-        if lastEmpty or (c.prevItem.getSome(prevItem) and prevItem.kind == OverlayMapChunkKind.Empty):
+        if lastEmpty or (c.prevItem.getSome(prevItem) and prevItem.kind == OverlayMapChunkKind.Identity):
           lastEmpty = true
           newMap.updateLast proc(chunk: var OverlayMapChunk) =
             chunk.src += item.src
@@ -651,7 +663,7 @@ proc clear*(self: var OverlayMapSnapshot, id: int = -1): Patch[OverlayPoint] =
             chunk.dst += item.src.OverlayPoint
             chunk.dstBytes += item.srcBytes
 
-            if c.nextItem.getSome(nextItem) and nextItem.kind == OverlayMapChunkKind.Empty:
+            if c.nextItem.getSome(nextItem) and nextItem.kind == OverlayMapChunkKind.Identity:
               chunk.src += nextItem.src
               chunk.srcBytes += nextItem.srcBytes
               chunk.dst += nextItem.src.OverlayPoint
@@ -660,10 +672,10 @@ proc clear*(self: var OverlayMapSnapshot, id: int = -1): Patch[OverlayPoint] =
 
         elif item.src != point(0, 0):
           newMap.add OverlayMapChunk(src: item.src, dst: item.src.OverlayPoint, srcBytes: item.srcBytes, dstBytes: item.srcBytes)
-          lastEmpty = item.kind == OverlayMapChunkKind.Empty
+          lastEmpty = item.kind == OverlayMapChunkKind.Identity
 
-        let change = c.endPos.src - c.startPos.src
-        patch.add initEdit(c.startPos.dst...c.endPos.dst, dst...(dst + change))
+        let deleted: OverlayPoint = c.endPos.src - c.startPos.src
+        patch.add initEdit(c.startPos.dst...c.endPos.dst, dst...(dst + deleted))
         c.next()
         if skipNext:
           c.next()
@@ -673,7 +685,17 @@ proc clear*(self: var OverlayMapSnapshot, id: int = -1): Patch[OverlayPoint] =
 
     newMap.append c.suffix()
 
-  assert patch.isValid
+  if not patch.isValid:
+    echo &"OverlayMapSnapshot.clear {id}, {self.desc}"
+    echo &"Invalid patch {patch}"
+    echo self
+    echo "========================="
+    echo OverlayMapSnapshot(
+      map: newMap,
+      buffer: self.buffer.clone(),
+      version: self.version + 1,
+    )
+    # patch = initPatch([initEdit(overlayPoint(0, 0)...self.endOverlayPoint, overlayPoint(0, 0)...newMap.summary.dst)])
   self = OverlayMapSnapshot(
     map: newMap,
     buffer: self.buffer.clone(),
@@ -696,14 +718,15 @@ proc clear*(self: OverlayMap, id: int = -1) =
   ))
 
 proc addOverlay*(self: var OverlayMapSnapshot, range: Range[Point], text: string, id: int, scope: string = "", bias: Bias = Bias.Left, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline): Patch[OverlayPoint] =
-  logOverlayMapUpdate &"OverlayMap.add {range}, '{text}', {id}, '{scope}', bias, {self.desc}"
+  logOverlayMapUpdate &"OverlayMapSnapshot.add {range}, '{text}', {id}, '{scope}', {bias}, {self.desc}"
+  logOverlayMapUpdate self
 
   template log(msg: untyped) =
     when false:
       debugEcho msg
 
-
   log &"OverlayMap.addOverlay {range}, '{text}'\n{self}"
+  log self
   let newSummary = TextSummary.init(text)
   var newMap = SumTree[OverlayMapChunk].new()
 
@@ -711,25 +734,30 @@ proc addOverlay*(self: var OverlayMapSnapshot, range: Range[Point], text: string
 
   var c = self.map.initCursor(OverlayMapChunkSummary)
   newMap.append c.slice(range.a.OverlayMapChunkSrc, Bias.Left)
+
   # Skip over left aligned overlays at the current position
-  while c.endPos.src < self.map.summary.src and range.a == c.endPos.src and (
-    (c.item.get[].kind != Empty and c.item.get[].bias == Bias.Left) or (c.nextItem().getSome(item) and item[].kind != Empty and item[].bias == Bias.Left)):
+  log &"  1: {c.startPos}...{c.endPos}: {(if c.item.isSome: $c.item.get[] else: $0)}"
+  while c.endPos.src < self.map.summary.src and range.a == c.endPos.src and c.item.isSome and (
+      (c.item.get[].kind != Identity and (c.item.get[].srcBytes > 0 or c.item.get[].bias == Bias.Left)) or # On overlay biased left
+      (c.nextItem().getSome(item) and item[].kind != Identity and item[].bias == Bias.Left and item[].srcBytes == 0) or # Next is empty overlay biased left
+      c.item.get[].kind == Identity
+    ):
     log &"Overlay biased left, at border {range}, {c.endPos}"
     log &"-> chunk {c.item.get[]}"
     newMap.add c.item.get[]
     c.next()
 
+  log &"  2: {c.startPos}...{c.endPos}: {(if c.item.isSome: $c.item.get[] else: $0)}"
   let currentEmpty = c.startPos.src == c.endPos.src
 
   log &"  current: {newMap.summary}, current: {c.startPos}...{c.endPos}"
+  # Split current chunk if we're overlapping
   if range.a > c.startPos.src or (currentEmpty and bias == Bias.Right):
     if c.item.getSome(item):
-      if item.kind == OverlayMapChunkKind.String:
-        discard # todo
-      else:
-        let newRange = (range.a - c.startPos.src).toPoint
-        let newByteRange = byteRange.a - c.startPos.srcBytes
-        log &"  add start of overlappin chunk {newRange}"
+      let newRange = (range.a - c.startPos.src).toPoint
+      let newByteRange = byteRange.a - c.startPos.srcBytes
+      log &"  add start of overlappin chunk {newRange}"
+      if newByteRange != 0:
         newMap.add OverlayMapChunk(src: newRange, dst: newRange.OverlayPoint, srcBytes: newByteRange, dstBytes: newByteRange)
 
   newMap.add OverlayMapChunk(id: id, src: range.len, dst: newSummary.lines.OverlayPoint, srcBytes: byteRange.len, dstBytes: newSummary.bytes, kind: OverlayMapChunkKind.String, text: text, scope: scope, bias: bias, renderId: renderId, location: location)
@@ -738,17 +766,24 @@ proc addOverlay*(self: var OverlayMapSnapshot, range: Range[Point], text: string
   let overlayRangeNew = overlayRangeOld.a...(overlayRangeOld.a + newSummary.lines.OverlayPoint)
   result.add initEdit(overlayRangeOld, overlayRangeNew)
 
+  # Skip anything which is covered by our overlay
+  if range.b > range.a:
+    log &"  skip overlapping {range}"
+    discard c.seekForward(range.b.OverlayMapChunkSrc, Bias.Left, ())
+
+  log &"  3: {c.startPos}...{c.endPos}: {(if c.item.isSome: $c.item.get[] else: $0)}"
+  # Split at range end
   if range.b < c.endPos.src or (currentEmpty and bias == Bias.Left):
     if c.item.getSome(item):
-      if item.kind == OverlayMapChunkKind.String:
-        discard # todo
-      else:
-        let newRange = (c.endPos.src - range.b).toPoint
-        let newByteRange = c.endPos.srcBytes - byteRange.b
-        log &"  add end of overlappin chunk {newRange}"
+      let newRange = (c.endPos.src - range.b).toPoint
+      let newByteRange = c.endPos.srcBytes - byteRange.b
+      log &"  add end of overlappin chunk {newRange}"
+      if newByteRange != 0 or range.b == self.map.summary.src: # We
         newMap.add OverlayMapChunk(src: newRange, dst: newRange.OverlayPoint, srcBytes: newByteRange, dstBytes: newByteRange)
 
+  log &"  4: {c.startPos}...{c.endPos}: {(if c.item.isSome: $c.item.get[] else: $0)}"
   c.next()
+  log &"  5: {c.startPos}...{c.endPos}: {(if c.item.isSome: $c.item.get[] else: $0)}"
   newMap.append c.suffix()
 
   self = OverlayMapSnapshot(
@@ -756,6 +791,8 @@ proc addOverlay*(self: var OverlayMapSnapshot, range: Range[Point], text: string
     buffer: self.buffer.clone(),
     version: self.version + 1,
   )
+  log &"-> {self.desc}"
+  log self
 
 proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, scope: string = "", bias: Bias = Bias.Left, renderId: int = 0, location: OverlayRenderLocation = OverlayRenderLocation.Inline) =
   logOverlayMapUpdate &"OverlayMap.add {range}, '{text}', {id}, '{scope}', bias, {self.snapshot.desc}"
@@ -767,6 +804,10 @@ proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, s
   ))
 
 proc enqueueOperation*(self: OverlayMap, op: sink OverlayMapOperation) =
+  if op.id notin 0..self.allocatedIds.high or not self.allocatedIds[op.id]:
+    echo &"Trying to add overlay with invalid id {op.id}. Allocate an id using allocateId"
+    return
+  logOverlayMapUpdate &"OverlayMap.enqueueOperation {op.id} replace={op.replace} overlays={op.newOverlays.len}"
   if op.replace:
     if op.id == -1:
       self.pendingOperations.setLen(0)
@@ -787,6 +828,7 @@ proc addOverlays*(self: OverlayMap, id: int, replace: bool, overlays: sink seq[O
   ))
 
 proc applyOps*(self: var OverlayMapSnapshot, operations: sink seq[OverlayMapOperation]): Patch[OverlayPoint] =
+  logOverlayMapUpdate &"OverlayMapSnapshot.applyOps operations={operations.len}"
   var num = 0
   for op in operations:
     if op.buffer.version != self.buffer.version:
@@ -889,14 +931,14 @@ proc applyOpsAsync(self: OverlayMap) {.async: (raises: []).} =
   except CatchableError:
     discard
 
-var debugOverlayMapNext* = false
+var debugOverlayMapNext* = true
 template logIter(msg: untyped) =
   when false:
     if ({.gcsafe.}: debugOverlayMapNext):
       debugEcho msg
 
 proc setupSubIterAfterSeek(self: var OverlayChunkIterator) =
-  # Bias to right if at end of non-empty chunk
+  # Bias to right if at end of non-identity chunk
   logIter &"setupSubIterAfterSeek: {self.overlayPoint} == {self.overlayMapCursor.endPos.dst}"
   if self.overlayMapCursor.endPos.src > self.overlayMapCursor.startPos.src and self.overlayPoint == self.overlayMapCursor.endPos.dst:
     logIter &"at end of {self.overlayMapCursor.startPos} -> {self.overlayMapCursor.endPos}"
@@ -904,8 +946,8 @@ proc setupSubIterAfterSeek(self: var OverlayChunkIterator) =
 
   if self.overlayMapCursor.item.getSome(item):
     case item.kind
-    of OverlayMapChunkKind.Empty:
-      self.subIterKind = OverlayMapChunkKind.Empty
+    of OverlayMapChunkKind.Identity:
+      self.subIterKind = OverlayMapChunkKind.Identity
     of OverlayMapChunkKind.String:
       self.subIterKind = OverlayMapChunkKind.String
       # self.stringLine = self.overlayPoint.row.int - self.overlayMapCursor.startPos.dst.row.int
@@ -957,7 +999,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
 
   logIter &"Overlay.next {self.overlayPoint}, {self.styledChunks.point}, {self.subIterKind}, localOffset: {self.localOffset}"
 
-  if self.subIterKind == OverlayMapChunkKind.Empty:
+  if self.subIterKind == OverlayMapChunkKind.Identity:
     if self.styledChunk.isNone or self.localOffset > self.styledChunk.get.len:
       self.styledChunk = self.styledChunks.next()
       self.localOffset = 0
@@ -970,8 +1012,8 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
         discard self.overlayMapCursor.seekForward(currentPoint.OverlayMapChunkSrc, Bias.Left, ())
 
       if currentPoint == self.overlayMapCursor.endPos.src and self.overlayMapCursor.startPos.src != self.overlayMapCursor.endPos.src:
-        logIter &"  overlayMapCursor.next()"
         self.overlayMapCursor.next()
+        logIter &"  overlayMapCursor.next() -> {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}"
 
       logIter &"  OverlayChunkIterator.next1 {self.overlayPoint} -> {self.overlayMapCursor.toOverlayPoint(currentPoint)}"
       self.overlayPoint = self.overlayMapCursor.toOverlayPoint(currentPoint)
@@ -983,6 +1025,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
       return
     else:
       self.overlayMapCursor.next()
+      logIter &"  overlayMapCursor.next() -> {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}"
       if self.overlayMapCursor.atEnd:
         self.atEnd = true
         self.overlayChunk = OverlayChunk.none
@@ -1044,7 +1087,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
       logIter &"  overlay chunk {overlayChunk}, endOffset: {endOffset}, len: {item.text.len}"
 
       if endOffset == item.text.len:
-        self.subIterKind = OverlayMapChunkKind.Empty
+        self.subIterKind = OverlayMapChunkKind.Identity
         self.stringLine = 0
         self.stringOffset = 0
         self.stringRuneOffset = 0
@@ -1054,21 +1097,26 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
         if self.overlayMapCursor.startPos.src == self.overlayMapCursor.endPos.src:
           logIter &"  empty overlay src range, next overlay"
           self.overlayMapCursor.next()
+          logIter &"  overlayMapCursor.next() -> {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}"
         else:
           logIter &"  seek {self.overlayMapCursor.startPos.src} != {self.overlayMapCursor.endPos.src}"
           let deletedRange: InputPoint = self.overlayMapCursor.endPos.src - self.overlayMapCursor.startPos.src
           let insertedRange: InputPoint = self.overlayMapCursor.endPos.dst - self.overlayMapCursor.startPos.dst
+          logIter &"    deleted={deletedRange}, inserted={insertedRange}"
           if deletedRange >= insertedRange:
+            logIter &"    seek src {self.overlayMapCursor.endPos.src}"
             self.seek(self.overlayMapCursor.endPos.src)
           else:
+            logIter &"    seek dst {self.overlayMapCursor.endPos.dst}"
             self.seek(self.overlayMapCursor.endPos.dst)
           logIter &"  after seek {self.overlayMapCursor.startPos.src} <= {self.overlayMapCursor.endPos.src}, {self.overlayPoint}, {self.overlayMapCursor.endPos.dst}"
           if self.overlayMapCursor.endPos.src > self.overlayMapCursor.startPos.src and self.overlayPoint == self.overlayMapCursor.endPos.dst:
             logIter &"at end of {self.overlayMapCursor.startPos} -> {self.overlayMapCursor.endPos}"
             logIter &"  and next, {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}, {self.overlayPoint}"
-            self.overlayMapCursor.next()
+            # self.overlayMapCursor.next()
+            logIter &"  overlayMapCursor.next() -> {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}"
 
-        if self.overlayMapCursor.item.getSome(item) and item.kind != OverlayMapChunkKind.Empty:
+        if self.overlayMapCursor.item.getSome(item) and item.kind != OverlayMapChunkKind.Identity:
           logIter &"  Next chunk also string {item[]}, {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}, {self.overlayPoint}"
           self.subIterKind = item.kind
       else:
@@ -1188,7 +1236,7 @@ proc renderString*(self: OverlayMapSnapshot): string =
       result.add c
 
 when isMainModule:
-  let content = "abcdefghijkl"
+  let content = "Abc *hello `world`* test\n"
   var b = initBuffer(content = content)
   assert $b.visibleText == content
 
@@ -1199,19 +1247,20 @@ when isMainModule:
   echo "---------- initial overlay map"
   echo om.snapshot.renderString()
   echo "----------"
-  echo om.snapshot.addOverlay(point(0, 3)...point(0, 3), "123", 1, "", Bias.Left)
-  echo om.snapshot.addOverlay(point(0, 6)...point(0, 6), "XYZ", 2, "", Bias.Left)
-  echo om.snapshot.addOverlay(point(0, 9)...point(0, 9), "456", 1, "", Bias.Left)
+  echo om.snapshot.addOverlay(point(0, 4)...point(0, 5), "", 1, "", Bias.Right)
+  echo om.snapshot.addOverlay(point(0, 11)...point(0, 12), "", 1, "", Bias.Right)
+  echo om.snapshot.addOverlay(point(0, 17)...point(0, 18), "", 1, "", Bias.Right)
+  echo om.snapshot.addOverlay(point(0, 18)...point(0, 19), "", 1, "", Bias.Right)
   echo "======================================================="
   echo &"snapshot: {om.snapshot}"
   echo "---------- overlay map"
   echo om.snapshot.renderString()
   echo "----------"
 
-  let p = om.snapshot.clear(1)
-  echo p
-  echo "======================================================="
-  echo &"snapshot: {om.snapshot}"
-  echo "---------- overlay map"
-  echo om.snapshot.renderString()
-  echo "----------"
+  # let p = om.snapshot.clear(1)
+  # echo p
+  # echo "======================================================="
+  # echo &"snapshot: {om.snapshot}"
+  # echo "---------- overlay map"
+  # echo om.snapshot.renderString()
+  # echo "----------"
