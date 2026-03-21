@@ -1,5 +1,5 @@
 import std/[locks]
-import vmath, chroma
+import vmath, chroma, bumpy
 import ui/node
 import misc/[event, timer]
 import input, vfs, app_options, scripting_api, pixie
@@ -7,6 +7,11 @@ import input, vfs, app_options, scripting_api, pixie
 export input, event
 
 type
+  RecordMode* = enum
+    None
+    Screenshot
+    Video
+
   WLayoutOptions* = object
     getTextBounds*: proc(text: string, fontSizeIncreasePercent: float = 0): Vec2
   Platform* = ref object of RootObj
@@ -36,6 +41,12 @@ type
     vfs*: VFS
     backend*: Backend
     currentModifiers*: Modifiers
+
+    record*: RecordMode = RecordMode.None
+    screenRect*: Rect
+    screenshotPath*: string
+    videoFrameIndex*: int
+    lastVideoFrameTime*: Timer
 
 method requestRender*(self: Platform, redrawEverything = false) {.base, gcsafe, raises: [].} = discard
 method render*(self: Platform, rerender: bool) {.base, gcsafe, raises: [].} = discard

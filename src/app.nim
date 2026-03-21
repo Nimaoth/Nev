@@ -143,6 +143,11 @@ type
     generalSettings*: GeneralSettings
     debugSettings*: DebugSettings
 
+    recordingKeys*: bool = false
+    recordingKeysTimer*: Timer
+    recordingKeysBuffer*: string
+    isReplayingKeys*: bool = false
+
 var gEditor* {.exportc.}: App = nil
 
 proc handleLog(self: App, level: Level, args: openArray[string])
@@ -728,7 +733,11 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.appOptions = options
   self.services = services
 
-  discard platform.onKeyPress.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyPress(event.input, event.modifiers)
+  discard platform.onKeyPress.subscribe proc(event: auto): void {.gcsafe, raises: [].} =
+    if event.input == INPUT_ESCAPE and self.isReplayingKeys:
+      debugf"interrupted replaying keys"
+      self.isReplayingKeys = false
+    self.handleKeyPress(event.input, event.modifiers)
   discard platform.onKeyRelease.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyRelease(event.input, event.modifiers)
   discard platform.onModifiersChanged.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleModsChanged(event.old, event.new)
   discard platform.onRune.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleRune(event.input, event.modifiers)
@@ -1051,6 +1060,22 @@ proc enableDebugPrintAsyncAwaitStackTrace*(self: App, enable: bool) {.expose("ed
 
 proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
   self.platform.showDrawnNodes = not self.platform.showDrawnNodes
+
+proc takeScreenshot*(self: App, path: string, x: float = 0, y: float = 0, w: float = 0, h: float = 0) {.expose("editor").} =
+  self.platform.screenshotPath = path
+  self.platform.screenRect = rect(x, y, w, h)
+  self.platform.record = RecordMode.Screenshot
+  self.platform.requestRender(true)
+
+proc startRecordingScreen*(self: App, path: string, x: float = 0, y: float = 0, w: float = 0, h: float = 0) {.expose("editor").} =
+  self.platform.screenshotPath = path
+  self.platform.screenRect = rect(x, y, w, h)
+  self.platform.record = RecordMode.Video
+  self.platform.requestRender(true)
+
+proc stopRecordingScreen*(self: App) {.expose("editor").} =
+  self.platform.record = RecordMode.None
+  self.platform.requestRender(true)
 
 proc saveAppState*(self: App) {.expose("editor").} =
   var state = EditorState()
@@ -2816,6 +2841,12 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
       self.registers.registers[register] = Register(kind: RegisterKind.Text, text: "")
     self.registers.registers[register].text.add inputToString(input, modifiers)
 
+  if self.recordingKeys:
+    let ms = self.recordingKeysTimer.elapsed.ms.int
+    let prefix = if Modifier.Release in modifiers: "up " else: "down "
+    var cleanMods = modifiers - {Modifier.Release}
+    self.recordingKeysBuffer.add prefix & inputToString(input, cleanMods) & " " & $ms & "\n"
+
   try:
     while true:
       case self.currentEventHandlers.handleEvent(input, modifiers, self.delayedInputs, debugInput)
@@ -2855,6 +2886,9 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   self.updateNextPossibleInputs()
 
 proc handleModsChanged*(self: App, old: Modifiers, new: Modifiers) =
+  if self.recordingKeys:
+    let ms = self.recordingKeysTimer.elapsed.ms.int
+    self.recordingKeysBuffer.add "mods " & inputToString(0, old) & " " & inputToString(0, new) & " " & $ms & "\n"
   self.updateNextPossibleInputs()
 
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
@@ -2868,6 +2902,11 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
   if debugInput:
     debugf"handleRune {inputToString(input, modifiers)}"
   self.logNextFrameTime = true
+
+  if self.recordingKeys:
+    let ms = self.recordingKeysTimer.elapsed.ms.int
+    let runeStr = $Rune(input)
+    self.recordingKeysBuffer.add "rune " & inputToString(input, modifiers) & " " & runeStr & " " & $ms & "\n"
 
   try:
     let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
@@ -2979,6 +3018,113 @@ proc replayKeys*(self: App, register: string) {.expose("editor").} =
 proc inputKeys*(self: App, input: string) {.expose("editor").} =
   for (inputCode, mods, _) in parseInputs(input):
     self.handleKeyPress(inputCode.a, mods)
+
+proc recordKeys*(self: App) {.expose("editor").} =
+  if self.isReplayingKeys:
+    return
+  self.recordingKeys = true
+  self.recordingKeysTimer = startTimer()
+  self.recordingKeysBuffer = ""
+
+proc stopRecordKeys*(self: App, file: string) {.expose("editor").} =
+  if not self.recordingKeys:
+    return
+  self.recordingKeys = false
+  asyncSpawn self.vfs.write(&"app://recordings/{file}.txt", self.recordingKeysBuffer)
+
+proc replayRecordedKeysAsync(self: App, file: string) {.async.} =
+  let input = await self.vfs.read(&"app://recordings/{file}.txt")
+  var lastTime = 0
+  defer:
+    log lvlInfo, &"Stopped replaying commands"
+  for line in input.splitLines:
+    let line = line.strip
+    if line.len == 0 or line.startsWith("#"):
+      continue
+
+    let firstSpace = line.find(' ')
+    if firstSpace < 0:
+      continue
+    let kind = line[0 ..< firstSpace]
+    let rest = line[firstSpace + 1 .. ^1]
+
+    case kind
+    of "down", "up":
+      let lastSpace = rest.rfind(' ')
+      if lastSpace < 0: continue
+      let keyStr = rest[0 ..< lastSpace]
+      let timeStr = rest[lastSpace + 1 .. ^1]
+      var parsedTime: int
+      try: parsedTime = timeStr.parseInt except: continue
+
+      let parsed = parseFirstInput(keyStr)
+      if parsed.isSome:
+        let t = parsed.get
+        if t.inputCode.a == t.inputCode.b:
+          await sleepAsync(max(0, parsedTime - lastTime).milliseconds)
+          if not self.isReplayingKeys:
+            return
+          lastTime = parsedTime
+          var mods = t.mods
+          if kind == "up":
+            mods.incl Modifier.Release
+          self.handleKeyPress(t.inputCode.a, mods)
+
+    of "rune":
+      let lastSpace = rest.rfind(' ')
+      if lastSpace < 0: continue
+      let beforeTime = rest[0 ..< lastSpace]
+      let timeStr = rest[lastSpace + 1 .. ^1]
+      var parsedTime: int
+      try: parsedTime = timeStr.parseInt except: continue
+
+      let secondSpace = beforeTime.find(' ')
+      if secondSpace < 0: continue
+      let keyStr = beforeTime[0 ..< secondSpace]
+
+      let parsed = parseFirstInput(keyStr)
+      if parsed.isSome:
+        let t = parsed.get
+        if t.inputCode.a == t.inputCode.b:
+          await sleepAsync(max(0, parsedTime - lastTime).milliseconds)
+          if not self.isReplayingKeys:
+            return
+          lastTime = parsedTime
+          self.handleRune(t.inputCode.a, t.mods)
+
+    of "mods":
+      let lastSpace = rest.rfind(' ')
+      if lastSpace < 0: continue
+      let beforeTime = rest[0 ..< lastSpace]
+      let timeStr = rest[lastSpace + 1 .. ^1]
+      var parsedTime: int
+      try: parsedTime = timeStr.parseInt except: continue
+
+      let secondSpace = beforeTime.find(' ')
+      if secondSpace < 0: continue
+      let oldStr = beforeTime[0 ..< secondSpace]
+      let newStr = beforeTime[secondSpace + 1 .. ^1]
+
+      let oldParsed = parseFirstInput(oldStr)
+      let newParsed = parseFirstInput(newStr)
+      if oldParsed.isSome and newParsed.isSome:
+        await sleepAsync(max(0, parsedTime - lastTime).milliseconds)
+        if not self.isReplayingKeys:
+          return
+        lastTime = parsedTime
+        self.handleModsChanged(oldParsed.get.mods, newParsed.get.mods)
+
+    else:
+      discard
+
+proc replayRecordedKeys*(self: App, file: string) {.expose("editor").} =
+  if self.isReplayingKeys:
+    return
+  self.isReplayingKeys = true
+  asyncSpawn self.replayRecordedKeysAsync(file)
+
+proc stopReplay*(self: App) {.expose("editor").} =
+  self.isReplayingKeys = false
 
 proc collectGarbage*(self: App) {.expose("editor").} =
   log lvlInfo, "collectGarbage"

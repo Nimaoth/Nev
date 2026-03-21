@@ -15,6 +15,32 @@ logCategory "gui-platform"
 const logDeletedImageCount = true
 
 type
+  FrameData* = tuple[width, height: int, pixels: seq[ColorRGBX], path: string, screenRect: Rect]
+
+var frameChannel: Channel[FrameData]
+frameChannel.open()
+
+proc screenshotWriterThread() {.thread.} =
+  while true:
+    try:
+      let data = frameChannel.recv()
+      if data.width == 0 and data.height == 0:
+        break
+      var image = newImage(data.width, data.height)
+      copyMem(image.data[0].addr, data.pixels[0].unsafeAddr, data.pixels.len * sizeof(ColorRGBX))
+      image.flipVertical()
+      if data.screenRect.w > 0 and data.screenRect.h > 0:
+        let cropped = image.subImage(
+          data.screenRect.x.int, data.screenRect.y.int,
+          data.screenRect.w.int, data.screenRect.h.int
+        )
+        cropped.writeFile(data.path)
+      else:
+        image.writeFile(data.path)
+    except CatchableError:
+      discard
+
+type
   GuiPlatform* = ref object of Platform
     window: Window
     ctx*: Context
@@ -56,6 +82,8 @@ type
     drawnNodes: seq[UINode]
 
     vsync: bool
+
+    writerThread: Thread[void]
 
 proc toInput(rune: Rune): int64
 proc toInput(button: Button): int64
@@ -272,11 +300,16 @@ method init*(self: GuiPlatform, options: AppOptions) =
       else:
         if not self.builder.handleKeyReleased(button.toInput, self.currentModifiers):
           self.onKeyRelease.invoke (button.toInput, self.currentModifiers)
+
+    createThread(self.writerThread, screenshotWriterThread)
   except:
     log lvlError, &"Failed to create gui platform: {getCurrentExceptionMsg()}"
     quit(0)
 
 method deinit*(self: GuiPlatform) =
+  frameChannel.send((0, 0, newSeq[ColorRGBX](0), "", Rect()))
+  self.writerThread.joinThread()
+  frameChannel.close()
   self.window.close()
 
 {.push gcsafe.}
@@ -657,6 +690,13 @@ proc updateTextures(self: GuiPlatform) =
     if texturesToDelete.len > 30:
       echo &"{textures[].len} active ----------------"
 
+proc captureFrame(self: GuiPlatform, path: string) =
+  try:
+    let image = self.framebuffer.readImage()
+    frameChannel.send((image.width, image.height, image.data, path, self.screenRect))
+  except:
+    discard
+
 method render*(self: GuiPlatform, rerender: bool) =
   try:
     self.updateTextures()
@@ -720,6 +760,20 @@ method render*(self: GuiPlatform, rerender: bool) =
 
       self.redrawEverything = false
       self.lastSize = self.size
+
+      if self.record == Screenshot:
+        self.record = RecordMode.None
+        self.captureFrame(self.screenshotPath)
+      elif self.record == Video:
+        self.requestedRender = true
+        let elapsed = self.lastVideoFrameTime.elapsed
+        if elapsed.ms >= (1000 div 20):
+          self.lastVideoFrameTime = startTimer()
+          let (dir, name, ext) = self.screenshotPath.splitFile
+          self.captureFrame(dir / name & $self.videoFrameIndex & ext)
+          self.videoFrameIndex += 1
+      elif self.videoFrameIndex != 0:
+        self.videoFrameIndex = 0
 
     if rerender or self.renderedSomethingLastFrame:
       glBindFramebuffer(GL_READ_FRAMEBUFFER, self.framebufferId)
