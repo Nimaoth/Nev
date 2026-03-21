@@ -430,9 +430,9 @@
         "<?-count>f<ENTER>": ["(move-to \"\n\")"],
         "<?-count>t<ENTER>": ["(column) (move-to \"\n\") (column -1)"],
 
-        "<?-count><C-d>": ["vim.move-cursor-visual-page", 50, "<#move.count>", true],
+        "<?-count><C-d>": ["vim.move-cursor-visual-page", 30, "<#move.count>", true],
         "<?-count><PAGE_DOWN>": ["vim.move-cursor-visual-page", 100, "<#move.count>", true],
-        "<?-count><C-u>": ["vim.move-cursor-visual-page", -50, "<#move.count>", true],
+        "<?-count><C-u>": ["vim.move-cursor-visual-page", -30, "<#move.count>", true],
         "<?-count><PAGE_UP>": ["vim.move-cursor-visual-page", -100, "<#move.count>", true],
         "<?-count>|": ["vim.move-to-column", "<#move.count>"],
         "<?-count>-": ["vim.move-cursor-line-first-char", -1, "<#move.count>"],

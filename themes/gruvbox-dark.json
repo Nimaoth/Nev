@@ -21,7 +21,7 @@
         "tab.activeBackground": "#504945",
         "tab.inactiveBackground": "#3c3836",
         "focusBorder": "#665c54",
-        "breadcrumbPicker.background": "#32302f",
+        "breadcrumbPicker.background": "#38382a",
 
         "diffEditor.insertedTextBackground": "#b8bb2620",
         "diffEditor.removedTextBackground": "#fb493422",
@@ -502,7 +502,7 @@
             "name": "string.special.key",
             "scope": "string.special.key",
             "settings": {
-                "foreground": "#b8bb26"
+                "foreground": "#fe8019"
             }
         },
         {
@@ -649,8 +649,8 @@
             "name": "header1",
             "scope": "header1",
             "settings": {
-                "fontStyle": "bold",
-                "foreground": "#fb4934",
+                "fontStyle": "",
+                "foreground": "#fabd2f",
                 "fontScale": 2,
             }
         },
@@ -658,35 +658,35 @@
             "name": "header2",
             "scope": "header2",
             "settings": {
-                "fontStyle": "bold",
-                "foreground": "#fe8019",
-                "fontScale": 1.8,
+                "fontStyle": "",
+                "foreground": "#fabd2f",
+                "fontScale": 1.7,
             }
         },
         {
             "name": "header3",
             "scope": "header3",
             "settings": {
-                "fontStyle": "bold",
+                "fontStyle": "",
                 "foreground": "#fabd2f",
-                "fontScale": 1.6,
+                "fontScale": 1.5,
             }
         },
         {
             "name": "header4",
             "scope": "header4",
             "settings": {
-                "fontStyle": "bold,italic",
-                "foreground": "#b8bb26",
-                "fontScale": 1.4,
+                "fontStyle": "",
+                "foreground": "#fabd2f",
+                "fontScale": 1.3,
             }
         },
         {
             "name": "header5",
             "scope": "header5",
             "settings": {
-                "fontStyle": "bold,italic",
-                "foreground": "#83a598",
+                "fontStyle": "",
+                "foreground": "#fabd2f",
                 "fontScale": 1.2,
             }
         },
@@ -694,8 +694,8 @@
             "name": "header6",
             "scope": "header6",
             "settings": {
-                "fontStyle": "bold,italic",
-                "foreground": "#d3869b",
+                "fontStyle": "",
+                "foreground": "#fabd2f",
                 "fontScale": 1.1,
             }
         },
@@ -721,7 +721,7 @@
             "settings": {
                 "fontStyle": "",
                 "fontStyle": "",
-                "foreground": "#fe8019",
+                "foreground": "#b8bb26",
             }
         },
         {
@@ -729,6 +729,14 @@
             "scope": "text.strong",
             "settings": {
                 "fontStyle": "bold",
+                "foreground": "#00000000",
+            }
+        },
+        {
+            "name": "text.strikethrough",
+            "scope": "text.strikethrough",
+            "settings": {
+                "fontStyle": "underline",
                 "foreground": "#00000000",
             }
         },
@@ -744,8 +752,8 @@
             "name": "text.uri",
             "scope": "text.uri",
             "settings": {
-                "fontStyle": "bold,italic",
-                "foreground": "#0080ff",
+                "fontStyle": "italic",
+                "foreground": "#83a598",
             }
         },
         {
@@ -753,7 +761,7 @@
             "scope": "text.reference",
             "settings": {
                 "fontStyle": "",
-                "foreground": "#f0f000",
+                "foreground": "#fb4934",
             }
         },
         {

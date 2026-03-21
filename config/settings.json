@@ -35,6 +35,7 @@
         "\\..nev-session$": "json",
         "\\..lock$": "json",
         "\\..code-workspace$": "json",
+        "\\..nif$": "json",
         "\\..yml$": "yaml",
         "\\..clangd$": "yaml",
         "\\..nix$": "nix",
