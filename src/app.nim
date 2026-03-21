@@ -8,7 +8,7 @@ import workspaces/[workspace]
 import config_provider, app_interface
 import language_server_command_line
 import input, events, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
-import text/[custom_treesitter]
+import text/[custom_treesitter, overlay_map]
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
 import service, layout, session, command_service, toast, plugin_service
