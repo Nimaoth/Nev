@@ -51,7 +51,7 @@ when implModule:
     fullRange: TSRange
     languageId: string
     currentLines: HashSet[int]
-    tableQuery: TSQuery
+    query: TSQuery
 
   proc query(self: MarkdownComponent, language: string, name: string, text: string): Future[Option[TSQuery]] {.async.} =
     let language = getLoadedLanguage(language)
@@ -88,7 +88,7 @@ when implModule:
 
       arena.restoreCheckpoint(0)
 
-      for match in args.tableQuery.matches(layer.tree.root, args.fullRange, arena):
+      for match in args.query.matches(layer.tree.root, args.fullRange, arena):
         for capture in match.captures:
           capture.node.withTreeCursor(c):
             checkRes c.gotoFirstChild()
@@ -132,7 +132,7 @@ when implModule:
   proc getMarkdownComponent*(self: ComponentOwner): Option[MarkdownComponent] {.gcsafe, raises: [].} =
     return self.getComponent(MarkdownComponentId).mapIt(it.MarkdownComponent)
 
-  proc updateAsync(self: MarkdownComponent): Future[void] {.async.} =
+  proc updateTablesAsync(self: MarkdownComponent): Future[void] {.async.} =
     if self.owner == nil or self.tableOverlayId.isNone:
       return
     let editor = self.owner.DocumentEditor
@@ -207,9 +207,14 @@ when implModule:
                   while true:
                     let node = c.currentNode
                     let r = node.getRange.toRange
+                    var extraOffset = 0
+                    if isDelimiter:
+                      let nextChar = content.charAt(r.b)
+                      if nextChar == '|':
+                        extraOffset = 1
                     if node.isNamed:
                       let displayRange = edit.toDisplayPoint(r.a, Bias.Right)...edit.toDisplayPoint(r.b, Bias.Left)
-                      result.add Cell(node: node, width: displayRange.b.column.int - cellStartColumn + offset, text: $content[r], range: r, isDelimiter: isDelimiter)
+                      result.add Cell(node: node, width: displayRange.b.column.int - cellStartColumn + offset - extraOffset, text: $content[r], range: r, isDelimiter: isDelimiter)
                     else:
                       cellStartColumn = edit.toDisplayPoint(r.b).column.int
                     if not c.gotoNextSibling():
@@ -292,8 +297,8 @@ when implModule:
     let edit = editor.getTextEditorComponent().getOr:
       return
 
-    let tableQuery = await self.query("markdown_inline", "markdown_emphasis", "[(emphasis) (strong_emphasis) (code_span) (strikethrough)] @emph")
-    if tableQuery.isNone or self.owner.isNil or editor.isNil or editor.currentDocument.isNil:
+    let emphQuery = await self.query("markdown_inline", "markdown_emphasis", "[(emphasis) (strong_emphasis) (code_span) (strikethrough)] @emph")
+    if emphQuery.isNone or self.owner.isNil or editor.isNil or editor.currentDocument.isNil:
       return
 
     while true:
@@ -311,7 +316,7 @@ when implModule:
           fullRange: fullRange,
           languageId: "markdown_inline",
           currentLines: self.currentLines,
-          tableQuery: tableQuery.get,
+          query: emphQuery.get,
         ))
         while not overlaysFlowVar.isReady:
           await sleepAsync(1.milliseconds)
@@ -332,7 +337,7 @@ when implModule:
             continue
           visibleOverlays.add (overlayRange, "", "comment", Bias.Right, 0, OverlayRenderLocation.Inline)
         decorations.addOverlays(self.delimiterOverlayId.get, replace = true, visibleOverlays)
-        asyncSpawn self.updateAsync()
+        asyncSpawn self.updateTablesAsync()
 
       lastUpdateDelimiterRequestNum = self.updateDelimiterRequestNum
       break
@@ -352,7 +357,7 @@ when implModule:
 
       arena.restoreCheckpoint(0)
 
-      for match in args.tableQuery.matches(layer.tree.root, args.fullRange, arena):
+      for match in args.query.matches(layer.tree.root, args.fullRange, arena):
         for capture in match.captures:
           let r = capture.node.getRange.toRange
           if r.a != r.b:
@@ -392,7 +397,7 @@ when implModule:
       fullRange: fullRange,
       languageId: "markdown",
       currentLines: self.currentLines,
-      tableQuery: headerQuery.get,
+      query: headerQuery.get,
     ))
     while not overlaysFlowVar.isReady:
       await sleepAsync(1.milliseconds)
@@ -592,8 +597,8 @@ when implModule:
   proc toggleStrikethrough*(self: MarkdownComponent) {.async.} =
     self.toggleStyle("strikethrough", ["~"])
 
-  proc update(self: MarkdownComponent) =
-    asyncSpawn self.updateAsync()
+  proc updateTables(self: MarkdownComponent) =
+    asyncSpawn self.updateTablesAsync()
 
   proc handleDocumentChanged(self: MarkdownComponent, old: Document, new: Document) =
     if old != nil:
@@ -669,7 +674,7 @@ when implModule:
           return vec2(size.x, 0)
 
     res.updateTask = startDelayedPaused(1, false):
-      res.update()
+      res.updateTables()
 
     res.updateDelimitersTask = startDelayedPaused(1, false):
       asyncSpawn res.updateDelimiterHidingAsync()
