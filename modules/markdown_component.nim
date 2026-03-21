@@ -238,9 +238,10 @@ when implModule:
                 break
               maxWidths.add(maxWidth)
 
+            let endPoint = text.content.endPoint
             for row in rows.mitems:
               for i, cell in row:
-                if i >= maxWidths.len:
+                if i >= maxWidths.len or cell.range.b > endPoint:
                   continue
                 let overlayWidth = maxWidths[i] - cell.width
                 if overlayWidth > 0:
@@ -322,11 +323,12 @@ when implModule:
         overlays = ^overlaysFlowVar
 
       block:
+        let endPoint = text.content.endPoint
         let visibleRange = edit.visibleTextRange(10)
         var visibleOverlays = newSeqOfCap[OverlayDef](overlays.len)
         for overlayRange in overlays:
           # if overlayRange.a in visibleRange:
-          if overlayRange.a.row.int in self.currentLines:
+          if overlayRange.a.row.int in self.currentLines or overlayRange.a > endPoint:
             continue
           visibleOverlays.add (overlayRange, "", "comment", Bias.Right, 0, OverlayRenderLocation.Inline)
         decorations.addOverlays(self.delimiterOverlayId.get, replace = true, visibleOverlays)
@@ -397,10 +399,11 @@ when implModule:
 
     overlays = ^overlaysFlowVar
 
+    let endPoint = text.content.endPoint
     let visibleRange = edit.visibleTextRange(10)
     var visibleOverlays = newSeqOfCap[OverlayDef](overlays.len)
     for overlayRange in overlays:
-      if overlayRange.a.row.int in self.currentLines:
+      if overlayRange.a.row.int in self.currentLines or overlayRange.a > endPoint:
         continue
       visibleOverlays.add (overlayRange, "", "comment", Bias.Left, self.headerMarkerRendererId.uint64.int, OverlayRenderLocation.Below)
     decorations.addOverlays(self.headerOverlayId.get, replace = true, visibleOverlays)

@@ -727,6 +727,11 @@ proc addOverlay*(self: var OverlayMapSnapshot, range: Range[Point], text: string
 
   log &"OverlayMap.addOverlay {range}, '{text}'\n{self}"
   log self
+
+  # Invalid overlays don't do anything
+  if range.a > range.b or range.a > self.buffer.visibleText.endPoint:
+    return
+
   let newSummary = TextSummary.init(text)
   var newMap = SumTree[OverlayMapChunk].new()
 

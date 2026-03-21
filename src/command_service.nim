@@ -192,7 +192,7 @@ when implModule:
       let name = self.idToCommand[id]
       self.idToCommand.del(id)
 
-      if self.commands[name].id != id:
+      if name in self.commands and self.commands[name].id != id:
         # Command was reassigned, don't delete the new command.
         return
       self.commands.del(name)

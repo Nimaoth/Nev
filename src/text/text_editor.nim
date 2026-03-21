@@ -2954,13 +2954,13 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
           for captures in self.document.treesitterComponent.textObjectsQuery.query(self.document.tsTree, s):
             var captureSelections = newSeqOfCap[Selection](captures.len)
             if self.moveDatabase.debugMoves:
-              echo &"move 'ts' {move}: {captures.len} captures"
+              debugf"move 'ts' {move}: {captures.len} captures"
             for (node, nodeCapture) in captures:
               if capture == "" or capture == nodeCapture:
                 var sel = node.getRange().toSelection
                 captureSelections.add sel
                 if self.moveDatabase.debugMoves:
-                  echo &"    {sel}"
+                  debugf"    {sel}"
 
             let captureSelectionsTransformed = self.moveDatabase.applyMove(self.displayMap, captureMove, captureSelections, env, self.moveFallbacks)
 
@@ -2984,13 +2984,13 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
           for captures in self.document.treesitterComponent.tagsQuery.query(self.document.tsTree, queryRange):
             var captureSelections = newSeqOfCap[Selection](captures.len)
             if self.moveDatabase.debugMoves:
-              echo &"move 'ts' {move}: {captures.len} captures"
+              debugf"move 'ts' {move}: {captures.len} captures"
             for (node, nodeCapture) in captures:
               if capture == "" or nodeCapture.match(captureRegex):
                 var sel = node.getRange().toSelection
                 captureSelections.add sel
                 if self.moveDatabase.debugMoves:
-                  echo &"    {sel}"
+                  debugf"    {sel}"
 
             let captureSelectionsTransformed = self.moveDatabase.applyMove(self.displayMap, captureMove, captureSelections, env, self.moveFallbacks)
 
@@ -3016,13 +3016,13 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
           for captures in self.document.treesitterComponent.tagsQuery.query(self.document.tsTree, queryRange):
             var captureSelections = newSeqOfCap[Selection](captures.len)
             if self.moveDatabase.debugMoves:
-              echo &"move 'ts' {move}: {captures.len} captures"
+              debugf"move 'ts' {move}: {captures.len} captures"
             for (node, nodeCapture) in captures:
               if capture == "" or nodeCapture.match(captureRegex):
                 var sel = node.getRange().toSelection
                 captureSelections.add sel
                 if self.moveDatabase.debugMoves:
-                  echo &"    {sel}"
+                  debugf"    {sel}"
 
             let captureSelectionsTransformed = self.moveDatabase.applyMove(self.displayMap, captureMove, captureSelections, env, self.moveFallbacks)
 

@@ -635,6 +635,8 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   # todo: allow specifying queries in home and workspace config
   let highlightQueryPath = &"app://languages/{treesitterLanguageName}/queries/highlights.scm"
   let highlightQuery = language.get.queryFile(self.vfs, "highlights", highlightQueryPath).await
+  if not self.isInitialized:
+    return
   if highlightQuery.isSome:
     if prevLanguageId != self.languageId:
       return
@@ -643,6 +645,8 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
 
   let textObjectsQueryPath = &"app://languages/{treesitterLanguageName}/queries/textobjects.scm"
   let textObjectsQuery = language.get.queryFile(self.vfs, "textobjects", textObjectsQueryPath).await
+  if not self.isInitialized:
+    return
   if textObjectsQuery.isSome:
     if prevLanguageId != self.languageId:
       return
@@ -651,6 +655,8 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
 
   let tagsQueryPath = &"app://languages/{treesitterLanguageName}/queries/tags.scm"
   let tagsQuery = language.get.queryFile(self.vfs, "tags", tagsQueryPath).await
+  if not self.isInitialized:
+    return
   if tagsQuery.isSome:
     if prevLanguageId != self.languageId:
       return
@@ -662,6 +668,8 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
 
   let errorQueryPath = &"app://languages/{treesitterLanguageName}/queries/errors.scm"
   var errorQuery = language.get.queryFile(self.vfs, "error", errorQueryPath, cacheOnFail = false).await
+  if not self.isInitialized:
+    return
   if errorQuery.isSome:
     if prevLanguageId != self.languageId:
       return
@@ -679,6 +687,8 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
 
   let injectionQueryPath = &"app://languages/{treesitterLanguageName}/queries/injections.scm"
   let injectionQuery = language.get.queryFile(self.vfs, "injections", injectionQueryPath, cacheOnFail = false).await
+  if not self.isInitialized:
+    return
   if prevLanguageId != self.languageId:
     return
 
@@ -912,6 +922,8 @@ proc saveAsync*(self: TextDocument) {.async.} =
     self.onDocumentBeforeSave.invoke(self)
     for h in self.preSaveHandlers:
       await h(self)
+    if not self.isInitialized:
+      return
 
     let trimTrailingWhitespace = self.settings.trimTrailingWhitespace.enabled.get()
     let maxFileSizeForTrim = self.settings.trimTrailingWhitespace.maxSize.get()
@@ -926,6 +938,8 @@ proc saveAsync*(self: TextDocument) {.async.} =
     var newFile = false
     if self.vfs.getFileKind(self.filename).await.isNone:
       newFile = true
+    if not self.isInitialized:
+      return
 
     self.lastSavedTimer = startTimer()
     await self.vfs.write(self.filename, self.rope.slice())
@@ -1015,6 +1029,8 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]
       let oldRope = self.rope.clone()
       var diff = RopeDiff[int]()
       await diffRopeAsync(oldRope.clone(), rope.clone(), diff.addr).wait(diffTimeout.milliseconds)
+      if not self.isInitialized:
+        return
       log lvlDebug, &"Diff took {t.elapsed.ms} ms"
 
       if diff.edits.len > 0:
@@ -1034,6 +1050,8 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]
             await self.vfs.write("app://failed_diffs/old.txt", oldRope)
             await self.vfs.write("app://failed_diffs/new-edit.txt", self.rope)
             await self.vfs.write("app://failed_diffs/new.txt", rope)
+            if not self.isInitialized:
+              return
             self.replaceAll(rope.move)
             return @[((0, 0), (self.rope.endPoint.toCursor))]
 
@@ -1081,6 +1099,9 @@ proc loadAsync*(self: TextDocument, isReload: bool, filename: string, temp: bool
     self.content = rope.clone()
     @[((0, 0), (self.rope.endPoint.toCursor))]
 
+  if not self.isInitialized:
+    return
+
   if self.settings.autoReload.get():
     self.enableAutoReload(true)
   else:
@@ -1089,6 +1110,8 @@ proc loadAsync*(self: TextDocument, isReload: bool, filename: string, temp: bool
   if self.vfs.getFileAttributes(filename).await.mapIt(it.writable).get(true):
     self.readOnly = false
 
+  if not self.isInitialized:
+    return
   self.autoDetectIndentStyle()
 
   if not temp:
