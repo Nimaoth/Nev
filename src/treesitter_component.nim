@@ -15,6 +15,7 @@ type
     tsLanguage*: TSLanguage
     highlightQuery*: TSQuery
     textObjectsQuery*: TSQuery
+    tagsQuery*: TSQuery
     errorQuery*: TSQuery
     tsQueries*: Table[string, Option[TSQuery]]
     syntaxMap*: SyntaxMap
@@ -49,6 +50,7 @@ when implModule:
     self.tsQueries.clear()
     self.highlightQuery = nil
     self.textObjectsQuery = nil
+    self.tagsQuery = nil
     self.errorQuery = nil
     self.tsLanguage = nil
     self.syntaxMap.clear()

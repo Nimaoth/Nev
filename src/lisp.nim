@@ -385,7 +385,7 @@ proc parseEscapedUTF16*(buf: cstring, pos: var int): int =
 proc parseSymbol(my: var LispParser): TokKind =
   result = tkSymbol
   var pos = my.bufpos
-  while true:
+  while pos < my.buf.len:
     case my.buf[pos]
     of ')', '}', ']', ',', ' ', '\n', ':':
       break
@@ -403,7 +403,7 @@ proc parseString(my: var LispParser, endd: char): TokKind =
   var pos = my.bufpos + 1
   if my.rawStringLiterals:
     add(my.a, endd)
-  while true:
+  while pos < my.buf.len:
     let c = my.buf[pos]
     case c
     of '\0':

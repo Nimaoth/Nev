@@ -649,6 +649,14 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
 
     self.treesitterComponent.textObjectsQuery = textObjectsQuery.get
 
+  let tagsQueryPath = &"app://languages/{treesitterLanguageName}/queries/tags.scm"
+  let tagsQuery = language.get.queryFile(self.vfs, "tags", tagsQueryPath).await
+  if tagsQuery.isSome:
+    if prevLanguageId != self.languageId:
+      return
+
+    self.treesitterComponent.tagsQuery = tagsQuery.get
+
   if not self.isInitialized:
     return
 

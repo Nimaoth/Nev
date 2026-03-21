@@ -518,6 +518,12 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
       if s.contains(c):
         result.add s
 
+  of "non-overlapping":
+    let c = originalSelections.last.last
+    for s in selections:
+      if not s.contains(c):
+        result.add s
+
   of "word-line":
     return selections.mapIt:
       let cursor = it.last
@@ -807,6 +813,17 @@ proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: LispVal, origi
       impl:
         if selections.len > 0:
           selections = @[selections[^1]]
+    of "nth":
+      impl:
+        if selections.len > 0:
+          var n = if args.len > 0 and args[0].kind == Number:
+            args[0].num.int
+          else:
+            0
+          if n < 0:
+            n = selections.len + n
+          n = n.clamp(0, selections.high)
+          selections = @[selections[n]]
     of "start":
       impl:
         selections = selections.mapIt(it.first.toSelection)

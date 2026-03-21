@@ -2930,6 +2930,18 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
           result = self.resolveAnchors(val[])
           break
 
+    of "context-lines":
+      let kind = if largs.len > 0:
+        largs[0].toJson.jsonTo(string)
+      else:
+        ""
+      let r = re(kind)
+      let contextLines = self.contextLineComponent.getContextLines()
+      for line in contextLines:
+        if kind.len > 0 and not line.kindName.match(r):
+          continue
+        result.add line.lineRange.toSelection
+
     of "ts-text-object", "ts":
       let capture = if largs.len > 0:
         largs[0].toJson.jsonTo(string)
@@ -2956,6 +2968,70 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
             let captureSelectionsTransformed = self.moveDatabase.applyMove(self.displayMap, captureMove, captureSelections, env, self.moveFallbacks)
 
             result.add captureSelectionsTransformed
+
+    of "ts-tags-next":
+      let capture = if largs.len > 0:
+        largs[0].toJson.jsonTo(string)
+      else:
+        ""
+      let captureMove = if largs.len > 1:
+        largs[1]
+      else:
+        parseLisp("(first)")
+
+      let captureRegex = re(capture)
+
+      if self.document.treesitterComponent.tagsQuery != nil and not self.document.tsTree.isNil:
+        for s in selections:
+          let queryRange = (s.normalized.last, self.document.rope.endPoint.toCursor)
+          for captures in self.document.treesitterComponent.tagsQuery.query(self.document.tsTree, queryRange):
+            var captureSelections = newSeqOfCap[Selection](captures.len)
+            if self.moveDatabase.debugMoves:
+              echo &"move 'ts' {move}: {captures.len} captures"
+            for (node, nodeCapture) in captures:
+              if capture == "" or nodeCapture.match(captureRegex):
+                var sel = node.getRange().toSelection
+                captureSelections.add sel
+                if self.moveDatabase.debugMoves:
+                  echo &"    {sel}"
+
+            let captureSelectionsTransformed = self.moveDatabase.applyMove(self.displayMap, captureMove, captureSelections, env, self.moveFallbacks)
+
+            result.add captureSelectionsTransformed
+      if result.len == 0:
+        result = @selections
+
+    of "ts-tags-prev":
+      let capture = if largs.len > 0:
+        largs[0].toJson.jsonTo(string)
+      else:
+        ""
+      let captureMove = if largs.len > 1:
+        largs[1]
+      else:
+        parseLisp("(last)")
+
+      let captureRegex = re(capture)
+
+      if self.document.treesitterComponent.tagsQuery != nil and not self.document.tsTree.isNil:
+        for s in selections:
+          let queryRange = ((0, 0).Cursor, s.normalized.first)
+          for captures in self.document.treesitterComponent.tagsQuery.query(self.document.tsTree, queryRange):
+            var captureSelections = newSeqOfCap[Selection](captures.len)
+            if self.moveDatabase.debugMoves:
+              echo &"move 'ts' {move}: {captures.len} captures"
+            for (node, nodeCapture) in captures:
+              if capture == "" or nodeCapture.match(captureRegex):
+                var sel = node.getRange().toSelection
+                captureSelections.add sel
+                if self.moveDatabase.debugMoves:
+                  echo &"    {sel}"
+
+            let captureSelectionsTransformed = self.moveDatabase.applyMove(self.displayMap, captureMove, captureSelections, env, self.moveFallbacks)
+
+            result.add captureSelectionsTransformed
+      if result.len == 0:
+        result = @selections
 
     else:
       return self.document.applyMoveFallback(move, selections, count, largs, env)
