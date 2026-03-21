@@ -805,6 +805,10 @@ proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: LispVal, origi
       impl:
         if stack.len > 0:
           selections = stack.pop()
+    of "discard":
+      impl:
+        if stack.len > 0:
+          discard stack.pop()
     of "first":
       impl:
         if selections.len > 0:
@@ -836,7 +840,14 @@ proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: LispVal, origi
           return newNil()
         var count = env.getCount()
         assert count != 0
-        env["count"] = newNumber(count.float * args[0].num)
+        env["count"] = newNumber(count.float * max(args[0].num, 1))
+        return newNil()
+      )
+    of "count=":
+      newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
+        if args.len == 0 or args[0].kind != Number:
+          return newNil()
+        env["count"] = newNumber(args[0].num)
         return newNil()
       )
     of "merge":
