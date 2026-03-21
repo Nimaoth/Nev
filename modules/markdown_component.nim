@@ -19,6 +19,7 @@ when implModule:
   import text/[display_map, syntax_map, treesitter_types, treesitter_type_conv, custom_treesitter, snippet]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import service, event_service, document_editor, document, decoration_component, treesitter_component, text_component, language_component, text_editor_component, command_component, move_component, snippet_component, config_component
+  import platform_service
 
   {.push warning[Deprecated]:off.}
   import std/[threadpool]
@@ -659,9 +660,12 @@ when implModule:
       res.tableOverlayId = decorations.allocateOverlayId()
       res.delimiterOverlayId = decorations.allocateOverlayId()
       res.headerOverlayId = decorations.allocateOverlayId()
-      res.headerMarkerRendererId = decorations.addCustomRenderer proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 =
-        commands.fillRect(rect(5, -2, size.x - 10, 1), color(0.7, 0.7, 0.7, 0.2))
-        return vec2(size.x, 0)
+
+      let platform = getServices().getService(PlatformService)
+      if platform.isSome and platform.get.platform.backend == Backend.Gui:
+        res.headerMarkerRendererId = decorations.addCustomRenderer proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 =
+          commands.fillRect(rect(5, -2, size.x - 10, 1), color(0.7, 0.7, 0.7, 0.2))
+          return vec2(size.x, 0)
 
     res.updateTask = startDelayedPaused(1, false):
       res.update()

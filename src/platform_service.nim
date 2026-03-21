@@ -2,6 +2,8 @@ import platform/platform
 import misc/[custom_async, custom_logger]
 import service
 
+export platform
+
 logCategory "platform-service"
 
 type
