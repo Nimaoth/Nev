@@ -280,6 +280,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   searchResults*: seq[Range[Point]]
   isUpdatingSearchResults: bool
   lastSearchResultUpdate: tuple[buffer: BufferId, version: Global, searchQuery: string]
+  useMoveSearch*: bool
   isUpdatingMatchingWordHighlights: bool
 
   defaultScrollBehaviour*: ScrollBehaviour = ScrollToMargin
@@ -569,6 +570,8 @@ proc handleSelectionsChanged(self: TextDocumentEditor, old: openArray[Selection]
       self.showSignatureHelpForDelayed(self.selection.last)
   self.hideCompletions()
   self.updateMatchingWordHighlight()
+  if self.useMoveSearch and self.searchQuery != "":
+    self.updateSearchResults()
   # self.document.addNextCheckpoint("move")
 
   self.onSelectionsChanged.invoke (self,)
@@ -941,16 +944,23 @@ proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
   while true:
     let buffer = self.document.buffer.snapshot.clone()
     let searchQuery = self.searchQuery
+    let useMoveSearch = self.useMoveSearch
     if searchQuery.len == 0:
       self.decorations.clearCustomHighlights(searchResultsId)
       self.searchResults.setLen(0)
       self.markDirty()
       return
 
-    if self.lastSearchResultUpdate == (buffer.remoteId, buffer.version, searchQuery):
+    if self.lastSearchResultUpdate == (buffer.remoteId, buffer.version, searchQuery) and not self.useMoveSearch:
       return
 
-    let searchResults = await findAllAsync(buffer.visibleText.slice(int), searchQuery)
+    var searchResults: seq[Range[Point]]
+    if useMoveSearch:
+      let results = self.getSelectionsForMove(self.selections, searchQuery)
+      searchResults = results.mapIt(it.toRange)
+    else:
+      searchResults = await findAllAsync(buffer.visibleText.slice(int), searchQuery)
+
     if self.document.isNil:
       return
 
@@ -3143,7 +3153,7 @@ proc move*(self: TextDocumentEditor, move: string, updateTargetColumn: bool = tr
 proc getSearchQuery*(self: TextDocumentEditor): string =
   return self.searchQuery
 
-proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false, prefix: string = "", suffix: string = ""): bool {.expose("editor.text").} =
+proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false, prefix: string = "", suffix: string = "", useMoveSearch: bool = false): bool {.expose("editor.text").} =
   debugf"setSearchQuery '{query}'"
 
   let query = if escapeRegex:
@@ -3152,27 +3162,29 @@ proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool 
     query
 
   let finalQuery = prefix & query & suffix
-  if self.searchQuery == finalQuery:
+  if self.searchQuery == finalQuery and self.useMoveSearch == useMoveSearch:
     return false
 
   self.searchQuery = finalQuery
+  self.useMoveSearch = useMoveSearch
   self.updateSearchResults()
   return true
 
-proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPreview: bool = true, select: bool = true) {.expose("editor.text").} =
+proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPreview: bool = true, select: bool = true, useMoveSearch: bool = false) {.expose("editor.text").} =
   let commandLineEditor = self.editors.commandLineEditor.TextDocumentEditor
   if commandLineEditor == self:
     return
 
   let prevSearchQuery = self.searchQuery
+  let prevUseMoveSearch = self.useMoveSearch
   self.commands.openCommandLine "", "/", proc(command: Option[string]): Option[string] =
     if command.getSome(command):
-      discard self.setSearchQuery(command)
+      discard self.setSearchQuery(command, useMoveSearch = useMoveSearch)
       if select:
         self.selection = self.getNextFindResult(self.selection.last).first.toSelection
       self.scrollToCursor(self.selection.last)
     else:
-      discard self.setSearchQuery(prevSearchQuery)
+      discard self.setSearchQuery(prevSearchQuery, useMoveSearch = prevUseMoveSearch)
       if scrollToPreview:
         self.scrollToCursor(self.selection.last)
 
@@ -3187,7 +3199,7 @@ proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPrevie
   var onSearchHandle = Id.new
 
   onEditHandle[] = document.onEdit.subscribe proc(arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) =
-    discard self.setSearchQuery(arg.document.contentString.replace(r".set-search-query \"))
+    discard self.setSearchQuery(arg.document.contentString.replace(r".set-search-query \"), useMoveSearch = useMoveSearch)
 
   onActiveHandle[] = commandLineEditor.onActiveChanged.subscribe proc(editor: DocumentEditor) =
     if not editor.active:

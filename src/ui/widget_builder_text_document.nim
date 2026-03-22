@@ -415,7 +415,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   if completionsPanel.bounds.xw > completionsPanel.parent.bounds.w:
     completionsPanel.rawX = max(completionsPanel.parent.bounds.w - completionsPanel.bounds.w, 0)
 
-proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selection, color: Color, renderCommands: var RenderCommands, state: var LineDrawerState, cursor: var RopeCursorT[Point]) =
+proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selection, color: Color, renderCommands: var RenderCommands, state: var LineDrawerState, cursor: var RopeCursorT[Point], drawEmpty: bool) =
 
   let r = sn.first.toPoint...sn.last.toPoint
 
@@ -442,6 +442,7 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
 
     if firstIndexClamped != -1 and lastIndexClamped != -1:
       for i in firstIndexClamped..lastIndexClamped:
+        let drawEmpty = drawEmpty and i == firstIndexClamped
         if i >= state.chunkBounds.len:
           break
 
@@ -482,7 +483,7 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
         else:
           bounds.displayChunk.toOpenArray.runeLen.int
 
-        if firstOffset == lastOffset:
+        if firstOffset == lastOffset and not drawEmpty:
           continue
 
         var selectionBounds = rect(
@@ -491,10 +492,13 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
 
         let firstIndexClamped = firstOffset.clamp(0, bounds.charsRange.len - 1)
         let lastIndexClamped = lastOffset.clamp(0, bounds.charsRange.len)
-        if firstIndexClamped != -1 and lastIndexClamped != -1:
+        if firstIndexClamped != -1 and lastIndexClamped != -1 and lastIndexClamped > firstIndexClamped:
           let firstBounds = state.charBounds[bounds.charsRange.a + firstIndexClamped] + bounds.bounds.xy
           let lastBounds = state.charBounds[bounds.charsRange.a + lastIndexClamped - 1] + bounds.bounds.xy
           selectionBounds = rect(firstBounds.xy, vec2(lastBounds.xw - firstBounds.x, max(builder.textHeight, bounds.bounds.h)))
+
+        if selectionBounds.w == 0:
+          selectionBounds.w = ceil(builder.charWidth * 0.5)
 
         if renderCommands.commands.len > 0:
           let last = renderCommands.commands[^1].addr
@@ -1435,13 +1439,11 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let visibleTextRange = self.visibleTextRange(2)
   for selections in self.decorations.customHighlights.values:
     for s in selections:
-      if s.selection.isEmpty:
-        continue
       var sn = s.selection.normalized
       if sn.last < visibleTextRange.first or sn.first > visibleTextRange.last:
         continue
       let color = builder.theme.color(s.color, color(200/255, 200/255, 200/255)) * s.tint
-      self.drawHighlight(builder, sn, color, selectionsNode.renderCommands, state, ropeCursor)
+      self.drawHighlight(builder, sn, color, selectionsNode.renderCommands, state, ropeCursor, true)
 
   for s in self.selections:
     var sn = s.normalized
@@ -1452,7 +1454,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if sn.last < visibleTextRange.first or sn.first > visibleTextRange.last:
       continue
 
-    self.drawHighlight(builder, sn, selectionColor, selectionsNode.renderCommands, state, ropeCursor)
+    self.drawHighlight(builder, sn, selectionColor, selectionsNode.renderCommands, state, ropeCursor, false)
 
   selectionsNode.markDirty(builder)
   currentNode.markDirty(builder)

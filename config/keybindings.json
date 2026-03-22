@@ -507,6 +507,7 @@
         "<C-DOWN>": ["scroll-lines", 1],
 
         "/": ["vim.open-search-bar"],
+        "\\\\": ["open-search-bar", "", true, true, true],
         "gc": ["vim.toggle-line-comment"],
         "*": ["vim.set-search-query-from-word"],
 
