@@ -35,8 +35,8 @@ work.
 
 ### Section Configuration
 
-Sections are configured via the `dashboard.sections` setting. Each entry in the array defines a
-section:
+Sections are configured via the `dashboard.sections` setting. Each key in the object defines a
+section, with the value being the section properties:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -48,11 +48,37 @@ section:
 
 #### Section Types
 
-- `logo` - ASCII art logo
+- `logo` - ASCII art logo. Supports a custom `logos` property (array of array of strings)
+  to define custom ASCII art. Falls back to built-in logos.
 - `commands` - Command list with keybindings
 - `sessions` - Recent sessions list
 - `gitStatus` - Git file status
 - `commitHistory` - Git commit log
+
+#### Logo
+
+The `logo` type displays ASCII art with a random ANSI color. Custom logos can be defined using the
+`logos` property:
+
+```json
+{
+  "name": "logo",
+  "border": false,
+  "logos": [
+    [
+      " _   _  _____  _____ ",
+      "| \\ | ||  ___||  ___|",
+      "|  \\| || |__  | |__  ",
+      "|     ||  __| |  __| ",
+      "| |\\  || |___ | |___ ",
+      "\\_| \\_/\\____/ \\____/ "
+    ]
+  ]
+}
+```
+
+Each entry in the `logos` array is an array of strings representing the lines of one logo.
+One logo is randomly selected on each load.
 
 #### Commands
 
@@ -88,33 +114,33 @@ number of entries displayed (defaults: gitStatus=25, commitHistory=50).
   "dashboard.pad-x": 0.03,
   "dashboard.pad-y": 0.02,
   "dashboard.col-gap": 0.01,
-  "dashboard.sections": [
-    { "name": "logo", "title": "", "border": false },
-    {
+  "dashboard.sections": {
+    "logo": { "name": "logo", "title": "", "border": false },
+    "commands": {
       "name": "commands",
       "title": "Commands",
       "side": 0,
       "commands": ["command-line", "choose-file", "explore-files", "quit"]
     },
-    {
+    "sessions": {
       "name": "sessions",
       "title": "Recent Sessions",
       "side": 0,
       "maxItems": 5
     },
-    {
+    "gitStatus": {
       "name": "gitStatus",
       "title": "Git Status",
       "side": 1,
       "maxItems": 20
     },
-    {
+    "commitHistory": {
       "name": "commitHistory",
       "title": "Commits",
       "side": 1,
       "maxItems": 30
     }
-  ]
+  }
 }
 ```
 

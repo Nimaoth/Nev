@@ -55,7 +55,7 @@ const logos = @[
 ]
 
 when implModule:
-  import std/[tables, options, strformat, strutils, sequtils, random, json, algorithm]
+  import std/[tables, options, strformat, strutils, sequtils, random, json, algorithm, math]
   import vmath, chroma
   import misc/[custom_logger, util, custom_async, custom_unicode, jsonex, myjsonutils]
   import ui/node
@@ -92,18 +92,36 @@ when implModule:
       hasFetched*: bool
 
     LogoState = ref object of RootObj
-      index: int
+      index: int = -1
       colorName: string
-
-    SectionRenderFunc* = proc(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].}
+      cachedLogos: seq[seq[string]]
 
     SectionInfo* = object
       title*: string
       side*: int
       renderer*: string
       state*: RootRef
-      border*: bool = true
+      border*: bool = false
       config*: JsonNodeEx
+
+  proc getLogos(section: var SectionInfo): seq[seq[string]] =
+    var state = section.state.LogoState
+    if state == nil:
+      state = LogoState()
+      section.state = state
+    if state.cachedLogos.len == 0:
+      if section.config != nil and section.config.hasKey("logos"):
+        for logoNode in section.config["logos"].getElems:
+          var lines: seq[string] = @[]
+          for line in logoNode.getElems:
+            lines.add line.getStr
+          state.cachedLogos.add lines
+      else:
+        state.cachedLogos = logos
+    return state.cachedLogos
+
+  type
+    SectionRenderFunc* = proc(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].}
 
     DashboardView* = ref object of DynamicView
       events*: EventHandlerService
@@ -216,11 +234,12 @@ when implModule:
   proc handleAction(self: DashboardView, action: string, arg: string): Option[string] =
     if action == "dashboard.logo.randomize":
       let colorNames = ["Red", "Green", "Yellow", "Blue", "Magenta", "Cyan"]
-      for section in self.sections:
+      for section in self.sections.mitems:
         if section.state of LogoState:
+          let sectionLogos = section.getLogos()
           let current = section.state.LogoState.index
           while section.state.LogoState.index == current:
-            section.state.LogoState.index = rand(logos.high)
+            section.state.LogoState.index = rand(sectionLogos.high)
           section.state.LogoState.colorName = colorNames[rand(colorNames.high)]
       self.markDirty()
       return "".some
@@ -267,17 +286,19 @@ when implModule:
 
     if section.state == nil:
       let state = LogoState()
-      state.index = rand(logos.high)
       section.state = state
 
+    let sectionLogos = section.getLogos()
     var state = section.state.LogoState
+    if state.index < 0 or state.index > sectionLogos.high:
+      state.index = rand(sectionLogos.high)
     if state.colorName.len == 0:
       let colorNames = ["Red", "Green", "Yellow", "Blue", "Magenta", "Cyan"]
       state.colorName = colorNames[rand(colorNames.high)]
 
     let ansiColor = builder.theme.color("terminal.ansi" & state.colorName, foregroundColor).darken(0.1)
     let ansiBrightColor = builder.theme.color("terminal.ansiBright" & state.colorName, foregroundColor).lighten(0.1)
-    let lines {.cursor.} = logos[section.state.LogoState.index]
+    let lines {.cursor.} = sectionLogos[state.index]
 
     var maxLineWidth = 0
     for l in lines:
@@ -560,11 +581,23 @@ when implModule:
             builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = authorX, text = commit.author, textColor = authorColor)
 
   proc buildSectionsFromConfig(config: JsonNodeEx): seq[SectionInfo] =
+    if config == nil or config.kind != JObject:
+      log lvlWarn, "dashboard: sections config is not an object, using defaults"
+      return @[]
+
     var sections: seq[SectionInfo] = @[]
-    for entry in config.getElems:
-      let name = entry["name"].getStr
+    for key, entry in config.getFields:
+      if entry == nil or entry.kind != JObject:
+        log lvlWarn, &"dashboard: section '{key}' is not an object, ignoring"
+        continue
+
+      let name = entry{"name"}.getStr(key)
+      if name.len == 0:
+        log lvlWarn, &"dashboard: section '{key}' has empty name, ignoring"
+        continue
+
       let title = entry{"title"}.getStr(name)
-      let side = entry{"side"}.getInt(0)
+      let side = clamp(entry{"side"}.getInt(0), -1, 1)
       let border = entry{"border"}.getBool(true)
       sections.add SectionInfo(
         title: title,
@@ -576,43 +609,53 @@ when implModule:
     return sections
 
   proc createDashboardView(events: EventHandlerService, commandService: CommandService): DashboardView =
-    let defaultSectionsConfig = %%*[{
-      "name": "logo",
-      "title": "",
-      "border": false,
-      "side": -1,
-    }, {
-      "name": "commands",
-      "title": "Commands",
-      "side": 0,
-      "commands": ["command-line", "explore-help", "choose-file", "choose-open",
-        "explore-workspace", "explore-files",
-        "browse-keybinds", "explore-user-config", "quit"]
-    }, {
-      "name": "sessions",
-      "title": "Sessions",
-      "side": 0,
-      "maxItems": 9
-    }, {
-      "name": "gitStatus",
-      "title": "Git Status",
-      "side": 1,
-      "maxItems": 20
-    }, {
-      "name": "commitHistory",
-      "title": "Commit History",
-      "side": 1,
-      "maxItems": 20
-    }]
+    let defaultSectionsConfig = %%*{
+      "logo": {
+        "name": "logo",
+        "title": "",
+        "side": -1,
+      },
+      "commands": {
+        "name": "commands",
+        "title": "Commands",
+        "side": 0,
+        "commands": ["command-line", "explore-help", "choose-file", "choose-open",
+          "explore-workspace", "explore-files",
+          "browse-keybinds", "explore-user-config", "quit"]
+      },
+      "sessions": {
+        "name": "sessions",
+        "title": "Sessions",
+        "side": 0,
+        "maxItems": 9
+      },
+      "gitStatus": {
+        "name": "gitStatus",
+        "title": "Git Status",
+        "side": 1,
+        "maxItems": 20
+      },
+      "commitHistory": {
+        "name": "commitHistory",
+        "title": "Commit History",
+        "side": 1,
+        "maxItems": 20
+      }
+    }
 
     let services = getServices()
     let configService = services.getService(ConfigService).get
     let sectionsConfig = configService.runtime.get("dashboard.sections", JsonNodeEx, defaultSectionsConfig)
 
+    var sections = buildSectionsFromConfig(sectionsConfig)
+    if sections.len == 0:
+      log lvlWarn, "dashboard: no valid sections found, falling back to defaults"
+      sections = buildSectionsFromConfig(defaultSectionsConfig)
+
     let view = DashboardView(
       events: events,
       commandService: commandService,
-      sections: buildSectionsFromConfig(sectionsConfig),
+      sections: sections,
     )
 
     view.sectionRenderers["logo"] = renderLogo
@@ -634,6 +677,27 @@ when implModule:
     let platformService = services.getService(PlatformService).get
     discard view.onMarkedDirty.subscribe proc() =
       platformService.platform.requestedRender = true
+
+    discard configService.runtime.onConfigChanged.subscribe proc(key: string) =
+      if key == "" or key.startsWith("dashboard."):
+        let sectionsConfig = configService.runtime.get("dashboard.sections", JsonNodeEx, defaultSectionsConfig)
+        var newSections = buildSectionsFromConfig(sectionsConfig)
+        if newSections.len == 0:
+          log lvlWarn, "dashboard: no valid sections after config change, keeping current"
+          return
+        # Preserve state from matching sections, clear logo cache on config change
+        var merged: seq[SectionInfo] = @[]
+        for newSection in newSections:
+          var section = newSection
+          for oldSection in view.sections:
+            if oldSection.title == newSection.title and oldSection.renderer == newSection.renderer:
+              section.state = oldSection.state
+              if section.renderer == "logo" and section.state of LogoState:
+                section.state.LogoState.cachedLogos = @[]
+              break
+          merged.add section
+        view.sections = merged
+        view.markDirty()
 
     return view
 
