@@ -760,11 +760,11 @@ proc applyMoveFallback*(self: TextDocument, move: string, selections: openArray[
             result.add captureSelectionsTransformed
 
     else:
-      log lvlError, &"Unknown move '{move}'"
+      log lvlWarn, &"Unknown move '{move}'"
       return @selections
 
   except CatchableError as e:
-    log lvlError, &"Failed to apply move '{move}': {e.msg}"
+    log lvlWarn, &"Failed to apply move '{move}': {e.msg}"
     return @selections
 
 proc newTextDocument*(

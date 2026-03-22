@@ -41,10 +41,10 @@ proc parseSelector(val: LispVal, default: Selector): Selector =
     of "curr-end": CurrentEnd
     of ".": default
     else:
-      log lvlError, &"Unknown cursor selector '{val.sym}'"
+      log lvlWarn, &"Unknown cursor selector '{val.sym}'"
       default
   else:
-    log lvlError, &"Failed to parse cursor selector '{val}'. Expected Symbol, got {val.kind}"
+    log lvlWarn, &"Failed to parse cursor selector '{val}'. Expected Symbol, got {val.kind}"
     default
 
 proc selectCursor(selector: Selector, i: int, default: Cursor, selections, lastSelections, originalSelections: openArray[Selection]): Cursor =
@@ -422,7 +422,7 @@ proc getCount(env: Env): int =
       else:
         return val.num.int
     else:
-      log lvlError, "Can't convert env.count (" & $val & ") to type int"
+      log lvlWarn, "Can't convert env.count (" & $val & ") to type int"
 
   return 1
 
@@ -437,7 +437,7 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
         try:
           val.toJson().to(typ)
         except CatchableError as e:
-          log lvlError, "In move '" & move & "': Failed to convert env." & name & " (" & $val & ") to typ " & $typ & ": " & e.msg
+          log lvlWarn, "In move '" & move & "': Failed to convert env." & name & " (" & $val & ") to typ " & $typ & ": " & e.msg
           default
       else:
         default
@@ -448,7 +448,7 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
         try:
           args[index].toJson().to(typ)
         except CatchableError as e:
-          log lvlError, "In move '" & move & "': Failed to convert argument " & $index & " to typ " & $typ & ": " & e.msg
+          log lvlWarn, "In move '" & move & "': Failed to convert argument " & $index & " to typ " & $typ & ": " & e.msg
           default
       else:
         default
@@ -762,7 +762,7 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
   else:
     if fallback != nil:
       return fallback(move, selections, count, args, env)
-    log lvlError, &"Unknown move '{move}'"
+    log lvlWarn, &"Unknown move '{move}'"
     return @selections
 
 proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: LispVal, originalSelections: openArray[Selection], baseEnv: Env, fallback: MoveFunction): seq[Selection] =
@@ -898,7 +898,7 @@ proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: LispVal, origi
     discard move.eval(env)
     return selections
   except CatchableError as e:
-    log lvlError, &"Failed to apply move '{move}': {e.msg}"
+    log lvlWarn, &"Failed to apply move '{move}': {e.msg}"
     return @originalSelections
   finally:
     env.clear()
@@ -911,7 +911,7 @@ proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, ori
     var expr = move.parseLisp()
     self.applyMove(displayMap, expr, originalSelections, env, fallback)
   except CatchableError as e:
-    log lvlError, &"Failed to apply move '{move}': {e.msg}"
+    log lvlWarn, &"Failed to apply move '{move}': {e.msg}"
     return @originalSelections
 
 proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], fallback: MoveFunction = nil, env: Env = Env()): seq[Selection] =

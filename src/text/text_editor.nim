@@ -2840,7 +2840,7 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
         for a in newStringStream(argsString).parseJsonFragments():
           args.add a
       except CatchableError as e:
-        log lvlError, &"getSelectionsForMove: '{move}', Failed to parse args: {e.msg}"
+        log lvlWarn, &"getSelectionsForMove: '{move}', Failed to parse args: {e.msg}"
 
   template getArg(index: int, typ: untyped, default: untyped): untyped =
     block:
@@ -2851,7 +2851,7 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
         try:
           args[index].to(typ)
         except CatchableError as e:
-          log lvlError, "In move '" & move & "': Failed to convert argument " & $index & " to typ " & $typ & ": " & e.msg
+          log lvlWarn, "In move '" & move & "': Failed to convert argument " & $index & " to typ " & $typ & ": " & e.msg
           default
       else:
         default
@@ -3034,7 +3034,7 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
       return self.document.applyMoveFallback(move, selections, count, largs, env)
 
   except CatchableError as e:
-    log lvlError, &"Failed to apply move '{move}': {e.msg}"
+    log lvlWarn, &"Failed to apply move '{move}': {e.msg}"
     return @selections
 
 proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selection], move: string,
