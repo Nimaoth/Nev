@@ -382,20 +382,26 @@ proc parseEscapedUTF16*(buf: cstring, pos: var int): int =
     else:
       return -1
 
+proc isSymbolChar(c: char, first: bool): bool {.inline.} =
+  case c
+  of 'a'..'z', 'A'..'Z', '_', '!', ':', '+', '*', '/', '%', '=', '<', '>', '&', '|', '~', '#', '.', '-':
+    return true
+  of '0'..'9':
+    return not first
+  else:
+    return false
+
 proc parseSymbol(my: var LispParser): TokKind =
   result = tkSymbol
   var pos = my.bufpos
+  var first = true
   while pos < my.buf.len:
-    case my.buf[pos]
-    of ')', '}', ']', ',', ' ', '\n', ':':
+    let c = my.buf[pos]
+    if not isSymbolChar(c, first):
       break
-    of '\c':
-      break
-    # of '\L':
-    #   break
-    else:
-      add(my.a, my.buf[pos])
-      inc(pos)
+    add(my.a, c)
+    inc(pos)
+    first = false
   my.bufpos = pos # store back
 
 proc parseString(my: var LispParser, endd: char): TokKind =
@@ -488,10 +494,10 @@ proc parseString(my: var LispParser, endd: char): TokKind =
 
 proc skip(my: var LispParser) =
   var pos = my.bufpos
-  while true:
+  while pos < my.buf.len:
     case my.buf[pos]
     of ';', '/':
-      if my.buf[pos] == ';' or my.buf[pos+1] == '/':
+      if my.buf[pos] == ';' or (pos + 1 < my.buf.len and my.buf[pos+1] == '/'):
         # skip line comment:
         inc(pos, 2)
         while true:
@@ -506,7 +512,7 @@ proc skip(my: var LispParser) =
             break
           else:
             inc(pos)
-      elif my.buf[pos+1] == '*':
+      elif pos + 1 < my.buf.len and my.buf[pos+1] == '*':
         # skip long comment:
         inc(pos, 2)
         while true:
@@ -571,9 +577,11 @@ proc getTok(my: var LispParser): TokKind =
   my.lastBufpos = my.bufpos
   setLen(my.a, 0)
   skip(my) # skip whitespace, comments
+  if my.bufpos >= my.buf.len:
+    return tkEof
   case my.buf[my.bufpos]
   of '-':
-    if my.buf[my.bufpos + 1] != ' ':
+    if my.bufpos + 1 < my.buf.len and my.buf[my.bufpos + 1] != ' ':
       parseNumber(my)
       if {'.', 'e', 'E'} in my.a:
         result = tkFloat
@@ -611,7 +619,7 @@ proc getTok(my: var LispParser): TokKind =
     result = tkCurlyRi
   of ',':
     inc(my.bufpos)
-    if my.buf[my.bufpos] == '@':
+    if my.bufpos < my.buf.len and my.buf[my.bufpos] == '@':
       inc(my.bufpos)
       result = tkCommaAt
     else:
@@ -625,11 +633,12 @@ proc getTok(my: var LispParser): TokKind =
   of '\0':
     result = tkEof
   else:
-    result = parseSymbol(my)
-    case my.a
-    of "nil", "null": result = tkNull
-    of "true": result = tkTrue
-    of "false": result = tkFalse
+    if isSymbolChar(my.buf[my.bufpos], first=true):
+      result = parseSymbol(my)
+      case my.a
+      of "nil", "null": result = tkNull
+      of "true": result = tkTrue
+      of "false": result = tkFalse
 
   my.tok = result
 
@@ -868,6 +877,8 @@ proc evalQuasiquote(expr: LispVal, env: var Env): LispVal =
     if head.kind == Symbol:
       case head.sym
       of "unquote":
+        if expr.elems.len < 2:
+          raise newException(LispError, "unquote requires an argument")
         return eval(expr.elems[1], env)
       of "unquote-splicing":
         raise newException(LispError, "unquote-splicing not allowed here")  # must be handled inside list
@@ -876,6 +887,8 @@ proc evalQuasiquote(expr: LispVal, env: var Env): LispVal =
     for el in expr.elems:
       if el.kind == List and el.elems.len > 0 and
          el.elems[0].kind == Symbol and el.elems[0].sym == "unquote-splicing":
+        if el.elems.len < 2:
+          raise newException(LispError, "unquote-splicing requires an argument")
         let spliceVal = eval(el.elems[1], env)
         if spliceVal.kind != expr.kind:
           raise newException(LispError, "unquote-splicing must return a list")
@@ -888,6 +901,8 @@ proc evalQuasiquote(expr: LispVal, env: var Env): LispVal =
     for key, el in expr.fields.pairs:
       if el.kind == List and el.elems.len > 0 and
          el.elems[0].kind == Symbol and el.elems[0].sym == "unquote-splicing":
+        if el.elems.len < 2:
+          raise newException(LispError, "unquote-splicing requires an argument")
         let spliceVal = eval(el.elems[1], env)
         if spliceVal.kind != Map:
           raise newException(LispError, "unquote-splicing must return a map")
@@ -930,13 +945,19 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
     if first.kind == Symbol:
       case first.sym
       of "quote":
+        if expr.elems.len < 2:
+          raise newException(LispError, "quote requires an argument")
         return expr.elems[1]
       of "let":
+        if expr.elems.len < 3:
+          raise newException(LispError, "let requires 2 arguments: symbol, value")
         let sym = expr.elems[1]
         let value = eval(expr.elems[2], env)
         env[sym.sym] = value
         return value
       of "set":
+        if expr.elems.len < 3:
+          raise newException(LispError, "set requires 2 arguments: symbol, value")
         let sym = expr.elems[1]
         if sym.kind != Symbol:
           raise newException(LispError, "not a symbol: '" & $sym & "'")
@@ -947,20 +968,28 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
 
         return value
       of "eval":
+        if expr.elems.len < 2:
+          raise newException(LispError, "eval requires an argument")
         let sub = expr.elems[1]
         let value = eval(sub, env)
         return eval(value, env)
       of "lambda":
+        if expr.elems.len < 3:
+          raise newException(LispError, "lambda requires 2 arguments: params, body")
         let params = expr.elems[1].elems.mapIt(it.sym)
         let body = expr.elems[2]
         return newLambda(params, body, env)
       of "defmacro":
+        if expr.elems.len < 4:
+          raise newException(LispError, "defmacro requires 3 arguments: name, params, body")
         let name = expr.elems[1].sym
         let params = expr.elems[2].elems.mapIt(it.sym)
         let body = expr.elems[3]
         env[name] = newMacro(params, body, env)
         return env[name]
       of "quasiquote":
+        if expr.elems.len < 2:
+          raise newException(LispError, "quasiquote requires an argument")
         return evalQuasiquote(expr.elems[1], env)
       of "if":
         var i = 1
@@ -973,11 +1002,15 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
           return eval(expr.elems[i], env)
         return newNil()
       of "floor":
+        if expr.elems.len < 2:
+          raise newException(LispError, "floor requires an argument")
         let val = eval(expr.elems[1], env)
         if val.kind != Number:
           raise newException(LispError, "floor takes a number, got " & $val)
         return newNumber(val.num.floor)
       of "repeat":
+        if expr.elems.len < 4:
+          raise newException(LispError, "repeat requires 3 arguments: name, count, body")
         let name = expr.elems[1].sym
         let count = eval(expr.elems[2], env)
         if count.kind != Number:
@@ -990,6 +1023,8 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
           res.elems.add(eval(expr.elems[3], env))
         return res
       of "len":
+        if expr.elems.len < 2:
+          raise newException(LispError, "len requires an argument")
         let container = eval(expr.elems[1], env)
         if container.kind == Map:
           return newNumber(container.fields.len.float)
@@ -1090,6 +1125,8 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
             list.elems.add expr.elems[k]
           newEnv[name[0..^4]] = list
         else:
+          if i + 1 >= expr.elems.len:
+            raise newException(LispError, &"Missing argument for parameter '{name}'")
           newEnv[name] = expr.elems[i+1]  # unevaluated
       let expanded = eval(fun.body, newEnv)
       return eval(expanded, env)  # evaluate expanded result
@@ -1112,6 +1149,8 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
           args.add v
       var newEnv = fun.env.createChild()
       for i in 0..<fun.params.len:
+        if i >= args.len:
+          raise newException(LispError, &"Missing argument for parameter '{fun.params[i]}'")
         newEnv[fun.params[i]] = args[i]
       return eval(fun.body, newEnv)
     else:
@@ -1127,10 +1166,12 @@ proc baseEnv*(): Env =
   result["+"] = newFunc("+", proc(args: seq[LispVal]): LispVal =
     newNumber(args.foldl(a + b.num, 0.0)))
   result["-"] = newFunc("-", proc(args: seq[LispVal]): LispVal =
+    if args.len < 2: raise newException(LispError, "- requires 2 arguments")
     newNumber(args[0].num - args[1].num))
   result["*"] = newFunc("*", proc(args: seq[LispVal]): LispVal =
     newNumber(args.foldl(a * b.num, 1.0)))
   result["/"] = newFunc("/", proc(args: seq[LispVal]): LispVal =
+    if args.len < 2: raise newException(LispError, "/ requires 2 arguments")
     newNumber(args[0].num / args[1].num))
   result["or"] = newFunc("or", proc(args: seq[LispVal]): LispVal =
     for a in args:
@@ -1141,10 +1182,13 @@ proc baseEnv*(): Env =
     return newNil()
   )
   result["eq"] = newFunc("eq", proc(args: seq[LispVal]): LispVal =
+    if args.len < 2: raise newException(LispError, "eq requires 2 arguments")
     newBool(args[0].kind == args[1].kind and $args[0] == $args[1])) # todo: don't use $
   result[">"] = newFunc(">", proc(args: seq[LispVal]): LispVal =
+    if args.len < 2: raise newException(LispError, "> requires 2 arguments")
     newBool(args[0].num > args[1].num))
   result["<"] = newFunc("<", proc(args: seq[LispVal]): LispVal =
+    if args.len < 2: raise newException(LispError, "< requires 2 arguments")
     newBool(args[0].num < args[1].num))
   result["list"] = newFunc("list", proc(args: seq[LispVal]): LispVal =
     newList(args))
@@ -1154,17 +1198,19 @@ proc baseEnv*(): Env =
     else:
       newNil())
   result["head"] = newFunc("head", proc(args: seq[LispVal]): LispVal =
-    if args[0].kind != List: raise newException(LispError, "head needs list")
-    else: args[0].elems[0])
+    if args.len < 1 or args[0].kind != List: raise newException(LispError, "head needs a list")
+    if args[0].elems.len < 1: raise newException(LispError, "head: list is empty")
+    args[0].elems[0])
   result["tail"] = newFunc("tail", proc(args: seq[LispVal]): LispVal =
-    if args[0].kind != List: raise newException(LispError, "tail needs list")
-    else: newList(args[0].elems[1..^1]))
+    if args.len < 1 or args[0].kind != List: raise newException(LispError, "tail needs a list")
+    newList(args[0].elems[1..^1]))
   result["cons"] = newFunc("cons", proc(args: seq[LispVal]): LispVal =
+    if args.len < 2: raise newException(LispError, "cons requires 2 arguments")
     if args[1].kind != List: raise newException(LispError, "cons needs list")
-    else: newList(@[args[0]] & args[1].elems))
+    newList(@[args[0]] & args[1].elems))
 
   result["add"] = newFunc("add", proc(args: seq[LispVal]): LispVal =
-    if args[0].kind notin {List, Array}: raise newException(LispError, "add needs list or array")
+    if args.len < 1 or args[0].kind notin {List, Array}: raise newException(LispError, "add needs list or array")
     for i in 1..args.high:
       args[0].elems.add args[i]
   )
@@ -1197,7 +1243,7 @@ proc baseEnv*(): Env =
   )
 
   result["append"] = newFunc("append", proc(args: seq[LispVal]): LispVal =
-    if args[0].kind notin {List, Array}: raise newException(LispError, "append needs list or array")
+    if args.len < 1 or args[0].kind notin {List, Array}: raise newException(LispError, "append needs list or array")
     for i in 1..args.high:
       if args[i].kind notin {List, Array}:
         raise newException(LispError, "append needs list or array")
