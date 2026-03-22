@@ -50,7 +50,7 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   editor.document.setReadOnly(false)
   if self.prefixOverlayId.isSome:
     editor.clearOverlays(self.prefixOverlayId.get)
-  editor.setDefaultMode()
+  editor.setDefaultMode(forceNotify = true)
   if self.prefix != "":
     if self.prefixOverlayId.isNone:
       self.prefixOverlayId = editor.displayMap.overlay.allocateId()

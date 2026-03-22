@@ -479,7 +479,7 @@ proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBe
 proc numDisplayLines*(self: TextDocumentEditor): int
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = true, includeAfter: bool = true): Cursor
 proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string)
-proc setDefaultMode*(self: TextDocumentEditor)
+proc setDefaultMode*(self: TextDocumentEditor, forceNotify: bool = false)
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
 proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
@@ -1517,7 +1517,7 @@ proc removeMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text")
 
   self.markDirty()
 
-proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true) {.expose("editor.text").} =
+proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true, forceNotify: bool = false) {.expose("editor.text").} =
   ## Sets the current mode of the editor.
   ## If `mode` is "", then no additional scope will be pushed on the scope stac.k
   ## If mode is e.g. "insert",
@@ -1558,7 +1558,7 @@ proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true) {.
     modes.add(mode)
     changed = true
 
-  if not changed:
+  if not changed and not forceNotify:
     return
 
   self.settings.modes.set(modes)
@@ -1570,8 +1570,8 @@ proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true) {.
 
   self.markDirty()
 
-proc setDefaultMode*(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.setMode(self.settings.defaultMode.get())
+proc setDefaultMode*(self: TextDocumentEditor, forceNotify: bool = false) {.expose("editor.text").} =
+  self.setMode(self.settings.defaultMode.get(), forceNotify = forceNotify)
 
 proc mode*(self: TextDocumentEditor): string =
   ## Returns the current mode of the text editor, or "" if there is no mode
@@ -4994,7 +4994,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
 
   self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 
-  self.setDefaultMode()
+  self.setDefaultMode(forceNotify = true)
 
   return self
 
