@@ -1072,5 +1072,40 @@
     "unsaved": {
         "interval": 60,
         "behaviour": "none",
-    }
+    },
+
+    "dashboard.sections": {
+        "logo": {
+            "name": "logo",
+            "title": "",
+            "side": -1,
+        },
+        "commands": {
+            "name": "commands",
+            "title": "Commands",
+            "side": 0,
+            "commands": ["command-line", "explore-help", "choose-file", "choose-open",
+                "explore-workspace", "explore-files",
+                "browse-keybinds", "explore-user-config", "quit"]
+        },
+        "sessions": {
+            "name": "sessions",
+            "title": "Sessions",
+            "side": 0,
+            "maxItems": 9
+        },
+        "gitStatus": {
+            "name": "gitStatus",
+            "title": "Git Status",
+            "side": 1,
+            "maxItems": 20
+        },
+        "commitHistory": {
+            "name": "commitHistory",
+            "title": "Commit History",
+            "side": 1,
+            "maxItems": 20
+        }
+    },
+
 }
