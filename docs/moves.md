@@ -77,6 +77,7 @@ These are built-in functions in the move language that operate on the current se
 | `(push)` | list | Push current selections onto a stack |
 | `(pop)` | list | Pop selections from the stack, replacing current ones |
 | `(discard)` | list | Pop selections from the stack and discard them. |
+| `(pop-append)` | list | Pop selections from the stack and append them to the current selections. |
 | `(first)` | list | Keep only the first selection (discard the rest) |
 | `(last)` | list | Keep only the last selection |
 | `(nth N)` | list | Keep only the Nth selection (0-indexed, negative indexes from end) |

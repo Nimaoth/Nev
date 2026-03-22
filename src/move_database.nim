@@ -805,6 +805,10 @@ proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: LispVal, origi
       impl:
         if stack.len > 0:
           selections = stack.pop()
+    of "pop-append":
+      impl:
+        if stack.len > 0:
+          selections.add stack.pop()
     of "discard":
       impl:
         if stack.len > 0:
