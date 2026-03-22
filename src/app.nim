@@ -279,28 +279,9 @@ proc setupDefaultKeybindings(self: App) =
   selectorPopupConfig.addCommand("", "<C-u>", "prev-x")
   selectorPopupConfig.addCommand("", "<C-d>", "next-x")
 
-proc getRecentSessions(self: App): Future[seq[string]] {.async.} =
-  try:
-    let lastSessionsJson = await self.vfs.read(homeConfigDir // "sessions.json")
-    let lastSessions = lastSessionsJson.parseJson()
-    if lastSessions.kind != JArray:
-      log lvlError, &"Failed to restore last session: sessions.json must contain an array of strings"
-      return @[]
-
-    for session in lastSessions.elems:
-      if session.kind != JString:
-        log lvlError, &"sessions.json contains invalid session: {session}. Expected string."
-        continue
-
-      result.add session.getStr()
-
-  except:
-    log lvlError, &"Failed to restore last session: {getCurrentExceptionMsg()}"
-    return @[]
-
 proc addSessionToRecentSessions(self: App, session: string) {.async.} =
   try:
-    var recentSessions = await self.getRecentSessions()
+    var recentSessions = await self.session.getRecentSessions()
     let i = recentSessions.find(session)
     if i != -1:
       recentSessions.removeShift(i)
@@ -312,10 +293,10 @@ proc addSessionToRecentSessions(self: App, session: string) {.async.} =
 
 proc loadSession*(self: App) {.async: (raises: []).} =
   try:
+    let stateJson = self.vfs.read(self.sessionFile).await.parseJson
     if self.generalSettings.keepSessionHistory.get():
       asyncSpawn self.addSessionToRecentSessions(self.sessionFile)
 
-    let stateJson = self.vfs.read(self.sessionFile).await.parseJson
     var state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
 
     if stateJson.hasKey("workspaceFolders"):
@@ -873,7 +854,7 @@ proc setupSessionAndWorkspace*(self: App) {.async.} =
             self.sessionFile = path // defaultSessionName
 
     elif self.appOptions.restoreLastSession:
-      let lastSessions = await self.getRecentSessions()
+      let lastSessions = await self.session.getRecentSessions()
       if lastSessions.len == 0:
         log lvlError, &"Failed to restore last session: No last session found."
       else:
@@ -1012,6 +993,10 @@ proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false,
       discard
   else:
     asyncSpawn self.reapplyConfigKeybindingsAsync(app, home, workspace)
+
+proc loadSession*(self: App, path: string) {.expose("editor").} =
+  self.sessionFile = path
+  asyncSpawn self.loadSession()
 
 proc runExternalCommand*(self: App, command: string, args: seq[string] = @[], workingDir: string = "") {.expose("editor").} =
   proc handleOutput(line: string) {.gcsafe.} =
@@ -1324,7 +1309,7 @@ proc openRecentSession*(self: App, preview: bool = true, scaleX: float = 0.9, sc
     var items = newSeq[FinderItem]()
 
     try:
-      let lastSessions = await self.getRecentSessions()
+      let lastSessions = await self.session.getRecentSessions()
       for i in countdown(lastSessions.high, 0):
         let session = lastSessions[i]
         items.add FinderItem(

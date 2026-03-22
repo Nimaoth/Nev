@@ -134,6 +134,26 @@ when implModule:
     except CatchableError as e:
       return @[]
 
+  proc gitGetCommitHistory(self: VersionControlSystemGit, maxCount: int = 50): Future[seq[VCSCommitInfo]] {.gcsafe, async: (raises: []).} =
+    try:
+      let args = @["log", &"--max-count={maxCount}", "--format=%h%n%s%n%ai%n%an"]
+      let output = runProcessAsync("git", args, workingDir=self.root).await
+
+      var commits = newSeq[VCSCommitInfo]()
+      var i = 0
+      while i + 3 < output.len:
+        commits.add VCSCommitInfo(
+          id: output[i],
+          description: output[i + 1],
+          date: output[i + 2],
+          author: output[i + 3],
+        )
+        i += 4
+
+      return commits
+    except CatchableError as e:
+      return @[]
+
   proc gitStageFile(self: VersionControlSystemGit, path: string): Future[string] {.gcsafe, async: (raises: []).} =
     try:
       let args = @["add", path]
@@ -269,6 +289,8 @@ when implModule:
       asyncSpawn self.VersionControlSystemGit.gitUpdateStatus()
     result.getChangedFilesImpl = proc(self: VersionControlSystem): Future[seq[VCSChangelist]] {.gcsafe, async: (raises: []).} =
       return await self.VersionControlSystemGit.gitGetChangedFiles()
+    result.getCommitHistoryImpl = proc(self: VersionControlSystem, maxCount: int = 50): Future[seq[VCSCommitInfo]] {.gcsafe, async: (raises: []).} =
+      return await self.VersionControlSystemGit.gitGetCommitHistory(maxCount)
     result.stageFileImpl = proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).} =
       return await self.VersionControlSystemGit.gitStageFile(path)
     result.unstageFileImpl = proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).} =

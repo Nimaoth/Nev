@@ -149,6 +149,20 @@
         "<A-a>": ["all", ["toggle-debugger-toolbar", false], ["toggle-debugger-threads", false], ["toggle-debugger-stacktrace", false], ["toggle-debugger-variables", false]],
     },
 
+    "dashboard": {
+        "r": ["dashboard.logo.randomize"],
+        "a": ["dashboard.logo.randomize"],
+        "1": ["dashboard.session.open", 0],
+        "2": ["dashboard.session.open", 1],
+        "3": ["dashboard.session.open", 2],
+        "4": ["dashboard.session.open", 3],
+        "5": ["dashboard.session.open", 4],
+        "6": ["dashboard.session.open", 5],
+        "7": ["dashboard.session.open", 6],
+        "8": ["dashboard.session.open", 7],
+        "9": ["dashboard.session.open", 8],
+    },
+
     "editor.text.completion": {
         "<C-p>": ["select-prev-completion"],
         "<C-n>": ["select-next-completion"],

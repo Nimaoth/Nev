@@ -1,6 +1,7 @@
 import std/[options, json]
-import misc/[event, id]
+import misc/[event, id, custom_async]
 import service, view, popup, selector_popup_builder
+import compilation_config
 
 include dynlib_export
 
@@ -20,16 +21,18 @@ func serviceName*(_: typedesc[SessionService]): string = "SessionService"
 
 # DLL API
 proc sessionServiceAddSaveHandler(self: SessionService, key: string, save: proc(): JsonNode {.gcsafe, raises: [].}, load: proc(data: JsonNode) {.gcsafe, raises: [].}) {.apprtl, gcsafe, raises: [].}
+proc sessionServiceGetRecentSessions(self: SessionService): Future[seq[string]] {.apprtl, gcsafe, async: (raises: []).}
 
 # Nice wrappers
 proc addSaveHandler*(self: SessionService, key: string, save: proc(): JsonNode {.gcsafe, raises: [].}, load: proc(data: JsonNode) {.gcsafe, raises: [].}) {.inline.} = sessionServiceAddSaveHandler(self, key, save, load)
+proc getRecentSessions*(self: SessionService): Future[seq[string]] {.inline, async: (raises: []).} = await sessionServiceGetRecentSessions(self)
 
 # Implementation
 when implModule:
-  import std/[strutils, options, json, tables]
+  import std/[strutils, options, json, tables, os]
   import misc/[custom_async, custom_logger, util, myjsonutils]
   import scripting/[expose]
-  import dispatch_tables, service, event_service
+  import dispatch_tables, service, event_service, vfs_service
 
   {.push gcsafe.}
   {.push raises: [].}
@@ -42,6 +45,23 @@ when implModule:
     log lvlInfo, &"SessionService.init"
     self.sessionData = newJObject()
     return ok()
+
+  proc sessionServiceGetRecentSessions(self: SessionService): Future[seq[string]] {.async: (raises: []).} =
+    let vfsService = self.services.getService(VFSService).getOr: return @[]
+    let vfs = vfsService.vfs
+    try:
+      let lastSessionsJson = await vfs.read(homeConfigDir // "sessions.json")
+      let lastSessions = lastSessionsJson.parseJson()
+      if lastSessions.kind != JArray:
+        log lvlError, &"sessions.json must contain an array of strings"
+        return @[]
+
+      for session in lastSessions.elems:
+        if session.kind == JString:
+          result.add session.getStr()
+    except:
+      log lvlError, &"Failed to read sessions.json: {getCurrentExceptionMsg()}"
+      return @[]
 
   proc restoreSession*(self: SessionService, sessionData: JsonNode) =
     log lvlInfo, &"SessionService.restoreSession"

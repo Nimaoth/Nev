@@ -1,4 +1,4 @@
-import std/[tables, json]
+import std/[tables, json, options]
 import input, service, config_provider
 
 include dynlib_export
@@ -60,10 +60,14 @@ func serviceName*(_: typedesc[EventHandlerService]): string = "EventHandlerServi
 # DLL API
 proc eventsGetEventHandlerConfig(self: EventHandlerService, context: string): EventHandlerConfig {.apprtl, gcsafe, raises: [].}
 proc eventsBuildDFA(config: EventHandlerConfig): CommandDFA {.apprtl, gcsafe, raises: [].}
+proc commandInfosGetInfos(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] {.apprtl, gcsafe, raises: [].}
+proc commandInfosRebuildCommandToKeysMap(self: EventHandlerService) {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
 proc getEventHandlerConfig*(self: EventHandlerService, context: string): EventHandlerConfig {.inline.} = eventsGetEventHandlerConfig(self, context)
 proc buildDFA*(config: EventHandlerConfig): CommandDFA {.inline.} = eventsBuildDFA(config)
+proc getInfos*(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] {.inline.} = commandInfosGetInfos(self, command)
+proc rebuildCommandToKeysMap*(self: EventHandlerService) {.inline.} = commandInfosRebuildCommandToKeysMap(self)
 
 proc handleInputs*(config: EventHandlerConfig): bool =
   return config.settings.get("input." & config.context & ".handle-inputs", false)
@@ -447,7 +451,7 @@ when implModule:
           source: commandInfo.source,
         ))
 
-  proc getInfos*(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] =
+  proc commandInfosGetInfos(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] =
     if self.commandToKeys.contains(command):
       return self.commandToKeys[command].some
 
@@ -472,7 +476,7 @@ when implModule:
   proc invalidateCommandToKeysMap*(self: EventHandlerService) =
     self.commandInfos.invalidate()
 
-  proc rebuildCommandToKeysMap*(self: EventHandlerService) =
+  proc commandInfosRebuildCommandToKeysMap(self: EventHandlerService) =
     self.commandInfos.rebuild(self.eventHandlerConfigs)
 
   ###########################################################################

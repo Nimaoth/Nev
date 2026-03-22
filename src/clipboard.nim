@@ -1,4 +1,4 @@
-import std/[options, macros]
+import std/[options, macros, strutils]
 import misc/[util, custom_async, custom_logger]
 
 logCategory "clipboard"
@@ -16,7 +16,7 @@ when enableWindyClipboard:
 
   proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
     {.gcsafe.}:
-      return getClipboardString().some
+      return getClipboardString().replace("\r", "").some
 
 else:
   static:

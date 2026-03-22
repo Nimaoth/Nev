@@ -9,6 +9,8 @@ include dynlib_export
 type
   CreateView* = proc(config: JsonNode): View {.gcsafe, raises: [ValueError].}
   LayoutService* = ref object of Service
+    fallbackView*: View
+
   EditorView* = ref object of DynamicView
     path: string
     document*: Document # todo: remove
@@ -552,6 +554,8 @@ when implModule:
     let view = self.layout.activeLeafView()
     if view != nil:
       view.some
+    elif self.fallbackView != nil:
+      self.fallbackView.some
     else:
       View.none
 

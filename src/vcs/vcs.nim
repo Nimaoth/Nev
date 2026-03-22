@@ -24,6 +24,12 @@ type
     author*: string
     files*: seq[VCSFileInfo]
 
+  VCSCommitInfo* = object
+    id*: string
+    description*: string
+    date*: string
+    author*: string
+
   VersionControlSystem* = ref object of RootObj
     name*: string
     root*: string
@@ -39,6 +45,7 @@ type
     checkoutFileImpl*: proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).}
     addFileImpl*: proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).}
     getChangedFilesImpl*: proc(self: VersionControlSystem): Future[seq[VCSChangelist]] {.gcsafe, async: (raises: []).}
+    getCommitHistoryImpl*: proc(self: VersionControlSystem, maxCount: int = 50): Future[seq[VCSCommitInfo]] {.gcsafe, async: (raises: []).}
 
 type
   VCSDetector* = proc(rootDir: string): Option[VersionControlSystem] {.gcsafe, raises: [].}
@@ -95,6 +102,10 @@ proc addFile*(self: VersionControlSystem, path: string): Future[string] {.gcsafe
 proc getChangedFiles*(self: VersionControlSystem): Future[seq[VCSChangelist]] {.gcsafe, async: (raises: []).} =
   if self.getChangedFilesImpl != nil:
     return await self.getChangedFilesImpl(self)
+
+proc getCommitHistory*(self: VersionControlSystem, maxCount: int = 50): Future[seq[VCSCommitInfo]] {.gcsafe, async: (raises: []).} =
+  if self.getCommitHistoryImpl != nil:
+    return await self.getCommitHistoryImpl(self, maxCount)
 
 when implModule:
   addBuiltinService(VCSService, Workspace, ConfigService, VFSService)

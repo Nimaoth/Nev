@@ -1,5 +1,6 @@
 import "../modules/language_server_ue_cpp.nim"
 import "../modules/debugger/debugger.nim"
+import "../modules/dashboard.nim"
 import "../modules/vcs_git.nim"
 import "../modules/command_server.nim"
 import "../modules/vcs_perforce.nim"
@@ -24,6 +25,7 @@ import "../modules/language_server_ue_as.nim"
 proc initModules*() =
   when declared(init_module_language_server_ue_cpp): init_module_language_server_ue_cpp()
   when declared(init_module_debugger): init_module_debugger()
+  when declared(init_module_dashboard): init_module_dashboard()
   when declared(init_module_vcs_git): init_module_vcs_git()
   when declared(init_module_command_server): init_module_command_server()
   when declared(init_module_vcs_perforce): init_module_vcs_perforce()
@@ -48,6 +50,7 @@ proc initModules*() =
 proc shutdownModules*() =
   when declared(shutdown_module_language_server_ue_cpp): shutdown_module_language_server_ue_cpp()
   when declared(shutdown_module_debugger): shutdown_module_debugger()
+  when declared(shutdown_module_dashboard): shutdown_module_dashboard()
   when declared(shutdown_module_vcs_git): shutdown_module_vcs_git()
   when declared(shutdown_module_command_server): shutdown_module_command_server()
   when declared(shutdown_module_vcs_perforce): shutdown_module_vcs_perforce()

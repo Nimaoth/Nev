@@ -6,5 +6,11 @@
         "scroll-speed": 3,
         "smooth-scroll": false,
         "cursor-trail-length": 0
-    }
+    },
+
+    "dashboard.min-two-col-chars": 160,
+    "dashboard.pad-x": 0.1,
+    "dashboard.pad-y": 0.01,
+    "dashboard.section-gap": 0.001,
+    "dashboard.col-gap": 0.05,
 }

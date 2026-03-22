@@ -444,11 +444,17 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
             let view = self.layout.layout.activeLeafView()
             if view != nil:
               overlays.add view.createUI(builder)
+            elif self.layout.fallbackView != nil:
+              overlays.add self.layout.fallbackView.createUI(builder)
             else:
               builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
         else:
-          overlays.add self.layout.layout.createUI(builder)
+          let visibleViews = self.layout.getNumVisibleViews()
+          if visibleViews == 0 and self.layout.fallbackView != nil:
+            overlays.add self.layout.fallbackView.createUI(builder)
+          else:
+            overlays.add self.layout.layout.createUI(builder)
 
     builder.panel(&{FlushBorders})
     builder.flushOverlays(overlays)
