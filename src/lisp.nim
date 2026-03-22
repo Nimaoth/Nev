@@ -357,7 +357,7 @@ proc errorMsgExpected*(my: LispParser, e: string): string =
   ## returns an error message "`e` expected" in the same format as the
   ## other error messages
   result = "$1($2, $3) Error: $4" % [
-    my.filename, $getLine(my), $getColumn(my), e & " expected"]
+    my.filename, $getLine(my), $getColumn(my), e & " expected, got " & tokToStr[my.tok]]
 
 proc handleHexChar*(c: char, x: var int): bool {.inline.} =
   ## Converts `%xx` hexadecimal to the ordinal number and adds the result to `x`.
@@ -384,7 +384,7 @@ proc parseEscapedUTF16*(buf: cstring, pos: var int): int =
 
 proc isSymbolChar(c: char, first: bool): bool {.inline.} =
   case c
-  of 'a'..'z', 'A'..'Z', '_', '!', ':', '+', '*', '/', '%', '=', '<', '>', '&', '|', '~', '#', '.', '-':
+  of 'a'..'z', 'A'..'Z', '_', '!', '?', ':', '+', '*', '/', '%', '=', '<', '>', '&', '|', '~', '#', '.', '-':
     return true
   of '0'..'9':
     return not first
