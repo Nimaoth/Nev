@@ -598,7 +598,7 @@ when implModule:
 
       let title = entry{"title"}.getStr(name)
       let side = clamp(entry{"side"}.getInt(0), -1, 1)
-      let border = entry{"border"}.getBool(true)
+      let border = entry{"border"}.getBool(false)
       sections.add SectionInfo(
         title: title,
         side: side,
