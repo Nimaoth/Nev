@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.5.0](https://github.com/Nimaoth/Nev/compare/v0.4.0...v0.5.0) (2026-03-22)
+
+- Introduced a new WASM-based plugin system with dynamic API dispatching, thread support, and plugin state restoring on reload
+- Moved Vim motions to the new plugin system and removed the old one
+- Added a builtin ctags-based language server with hover, signature help, and completion
+- Implemented debugger watches, multiple variable views, inline value display, and recursive variable search
+- Added variable filtering, separate debugger views, and inlay hints for debugger values. Breakpoints now move when editing text
+- Added support for nested treesitter languages (e.g. code blocks inside markdown)
+- Added markdown features like inline image preview with GIF support, and table alignment
+- Added context lines with improved rendering and detection
+- Implemented auto-insertion of matching braces, quotes, and closing characters with improved auto indenting
+- Auto-coloring for brackets
+- Unsaved file temp save/restore
+- Somewhat configurable status line
+- New themes (dark blue, gruvbox dark)
+- Added git status display
+- More Perforce integration with diffing, changelists, and file adding
+- Added support for different line heights and font sizes
+- Major refactor to make the editor extensible through modules. Converted debugger, terminal, and LSP to modules. Added experimental dynamically linked module support with build tooling
+- Lots of bug fixes (and new bugs)
+
+
 ## [0.4.0](https://github.com/Nimaoth/Nev/compare/v0.3.0...v0.4.0) (2025-05-01)
 
 - You can now define an alias for commands, with the ability to run multiple commands in one alias and forward arguments or
