@@ -268,14 +268,32 @@ import ui/node
 
 import chronos/config
 
-proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions) =
-  var frameIndex = 0
+const maxPollPerFrameMs = 2.5
+
+proc pollFutures() =
+  gAsyncFrameTimer = startTimer()
+  try:
+    let start = startTimer()
+    var tries = 25
+
+    let hasPendingOperations = when chronosFutureTracking:
+      pendingFuturesCount() > 0
+    else:
+      true
+
+    while tries > 0 and start.elapsed.ms < maxPollPerFrameMs and hasPendingOperations:
+      dec tries
+      poll()
+
+  except CatchableError:
+    discard
+
+proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, frameIndex: var int) =
   var frameTime = 0.0
 
   plat.lastEventTime = startTimer()
   var renderedLastFrame = false
 
-  let maxPollPerFrameMs = 2.5
   let totalTime = startTimer()
   var lastTime = totalTime.elapsed.float
 
@@ -355,22 +373,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions) =
       logger().flush()
 
     let pollTimer = startTimer()
-    gAsyncFrameTimer = startTimer()
-    try:
-      let start = startTimer()
-      var tries = 25
-
-      let hasPendingOperations = when chronosFutureTracking:
-        pendingFuturesCount() > 0
-      else:
-        true
-
-      while tries > 0 and start.elapsed.ms < maxPollPerFrameMs and hasPendingOperations:
-        dec tries
-        poll()
-
-    except CatchableError:
-      discard
+    pollFutures()
 
     let pollTime = pollTimer.elapsed.ms
 
@@ -455,11 +458,39 @@ else:
   log lvlInfo, "Load static modules"
   initModules()
 
+import misc/event
+
 proc main() =
   let app = newApp(backend.get, plat, gServices, gAppOptions)
   log lvlInfo, &"Finished creating app"
   asyncSpawn app.loadPlugins()
-  run(app, plat, backend.get, gAppOptions)
+
+  var eventBus: EventService = app.services.getServiceChecked(EventService)
+  var frameIndex = 0
+
+  var p = plat
+  discard plat.onResize.subscribe proc() {.gcsafe.} =
+    p.onPreRender.invoke(p)
+    eventBus.emit(&"platform/prerender", "")
+
+    when enableGui:
+      let size = if p of GuiPlatform and p.GuiPlatform.showDrawnNodes: p.size * vec2(0.5, 1) else: p.size
+    else:
+      let size = p.size
+
+    p.requestedRender = false
+    p.builder.beginFrame(size)
+    try:
+      app.updateWidgetTree(frameIndex)
+      p.builder.endFrame()
+    except:
+      discard
+
+    p.render(true)
+    inc frameIndex
+    pollFutures()
+
+  run(app, plat, backend.get, gAppOptions, frameIndex)
 
   try:
     log lvlInfo, "Shutting down editor"

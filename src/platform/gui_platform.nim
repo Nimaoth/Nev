@@ -227,6 +227,10 @@ method init*(self: GuiPlatform, options: AppOptions) =
         of TripleClick: MouseButton.TripleClick
         else: MouseButton.Unknown
 
+    self.window.onResize = proc() =
+      inc self.eventCounter
+      self.onResize.invoke()
+
     self.window.onButtonPress = proc(button: Button) =
       inc self.eventCounter
 

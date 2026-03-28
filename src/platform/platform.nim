@@ -18,6 +18,7 @@ type
     focused*: bool
     deltaTime*: float
     eventCounter*: int
+    onResize*: Event[void]
     onKeyPress*: Event[tuple[input: int64, modifiers: Modifiers]]
     onKeyRelease*: Event[tuple[input: int64, modifiers: Modifiers]]
     onRune*: Event[tuple[input: int64, modifiers: Modifiers]]
