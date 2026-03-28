@@ -1,3 +1,4 @@
+#use stats
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
@@ -62,7 +63,7 @@ when implModule:
   import view, dynamic_view, layout, service, events, command_service
   import theme
   import vcs/vcs
-  import platform_service
+  import platform_service, stats
   import session
   import config_provider
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -90,6 +91,13 @@ when implModule:
     CommitHistoryState* = ref object of RootObj
       commits*: seq[VCSCommitInfo]
       hasFetched*: bool
+
+    StatEntry* = object
+      label*: string
+      value*: string
+
+    StatsState* = ref object of RootObj
+      stats: StatsService
 
     LogoState = ref object of RootObj
       index: int = -1
@@ -580,6 +588,37 @@ when implModule:
             builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = dateX, text = commit.date, textColor = dateColor)
             builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = authorX, text = commit.author, textColor = authorColor)
 
+  proc renderStats(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
+    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+    let accentColor = builder.theme.color("editorLineNumber.foreground", color(120/255, 120/255, 160/255))
+    let valueColor = builder.theme.tokenColor("keyword", accentColor)
+    let lineColor = builder.theme.color("editor.background", color(25/255, 25/255, 40/255)).lighten(0.01)
+    let renderLines = shouldRenderLines()
+
+    var state = StatsState(section.state)
+    if state == nil:
+      let stats = getServices().getService(StatsService).getOr:
+        return
+      state = StatsState(stats: stats)
+      section.state = state
+
+    let cx = builder.charWidth
+    let cy = builder.textHeight
+    let availableWidth = builder.currentParent.bounds.w
+
+    builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
+      for (name, stat) in state.stats.stats.pairs:
+        let valueText = $stat.value & stat.unit
+        let valueX = availableWidth - valueText.len.float * cx - cx * 2
+        let labelWidth = name.len.float * cx
+        builder.panel(&{SizeToContentY, FillX}):
+          builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = name, textColor = textColor)
+          let lineX = labelWidth + cx
+          let lineW = valueX - lineX - cx
+          if lineW > 0 and renderLines:
+            builder.panel(&{DrawBorder}, x = lineX, y = floor(cy * 0.5) - 1, w = lineW, h = 1, border = border(0, 0, 1, 0), borderColor = lineColor)
+          builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = valueX, text = valueText, textColor = valueColor)
+
   proc buildSectionsFromConfig(config: JsonNodeEx): seq[SectionInfo] =
     if config == nil or config.kind != JObject:
       log lvlWarn, "dashboard: sections config is not an object, using defaults"
@@ -640,6 +679,11 @@ when implModule:
         "title": "Commit History",
         "side": 1,
         "maxItems": 20
+      },
+      "stats": {
+        "name": "stats",
+        "title": "Stats",
+        "side": 0
       }
     }
 
@@ -665,6 +709,7 @@ when implModule:
     view.sectionRenderers["currentSession"] = renderCurrentSession
     view.sectionRenderers["gitStatus"] = renderGitStatus
     view.sectionRenderers["commitHistory"] = renderCommitHistory
+    view.sectionRenderers["stats"] = renderStats
 
     view.renderImpl = proc(self: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] =
       renderDashboard(self.DashboardView, builder)

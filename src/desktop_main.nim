@@ -11,6 +11,9 @@ else:
   static:
     echo "Compiling for unknown"
 
+import misc/[timer]
+let startupTimer = startTimer()
+
 import std/[parseopt, options, macros, strutils, os, strformat]
 import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
@@ -211,7 +214,7 @@ if not disableLogging: ## Enable loggers
     if backend.get != Terminal and logToConsole:
       logger().enableConsoleLogger()
 
-import misc/[timer, custom_async]
+import misc/[custom_async]
 import platform/[platform]
 import ui/widget_builders
 import app, platform_service
@@ -238,6 +241,8 @@ import config_provider, event_service
 import vcs/vcs_api
 import collab
 {.pop.}
+
+import "../modules/stats"
 
 defineSetAllDefaultSettings()
 
@@ -367,6 +372,10 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, fra
 
     if frameIndex == 0:
       log lvlInfo, "First render done"
+
+    if not app.firstRenderDone:
+      if getServices().getService(StatsService).getSome(stats):
+        stats.add("Startup Time", startupTimer.elapsed.ms.int, "ms")
     app.firstRenderDone = true
 
     {.gcsafe.}:

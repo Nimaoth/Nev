@@ -4,6 +4,8 @@ import scripting/expose
 import service, vfs_service, vfs, vfs_local, dispatch_tables, events, config_provider, command_service
 import lisp
 
+import "../modules/stats"
+
 {.push gcsafe.}
 {.push raises: [].}
 
@@ -157,9 +159,20 @@ proc updatePermissions(self: PluginService, plugin: Plugin) =
   except CatchableError as e:
     log lvlError, &"Failed to parse permissions for {plugin.desc}: {e.msg}"
 
+proc updateLoadedPluginCount(self: PluginService) =
+  if getService(StatsService).getSome(stats):
+    var num = 0
+    for plugin in self.plugins:
+      if plugin.state == Loaded:
+        inc num
+    stats.set("Loaded Plugins", num)
+
 proc loadPlugin*(self: PluginService, plugin: Plugin, state: seq[uint8] = @[]) {.async.} =
   if plugin.state notin {PluginState.Unloaded, PluginState.Failed}:
     return
+
+  defer:
+    self.updateLoadedPluginCount()
 
   log lvlInfo, &"Load plugin {plugin.desc}"
   plugin.state = Loading
@@ -180,6 +193,9 @@ proc loadPlugin*(self: PluginService, plugin: Plugin, state: seq[uint8] = @[]) {
 proc unloadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
   if plugin.state != PluginState.Loaded:
     return
+
+  defer:
+    self.updateLoadedPluginCount()
 
   for id in plugin.registeredLoadCommands.values:
     self.commands.unregisterCommand(id)

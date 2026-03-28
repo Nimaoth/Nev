@@ -153,6 +153,12 @@ proc getServiceAsync*(self: Services, T: typedesc): Future[Option[T]] {.gcsafe, 
       return service.get.T.some
   return T.none
 
+proc getService*(T: typedesc, state: Option[ServiceState] = ServiceState.none): Option[T] {.gcsafe, raises: [].} =
+  return getServices().getService(T, state)
+
+proc getServiceChecked*(T: typedesc, state: Option[ServiceState] = ServiceState.none): T {.gcsafe, raises: [].} =
+  return getServices().getServiceChecked(T, state)
+
 proc addService*[T: Service](self: Services, service: T, dependencies: seq[string] = @[]) {.gcsafe, raises: [].} =
   self.addService(T.serviceName, service, dependencies)
 

@@ -106,6 +106,10 @@ when defined(musl):
   switch("d", "enableSystemClipboard=false")
   switch("d", "nimWasmtimeBuildMusl=true")
 
+when defined(windows):
+  # Required to change title bar header
+  switch("passL", "-ldwmapi")
+
 patchFile("stdlib", "osproc", "patches/osproc")
 patchFile("stdlib", "excpt", "patches/excpt")
 patchFile("stdlib", "jsonutils", "src/misc/myjsonutils")

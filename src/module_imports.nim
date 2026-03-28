@@ -21,6 +21,7 @@ import "../modules/language_server_paths.nim"
 import "../modules/formatting_component.nim"
 import "../modules/angelscript_formatter.nim"
 import "../modules/language_server_ue_as.nim"
+import "../modules/stats.nim"
 
 proc initModules*() =
   when declared(init_module_language_server_ue_cpp): init_module_language_server_ue_cpp()
@@ -46,6 +47,7 @@ proc initModules*() =
   when declared(init_module_formatting_component): init_module_formatting_component()
   when declared(init_module_angelscript_formatter): init_module_angelscript_formatter()
   when declared(init_module_language_server_ue_as): init_module_language_server_ue_as()
+  when declared(init_module_stats): init_module_stats()
 
 proc shutdownModules*() =
   when declared(shutdown_module_language_server_ue_cpp): shutdown_module_language_server_ue_cpp()
@@ -71,3 +73,4 @@ proc shutdownModules*() =
   when declared(shutdown_module_formatting_component): shutdown_module_formatting_component()
   when declared(shutdown_module_angelscript_formatter): shutdown_module_angelscript_formatter()
   when declared(shutdown_module_language_server_ue_as): shutdown_module_language_server_ue_as()
+  when declared(shutdown_module_stats): shutdown_module_stats()
