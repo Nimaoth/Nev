@@ -4,6 +4,9 @@
     "maintainers": [""],
     "type": "dark",
     "colors": {
+        "titleBar.background": "#001100",
+        "titleBar.foreground": "#00ff00",
+
         "list.activeSelectionBackground": "#003300",
         "editor.foreground.fade1": "#00AA00",
         "editor.foreground.fade2": "#005500",

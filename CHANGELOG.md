@@ -20,6 +20,8 @@
 - Added support for different line heights and font sizes
 - Major refactor to make the editor extensible through modules. Converted debugger, terminal, and LSP to modules. Added experimental dynamically linked module support with build tooling
 - Lots of bug fixes (and new bugs)
+- Rerender on resize
+- On windows: change title bar color to match theme
 
 
 ## [0.4.0](https://github.com/Nimaoth/Nev/compare/v0.3.0...v0.4.0) (2025-05-01)

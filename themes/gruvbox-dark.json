@@ -4,6 +4,9 @@
     "maintainers": ["jfaz"],
     "type": "dark",
     "colors": {
+        "titleBar.background": "#282828",
+        "titleBar.foreground": "#ebdbb2",
+
         "list.activeSelectionBackground": "#3c3836",
         "editor.foreground": "#ebdbb2",
         "editor.foreground.fade1": "#cbbb92",

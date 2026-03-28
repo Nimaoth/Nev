@@ -3,7 +3,7 @@ import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts
 import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer, generational_seq]
 import ui/node
 import platform
-import input, monitors, lrucache, compilation_config, vfs, app_options
+import input, monitors, lrucache, compilation_config, vfs, app_options, theme, service
 
 export platform
 
@@ -62,6 +62,7 @@ proc toInput(button: Button): int64
 proc centerWindowOnMonitor*(window: Window, monitor: int)
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
+proc handleThemeChanged(self: GuiPlatform, theme: Theme)
 
 const defaultTypefaceText = staticRead("../fonts/DejaVuSansMono.ttf")
 
@@ -80,6 +81,47 @@ var gTextures: GenerationalSeq[Texture, TextureId]
 reserveTextureImpl = proc(): TextureId {.gcsafe, raises: [].} =
   {.gcsafe.}:
     return gTextures.add(nil)
+
+when defined(windows):
+  import winim/lean except Rect
+
+when defined(windows):
+  proc DwmSetWindowAttribute*(
+    hwnd: HWND,
+    dwAttribute: DWORD,
+    pvAttribute: pointer,
+    cbAttribute: DWORD
+  ): HRESULT {.stdcall, importc.}
+
+  const DWMWA_CAPTION_COLOR*: DWORD = 35
+  const DWMWA_TEXT_COLOR*: DWORD = 36
+  const DWMWA_SYSTEMBACKDROP_TYPE*: DWORD = 38
+  const
+    DWMSBT_AUTO: DWORD = 0
+    DWMSBT_NONE: DWORD = 1
+    DWMSBT_MAINWINDOW: DWORD = 2   # Mica
+    DWMSBT_TRANSIENTWINDOW: DWORD = 3 # Acrylic-like
+    DWMSBT_TABBEDWINDOW: DWORD = 4
+
+  proc RGB*(r, g, b: uint8): DWORD = (DWORD(r) or (DWORD(g) shl 8) or (DWORD(b) shl 16))
+
+  proc setTitleBarColor*(hwnd: HWND, color: DWORD) =
+    var c = color
+    discard DwmSetWindowAttribute(
+      hwnd,
+      DWMWA_CAPTION_COLOR,
+      addr c,
+      DWORD(sizeof(c))
+    )
+
+  proc setTitleTextColor*(hwnd: HWND, color: DWORD) =
+    var c = color
+    discard DwmSetWindowAttribute(
+      hwnd,
+      DWMWA_TEXT_COLOR,
+      addr c,
+      DWORD(sizeof(c))
+    )
 
 method init*(self: GuiPlatform, options: AppOptions) =
   log lvlInfo, "Init GUI platform"
@@ -276,6 +318,12 @@ method init*(self: GuiPlatform, options: AppOptions) =
       else:
         if not self.builder.handleKeyReleased(button.toInput, self.currentModifiers):
           self.onKeyRelease.invoke (button.toInput, self.currentModifiers)
+
+    if getServices().getService(ThemeService).getSome(themeService):
+      if themeService.theme.isNotNil:
+        self.handleThemeChanged(themeService.theme)
+      discard themeService.onThemeChanged.subscribe proc(theme: Theme) =
+        self.handleThemeChanged(theme)
   except:
     log lvlError, &"Failed to create gui platform: {getCurrentExceptionMsg()}"
     quit(0)
@@ -518,6 +566,24 @@ method processEvents*(self: GuiPlatform): int =
     self.onCloseRequested.invoke()
 
   return self.eventCounter
+
+proc handleThemeChanged(self: GuiPlatform, theme: Theme) =
+  if theme.isNil:
+    return
+  when defined(windows):
+    block:
+      let titleBarColor = theme.color(@["titleBar.background", "editor.background"])
+      let r = (titleBarColor.r * 255).uint8
+      let g = (titleBarColor.g * 255).uint8
+      let b = (titleBarColor.b * 255).uint8
+      self.window.platformHandle.setTitleBarColor(RGB(r, g, b))
+
+    block:
+      let titleTextColor = theme.color(@["titleBar.foreground", "editor.foreground"])
+      let r = (titleTextColor.r * 255).uint8
+      let g = (titleTextColor.g * 255).uint8
+      let b = (titleTextColor.b * 255).uint8
+      self.window.platformHandle.setTitleTextColor(RGB(r, g, b))
 
 proc toInput(rune: Rune): int64 =
   return rune.int64
@@ -993,9 +1059,6 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
 
   except GLerror, Exception:
     discard
-
-when defined(windows):
-  import winim/lean
 
 method focusWindow*(self: GuiPlatform) {.gcsafe, raises: [].} =
   when defined(windows):
