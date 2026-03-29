@@ -250,14 +250,14 @@ when implModule:
           fg: fgNone,
           bg: bgNone,
         )
+        var width = 0
         if prevOverlap > 0:
           c.previousWideGlyph = true
-
-        var width = 0
-        for i, r in cell.chars:
-          if r != 0 and r <= Rune.high.uint32:
-            c.appendChsFromRune(r.Rune, i > 0)
-            width = max(width, vterm.unicodeWidth(r))
+        else:
+          for i, r in cell.chars:
+            if r != 0 and r <= Rune.high.uint32:
+              c.appendChsFromRune(r.Rune, i > 0)
+              width = max(width, vterm.unicodeWidth(r))
 
         if cell.attrs.bold != 0: c.style.incl(terminal.Style.styleBlink)
         if cell.attrs.italic != 0: c.style.incl(terminal.Style.styleItalic)

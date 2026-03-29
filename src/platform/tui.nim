@@ -651,7 +651,7 @@ proc writeRune*(tb: var TerminalBuffer, x, y: int, ch: Rune, width: int, additio
     return
 
   if x >= 0 and x < tb.width:
-    if width == 0 or tb[x, y].endsWithCombiningChar:
+    if width == 0:
       var c = tb[x, y]
       c.appendChsFromRune(ch, width == 0)
       if italic:
@@ -777,10 +777,6 @@ proc displayFull*(tb: TerminalBuffer) =
 
     for x in 0..<tb.width:
       let c {.cursor.} = tb[x,y]
-      if c.isEmpty or c.previousWideGlyph:
-        bufXPos = -1
-        continue
-
       displayBuffer.setPos(x, y)
       if x != bufXPos:
         bufXPos = x
@@ -829,17 +825,13 @@ proc displayDiff(tb: TerminalBuffer) =
 
     let force = containsWideGlyph and anyChanged
 
-    if force or true:
+    if force:
       displayBuffer.setPos(0, y)
       bufXPos = 0
       for x in 0..<tb.width:
         let c {.cursor.} = tb[x,y]
         defer:
           gPrevTerminalBuffer[][x, y] = c
-
-        if c.isEmpty or c.previousWideGlyph:
-          bufXPos = -1
-          continue
 
         displayBuffer.setPos(x, y)
         if x != bufXPos:

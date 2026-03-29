@@ -148,7 +148,7 @@ proc runeProps(r: Rune): tuple[selectionWidth: int, displayWidth: int, isCombini
   let combining = vterm.unicodeIsCombining(r.uint32)
 
   if combining:
-    return (0, 0, true)
+    return (-1, -1, true)
 
   let w = max(1, width.int)
   return (w, w, false)
@@ -174,6 +174,35 @@ proc threadFunc(state: ptr ThreadState) {.thread.} =
     var str = stdin.readChar()
     chan.send(str)
     discard stdinEvent.fireSync()
+
+iterator iterateRuneBounds*(text: string): Rect =
+  var bounds = rect(0, 0, 1, 1)
+  var lastCombining = false
+  var last = bounds
+  for c in text.runes:
+    if c == '\n'.Rune:
+      bounds.y += 1
+      bounds.x = 0
+      bounds.w = 1
+      last = bounds
+      continue
+
+    let props = c.runeProps
+    if props.isCombining:
+      bounds = last
+      yield bounds
+      bounds.x = bounds.xw
+      bounds.w = 1
+    else:
+      bounds.w = max(bounds.w, props.displayWidth.float)
+      if lastCombining:
+        yield bounds
+        last = bounds
+      else:
+        yield bounds
+        last = bounds
+        bounds.x = bounds.xw
+        bounds.w = 1
 
 method init*(self: TerminalPlatform, options: AppOptions) =
   try:
@@ -278,24 +307,14 @@ method init*(self: TerminalPlatform, options: AppOptions) =
     self.redrawEverything = true
 
     self.builder.textWidthImpl = proc(node: UINode): float32 {.gcsafe, raises: [].} =
-      var currentWidth = 0.float32
-      for r in node.text.runes:
-        if r == '\n'.Rune:
-          result = max(result, currentWidth)
-          currentWidth = 0
-        else:
-          currentWidth += r.runeProps.displayWidth.float32
-      result = max(result, currentWidth)
+      result = 0
+      for b in node.text.iterateRuneBounds():
+        result = max(result, b.xw)
 
     self.builder.textWidthStringImpl = proc(text: string): float32 {.gcsafe, raises: [].} =
-      var currentWidth = 0.float32
-      for r in text.runes:
-        if r == '\n'.Rune:
-          result = max(result, currentWidth)
-          currentWidth = 0
-        else:
-          currentWidth += r.runeProps.displayWidth.float32
-      result = max(result, currentWidth)
+      result = 0
+      for b in text.iterateRuneBounds():
+        result = max(result, b.xw)
 
     self.builder.textBoundsImpl = proc(node: UINode): Vec2 {.gcsafe, raises: [].} =
       try:
@@ -373,16 +392,16 @@ method lineHeight*(self: TerminalPlatform): float = 1
 method charWidth*(self: TerminalPlatform): float = 1
 method charGap*(self: TerminalPlatform): float = 0
 method measureText*(self: TerminalPlatform, text: string): Vec2 =
+  result = vec2(0, 0)
   result.y = 1
-  for c in text.runes:
-    result.x += c.runeProps.displayWidth.float
+  for b in text.iterateRuneBounds():
+    result.x = max(result.x, b.xw)
+    result.y = max(result.y, b.yh)
+
 method layoutText*(self: TerminalPlatform, text: string): seq[Rect] =
   result = newSeqOfCap[Rect](text.len)
-  var x: float = 0
-  for i, c in enumerate(text.runes):
-    let width = c.runeProps.displayWidth.float
-    result.add rect(x, 0, 1, 1)
-    x += width
+  for b in text.iterateRuneBounds():
+    result.add b
 
 proc pushMask(self: TerminalPlatform, mask: Rect) =
   let maskedMask = if self.masks.len > 0:

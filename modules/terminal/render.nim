@@ -193,98 +193,12 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
 
           self.drawImages(builder, backgroundRenderCommands[], int.low ..< -1073741824)
 
-          var buffer = ""
-          for row in 0..<height:
-            var lastCell: TerminalChar = self.terminal.terminalBuffer[0, row]
-            buffer.setLen(0)
-            var boundsAcc = rect(0, row.float * builder.textHeight, 0, builder.textHeight)
-
-            var bg = lastCell.bg
-            var bgColor = color(0, 0, 0)
-            var fgColor = color(0, 0, 0)
-            var runLen = 0
-
-            var textFlags = 0.UINodeFlags
-
-            template flush(draw: bool = true): untyped =
-              if buffer.len > 0 and draw:
-                if bg != bgNone:
-                  buildCommands(backgroundRenderCommands[]):
-                    fillRect(boundsAcc, bgColor)
-
-                buildCommands(foregroundRenderCommands[]):
-                  if styleStrikethrough in lastCell.style:
-                    # todo: make this work in terminal platform
-                    fillRect(rect(boundsAcc.x, boundsAcc.y + boundsAcc.h * 0.4, boundsAcc.w, boundsAcc.h * 0.1), fgColor)
-
-                  if styleHidden notin lastCell.style and not lastCell.isEmpty:
-                    drawText(buffer, boundsAcc, fgColor, textFlags)
-
-              textFlags = 0.UINodeFlags
-              boundsAcc.x = boundsAcc.xw
-              boundsAcc.x = (boundsAcc.x / builder.charWidth).ceil * builder.charWidth
-              boundsAcc.w = builder.charWidth
-              buffer.setLen(0)
-              runLen = 0
-
-            template `!=`(a, b: colors.Color): bool =
-              not colors.`==`(a, b)
-
-            for col in 0..<width:
-              let cell {.cursor.} = self.terminal.terminalBuffer[col, row]
-              defer:
-                lastCell = cell
-
-              if drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col:
-                flush()
-                boundsAcc.x = col.float * builder.charWidth
-                let cellBounds = rect(col.float * builder.charWidth, row.float * builder.textHeight,
-                  builder.charWidth, builder.textHeight)
-                var cursorBounds = cellBounds
-                case self.terminal.cursor.shape
-                of CursorShape.Block:
-                  fgColor = cursorBackgroundColor
-                of CursorShape.Underline:
-                  cursorBounds.y += cursorBounds.h * 0.9
-                  cursorBounds.h *= 0.1
-                of CursorShape.BarLeft:
-                  cursorBounds.w *= 0.1
-
-                buildCommands(foregroundRenderCommands[]):
-                  fillRect(cursorBounds, cursorForegroundColor)
-                  if not cell.isEmpty and styleHidden notin cell.style:
-                    drawText(cell.chs, cellBounds, fgColor, textFlags)
-
-                continue
-
-              elif drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col + 1:
-                flush(false)
-                boundsAcc.x = col.float * builder.charWidth
-              elif cell.previousWideGlyph:
-                flush()
-                boundsAcc.x = col.float * builder.charWidth
-                continue
-              elif lastCell.previousWideGlyph:
-                flush(false)
-                boundsAcc.x = col.float * builder.charWidth
-              elif cell.isEmpty != lastCell.isEmpty:
-                flush()
-                boundsAcc.x = col.float * builder.charWidth
-              elif cell.fg != lastCell.fg or cell.fgColor != lastCell.fgColor or cell.bg != lastCell.bg or cell.bgColor != lastCell.bgColor or cell.style != lastCell.style:
-                flush()
-                boundsAcc.x = col.float * builder.charWidth
-
-              if not cell.isEmpty:
-                cell.writeCharsTo(buffer)
-              else:
-                buffer.add "\0"
-              boundsAcc.w = (col + 1).float * builder.charWidth - boundsAcc.x
-              inc runLen
-
-              # Only calculate colors and style for the first cell in a run
-              if runLen == 1:
-                bg = cell.bg
-                bgColor = color(0, 0, 0)
+          if config.get("debug.simple-terminal-render", false):
+            for row in 0..<height:
+              for col in 0..<width:
+                let cell {.cursor.} = self.terminal.terminalBuffer[col, row]
+                var bg = cell.bg
+                var bgColor = color(0, 0, 0)
 
                 case bg
                 of bgNone: discard
@@ -300,7 +214,7 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
                   let (r, g, b) = colors.extractRGB(cell.bgColor)
                   bgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
 
-                fgColor = textColor
+                var fgColor = textColor
 
                 case cell.fg
                 of fgNone: fgColor = textColor
@@ -326,20 +240,165 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
                   bg = bgRGB
                   fgColor = cursorBackgroundColor
 
-                if styleUnderscore in cell.style:
-                  textFlags.incl TextUndercurl
+                let bounds = rect(col.float * builder.charWidth, row.float * builder.textHeight, builder.charWidth, builder.textHeight)
+                buildCommands(foregroundRenderCommands[]):
+                  if bg != bgNone:
+                    buildCommands(backgroundRenderCommands[]):
+                      fillRect(bounds, bgColor)
 
-                if styleItalic in cell.style:
-                  textFlags.incl TextItalic
+                  if cell.chsLen > 0:
+                    drawText(cell.chs.toOpenArray(0, cell.chsLen - 1), bounds, fgColor, 0.UINodeFlags)
 
-                if styleBlink in cell.style:
-                  textFlags.incl TextBold
+          else:
+            var buffer = ""
+            for row in 0..<height:
+              var lastCell: TerminalChar = self.terminal.terminalBuffer[0, row]
+              buffer.setLen(0)
+              var boundsAcc = rect(0, row.float * builder.textHeight, 0, builder.textHeight)
 
-                if styleDim in cell.style:
-                  fgColor = fgColor.darken(0.2)
+              var bg = lastCell.bg
+              var bgColor = color(0, 0, 0)
+              var fgColor = color(0, 0, 0)
+              var runLen = 0
 
-            # Flush last part of the line
-            flush()
+              var textFlags = 0.UINodeFlags
+
+              template flush(draw: bool = true): untyped =
+                # debugf"flush {boundsAcc}, '{buffer}'"
+                if buffer.len > 0 and draw:
+                  if bg != bgNone:
+                    buildCommands(backgroundRenderCommands[]):
+                      fillRect(boundsAcc, bgColor)
+
+                  buildCommands(foregroundRenderCommands[]):
+                    if styleStrikethrough in lastCell.style:
+                      # todo: make this work in terminal platform
+                      fillRect(rect(boundsAcc.x, boundsAcc.y + boundsAcc.h * 0.4, boundsAcc.w, boundsAcc.h * 0.1), fgColor)
+
+                    if styleHidden notin lastCell.style and not lastCell.isEmpty:
+                      # debugf"  draw {boundsAcc}, '{buffer}'"
+                      drawText(buffer, boundsAcc, fgColor, textFlags)
+
+                textFlags = 0.UINodeFlags
+                boundsAcc.x = boundsAcc.xw
+                boundsAcc.x = (boundsAcc.x / builder.charWidth).ceil * builder.charWidth
+                boundsAcc.w = builder.charWidth
+                buffer.setLen(0)
+                runLen = 0
+
+              template `!=`(a, b: colors.Color): bool =
+                not colors.`==`(a, b)
+
+              for col in 0..<width:
+                let cell {.cursor.} = self.terminal.terminalBuffer[col, row]
+                defer:
+                  lastCell = cell
+
+                if drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col:
+                  flush()
+                  boundsAcc.x = col.float * builder.charWidth
+                  let cellBounds = rect(col.float * builder.charWidth, row.float * builder.textHeight,
+                    builder.charWidth, builder.textHeight)
+                  var cursorBounds = cellBounds
+                  case self.terminal.cursor.shape
+                  of CursorShape.Block:
+                    fgColor = cursorBackgroundColor
+                  of CursorShape.Underline:
+                    cursorBounds.y += cursorBounds.h * 0.9
+                    cursorBounds.h *= 0.1
+                  of CursorShape.BarLeft:
+                    cursorBounds.w *= 0.1
+
+                  buildCommands(foregroundRenderCommands[]):
+                    fillRect(cursorBounds, cursorForegroundColor)
+                    if not cell.isEmpty and styleHidden notin cell.style:
+                      drawText(cell.chs, cellBounds, fgColor, textFlags)
+
+                  continue
+
+                elif drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col + 1:
+                  flush(false)
+                  boundsAcc.x = col.float * builder.charWidth
+                elif cell.previousWideGlyph:
+                  flush()
+                  boundsAcc.x = col.float * builder.charWidth
+                  continue
+                elif lastCell.previousWideGlyph:
+                  flush(false)
+                  boundsAcc.x = col.float * builder.charWidth
+                elif cell.isEmpty != lastCell.isEmpty:
+                  flush()
+                  boundsAcc.x = col.float * builder.charWidth
+                elif cell.fg != lastCell.fg or cell.fgColor != lastCell.fgColor or cell.bg != lastCell.bg or cell.bgColor != lastCell.bgColor or cell.style != lastCell.style:
+                  flush()
+                  boundsAcc.x = col.float * builder.charWidth
+
+                if not cell.isEmpty:
+                  cell.writeCharsTo(buffer)
+                else:
+                  buffer.add "\0"
+                boundsAcc.w = (col + 1).float * builder.charWidth - boundsAcc.x
+                inc runLen
+
+                # Only calculate colors and style for the first cell in a run
+                if runLen == 1:
+                  bg = cell.bg
+                  bgColor = color(0, 0, 0)
+
+                  case bg
+                  of bgNone: discard
+                  of bgBlack: bgColor = color(0, 0, 0)
+                  of bgRed: bgColor = color(1, 0, 0)
+                  of bgGreen: bgColor = color(0, 1, 0)
+                  of bgYellow: bgColor = color(1, 1, 0)
+                  of bgBlue: bgColor = color(0, 0, 1)
+                  of bgMagenta: bgColor = color(1, 0, 1)
+                  of bgCyan: bgColor = color(0, 1, 1)
+                  of bgWhite: bgColor = color(1, 1, 1)
+                  of bgRGB:
+                    let (r, g, b) = colors.extractRGB(cell.bgColor)
+                    bgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
+
+                  fgColor = textColor
+
+                  case cell.fg
+                  of fgNone: fgColor = textColor
+                  of fgBlack: fgColor = color(0, 0, 0)
+                  of fgRed: fgColor = color(1, 0, 0)
+                  of fgGreen: fgColor = color(0, 1, 0)
+                  of fgYellow: fgColor = color(1, 1, 0)
+                  of fgBlue: fgColor = color(0, 0, 1)
+                  of fgMagenta: fgColor = color(1, 0, 1)
+                  of fgCyan: fgColor = color(0, 1, 1)
+                  of fgWhite: fgColor = color(1, 1, 1)
+                  of fgRGB:
+                    let (r, g, b) = colors.extractRGB(cell.fgColor)
+                    fgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
+
+                  if styleReverse in cell.style:
+                    case cell.fg
+                    of fgNone:
+                      bgColor = textColor
+                    else:
+                      bgColor = fgColor
+
+                    bg = bgRGB
+                    fgColor = cursorBackgroundColor
+
+                  if styleUnderscore in cell.style:
+                    textFlags.incl TextUndercurl
+
+                  if styleItalic in cell.style:
+                    textFlags.incl TextItalic
+
+                  if styleBlink in cell.style:
+                    textFlags.incl TextBold
+
+                  if styleDim in cell.style:
+                    fgColor = fgColor.darken(0.2)
+
+              # Flush last part of the line
+              flush()
 
           self.drawImages(builder, backgroundRenderCommands[], -1073741824..<0)
           self.drawImages(builder, foregroundRenderCommands[], 0..int.high)

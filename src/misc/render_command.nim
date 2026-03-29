@@ -248,6 +248,7 @@ proc typeset*(arrangement: var Arrangement, text: openArray[char], font: ptr Fon
   let initialY = round((font.ascent + font.lineGap / 2) * font.scale)
   var at: Vec2 = vec2(0, initialY)
   var lastRune = 0.Rune
+  var first = true
   for rune in text.runes:
     if rune.uint32 < ' '.uint32:
       continue
@@ -258,12 +259,20 @@ proc typeset*(arrangement: var Arrangement, text: openArray[char], font: ptr Fon
       at.x += kerning * font.scale
 
     let advance = font.advance(rune) * font.scale
+    var width = advance
+    var pos = at
+    if advance < 0:
+      width = 0
+      if not first:
+        pos = arrangement.positions[^1]
+
     arrangement.runes.add rune
-    arrangement.positions.add at
-    arrangement.selectionRects.add rect(at.x, 0, advance, font.lineHeight)
-    at.x += advance
+    arrangement.positions.add pos
+    arrangement.selectionRects.add rect(pos.x, 0, width, font.lineHeight)
+    at.x += width
 
     lastRune = rune
+    first = false
 
 proc typeset*(self: var RenderCommands, text: openArray[char], font: ptr FontInfo): int =
   var a: RenderCommandArrangement

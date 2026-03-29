@@ -50,8 +50,8 @@ type
     settings*: JsonNode
 
 type EditorState = object
-  fontSize: float32 = 16
-  lineDistance: float32 = 4
+  fontSize: float32 = 14
+  lineDistance: float32 = 1
   fontRegular: string
   fontBold: string
   fontItalic: string
@@ -737,8 +737,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.themes = services.getService(ThemeService).get
   self.vfs = self.vfsService.vfs
 
-  self.platform.fontSize = 16
-  self.platform.lineDistance = 4
+  self.platform.fontSize = 14
+  self.platform.lineDistance = 1
 
   self.fallbackFonts.add "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
   self.fallbackFonts.add "app://fonts/NotoEmoji/NotoEmoji.otf"
