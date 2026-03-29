@@ -1837,7 +1837,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
         let activeMarker = if view.View == activeView:
           "#"
         else:
-          "👁"
+          "."
         let (directory, name) = document.filename.splitPath
         let (root, relativeDirectory) = self.workspace.getRelativePathAndWorkspaceSync(directory).get(("", directory))
         items.add FinderItem(
@@ -2355,8 +2355,8 @@ proc getItemsFromDirectory(vfs: VFS, workspace: Workspace, directory: string, sh
   var list = newItemList(listing.files.len + listing.folders.len)
 
   # todo: use unicode icons on all targets once rendering is fixed
-  const fileIcon = "🗎 "
-  const folderIcon = "🗀"
+  const fileIcon = "F "
+  const folderIcon = "D "
 
   var i = 0
   proc addItem(name: string, isFile: bool) =

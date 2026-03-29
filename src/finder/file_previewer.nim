@@ -155,10 +155,10 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
       let listing = await self.vfs.getDirectoryListing(path)
 
       for name in listing.folders:
-        content.add &"🗀 {name}\n"
+        content.add &"D {name}\n"
 
       for name in listing.files:
-        content.add &"🗎  {name}\n"
+        content.add &"F {name}\n"
 
     if editor.document.isNil:
       log lvlInfo, fmt"Discard file load of '{path}' because preview editor was destroyed"
