@@ -246,17 +246,18 @@ when implModule:
 
           cell = state.scrollbackBuffer[scrollbackIndex][col]
 
-        var r = 0.Rune
-        if cell.chars[0] <= Rune.high.uint32:
-          r = cell.chars[0].Rune
-
         var c = TerminalChar(
-          ch: r,
           fg: fgNone,
           bg: bgNone,
         )
         if prevOverlap > 0:
           c.previousWideGlyph = true
+
+        var width = 0
+        for i, r in cell.chars:
+          if r != 0 and r <= Rune.high.uint32:
+            c.appendChsFromRune(r.Rune, i > 0)
+            width = max(width, vterm.unicodeWidth(r))
 
         if cell.attrs.bold != 0: c.style.incl(terminal.Style.styleBlink)
         if cell.attrs.italic != 0: c.style.incl(terminal.Style.styleItalic)
@@ -290,7 +291,7 @@ when implModule:
           c.bgColor = colors.rgb(cell.bg.rgb.red, cell.bg.rgb.green, cell.bg.rgb.blue)
 
         result[col, scrolledRow] = c
-        prevOverlap = cell.width.int
+        prevOverlap = width
 
   proc toRgbaFast(c: colortypes.Color): ColorRGBA {.inline.} =
     ## Convert Color to ColorRGBA

@@ -211,7 +211,10 @@ type
     ## when double buffering is enabled (this is a hack to achieve better
     ## continuity of horizontal lines when using UTF-8 box drawing symbols in
     ## the Windows Console).
-    ch*: Rune
+    chs*: array[24, char]
+    chsLen*: int
+    hasCombiningChar*: bool
+    endsWithCombiningChar*: bool
     fg*: ForegroundColor
     fgColor*: Color
     bg*: BackgroundColor
@@ -239,7 +242,7 @@ type
     ##   var tb = newTerminalBuffer(terminalWidth(), terminalHeight())
     ##
     ##   # Write the character "X" at position (5,5) then read it back
-    ##   tb[5,5] = TerminalChar(ch: "X".runeAt(0), fg: fgYellow, bg: bgNone, style: {})
+    ##   var tc = TerminalChar(fg: fgYellow, bg: bgNone, style: {}); tc.setChsFromRune("X".runeAt(0)); tb[5,5] = tc
     ##   let ch = tb[5,5]
     ##
     ##   # Write "foo" at position (10,10) in bright red
@@ -272,6 +275,78 @@ type
     currX: Natural
     currY: Natural
 
+proc intoUtf8Bytes*(c: Rune, s: var openArray[char], pos: var int) =
+  template ones(n: untyped): untyped = ((1 shl n)-1)
+  var i = int32(c)
+  if i <=% 127:
+    if pos + 0 >= s.len:
+      return
+    s[pos+0] = chr(i)
+    pos += 1
+  elif i <=% 0x07FF:
+    if pos + 1 >= s.len:
+      return
+    s[pos+0] = chr((i shr 6) or 0b110_00000)
+    s[pos+1] = chr((i and ones(6)) or 0b10_0000_00)
+    pos += 2
+  elif i <=% 0xFFFF:
+    if pos + 2 >= s.len:
+      return
+    s[pos+0] = chr(i shr 12 or 0b1110_0000)
+    s[pos+1] = chr(i shr 6 and ones(6) or 0b10_0000_00)
+    s[pos+2] = chr(i and ones(6) or 0b10_0000_00)
+    pos += 3
+  elif i <=% 0x001FFFFF:
+    if pos + 3 >= s.len:
+      return
+    s[pos+0] = chr(i shr 18 or 0b1111_0000)
+    s[pos+1] = chr(i shr 12 and ones(6) or 0b10_0000_00)
+    s[pos+2] = chr(i shr 6 and ones(6) or 0b10_0000_00)
+    s[pos+3] = chr(i and ones(6) or 0b10_0000_00)
+    pos += 4
+  elif i <=% 0x03FFFFFF:
+    if pos + 4 >= s.len:
+      return
+    s[pos+0] = chr(i shr 24 or 0b111110_00)
+    s[pos+1] = chr(i shr 18 and ones(6) or 0b10_0000_00)
+    s[pos+2] = chr(i shr 12 and ones(6) or 0b10_0000_00)
+    s[pos+3] = chr(i shr 6 and ones(6) or 0b10_0000_00)
+    s[pos+4] = chr(i and ones(6) or 0b10_0000_00)
+    pos += 5
+  elif i <=% 0x7FFFFFFF:
+    if pos + 5 >= s.len:
+      return
+    s[pos+0] = chr(i shr 30 or 0b1111110_0)
+    s[pos+1] = chr(i shr 24 and ones(6) or 0b10_0000_00)
+    s[pos+2] = chr(i shr 18 and ones(6) or 0b10_0000_00)
+    s[pos+3] = chr(i shr 12 and ones(6) or 0b10_0000_00)
+    s[pos+4] = chr(i shr 6 and ones(6) or 0b10_0000_00)
+    s[pos+5] = chr(i and ones(6) or 0b10_0000_00)
+    pos += 6
+  else:
+    discard # error, exception?
+
+proc setChsFromRune*(tc: var TerminalChar, r: Rune) {.gcsafe, inline.} =
+  tc.chsLen = 0
+  tc.hasCombiningChar = false
+  tc.endsWithCombiningChar = false
+  intoUtf8Bytes(r, tc.chs, tc.chsLen)
+
+proc appendChsFromRune*(tc: var TerminalChar, r: Rune, isCombining: bool) {.gcsafe, inline.} =
+  tc.hasCombiningChar = tc.hasCombiningChar or isCombining
+  tc.endsWithCombiningChar = isCombining
+  intoUtf8Bytes(r, tc.chs, tc.chsLen)
+
+proc isEmpty*(tc: TerminalChar): bool {.gcsafe, inline.} =
+  tc.chsLen == 0 or tc.chs[0] == '\0'
+
+proc writeCharsTo*(tc: TerminalChar, s: var string) {.inline.} =
+  if tc.chsLen > 0:
+    let start = s.len
+    s.setLen(start + tc.chsLen)
+    for i in 0 ..< tc.chsLen:
+      s[start + i] = tc.chs[i]
+
 proc `[]=`*(tb: var TerminalBuffer, x, y: Natural, ch: TerminalChar) =
   ## Index operator to write a character into the terminal buffer at the
   ## specified location. Does nothing if the location is outside of the
@@ -292,9 +367,10 @@ proc fill*(tb: var TerminalBuffer, x1, y1, x2, y2: int, ch: string = " ") =
   ## attributes. The rectangle is clipped to the extends of the terminal
   ## buffer and the call can never fail.
   if x1 < tb.width and y1 < tb.height:
-    let
-      c = TerminalChar(ch: ch.runeAt(0), fg: tb.currFg, bg: tb.currBg, fgColor: tb.currFgColor, bgColor: tb.currBgColor, style: tb.currStyle)
+    var c = TerminalChar(fg: tb.currFg, bg: tb.currBg, fgColor: tb.currFgColor, bgColor: tb.currBgColor, style: tb.currStyle)
+    c.setChsFromRune(ch.runeAt(0))
 
+    let
       xs = clamp(x1, 0, tb.width-1)
       ys = clamp(y1, 0, tb.width-1)
       xe = clamp(x2, 0, tb.width-1)
@@ -325,24 +401,22 @@ proc fillBackground*(tb: var TerminalBuffer, x1, y1, x2, y2: int) =
 
     for y in ys..ye:
       if xs > 0 and tb[xs, y].previousWideGlyph:
-        # Current cell is after a wide unicode char, so also override the prev cell with space
         var prevCell = tb[xs - 1, y]
-        prevCell.ch = ' '.Rune
+        prevCell.setChsFromRune(' '.Rune)
         tb[xs - 1, y] = prevCell
 
       for x in xs..xe:
         var c = tb[x, y]
-        if tb.currBgAlpha == 1 or c.ch.int == 0:
-          c.ch = ' '.Rune
+        if tb.currBgAlpha == 1 or c.isEmpty:
+          c.setChsFromRune(' '.Rune)
         c.bg = tb.currBg
         c.bgColor = blend(tb.currBgColor, c.bgColor, tb.currBgAlpha)
         c.previousWideGlyph = false
         tb[x, y] = c
 
       if xe + 1 < tb.width and tb[xe + 1, y].previousWideGlyph:
-        # Current cell is a wide unicode char, so also override the next cell with space
         var nextCell = tb[xe + 1, y]
-        nextCell.ch = ' '.Rune
+        nextCell.setChsFromRune(' '.Rune)
         nextCell.previousWideGlyph = false
         tb[xe + 1, y] = nextCell
 
@@ -551,7 +625,8 @@ proc write*(tb: var TerminalBuffer, x, y: int, s: string) =
     return
   var currX = x
   for ch in runes(s):
-    var c = TerminalChar(ch: ch, fg: tb.currFg, bg: tb.currBg, fgColor: tb.currFgColor, bgColor: tb.currBgColor, style: tb.currStyle)
+    var c = TerminalChar(fg: tb.currFg, bg: tb.currBg, fgColor: tb.currFgColor, bgColor: tb.currBgColor, style: tb.currStyle)
+    c.setChsFromRune(ch)
     if currX >= 0 and currX < tb.width:
       if c.fg == fgNone:
         c.fg = tb[currX, y].fg
@@ -572,51 +647,49 @@ proc writeRune*(tb: var TerminalBuffer, x, y: int, ch: Rune, width: int, additio
   ## Lines do not wrap and attempting to write
   ## outside the extents of the buffer will not raise an error; the output
   ## will be just cropped to the extents of the buffer.
-  if y < 0 or y >= tb.height:
+  if y < 0 or y >= tb.height or ch == 0.Rune:
     return
 
-  var c = TerminalChar(ch: ch, fg: tb.currFg, bg: tb.currBg, fgColor: tb.currFgColor, bgColor: tb.currBgColor, style: tb.currStyle)
-  if italic:
-    c.style.incl styleItalic
   if x >= 0 and x < tb.width:
-    if x > 0 and tb[x, y].previousWideGlyph:
-      # Current cell is after a wide unicode char, so also override the prev cell with space
-      var prevCell = tb[x - 1, y]
-      prevCell.ch = ' '.Rune
-      tb[x - 1, y] = prevCell
+    if width == 0 or tb[x, y].endsWithCombiningChar:
+      var c = tb[x, y]
+      c.appendChsFromRune(ch, width == 0)
+      if italic:
+        c.style.incl styleItalic
+      tb[x, y] = c
+    else:
+      var c = TerminalChar(fg: tb.currFg, bg: tb.currBg, fgColor: tb.currFgColor, bgColor: tb.currBgColor, style: tb.currStyle)
+      c.setChsFromRune(ch)
+      if italic:
+        c.style.incl styleItalic
 
-    if c.fg == fgNone:
-      c.fg = tb[x, y].fg
-      c.fgColor = tb[x, y].fgColor
-    if c.bg == bgNone:
-      c.bg = tb[x, y].bg
-      c.bgColor = tb[x, y].bgColor
-    tb[x, y] = c
+      if x > 0 and tb[x, y].previousWideGlyph:
+        var prevCell = tb[x - 1, y]
+        prevCell.setChsFromRune(' '.Rune)
+        tb[x - 1, y] = prevCell
 
-    var xEnd = x
+      if c.fg == fgNone:
+        c.fg = tb[x, y].fg
+        c.fgColor = tb[x, y].fgColor
+      if c.bg == bgNone:
+        c.bg = tb[x, y].bg
+        c.bgColor = tb[x, y].bgColor
+      tb[x, y] = c
 
-    # Set (`width` - 1) cells after the current one to space
-    for x2 in (x + 1)..<min(tb.width, x + width):
-      var c = c
-      c.ch = 0.Rune
-      c.previousWideGlyph = true
-      tb[x2, y] = c
-      xEnd = max(x2, xEnd)
+      var xEnd = x
 
-    # Set `additionalWidth` cells after the current one to space
-    for x2 in (x + 1)..<min(tb.width, x + additionalWidth + 1):
-      var c = c
-      c.ch = ' '.Rune
-      c.previousWideGlyph = true
-      tb[x2, y] = c
-      xEnd = max(x2, xEnd)
+      for x2 in (x + 1)..<min(tb.width, x + width):
+        var c = c
+        c.chsLen = 0
+        c.previousWideGlyph = true
+        tb[x2, y] = c
+        xEnd = max(x2, xEnd)
 
-    if xEnd + 1 < tb.width and tb[xEnd + 1, y].previousWideGlyph:
-      # Current cell is a wide unicode char, so also override the next cell with space
-      var nextCell = tb[xEnd + 1, y]
-      nextCell.ch = ' '.Rune
-      nextCell.previousWideGlyph = false
-      tb[xEnd + 1, y] = nextCell
+      if xEnd + 1 < tb.width and tb[xEnd + 1, y].previousWideGlyph:
+        var nextCell = tb[xEnd + 1, y]
+        nextCell.setChsFromRune(' '.Rune)
+        nextCell.previousWideGlyph = false
+        tb[xEnd + 1, y] = nextCell
 
   tb.currX = clamp(x + 2, 0, tb.width-1)
   tb.currY = y
@@ -698,27 +771,35 @@ proc setPos(buffer: var string, x: int, y: int) =
   buffer.add "f"
 
 proc displayFull*(tb: TerminalBuffer) =
+  var bufXPos: int = 0
   for y in 0..<tb.height:
     displayBuffer.setPos(0, y)
 
-    var additionalSpaces = 0
     for x in 0..<tb.width:
       let c {.cursor.} = tb[x,y]
-      if c.ch == 0.Rune:
-        inc additionalSpaces
+      if c.isEmpty or c.previousWideGlyph:
+        bufXPos = -1
         continue
 
-      if c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
+      displayBuffer.setPos(x, y)
+      if x != bufXPos:
+        bufXPos = x
         displayBuffer.setAttribs(c)
 
-      displayBuffer.add $c.ch
+      elif c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
+        displayBuffer.setAttribs(c)
 
-    when defined(windows):
-      # For some reason windows terminal doesn't update the cells at the end if there's a bunch of unicode in the line
-      # Adding a bunch of whitespace at the end fixes it.
-      # I don't know if this also happens in other terminals.
-      displayBuffer.add "                                                                   "
-      displayBuffer.add ' '.Rune.repeat(additionalSpaces)
+      if not c.isEmpty:
+        c.writeCharsTo(displayBuffer)
+      else:
+        displayBuffer.add " "
+      inc bufXPos
+
+      if c.isEmpty or c.previousWideGlyph or c.hasCombiningChar:
+        bufXPos = -1
+
+    if y < tb.height - 1:
+      displayBuffer.add "\r\n"
 
   flushDisplayBuffer()
   stdout.flushFile()
@@ -748,29 +829,38 @@ proc displayDiff(tb: TerminalBuffer) =
 
     let force = containsWideGlyph and anyChanged
 
-    var additionalSpaces = 0
-    if force:
+    if force or true:
       displayBuffer.setPos(0, y)
+      bufXPos = 0
       for x in 0..<tb.width:
         let c {.cursor.} = tb[x,y]
         defer:
           gPrevTerminalBuffer[][x, y] = c
 
-        if c.ch == 0.Rune:
-          inc additionalSpaces
+        if c.isEmpty or c.previousWideGlyph:
+          bufXPos = -1
           continue
 
-        if c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
+        displayBuffer.setPos(x, y)
+        if x != bufXPos:
+          bufXPos = x
+          bufYPos = y
           displayBuffer.setAttribs(c)
 
-        displayBuffer.add c.ch
+        elif c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
+          displayBuffer.setAttribs(c)
 
-      when defined(windows):
-        # For some reason windows terminal doesn't update the cells at the end if there's a bunch of unicode in the line
-        # Adding a bunch of whitespace at the end fixes it.
-        # I don't know if this also happens in other terminals.
-        displayBuffer.add "                                                                   "
-        displayBuffer.add ' '.Rune.repeat(additionalSpaces)
+        if not c.isEmpty:
+          c.writeCharsTo(displayBuffer)
+        else:
+          displayBuffer.add " "
+        inc bufXPos
+
+        if c.isEmpty or c.previousWideGlyph or c.hasCombiningChar:
+          bufXPos = -1
+
+      if y < tb.height - 1:
+        displayBuffer.add "\r\n"
 
     else:
       for x in 0..<tb.width:
@@ -778,8 +868,8 @@ proc displayDiff(tb: TerminalBuffer) =
         defer:
           gPrevTerminalBuffer[][x, y] = c
 
-        if c.ch == 0.Rune:
-          inc additionalSpaces
+        if c.isEmpty or c.previousWideGlyph:
+          bufXPos = -1
           continue
 
         if c == gPrevTerminalBuffer[][x, y]:
@@ -794,7 +884,7 @@ proc displayDiff(tb: TerminalBuffer) =
         if c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
           displayBuffer.setAttribs(c)
 
-        displayBuffer.add c.ch
+        c.writeCharsTo(displayBuffer)
         inc bufXPos
 
   flushDisplayBuffer()
@@ -1121,6 +1211,11 @@ proc write*(tb: var TerminalBuffer, bb: var BoxBuffer, writeStyle: bool = true) 
     for x in 0..<width:
       let boxChar = bb[x,y]
       if boxChar > 0:
+        if x > 0 and tb[x, y].previousWideGlyph:
+          var prevCell = tb[x - 1, y]
+          prevCell.setChsFromRune(' '.Rune)
+          tb[x - 1, y] = prevCell
+
         if ((boxChar and LEFT) or (boxChar and RIGHT)) > 0:
           if horizBoxCharCount == 1:
             var prev = tb[x-1,y]
@@ -1134,16 +1229,17 @@ proc write*(tb: var TerminalBuffer, bb: var BoxBuffer, writeStyle: bool = true) 
           forceWrite = false
 
         if writeStyle:
-          var c = TerminalChar(ch: toUTF8String(boxChar).runeAt(0),
-                               fg: tb.currFg, bg: tb[x, y].bg,
+          var c = TerminalChar(fg: tb.currFg, bg: tb[x, y].bg,
                                fgColor: tb.currFgColor, bgColor: tb[x, y].bgColor,
                                style: tb.currStyle, forceWrite: forceWrite)
+          c.setChsFromRune(toUTF8String(boxChar).runeAt(0))
           tb[x,y] = c
         else:
           var c = tb[x, y]
-          c.ch = toUTF8String(boxChar).runeAt(0)
+          c.setChsFromRune(toUTF8String(boxChar).runeAt(0))
           c.forceWrite = c.forceWrite or forceWrite
           tb[x,y] = c
+
 
 type
   TerminalCmd* = enum  ## commands that can be expressed as arguments

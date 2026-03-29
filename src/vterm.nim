@@ -361,6 +361,10 @@ proc sendSelection*(state: ptr VTermState; mask: VTermSelectionMask; frag: VTerm
 
 {.pop.}
 
+########## Unicode helpers ###########
+proc unicodeWidth*(codepoint: uint32): cint {.importc: "vterm_unicode_width".}
+proc unicodeIsCombining*(codepoint: uint32): bool {.importc: "vterm_unicode_is_combining".}
+
 proc vtermRgb*(r, g, b: uint8): VTermColor =
   result.`type` = VTERM_COLOR_RGB.ord.uint8
   result.rgb.red = r

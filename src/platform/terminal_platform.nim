@@ -5,6 +5,7 @@ import chroma as chroma
 import misc/[custom_logger, rect_utils, event, timer, custom_unicode, custom_async]
 import tui, input, ui/node
 import platform, app_options, terminal_input
+import vterm
 
 when defined(windows):
   import winlean
@@ -137,76 +138,20 @@ proc getClosestColor[T: HoleyEnum](r, g, b: int, default: T): T =
       result = fg
   {.pop.}
 
-# Characters which are displayed two cells wide in the terminal but only take up one character in the terminals grid
-# For those we take up two cells internally, but don't write the second cell to the terminal
-const narrowWide = """
-⌚⌛⏩⏪⏫⏬⏰⏳◽◾☔☕♈♉♊♋♌♍♎♏♐♑♒♓♿⚓⚡⚪⚫⚽⚾⛄⛅⛎⛔⛪⛲⛳⛵⛺⛽✅✊✋✨❌❎❓❔❕
-❗➕➖➗➰➿⬛⬜⭐⭕〰〽㊗㊙🀄🃏🆎🆑🆒🆓🆔🆕🆖🆗🆘🆙🆚🈁🈂🈚🈯🈲🈳🈴🈵🈶🈷🈸🈹🈺🉐🉑🌀🌁🌂🌃🌄🌅🌆🌇
-🌈🌈🌉🌊🌋🌌🌍🌎🌏🌐🌑🌒🌓🌔🌕🌖🌗🌘🌙🌚🌛🌜🌝🌞🌟🌠🌭🌮🌯🌰🌱🌲🌳🌴🌵🌷🌸🌹🌺🌻🌼🌽🌾🌿🍀🍁🍂🍃🍄🍅
-🍆🍇🍈🍉🍊🍋🍌🍍🍎🍏🍐🍑🍒🍓🍔🍕🍖🍗🍘🍙🍚🍛🍜🍝🍞🍟🍠🍡🍢🍣🍤🍤🍥🍦🍧🍨🍩🍪🍫🍬🍭🍮🍯🍰🍱🍲🍳🍴🍵🍶
-🍷🍸🍹🍺🍻🍼🍾🍿🎀🎁🎂🎃🎄🎅🎆🎇🎈🎉🎊🎋🎌🎍🎎🎏🎐🎑🎒🎓🎠🎡🎢🎣🎤🎥🎦🎧🎨🎩🎪🎫🎬🎭🎮🎯🎰🎱🎲🎳🎴🎵
-🎶🎷🎸🎹🎺🎻🎼🎽🎾🎿🏀🏁🏂🏃🏄🏅🏆🏇🏈🏉🏊🏏🏐🏑🏒🏓🏠🏡🏢🏣🏤🏥🏦🏧🏨🏩🏪🏫🏬🏭🏮🏯🏰🏴🏸🏸🏹🏺🏻🏼
-🏽🏾🏿🐀🐁🐂🐃🐄🐅🐆🐇🐈🐉🐊🐋🐌🐍🐎🐏🐐🐑🐒🐓🐔🐕🐖🐗🐘🐙🐚🐛🐜🐝🐞🐟🐠🐡🐢🐣🐤🐥🐦🐧🐨🐩🐪🐫🐬🐭🐮
-🐯🐰🐱🐲🐳🐴🐵🐶🐷🐸🐹🐺🐻🐼🐽🐾👀👂👃👄👅👆👇👈👉👊👋👌👍👎👏👐👑👒👓👔👕👖👗👘👙👚👛👜👝👞👟👠👡👢
-👣👤👥👦👧👨👩👪👫👬👭👮👯👰👱👲👳👴👵👶👷👸👹👺👻👼👽👾👿💀💁💂💃💄💅💆💇💈💉💊💋💌💍💎💏💐💑💒💓💔
-💕💖💗💘💙💚💛💜💝💞💟💠💡💢💣💤💥💦💧💨💩💪💫💬💭💮💯💰💱💲💳💴💵💶💷💸💹💺💻💼💽💾💿📀📁📂📃📄📅📆
-📇📈📉📊📋📌📍📎📏📐📑📒📓📔📕📖📖📗📘📙📚📛📜📝📞📟📠📡📢📣📤📥📦📧📨📩📪📫📬📭📮📯📰📱📲📳📴📵📶📷
-📸📹📺📻📼📿🔀🔁🔂🔂🔃🔄🔅🔆🔇🔈🔉🔊🔊🔋🔌🔍🔎🔏🔐🔑🔒🔓🔔🔕🔖🔗🔘🔙🔚🔛🔜🔝🔞🔟🔠🔡🔢🔣🔤🔥🔦🔧🔨🔩
-🔪🔫🔫🔬🔭🔮🔯🔰🔱🔲🔳🔴🔵🔶🔷🔸🔹🔺🔻🔼🔽🕋🕌🕍🕎🕐🕑🕒🕓🕔🕕🕖🕗🕘🕙🕚🕛🕜🕝🕞🕟🕠🕡🕢🕣🕤🕥🕦🕧🕺
-🖕🖖🖤🗻🗼🗽🗾🗿😀😁😂😃😄😅😆😇😈😉😊😋😌😍😎😏😐😑😒😓😔😕😖😗😘😙😚😛😜😝😞😟😠😡😢😣😤😥😦😧😨😩
-😪😫😬😭😮😯😰😱😲😳😴😵😶😷😸😹😺😻😼😽😾😿🙀🙁🙂🙃🙄🙄🙅🙆🙇🙈🙉🙊🙋🙌🙍🙎🙏🚀🚁🚁🚂🚃🚄🚅🚆🚇🚈🚉
-🚊🚋🚌🚍🚎🚏🚐🚑🚒🚓🚔🚕🚖🚗🚘🚙🚚🚛🚜🚝🚞🚟🚠🚡🚢🚣🚤🚥🚦🚧🚨🚩🚪🚫🚬🚭🚮🚯🚰🚱🚲🚳🚳🚴🚵🚶🚷🚸🚹🚺
-🚻🚼🚽🚾🚿🛀🛁🛂🛃🛄🛅🛌🛐🛑🛒🛕🛖🛗🛝🛞🛟🛫🛬🛴🛵🛶🛷🛸🛹🛺🛻🛼🟠🟡🟢🟣🟤🟥🟦🟧🟨🟩🟪🟫🟰🤌🤍🤎🤏🤐
-🤑🤒🤓🤔🤕🤖🤗🤘🤙🤚🤛🤜🤝🤞🤟🤠🤡🤢🤣🤤🤥🤦🤧🤨🤩🤪🤫🤬🤭🤮🤯🤰🤱🤲🤳🤴🤵🤶🤷🤸🤹🤺🤼🤽🤾🤿🥀🥁🥂🥃
-🥄🥅🥇🥈🥉🥊🥋🥌🥍🥎🥏🥐🥑🥒🥓🥔🥕🥖🥗🥘🥙🥚🥛🥜🥝🥞🥟🥠🥡🥢🥣🥤🥥🥦🥧🥨🥩🥪🥫🥬🥭🥮🥯🥰🥰🥱🥲🥳🥴🥵
-🥶🥷🥸🥹🥺🥻🥼🥽🥾🥿🦀🦁🦂🦃🦄🦅🦅🦆🦇🦈🦉🦊🦋🦌🦍🦎🦏🦐🦑🦒🦒🦓🦔🦕🦖🦗🦘🦙🦚🦛🦜🦝🦞🦟🦠🦡🦢🦣🦤🦥
-🦦🦧🦨🦩🦪🦫🦬🦬🦭🦮🦯🦰🦱🦲🦳🦴🦵🦶🦶🦷🦸🦹🦺🦻🦼🦽🦾🦿🧀🧁🧂🧃🧄🧅🧆🧇🧈🧉🧊🧋🧌🧍🧎🧏🧐🧑🧒🧓🧔🧕
-🧖🧗🧘🧙🧚🧚🧛🧜🧝🧞🧟🧠🧡🧢🧣🧤🧤🧥🧦🧧🧨🧩🧪🧫🧬🧭🧮🧯🧰🧱🧲🧳🧴🧵🧶🧷🧸🧹🧺🧻🧼🧽🧾🧿🩰🩱🩲🩳🩴🩸
-🩹🩺🩻🩼🪀🪁🪂🪃🪄🪅🪆🪐🪑🪒🪓🪔🪕🪖🪗🪘🪙🪚🪛🪜🪝🪞🪟🪠🪡🪢🪣🪤🪥🪦🪧🪨🪩🪪🪫🪬🪰🪱🪲🪳🪴🪵🪶🪷🪸🪹
-🪺🫀🫁🫂🫃🫄🫅🫐🫑🫒🫓🫔🫕🫖🫗🫘🫙🫠🫡🫢🫣🫤🫥🫦🫧🫰🫱🫲🫳🫴🫵🫶
-🇦🇧🇨🇩🇪🇫🇬🇭🇮🇯🇰🇱🇲🇳🇴🇵🇶🇷🇸🇹🇺🇻🇼🇽🇾🇿
-""".replace("\n", "")
-
-# Characters which only take up one cell
-const narrowNarrow = "*123456789©®‼⁉™↔↕↖↗↘↙↪▪▫▶◀◻◼☺♀♂♠♣♥♦⤴⤵⬅⬆⬇󾠫"
-
-# Characters which take up one cell in the terminal but are rendered as two cells, therefor overlapping
-# with the cell on the right.
-# For these we take up two cells in the internal buffer, the second just being a space with the same attributes
-# as the actual char. Therefore when rendered in the terminal the emoji overlaps with the space on the right
-# and looks nice.
-const wideNarrow = """
-ℹ⌨⏏⏭⏮⏯⏱⏲⏸⏹⏺☀☁☂☃☄☎☑☘☝☠☢☣☦☪☮☯☸☹♟♨♻♾⚒⚔⚕⚖⚗⚙⚛⚜⚠⚧⚰⚱⛈⛏⛑⛓⛩
-⛰⛱⛴⛷⛸⛹✂✈✉✌✍✏✒✔✖✝✡✳✴❄❇❣❤➡🅰🅱🅾🅿🌡🌤🌥🌦🌧🌨🌩🌪🌫🌬🌶🍽🎖🎗🎗🎙🎚🎛🎞🎟🏋🏌
-🏍🏎🏔🏕🏖🏗🏘🏙🏚🏛🏜🏝🏞🏟🏳🏵🏷🐿👁👁📽🕉🕊🕯🕰🕳🕴🕵🕶🕷🕸🕹🖇🖊🖋🖌🖍🖐🖥🖨🖱🖲🖼🗂🗃🗄🗑🗒🗓🗜
-🗝🗞🗡🗣🗨🗯🗳🗺🛋🛍🛎🛏🛠🛡🛢🛣🛤🛥🛩🛰🛳🗀
-""".replace("\n", "")
-
-var narrowWideSet = initHashSet[Rune]()
-for r in narrowWide.runes:
-  narrowWideSet.incl r
-
-var narrowNarrowSet = initHashSet[Rune]()
-for r in narrowNarrow.runes:
-  narrowNarrowSet.incl r
-
-var wideNarrowSet = initHashSet[Rune]()
-for r in wideNarrow.runes:
-  wideNarrowSet.incl r
-
 proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int, RuneCount) {.gcsafe.}
 
-proc runeProps(r: Rune): tuple[selectionWidth: int, displayWidth: int] {.gcsafe.} =
+proc runeProps(r: Rune): tuple[selectionWidth: int, displayWidth: int, isCombining: bool] {.gcsafe.} =
   if r.int <= 127:
-    return (1, 1)
+    return (1, 1, false)
 
-  {.gcsafe.}:
-    if r in narrowWideSet:
-      return (2, 2)
-    if r in wideNarrowSet:
-      return (1, 2)
+  let width = vterm.unicodeWidth(r.uint32)
+  let combining = vterm.unicodeIsCombining(r.uint32)
 
-  return (1, 1)
+  if combining:
+    return (0, 0, true)
+
+  let w = max(1, width.int)
+  return (w, w, false)
 
 proc getTerminalSize(self: TerminalPlatform): IVec2 =
   if self.noPty:
@@ -243,7 +188,7 @@ method init*(self: TerminalPlatform, options: AppOptions) =
       lineHeight: 1,
       lineGap: 0,
       scale: 1,
-      advance: proc(rune: Rune): float = 1
+      advance: proc(rune: Rune): float = rune.runeProps.displayWidth.float
     )
 
     when defined(windows):
@@ -301,6 +246,7 @@ method init*(self: TerminalPlatform, options: AppOptions) =
       setControlCHook(exitProc)
 
     stdout.write "\e[?25l"  # hide cursor
+    # stdout.write "\e[?7l" # Disable line wrapping
 
     self.builder = newNodeBuilder()
     self.builder.useInvalidation = true
@@ -400,6 +346,7 @@ method init*(self: TerminalPlatform, options: AppOptions) =
 
 method deinit*(self: TerminalPlatform) =
   try:
+    # stdout.write("\e[?7h") # Enable line wrapping
     if self.useKittyKeyboard:
       stdout.write("\e[<u")
     stdout.write(DisableMouseTrackAny)
@@ -425,11 +372,17 @@ method lineDistance*(self: TerminalPlatform): float = 0
 method lineHeight*(self: TerminalPlatform): float = 1
 method charWidth*(self: TerminalPlatform): float = 1
 method charGap*(self: TerminalPlatform): float = 0
-method measureText*(self: TerminalPlatform, text: string): Vec2 = vec2(text.len.float, 1)
+method measureText*(self: TerminalPlatform, text: string): Vec2 =
+  result.y = 1
+  for c in text.runes:
+    result.x += c.runeProps.displayWidth.float
 method layoutText*(self: TerminalPlatform, text: string): seq[Rect] =
   result = newSeqOfCap[Rect](text.len)
+  var x: float = 0
   for i, c in enumerate(text.runes):
-    result.add rect(i.float, 0, 1, 1)
+    let width = c.runeProps.displayWidth.float
+    result.add rect(x, 0, 1, 1)
+    x += width
 
 proc pushMask(self: TerminalPlatform, mask: Rect) =
   let maskedMask = if self.masks.len > 0:
@@ -687,7 +640,7 @@ proc drawBorder(self: TerminalPlatform, bounds: Rect, color: chroma.Color, borde
 #   self.buffer.drawRect(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
 #   self.buffer.setBackgroundColor(bgNone)
 
-proc writeLine(self: TerminalPlatform, pos: Vec2, text: string, italic: bool) =
+proc writeLine(self: TerminalPlatform, pos: Vec2, text: string, italic: bool): int =
   let mask = if self.masks.len > 0:
     self.masks[self.masks.high]
   else:
@@ -700,11 +653,19 @@ proc writeLine(self: TerminalPlatform, pos: Vec2, text: string, italic: bool) =
   var x = pos.x.int
   for r in text.runes:
     let props = r.runeProps
-    if x >= mask.x.int and x + props.displayWidth <= mask.xw.int:
-      self.buffer.writeRune(x, pos.y.int, r, props.selectionWidth, props.displayWidth - props.selectionWidth, italic)
-    x += props.displayWidth
-    if x >= mask.xw.int:
-      break
+    if props.isCombining:
+      # Combining characters overlay on the previous character's cell
+      if x > pos.x.int:
+        dec x
+      if x >= mask.x.int and x <= mask.xw.int:
+        self.buffer.writeRune(x, pos.y.int, r, 0, 0, italic)
+    else:
+      if x >= mask.x.int and x + props.displayWidth <= mask.xw.int:
+        self.buffer.writeRune(x, pos.y.int, r, props.selectionWidth, props.displayWidth - props.selectionWidth, italic)
+      x += props.displayWidth
+      result += props.displayWidth
+      if x >= mask.xw.int:
+        break
 
 proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int, RuneCount) {.gcsafe.} =
   var len = 0.RuneCount
@@ -748,7 +709,7 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string, color: chroma.Co
         if startByte >= line.len or endByte > line.len:
           break
 
-        self.writeLine(pos + vec2(0, yOffset), line[startByte..<endByte], italic)
+        discard self.writeLine(pos + vec2(0, yOffset), line[startByte..<endByte], italic)
 
         yOffset += 1
 
@@ -761,22 +722,23 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string, color: chroma.Co
     else:
       if TextDrawSpaces in flags:
         var start = 0
+        var xOffset = 0
         var i = line.find(' ')
         if i == -1:
-          self.writeLine(pos + vec2(0, yOffset), line, italic)
+          discard self.writeLine(pos + vec2(0, yOffset), line, italic)
         else:
           while i != -1:
-            self.writeLine(pos + vec2(start.float, yOffset), line[start..<i], italic)
+            xOffset += self.writeLine(pos + vec2(xOffset.float, yOffset), line[start..<i], italic)
             self.setForegroundColor(spaceColor)
-            self.writeLine(pos + vec2(i.float, yOffset), spaceText, italic)
+            xOffset += self.writeLine(pos + vec2(xOffset.float, yOffset), spaceText, italic)
             self.setForegroundColor(color)
             start = i + 1
             i = line.find(' ', start)
 
           if start < line.len:
-            self.writeLine(pos + vec2(start.float, yOffset), line[start..^1], italic)
+            discard self.writeLine(pos + vec2(xOffset.float, yOffset), line[start..^1], italic)
       else:
-        self.writeLine(pos + vec2(0, yOffset), line, italic)
+        discard self.writeLine(pos + vec2(0, yOffset), line, italic)
       yOffset += 1
 
 proc handleCommand(builder: UINodeBuilder, platform: TerminalPlatform, renderCommands: ptr RenderCommands, command: RenderCommand, offsets: var seq[Vec2], offset: var Vec2) =

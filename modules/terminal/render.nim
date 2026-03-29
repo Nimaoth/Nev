@@ -217,11 +217,12 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
                     # todo: make this work in terminal platform
                     fillRect(rect(boundsAcc.x, boundsAcc.y + boundsAcc.h * 0.4, boundsAcc.w, boundsAcc.h * 0.1), fgColor)
 
-                  if styleHidden notin lastCell.style and lastCell.ch.int != 0:
+                  if styleHidden notin lastCell.style and not lastCell.isEmpty:
                     drawText(buffer, boundsAcc, fgColor, textFlags)
 
               textFlags = 0.UINodeFlags
               boundsAcc.x = boundsAcc.xw
+              boundsAcc.x = (boundsAcc.x / builder.charWidth).ceil * builder.charWidth
               boundsAcc.w = builder.charWidth
               buffer.setLen(0)
               runLen = 0
@@ -236,6 +237,7 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
 
               if drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col:
                 flush()
+                boundsAcc.x = col.float * builder.charWidth
                 let cellBounds = rect(col.float * builder.charWidth, row.float * builder.textHeight,
                   builder.charWidth, builder.textHeight)
                 var cursorBounds = cellBounds
@@ -250,27 +252,32 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
 
                 buildCommands(foregroundRenderCommands[]):
                   fillRect(cursorBounds, cursorForegroundColor)
-                  if cell.ch != 0.Rune and styleHidden notin cell.style:
-                    drawText($cell.ch, cellBounds, fgColor, textFlags)
+                  if not cell.isEmpty and styleHidden notin cell.style:
+                    drawText(cell.chs, cellBounds, fgColor, textFlags)
 
                 continue
 
               elif drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col + 1:
                 flush(false)
+                boundsAcc.x = col.float * builder.charWidth
               elif cell.previousWideGlyph:
                 flush()
+                boundsAcc.x = col.float * builder.charWidth
                 continue
               elif lastCell.previousWideGlyph:
                 flush(false)
-              elif (cell.ch.int != 0) != (lastCell.ch.int != 0):
+                boundsAcc.x = col.float * builder.charWidth
+              elif cell.isEmpty != lastCell.isEmpty:
                 flush()
+                boundsAcc.x = col.float * builder.charWidth
               elif cell.fg != lastCell.fg or cell.fgColor != lastCell.fgColor or cell.bg != lastCell.bg or cell.bgColor != lastCell.bgColor or cell.style != lastCell.style:
                 flush()
+                boundsAcc.x = col.float * builder.charWidth
 
-              if cell.ch.int != 0:
-                buffer.add $cell.ch
+              if not cell.isEmpty:
+                cell.writeCharsTo(buffer)
               else:
-                buffer.add " "
+                buffer.add "\0"
               boundsAcc.w = (col + 1).float * builder.charWidth - boundsAcc.x
               inc runLen
 
