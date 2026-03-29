@@ -292,7 +292,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
     backgroundColor.a = 1
 
   const numLinesToShow = 25
-  let completionPanelHeight = min(self.completionMatches.len, numLinesToShow).float * totalLineHeight
+  let completionPanelHeight = min(self.completionMatches.len, numLinesToShow).float * totalLineHeight + 2
   let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow)
 
   const docsWidth = 75.0
@@ -357,7 +357,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
       listNode = currentNode
       let lineFlags = &{SizeToContentX, FillY}
       let firstIndex = max(self.completionsBaseIndex - (self.completionsScrollOffset / totalLineHeight).int, 0)
-      var y = if reverse: completionPanelHeight - totalLineHeight else: 0
+      var y = if reverse: completionPanelHeight - totalLineHeight - 2 else: 0
 
       builder.panel(lineFlags):
         onScroll:

@@ -123,7 +123,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
             builder.panel(&{FillX, LayoutVertical} + yFlag):
               if not items.locked:
                 let nextKeyHeight = whichKeyHeight.float * builder.textHeight
-                let maxLineCount = max(floor((bounds.h - nextKeyHeight) / totalLineHeight).int - 1, 1)
+                let maxLineCount = max(floor((bounds.h - 2 - nextKeyHeight) / totalLineHeight).int - 1, 1)
                 let targetNumRenderedItems = min(maxLineCount, items.filteredLen)
                 var lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.filteredLen - 1)
 
