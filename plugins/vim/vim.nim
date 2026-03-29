@@ -1232,6 +1232,19 @@ proc joinLines(editor: TextEditor, reduceSpace: bool) {.exposeActive(editorConte
     )
     editor.setSelections editor.edit(selectionsToDelete.stackWitList(), @@[ws""], inclusive=false).mapIt(it.first.toSelection).stackWitList()
 
+proc sortLines(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.addNextCheckpoint ws"insert"
+  let content = editor.content
+  var insertTexts: seq[WitString]
+  for it in editor.selections:
+    let text = $content.sliceSelection(it, inclusive=false).text
+    let endsWithNl = text.endsWith("\n")
+    let nl = if endsWithNl: "\n" else: ""
+    var lines = text.splitLines()
+    lines.sort()
+    insertTexts.add stackWitString(lines.join("\n") & nl)
+  editor.setSelections editor.edit(editor.selections, insertTexts.stackWitList(), inclusive=false)
+
 proc moveToColumn(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
   editor.setSelections editor.selections.mapIt((it.last.line.int, count).toSelection)
   editor.scrollToCursor()
