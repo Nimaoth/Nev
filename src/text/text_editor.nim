@@ -4973,6 +4973,9 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.addComponent(self.snippetComponent)
   self.commandComponent = newCommandComponent()
   self.addComponent(self.commandComponent)
+  self.commandComponent.executeCommandImpl = proc(cmd: string) =
+    let (action, arg) = parseAction(cmd)
+    discard self.handleAction(action, arg, false)
 
   self.textEditorComponent = newTextEditorComponent()
   self.textEditorComponent.displayMap = self.displayMap

@@ -10,6 +10,7 @@ type
   CommandHandler* = proc(handler: RootRef, args: string): string {.gcsafe, raises: [].}
   CommandComponent* = ref object of Component
     commands*: Table[string, tuple[handler: RootRef, cb: CommandHandler]]
+    executeCommandImpl*: proc (command: string) {.gcsafe, raises: [].}
 
 # DLL API
 {.push rtl, gcsafe, raises: [].}
@@ -17,12 +18,14 @@ proc getCommandComponent*(self: ComponentOwner): Option[CommandComponent]
 proc newCommandComponent*(): CommandComponent
 
 proc commandComponentRegisterCommand(self: CommandComponent, name: string, handler: RootRef, cb: CommandHandler)
+proc commandComponentExecuteCommand(self: CommandComponent, command: string)
 
 {.pop.}
 
 # Nice wrappers
 {.push inline.}
 proc registerCommand*(self: CommandComponent, name: string, handler: RootRef, cb: CommandHandler) = commandComponentRegisterCommand(self, name, handler, cb)
+proc executeCommand*(self: CommandComponent, command: string) = commandComponentExecuteCommand(self, command)
 {.pop.}
 
 # Implementation
@@ -47,6 +50,10 @@ when implModule:
 
   proc commandComponentRegisterCommand(self: CommandComponent, name: string, handler: RootRef, cb: CommandHandler) =
     self.commands[name] = (handler, cb)
+
+  proc commandComponentExecuteCommand(self: CommandComponent, command: string) =
+    if self.executeCommandImpl != nil:
+      self.executeCommandImpl(command)
 
   proc init_module_command_component*() {.cdecl, exportc, dynlib.} =
     discard
