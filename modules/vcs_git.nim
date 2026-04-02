@@ -137,7 +137,7 @@ when implModule:
   proc gitGetCommitHistory(self: VersionControlSystemGit, maxCount: int = 50): Future[seq[VCSCommitInfo]] {.gcsafe, async: (raises: []).} =
     try:
       let args = @["log", &"--max-count={maxCount}", "--format=%h%n%s%n%ai%n%an"]
-      let output = runProcessAsync("git", args, workingDir=self.root).await
+      let output = runProcessAsync("git", args, workingDir=self.root, log = false).await
 
       var commits = newSeq[VCSCommitInfo]()
       var i = 0
@@ -312,16 +312,33 @@ when implModule:
       self.updateStatusTask.interval = self.settings.get("git.update-status-interval", 5000).int64
       asyncSpawn self.gitUpdateStatus()
 
-  proc detectGit(path: string): Option[VersionControlSystem] =
+  iterator walkGitDirs(dir: string): string {.raises: [OSError].} =
+    var stack = @[""]
+    while stack.len > 0:
+      let d = stack.pop()
+      for k, p in walkDir(dir / d, relative = true, checkDir = false, skipSpecial = true):
+        let rel = d / p
+        if k in {pcDir, pcLinkToDir} and k in {pcDir}:
+          stack.add rel
+        if k in {pcDir}:
+          if p == ".git":
+            yield dir // d
+
+  proc detectGit(path: string): seq[VersionControlSystem] =
+    let config = getServiceChecked(ConfigService).runtime
+
     if dirExists(path // ".git"):
       log lvlInfo, fmt"Found git repository in {path}"
-      let services = getServices()
-      if services == nil:
-        return
-
-      let config = services.getService(ConfigService).get.runtime
       let vcs = newVersionControlSystemGit(path, config)
-      return vcs.VersionControlSystem.some
+      return @[vcs.VersionControlSystem]
+
+    try:
+      for path in walkGitDirs(path):
+        log lvlInfo, fmt"Found git repository in {path}"
+        let vcs = newVersionControlSystemGit(path, config)
+        result.add vcs.VersionControlSystem
+    except OSError:
+      discard
 
   proc init_module_vcs_git*() {.cdecl, exportc, dynlib.} =
     let services = getServices()

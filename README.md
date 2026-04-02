@@ -101,20 +101,24 @@ Some of these screenshots and GIFs are quite old and things might look different
 
 ### Diagnostics, inlay hints and hover information
 ![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/lsp_diagnostics_inlay_hints_hover.png)
+There is a [Discord server](https://discord.gg/eJjBMcgP2V) where you can ask questions as well.
 
 ---
 
 ### Fuzzy search for document symbols
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/lsp_document_symbols.png)
 ![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/lsp_document_symbols.png)
 
 ---
 
 ### View changed/added files in git, and open the diff for files directly, or stage/unstage/revert them
 ![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git_changed_files.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git_changed_files.png)
 
 ---
 
 ### View the git diff in the editor
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git_diff.png)
 ![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git_diff.png)
 
 ---

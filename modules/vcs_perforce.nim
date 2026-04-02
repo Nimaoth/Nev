@@ -449,11 +449,11 @@ when implModule:
       self.updateStatusTask.interval = config.get("perforce.update-status-interval", 10000).int64
       asyncSpawn self.perforceUpdateStatus()
 
-  proc detectPerforce(path: string): Option[VersionControlSystem] =
+  proc detectPerforce(path: string): seq[VersionControlSystem] =
     if fileExists(path // ".p4ignore"):
       log lvlInfo, fmt"Found perforce repository in {path}"
       let vcs = newVersionControlSystemPerforce(path)
-      return vcs.VersionControlSystem.some
+      return @[vcs.VersionControlSystem]
 
   proc init_module_vcs_perforce*() {.cdecl, exportc, dynlib.} =
     let services = getServices()

@@ -2382,9 +2382,12 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
     log lvlWarn, fmt"[updateDiffAsync] File is not part of any vcs: '{localizedPath}'"
     return
 
-  log lvlInfo, fmt"Diff document '{localizedPath}'"
+  log lvlInfo, fmt"Diff document '{localizedPath}', vcs: {vcs.name} '{vcs.root}'"
 
-  let relPath = self.workspace.getRelativePathSync(localizedPath).get(localizedPath)
+  var relPath = localizedPath
+  relPath.removePrefix(vcs.root)
+  relPath.removePrefix("/")
+
   if self.document.isNil or self.diffRevision > revision or not self.showDiff:
     return
 
@@ -2469,6 +2472,13 @@ proc revertSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) 
     if self.diffDocument.isNil or self.diffChanges.isNone:
       return
 
+    let autoReloadEnabled = self.document.settings.autoReload.get()
+    if autoReloadEnabled:
+      self.document.enableAutoReload(false)
+    defer:
+      if autoReloadEnabled:
+        self.document.enableAutoReload(true)
+
     var selection = self.selection.normalized
     if inclusiveEnd:
       selection.last = self.doMoveCursorColumn(selection.last, 1)
@@ -2506,6 +2516,13 @@ proc unstageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false)
   try:
     if self.diffDocument.isNil or self.diffChanges.isNone:
       return
+
+    let autoReloadEnabled = self.document.settings.autoReload.get()
+    if autoReloadEnabled:
+      self.document.enableAutoReload(false)
+    defer:
+      if autoReloadEnabled:
+        self.document.enableAutoReload(true)
 
     var selection = self.selection.normalized
     if inclusiveEnd:
@@ -2559,6 +2576,13 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
   try:
     if self.diffDocument.isNil or self.diffChanges.isNone:
       return
+
+    let autoReloadEnabled = self.document.settings.autoReload.get()
+    if autoReloadEnabled:
+      self.document.enableAutoReload(false)
+    defer:
+      if autoReloadEnabled:
+        self.document.enableAutoReload(true)
 
     var selection = self.selection.normalized
     if inclusiveEnd:

@@ -252,17 +252,20 @@ when implModule:
       self.getWorkspacePath() // path
 
   proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string] =
+    result = string.none
     try:
+      var longestMatch = 0
       if absolutePath.startsWith(self.path):
-        return absolutePath.relativePath(self.path, '/').some
+        result = absolutePath.relativePath(self.path, '/').some
+        longestMatch = self.path.len
 
       for path in self.additionalPaths:
-        if absolutePath.startsWith(path):
-          return absolutePath.relativePath(path, '/').some
+        if path.len > longestMatch and absolutePath.startsWith(path):
+          result = absolutePath.relativePath(path, '/').some
+          longestMatch = path.len
 
-      return string.none
     except:
-      return string.none
+      discard
 
   proc getRelativePathAndWorkspaceSync*(self: Workspace, absolutePath: string): Option[tuple[root, path: string]] =
     try:

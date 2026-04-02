@@ -48,7 +48,7 @@ type
     getCommitHistoryImpl*: proc(self: VersionControlSystem, maxCount: int = 50): Future[seq[VCSCommitInfo]] {.gcsafe, async: (raises: []).}
 
 type
-  VCSDetector* = proc(rootDir: string): Option[VersionControlSystem] {.gcsafe, raises: [].}
+  VCSDetector* = proc(rootDir: string): seq[VersionControlSystem] {.gcsafe, raises: [].}
 
   VCSService* = ref object of Service
     config*: ConfigService
@@ -115,7 +115,7 @@ when implModule:
   proc handleWorkspaceFolderAdded(self: VCSService, path: string) {.async: (raises: []).} =
     try:
       for detector in self.detectors.values:
-        if detector(path).getSome(vcs):
+        for vcs in detector(path):
           self.versionControlSystems.add vcs
 
     except CatchableError as e:
@@ -131,11 +131,14 @@ when implModule:
     return ok()
 
   proc getVcsForFile*(self: VCSService, file: string): Option[VersionControlSystem] =
+    result = VersionControlSystem.none
     let absolutePath = self.workspace.getAbsolutePath(file)
+    var longestMatch = 0
     for vcs in self.versionControlSystems:
       if absolutePath.startsWith(vcs.root):
-        return vcs.some
-    return VersionControlSystem.none
+        if vcs.root.len > longestMatch:
+          result = vcs.some
+          longestMatch = vcs.root.len
 
   proc getAllVersionControlSystems*(self: VCSService): seq[VersionControlSystem] =
     return self.versionControlSystems
