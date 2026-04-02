@@ -9,6 +9,7 @@ include dynlib_export
 
 type TextComponent* = ref object of Component
   onEdit*: Event[tuple[oldText: Rope, patch: Patch[Point]]]
+  savedVersion*: TransactionId
   onEditTransaction*: Event[Transaction]
   onUndoTransaction*: Event[Transaction]
   onRedoTransaction*: Event[Transaction]

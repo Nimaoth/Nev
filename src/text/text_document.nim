@@ -225,8 +225,6 @@ type
 
     currentDisplayMap: DisplayMap
 
-    savedVersion: TransactionId
-
   DiagnosticsData* = object
     languageServer*: LanguageServer
     currentDiagnostics*: seq[Diagnostic]
@@ -958,7 +956,7 @@ proc saveAsync*(self: TextDocument) {.async.} =
     self.isBackedByFile = true
     self.lastSavedRevision = self.undoableRevision
     # todo: what if someone changes the document while saving?
-    self.savedVersion = self.buffer.history.undoTree.nodes[self.buffer.history.undoTree.current].transaction.id
+    self.textComponent.savedVersion = self.buffer.history.undoTree.nodes[self.buffer.history.undoTree.current].transaction.id
     self.onSaved.invoke()
     self.onDocumentSaved.invoke(self)
     self.eventBus.emit(&"document/{self.id}/saved", $self.id)
@@ -1126,7 +1124,7 @@ proc loadAsync*(self: TextDocument, isReload: bool, filename: string, temp: bool
 
   if not temp:
     self.lastSavedRevision = self.undoableRevision
-    self.savedVersion = self.buffer.history.undoTree.nodes[self.buffer.history.undoTree.current].transaction.id
+    self.textComponent.savedVersion = self.buffer.history.undoTree.nodes[self.buffer.history.undoTree.current].transaction.id
   self.isLoadingAsync = false
   self.onLoaded.invoke (self, changedRegions)
   self.onDocumentLoaded.invoke self
@@ -1648,7 +1646,7 @@ proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
   self.textComponent.onEdit.invoke (oldText, pointPatch)
 
 proc updateDirtyAfterUndo(self: TextDocument) =
-  if self.buffer.history.undoTree.nodes[self.buffer.history.undoTree.current].transaction.id == self.savedVersion:
+  if self.buffer.history.undoTree.nodes[self.buffer.history.undoTree.current].transaction.id == self.textComponent.savedVersion:
     self.lastSavedRevision = self.undoableRevision
 
 proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =

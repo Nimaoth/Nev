@@ -223,208 +223,16 @@ when implModule:
     if delta == 0:
       return "just now"
     elif delta < 5:
-      return "1 second ago"
+      return "1s ago"
     elif delta < 60:
       let delta = ((delta.float / 5).floor * 5).int
-      return $delta & " seconds ago"
+      return $delta & "s ago"
     elif delta < 3600:
-      return $ (delta div 60) & " minutes ago"
+      return $ (delta div 60) & "min ago"
     elif delta < 86400:
-      return $ (delta div (60 * 60)) & " hours ago"
+      return $ (delta div (60 * 60)) & "h ago"
     else:
-      return $ (delta div (60 * 60 * 24)) & " days ago"
-
-  proc renderUndoTreeDirect*(self: UndoTreeView, document: Document, buffer: Buffer, builder: UINodeBuilder, renderCommands: var RenderCommands) =
-    let tree {.cursor.} = buffer.history.undoTree
-    if tree.nodes.len == 0:
-      return
-
-    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-    let backgroundColor = builder.theme.color("editor.background", color(25/255, 25/255, 40/255))
-
-    let branchColors = [
-      (builder.theme.color("terminal.ansiBrightYellow", color(1.0, 1.0, 0.7)), &{TextBold}),
-      (builder.theme.color("terminal.ansiRed", color(1.0, 0.5, 0.5)), 0.UINodeFlags),
-      (builder.theme.color("terminal.ansiGreen", color(0.5, 1.0, 0.5)), 0.UINodeFlags),
-      (builder.theme.color("terminal.ansiBlue", color(0.5, 0.5, 1.0)), 0.UINodeFlags),
-      (builder.theme.color("terminal.ansiMagenta", color(1.0, 0.5, 1.0)), 0.UINodeFlags),
-      (builder.theme.color("terminal.ansiCyan", color(0.5, 1.0, 1.0)), 0.UINodeFlags),
-      (builder.theme.color("terminal.ansiYellow", color(1.0, 1.0, 0.5)), 0.UINodeFlags),
-    ]
-
-    let charWidth = builder.charWidth
-    let lineHeight = builder.textHeight.float
-
-    var headerColor = if self.active: builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
-    self.scrollBox.defaultItemHeight = builder.textHeight
-    self.scrollBox.updateScroll(getServiceChecked(PlatformService).platform.deltaTime)
-
-    buildCommands(renderCommands):
-      let b = rect(0, 0, builder.currentParent.bounds.w, lineHeight)
-      fillRect(b, headerColor)
-      let (path, name) = document.filename.splitPath
-      drawText("Undo History for " & name & " - " & path, b, textColor, 0.UINodeFlags)
-
-    if buffer.remoteId != self.cachedBufferId or buffer.history.undoTree.nodes.len != self.cachedLen:
-      # let t = startTimer()
-      # defer:
-      #   echo &"parse took {t.elapsed.ms}ms"
-      if buffer.remoteId != self.cachedBufferId:
-        self.selected = 0
-
-      let lastSelected = self.cachedLines.len > 1 and self.selected == self.cachedLines.high
-      self.cachedBufferId = buffer.remoteId
-      self.cachedLen = buffer.history.undoTree.nodes.len
-      self.cachedLines.setLen(0)
-      parseRecursively(tree, self.cachedLines, 0, 1, false, 0, -1, true)
-      self.cachedLines.reverse()
-      self.selected = self.selected.clamp(0, self.cachedLines.high)
-
-      if lastSelected:
-        self.selected = self.cachedLines.high
-
-      var prevNodes: seq[tuple[col: int, leaf: int32, child: int]] = @[]
-      var newPrevNodes: seq[tuple[col: int, leaf: int32, child: int]] = @[]
-      proc prevLeaf(col: int, c: char): int =
-        let offset = case c
-        of '/': 1
-        of '\\': -1
-        else: 0
-
-        for i, n in prevNodes:
-          if n.col == col + offset:
-            return i
-        return -1
-
-      # Calculate colors
-      for lineIndex, line in self.cachedLines.mpairs:
-        newPrevNodes = prevNodes
-        for cell in line.cells.mitems:
-          var prev = prevLeaf(cell.col, cell.char)
-          if prev == -1:
-            newPrevNodes.add (cell.col, line.nodeIdx, lineIndex)
-            prev = newPrevNodes.high
-
-          let (charColor, charStyle) = branchColors[prev mod branchColors.len]
-          cell.color = charColor
-          cell.style = charStyle
-          if prev in 0..prevNodes.high:
-            cell.nodeLineIndex = prevNodes[prev].child
-
-          let offset = case cell.char
-          of '/': -1
-          of '\\': 1
-          else: 0
-          newPrevNodes[prev].col = cell.col + offset
-          if line.nodeIdx != -1 and (cell.char == '*' or cell.char == '+'):
-            newPrevNodes[prev].child = lineIndex
-
-        prevNodes = newPrevNodes
-
-      self.cachedMaxCol = 1
-      for line in self.cachedLines:
-        for cell in line.cells:
-          if cell.col > self.cachedMaxCol:
-            self.cachedMaxCol = cell.col
-
-      self.cachedMaxCol = self.cachedMaxCol + 3
-
-    if tree.nodes.len == 1:
-      let node = tree.nodes[0]
-      let text = "*1 " & $node.transaction.id.asNumber & " (base)"
-      let bounds = rect(0, lineHeight * 2, text.len.float * charWidth, lineHeight)
-      buildCommands(renderCommands):
-        fillRect(bounds, backgroundColor)
-        drawText(text, bounds, textColor, 0.UINodeFlags)
-      return
-
-    let now = getTime().toUnix().int64
-
-    let selectionColor = builder.theme.color("list.activeSelectionBackground", color(0.8, 0.8, 0.8))
-    self.scrollBox.beginRender(builder.currentParent.bounds.wh - 2 * lineHeight, 0.UINodeFlags, self.cachedLines.high)
-
-    proc drawLine(commands: var RenderCommands, index: int): Option[Vec2] =
-      if index notin 0..self.cachedLines.high:
-        return
-
-      let line {.cursor.} = self.cachedLines[index]
-
-      # Add a transform render command for which we later override the y offset to the correct y offset calculated by the
-      # scroll box. Every render command for a line can then just use (0, 0) as the origin.
-      commands.startTransform(vec2(0))
-      defer:
-        commands.endTransform()
-
-      let isSelected = (index == self.selected)
-      if isSelected:
-        commands.fillRect(rect(0, 0, builder.currentParent.bounds.w, builder.textHeight), selectionColor)
-
-      let isCurrent = (line.nodeIdx == tree.current)
-      for cell in line.cells:
-        let bounds = rect(cell.col.float * charWidth, 0, charWidth, lineHeight)
-        if isCurrent and cell.char in {'+', '*'}:
-          commands.drawText("(" & $cell.char & ")", bounds - vec2(charWidth, 0), cell.color, cell.style)
-        else:
-          commands.drawText($cell.char, bounds, cell.color, cell.style)
-
-      if line.nodeIdx >= 0:
-        let node = tree.nodes[line.nodeIdx]
-        let seqNum = line.nodeIdx
-        let saveMark = if line.nodeIdx == tree.current: ">" else: " "
-        let timeStr = " (" & formatTimeAgo(now, node.transaction.timestampUnix) & ")"
-        let nodeText = $seqNum
-        let bounds = rect(self.cachedMaxCol.float * charWidth, 0, nodeText.len.float * charWidth, lineHeight)
-        commands.drawText(saveMark, bounds, textColor.lighten(0.1), 0.UINodeFlags)
-        commands.drawText(nodeText, bounds + vec2(charWidth, 0), textColor, 0.UINodeFlags)
-        commands.drawText(timeStr, bounds + vec2(charWidth + nodeText.len.float * charWidth, 0), textColor.darken(0.1), &{TextItalic})
-
-      return vec2(builder.currentParent.bounds.w, lineHeight).some
-
-    # List of TransformStart render command indices where we need to fix the offset when we know it the offset after rendering all lines.
-    var fixups = newSeq[tuple[line: int, renderCommandHead: int]]()
-
-    while true:
-      let renderedItem = self.scrollBox.renderItemT:
-        let renderCommandHead = renderCommands.commands.len
-        let size = drawLine(renderCommands, self.scrollBox.currentIndex)
-        if size.isSome:
-          fixups.add (self.scrollBox.currentIndex, renderCommandHead)
-        size
-
-      if not renderedItem:
-        break
-
-    fixups.sort(proc(a, b: auto): int = cmp(a.line, b.line))
-    # Fixup chunk bounds and Transform render commands now that we know the line bounds
-    assert fixups.len == self.scrollBox.items.len
-    for i in 0..<fixups.len:
-      assert fixups[i].line == self.scrollBox.items[i].index
-      let fix = fixups[i]
-      let lineBounds = self.scrollBox.items[i].bounds
-
-      # Offset TransformStart render command according to scroll box item bounds
-      if fix.renderCommandHead in 0..renderCommands.commands.high and
-          renderCommands.commands[fix.renderCommandHead].kind == RenderCommandKind.TransformStart:
-        renderCommands.commands[fix.renderCommandHead] = RenderCommand(
-          kind: RenderCommandKind.TransformStart,
-          bounds: rect((vec2(0, lineHeight * 2 + lineBounds.y)), vec2(0)),
-        )
-
-    self.scrollBox.endRender()
-    self.scrollBox.clamp(self.cachedLines.high)
-
-    # Scroll bar
-    buildCommands(renderCommands):
-      if self.scrollBox.items.len > 0:
-        let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
-        let topScrollOffset = clamp(self.scrollBox.items[0].index.float / self.cachedLines.high.float, 0, 1)
-        let bottomScrollOffset = clamp(self.scrollBox.items[^1].index.float / self.cachedLines.high.float, 0, 1)
-        let y = topScrollOffset * builder.currentParent.bounds.h
-        let y2 = bottomScrollOffset * builder.currentParent.bounds.h
-        let centerY = (y + y2) * 0.5
-        let h = clamp(y2 - y, builder.textHeight, builder.currentParent.bounds.h * 0.5)
-        let w = ceil(builder.charWidth * 0.5)
-        fillRect(rect(builder.currentParent.bounds.w - w, floor(centerY - h * 0.5), w, ceil(h)), scrollBarColor)
+      return $ (delta div (60 * 60 * 24)) & "d ago"
 
   proc applySelected(view: UndoTreeView) =
     let curView = view.lastEditorView
@@ -437,40 +245,245 @@ when implModule:
           if nodeIndex != -1:
             cmd.executeCommand(&"switch-undo-branch {nodeIndex}")
 
+  proc generateLines(self: UndoTreeView, buffer: Buffer, theme: Theme) =
+    # let t = startTimer()
+    # defer:
+    #   echo &"parse took {t.elapsed.ms}ms"
+
+    let branchColors = [
+      (theme.color("terminal.ansiBrightYellow", color(1.0, 1.0, 0.7)), &{TextBold}),
+      (theme.color("terminal.ansiRed", color(1.0, 0.5, 0.5)), 0.UINodeFlags),
+      (theme.color("terminal.ansiGreen", color(0.5, 1.0, 0.5)), 0.UINodeFlags),
+      (theme.color("terminal.ansiBlue", color(0.5, 0.5, 1.0)), 0.UINodeFlags),
+      (theme.color("terminal.ansiMagenta", color(1.0, 0.5, 1.0)), 0.UINodeFlags),
+      (theme.color("terminal.ansiCyan", color(0.5, 1.0, 1.0)), 0.UINodeFlags),
+      (theme.color("terminal.ansiYellow", color(1.0, 1.0, 0.5)), 0.UINodeFlags),
+    ]
+
+    let tree {.cursor.} = buffer.history.undoTree
+    if buffer.remoteId != self.cachedBufferId:
+      self.selected = 0
+
+    let lastSelected = self.cachedLines.len > 1 and self.selected == self.cachedLines.high
+    self.cachedBufferId = buffer.remoteId
+    self.cachedLen = buffer.history.undoTree.nodes.len
+    self.cachedLines.setLen(0)
+    parseRecursively(tree, self.cachedLines, 0, 1, false, 0, -1, true)
+    self.cachedLines.reverse()
+    self.selected = self.selected.clamp(0, self.cachedLines.high)
+
+    if lastSelected:
+      self.selected = self.cachedLines.high
+
+    var prevNodes: seq[tuple[col: int, leaf: int32, child: int]] = @[]
+    var newPrevNodes: seq[tuple[col: int, leaf: int32, child: int]] = @[]
+    proc prevLeaf(col: int, c: char): int =
+      let offset = case c
+      of '/': 1
+      of '\\': -1
+      else: 0
+
+      for i, n in prevNodes:
+        if n.col == col + offset:
+          return i
+      return -1
+
+    # Calculate colors
+    for lineIndex, line in self.cachedLines.mpairs:
+      newPrevNodes = prevNodes
+      for cell in line.cells.mitems:
+        var prev = prevLeaf(cell.col, cell.char)
+        if prev == -1:
+          newPrevNodes.add (cell.col, line.nodeIdx, lineIndex)
+          prev = newPrevNodes.high
+
+        let (charColor, charStyle) = branchColors[prev mod branchColors.len]
+        cell.color = charColor
+        cell.style = charStyle
+        if prev in 0..prevNodes.high:
+          cell.nodeLineIndex = prevNodes[prev].child
+
+        let offset = case cell.char
+        of '/': -1
+        of '\\': 1
+        else: 0
+        newPrevNodes[prev].col = cell.col + offset
+        if line.nodeIdx != -1 and (cell.char == '*' or cell.char == '+'):
+          newPrevNodes[prev].child = lineIndex
+
+      prevNodes = newPrevNodes
+
+    self.cachedMaxCol = 1
+    for line in self.cachedLines:
+      for cell in line.cells:
+        if cell.col > self.cachedMaxCol:
+          self.cachedMaxCol = cell.col
+
+    self.cachedMaxCol = self.cachedMaxCol + 3
+
+  proc renderUndoTree*(self: UndoTreeView, builder: UINodeBuilder) =
+    var backgroundColor = if self.active: builder.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(-0.025)
+    let layout = getServiceChecked(LayoutService)
+
+    builder.panel(&{FillBackground, FillX, FillY, MaskContent}, backgroundColor = backgroundColor):
+      onScroll:
+        self.scrollBox.scroll(delta.y * builder.textHeight * 5)
+      onClickAny btn:
+        if btn == Left:
+          for item in self.scrollBox.items:
+            if item.bounds.contains(pos - builder.textHeight * 2):
+              self.selected = item.index
+        elif btn == DoubleClick:
+          for item in self.scrollBox.items:
+            if item.bounds.contains(pos - builder.textHeight * 2):
+              self.selected = item.index
+          self.applySelected()
+        getServiceChecked(LayoutService).tryActivateView(self)
+
+      currentNode.renderCommands.clear()
+      currentNode.markDirty(builder)
+
+      var curView = layout.tryGetCurrentView()
+      if curView.isNone or not (curView.get of EditorView):
+        curView = self.lastEditorView
+      if curView.isNone or not (curView.get of EditorView):
+        return
+      self.lastEditorView = curView
+      let editor = curView.get.EditorView.editor
+      if editor == nil or editor.currentDocument == nil:
+        return
+
+      let document = editor.currentDocument
+      let text = document.getTextComponent().get
+      let buffer {.cursor.} = text.buffer
+      let tree {.cursor.} = buffer.history.undoTree
+      if tree.nodes.len == 0:
+        return
+
+      let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+      let backgroundColor = builder.theme.color("editor.background", color(25/255, 25/255, 40/255))
+
+      let charWidth = builder.charWidth
+      let lineHeight = builder.textHeight.float
+
+      var headerColor = if self.active: builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+      self.scrollBox.defaultItemHeight = builder.textHeight
+      self.scrollBox.updateScroll(getServiceChecked(PlatformService).platform.deltaTime)
+
+      buildCommands(currentNode.renderCommands):
+        let b = rect(0, 0, builder.currentParent.bounds.w, lineHeight)
+        fillRect(b, headerColor)
+        let (path, name) = document.filename.splitPath
+        drawText("Undo History for " & name & " - " & path, b, textColor, 0.UINodeFlags)
+
+      if buffer.remoteId != self.cachedBufferId or buffer.history.undoTree.nodes.len != self.cachedLen:
+        self.generateLines(buffer, builder.theme)
+
+      if tree.nodes.len == 1:
+        let node = tree.nodes[0]
+        let text = "*1 " & $node.transaction.id.asNumber & " (base)"
+        let bounds = rect(0, lineHeight * 2, text.len.float * charWidth, lineHeight)
+        buildCommands(currentNode.renderCommands):
+          fillRect(bounds, backgroundColor)
+          drawText(text, bounds, textColor, 0.UINodeFlags)
+        return
+
+      let now = getTime().toUnix().int64
+
+      let selectionColor = builder.theme.color("list.activeSelectionBackground", color(0.8, 0.8, 0.8))
+      self.scrollBox.beginRender(builder.currentParent.bounds.wh - 2 * lineHeight, 0.UINodeFlags, self.cachedLines.high)
+
+      proc drawLine(commands: var RenderCommands, index: int): Option[Vec2] =
+        if index notin 0..self.cachedLines.high:
+          return
+
+        let line {.cursor.} = self.cachedLines[index]
+
+        # Add a transform render command for which we later override the y offset to the correct y offset calculated by the
+        # scroll box. Every render command for a line can then just use (0, 0) as the origin.
+        commands.startTransform(vec2(0))
+        defer:
+          commands.endTransform()
+
+        let isSelected = (index == self.selected)
+        if isSelected:
+          commands.fillRect(rect(0, 0, builder.currentParent.bounds.w, builder.textHeight), selectionColor)
+
+        let isCurrent = (line.nodeIdx == tree.current)
+        for cell in line.cells:
+          let bounds = rect(cell.col.float * charWidth, 0, charWidth, lineHeight)
+          if isCurrent and cell.char in {'+', '*'}:
+            commands.drawText("(" & $cell.char & ")", bounds - vec2(charWidth, 0), cell.color, cell.style)
+          else:
+            commands.drawText($cell.char, bounds, cell.color, cell.style)
+
+        if line.nodeIdx >= 0:
+          let node = tree.nodes[line.nodeIdx]
+          let seqNum = line.nodeIdx
+          let saveMark = if line.nodeIdx == tree.current: ">" else: " "
+          var timeStr = " (" & formatTimeAgo(now, node.transaction.timestampUnix) & ")"
+          if node.transaction.id == text.savedVersion:
+            timeStr.add " (saved)"
+          let nodeText = $seqNum
+          let bounds = rect(self.cachedMaxCol.float * charWidth, 0, nodeText.len.float * charWidth, lineHeight)
+          commands.drawText(saveMark, bounds, textColor.lighten(0.1), 0.UINodeFlags)
+          commands.drawText(nodeText, bounds + vec2(charWidth, 0), textColor, 0.UINodeFlags)
+          commands.drawText(timeStr, bounds + vec2(charWidth + nodeText.len.float * charWidth, 0), textColor.darken(0.1), &{TextItalic})
+
+
+        return vec2(builder.currentParent.bounds.w, lineHeight).some
+
+      # List of TransformStart render command indices where we need to fix the offset when we know it the offset after rendering all lines.
+      var fixups = newSeq[tuple[line: int, renderCommandHead: int]]()
+
+      while true:
+        let renderedItem = self.scrollBox.renderItemT:
+          let renderCommandHead = currentNode.renderCommands.commands.len
+          let size = drawLine(currentNode.renderCommands, self.scrollBox.currentIndex)
+          if size.isSome:
+            fixups.add (self.scrollBox.currentIndex, renderCommandHead)
+          size
+
+        if not renderedItem:
+          break
+
+      fixups.sort(proc(a, b: auto): int = cmp(a.line, b.line))
+      # Fixup chunk bounds and Transform render commands now that we know the line bounds
+      assert fixups.len == self.scrollBox.items.len
+      for i in 0..<fixups.len:
+        assert fixups[i].line == self.scrollBox.items[i].index
+        let fix = fixups[i]
+        let lineBounds = self.scrollBox.items[i].bounds
+
+        # Offset TransformStart render command according to scroll box item bounds
+        if fix.renderCommandHead in 0..currentNode.renderCommands.commands.high and
+            currentNode.renderCommands.commands[fix.renderCommandHead].kind == RenderCommandKind.TransformStart:
+          currentNode.renderCommands.commands[fix.renderCommandHead] = RenderCommand(
+            kind: RenderCommandKind.TransformStart,
+            bounds: rect((vec2(0, lineHeight * 2 + lineBounds.y)), vec2(0)),
+          )
+
+      self.scrollBox.endRender()
+      self.scrollBox.clamp(self.cachedLines.high)
+
+      # Scroll bar
+      buildCommands(currentNode.renderCommands):
+        if self.scrollBox.items.len > 0:
+          let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
+          let topScrollOffset = clamp(self.scrollBox.items[0].index.float / self.cachedLines.high.float, 0, 1)
+          let bottomScrollOffset = clamp(self.scrollBox.items[^1].index.float / self.cachedLines.high.float, 0, 1)
+          let y = topScrollOffset * builder.currentParent.bounds.h
+          let y2 = bottomScrollOffset * builder.currentParent.bounds.h
+          let centerY = (y + y2) * 0.5
+          let h = clamp(y2 - y, builder.textHeight, builder.currentParent.bounds.h * 0.5)
+          let w = ceil(builder.charWidth * 0.5)
+          fillRect(rect(builder.currentParent.bounds.w - w, floor(centerY - h * 0.5), w, ceil(h)), scrollBarColor)
+
   proc newUndoTreeView*(): UndoTreeView =
     result = UndoTreeView()
     result.renderImpl = proc(view: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] =
       let undoView = view.UndoTreeView
-      var backgroundColor = if undoView.active: builder.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(-0.025)
-      let services = getServices()
-      let layout = services.getService(LayoutService).get
-
-      builder.panel(&{FillBackground, FillX, FillY, MaskContent}, backgroundColor = backgroundColor):
-        onScroll:
-          undoView.scrollBox.scroll(delta.y * builder.textHeight * 5)
-        onClickAny btn:
-          if btn == Left:
-            for item in undoView.scrollBox.items:
-              if item.bounds.contains(pos - builder.textHeight * 2):
-                undoView.selected = item.index
-          elif btn == DoubleClick:
-            for item in undoView.scrollBox.items:
-              if item.bounds.contains(pos - builder.textHeight * 2):
-                undoView.selected = item.index
-            undoView.applySelected()
-          getServiceChecked(LayoutService).tryActivateView(undoView)
-
-        currentNode.renderCommands.clear()
-        var curView = layout.tryGetCurrentView()
-        if curView.isNone or not (curView.get of EditorView):
-          curView = undoView.lastEditorView
-        if curView.isSome and curView.get of EditorView:
-          undoView.lastEditorView = curView
-          let editor = curView.get.EditorView.editor
-          if editor != nil and editor.currentDocument != nil:
-            if editor.currentDocument.getTextComponent().getSome(textComp):
-              renderUndoTreeDirect(undoView, editor.currentDocument, textComp.buffer, builder, currentNode.renderCommands)
-        currentNode.markDirty(builder)
+      renderUndoTree(undoView, builder)
 
     result.getEventHandlersImpl = proc(self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] =
       getUndoTreeViewEventHandlers(self.UndoTreeView, inject)
