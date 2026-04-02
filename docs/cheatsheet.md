@@ -11,7 +11,7 @@ To switch to VSCode like keybindings create/extend the config file in `<USER_HOM
 }
 ```
 
-Possible values for `keybindings`: `vscode`, `vim` (default)
+Possible values for `keybindings.preset`: `vim` (default), `vscode`
 
 After changing the settings restart the editor.
 
@@ -66,5 +66,4 @@ so e.g. `<C-w>x` and `<LEADER>wx` both work
 - [`explore-app-config`](finders.md#explore-app-config): Search for config files that are installed with the editor.
 - [`browse-keybinds`](finders.md#browse-keybinds): Search through current keybindings.
 - `logs`: show the log file
-- `load-normal-keybindings`: load "normal" keybindings (like vs code)
-- `load-vim-keybindings`: load vim keybindings (WIP). As close to vim as possible.
+- Switch keybinding preset by changing `keybindings.preset` in settings to `vim` or `vscode`

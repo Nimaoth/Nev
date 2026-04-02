@@ -17,8 +17,9 @@ The following LSP features are currently supported:
 | `textDocument/documentSymbol` | `gs` | `<C-g><C-s>` or `<CS-o>` |  |
 | `textDocument/references` | `gr` | `<C-g><C-r>` or `<S-F12>` |  |
 | `textDocument/hover` | `K` | `<C-g><C-k>` |  |
-| `textDocument/diagnostic` | `H` | `<C-g><C-h>` |  |
-| `textDocument/codeAction` | `ga` |  | Opens the code action picker for the selected diagnostic. |
+| `textDocument/signatureHelp` | `H` |  | Show function signature help. |
+| `textDocument/diagnostic` |  | `<C-g><C-h>` |  |
+| `textDocument/codeAction` | `ga` | `<C-g><C-a>` | Opens the code action picker for the selected diagnostic. |
 | `textDocument/rename` | `gR` |  | Opens a prompt to rename a variable. |
 | `textDocument/switchSourceHeader` | `go` | `<C-g><C-o>` | Only for C/C++ with `clangd` |
 | `workspace/symbol` | `gw` | `<C-g><C-w>` or `<C-t>` |  |
@@ -169,9 +170,9 @@ Here is an example configuration for Nim which defines two regexes, one for goto
 }
 ```
 
-Given this configuration, when you press `gs` (in normal mode) in a Nim file, the editor will use the regex `languages.nim.search-regexes.symbols` to search the current file and display the results in a popup.
+Given this configuration, when you press `gs` (in normal mode) in a Nim file, the editor will use the regex `lang.nim.text.search-regexes.symbols` to search the current file and display the results in a popup.
 
-When you press `gd` (in normal mode) in a Nim file, the editor will use the regex `languages.nim.search-regexes.goto-definition` to search all workspaces. If only one result is found, the editor will open it immediately, otherwise all results are displayed in a popup.
+When you press `gd` (in normal mode) in a Nim file, the editor will use the regex `lang.nim.text.search-regexes.goto-definition` to search all workspaces. If only one result is found, the editor will open it immediately, otherwise all results are displayed in a popup.
 
 For `goto-definition`, `goto-declaration`, `goto-type-definition`, `goto-implementation` and `goto-references` the regex is a template, and any instances of the string `[[0]]` will be replaced by the word under the cursor.
 

@@ -1,17 +1,17 @@
 # Nev documentation
 
 This file contains documentation about features that don't fit into any of the other docs.
-- [Build from source](docs/building_from_source.md)
-- [Getting started](docs/getting_started.md)
-- [Cheat sheet](docs/cheatsheet.md)
-- [Configuration](docs/configuration.md)
-- [Finders](docs/finders.md)
+- [Build from source](building_from_source.md)
+- [Getting started](getting_started.md)
+- [Cheat sheet](cheatsheet.md)
+- [Configuration](configuration.md)
+- [Finders](finders.md)
 - [Plugin API](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html).
-- [Virtual filesystem](docs/virtual_file_system.md)
-- [Moves](docs/moves.md)
-- [Markdown](docs/markdown.md)
-- [Dashboard](docs/dashboard.md)
-- [Undo Tree](docs/undo_tree.md)
+- [Virtual filesystem](virtual_file_system.md)
+- [Moves](moves.md)
+- [Markdown](markdown.md)
+- [Dashboard](dashboard.md)
+- [Undo Tree](undo_tree.md)
 
 ## Layout
 
@@ -115,19 +115,19 @@ Defining layouts in a settings file:
     "slots.scratch-terminal": "bottom.+", // Open scratch terminals in a new tab in the bottom slot of the root layout
     "slots.build-run-terminal": "left.+", // Open build/run terminals in a new tab in the left slot of the root layout
     "kind": "center",                     // Root layout
-    "center": {                           // Specify which layout to use in the center
+    "centerTemplate": {                           // Specify which layout to use in the center
       "kind": "alternating",              // In the center we basically have the tabs-in-splits layout
       "childTemplate": {
         "kind": "tab",
       }
     },
-    "bottom": {                           // In the bottom slot are just tabs
+    "bottomTemplate": {                           // In the bottom slot are just tabs
       "kind": "tab",
     },
-    "left": {                             // In the left slot are just tabs
+    "leftTemplate": {                             // In the left slot are just tabs
       "kind": "tab",
     },
-    "right": {                            // In the right slot are just tabs
+    "rightTemplate": {                            // In the right slot are just tabs
       "kind": "tab",
     },
   },

@@ -50,13 +50,13 @@ vim.base             ← bottom (from `editor.base-modes`)    -  This one is alw
 
 When a selector popup is open, the following rules apply:
 
-* The base mode (e.g., `vim.selector`) is always added.
+* The base mode (e.g., `popup.selector`) is always added.
 * A **scope-specific mode** is added:
 
-  * For selector scope `themes` → `vim.selector.themes`
+  * For selector scope `themes` → `popup.selector.themes`
 * If the preview is focused, the preview mode is added:
 
-  * → `vim.selector.preview`
+  * → `popup.selector.preview`
 
 ---
 
@@ -64,12 +64,12 @@ When a selector popup is open, the following rules apply:
 These examples assume using Vim keybindings, with the modes defined like [this](../config/settings-vim.json)
 | Context                                  | Active Input Modes (Bottom → Top)                                                                  |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Selector popup for themes (preview not focused)    | `vim.base`, `vim.selector`, `vim.selector.themes`                                                  |
-| Selector popup for themes (preview focused)  | `vim.base`, `vim.selector`, `vim.selector.preview`                                                 |
+| Selector popup for themes (preview not focused)    | `vim.base`, `popup.selector`, `popup.selector.themes`                                              |
+| Selector popup for themes (preview focused)  | `vim.base`, `popup.selector`, `popup.selector.preview`                                              |
 | Text editor in **normal mode**    | `vim.base`, `vim`, `vim.normal`                                                                    |
 | Text editor in **insert mode**            | `vim.base`, `vim`, `vim.insert`                                                                    |
 | Text editor in **insert mode** and completions open   | `vim.base`, `vim`, `vim.insert`, `vim.completion`                                                  |
-| Terminal in **normal mode**               | `vim.base`, `terminal`, `normal`                                                                   |
+| Terminal in **normal mode**               | `vim.base`, `terminal`, `terminal.normal`                                                          |
 | Command-line in insert mode + completions | `vim.base`, `vim`, `vim.insert`, `vim.command-line-low`, `vim.completion`, `vim.command-line-high` |
 
 ---
@@ -149,10 +149,10 @@ To bind `<LEADER>m` in Vim Normal mode and `<C-m>` in VSCode mode to maximize th
         "<C-w>": ["vim.delete-word-back"],
         "<C-u>": ["vim.delete-line-back"]
     },
-    "vim.selector": {
+    "popup.selector": {
         // selector global keybindings
     },
-    "vim.selector.themes": {
+    "popup.selector.themes": {
         // keybindings specific to theme selector
     },
     "vscode.base": {

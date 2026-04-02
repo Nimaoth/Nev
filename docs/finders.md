@@ -18,7 +18,7 @@ While a finder is open the following keybinding contexts are pushed:
 
 When the preview is focused the following contexts are pushed instead:
 - `editor.text`: The preview editor
-- `editor.selector.preview`: For overriding keybindings of the text editor while in a preview
+- `popup.selector.preview`: For overriding keybindings of the text editor while in a preview
 
 Default keybindings:
 - Vim:

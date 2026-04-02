@@ -2,8 +2,7 @@
 
 The undo tree shows the full history of changes to a file as a branching tree, rather than a linear undo/redo stack. This lets you explore and restore any past state, even across different edit branches.
 
-![Undo Tree view showing a branching edit history](../screenshots/undo_tree.png)
-<!-- TODO: Replace with actual screenshot or gif -->
+![Undo Tree view showing a branching edit history](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/undo-tree.gif)
 
 ## Opening
 
@@ -21,13 +20,8 @@ Each node shows a sequence number, relative timestamp, and a `>` marker if it ma
 |-----|---------|-------------|
 | `gK` | `undotree.toggle` | Toggle undo tree panel |
 | `u` | `vim.undo` | Undo |
-| `<C-z>` | `undo` | Undo |
-| `g<*k>r` | `undo` | Redo |
-| `g<*k>R` | `undo Y` | Redo (force) |
-| `g<*k>n` | `undo-to-previous-sibling` | Jump to previous sibling branch |
-| `g<*k>t` | `undo-to-next-sibling` | Jump to next sibling branch |
-| `g<*k>N` | `undo-to-previous-sibling` (force) | Jump to previous sibling (force) |
-| `g<*k>T` | `undo-to-next-sibling` (force) | Jump to next sibling (force) |
+| `U` | `vim.redo` | Redo |
+| `<C-z>` | `undo` | Undo (VSCode keybindings) |
 
 ## Undo Tree Panel Keybindings
 

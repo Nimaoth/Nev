@@ -30,11 +30,11 @@ For examples and default values see [here](../config/settings.json)
 | `ui.theme` | bool | "app://themes/tokyo-night-color-theme.json" | Path to the theme. |
 | `ui.smooth-scroll` | bool | true | If true then scrolling is smooth. |
 | `ui.cursor-trail` | number (int) | 2 | How long of a trail to render when the cursor moves. |
-| `ui.which-key-delay` | number (ms) | 250 | After how many seconds the editor will show a window with possible next inputs after pressing a key which doesn't immediately execute an action. |
+| `ui.which-key-delay` | number (ms) | 250 | After how many milliseconds the editor will show a window with possible next inputs after pressing a key which doesn't immediately execute an action. |
 | `ui.which-key-height` | number | 6 | How many rows tall the window showing next possible inputs should be. |
 | `ui.which-key-no-progress` | bool | false | If true then the window showing next possible inputs will be displayed even when no keybinding is in progress (i.e. it will always be shown). |
 | `ui.selector-popup.which-key-height` | int | 5 | How many rows tall the window showing next possible inputs is in popups. |
-| `ui.smooth-scroll-speed` | bool | 15.0 | todo |
+| `ui.smooth-scroll-speed` | float | 15.0 | Scroll speed for smooth scrolling. |
 | `ui.highlight` | bool | true | Enable/disable syntax highlighting globally. |
 | `ui.indent-guide` | bool | true | If true then an indent guide is rendered to show the indentation of the current line. |
 | `ui.cursor-speed` | number | 100.0 | How fast the cursor trail moves. Higher is faster. |
@@ -47,11 +47,11 @@ For examples and default values see [here](../config/settings.json)
 | `text.reload-diff-check` | bool | false | If true and `text.reload-diff` is true, the diff is checked for correctness. |
 | `ui.log-text-render-time` | bool | false | If true log how long text rendering takes. |
 
-## todo
+## Incomplete — see [settings.gen.md](settings.gen.md) for the full list
 | Key | Type | Default | Description |
 | ----------- | --- | --- | ------ |
 | `editor.text.highlight-treesitter-errors` | bool | false | todo |
-| `editor.text.default-mode` | bool | false | todo |
+| `editor.text.default-mode` | string | "vim" | todo |
 | `editor.text.inclusive-selection` | bool | false | todo |
 | `editor.text.cursor.wide.` | bool | false | todo |
 | `editor.text.cursor.wide.normal` | bool | false | todo |
@@ -59,7 +59,7 @@ For examples and default values see [here](../config/settings.json)
 | `editor.text.cursor.movement.normal` | bool | false | todo |
 | `editor.text.languages-server` | bool | false | todo |
 | `editor.text.vim-motion-action` | bool | false | todo |
-| `editor.frame-time-smoothing` | bool | false | todo |
+| `editor.frame-time-smoothing` | float | 0.8 | todo |
 | `editor.custom-mode-on-top` | bool | false | todo |
 | `platform.terminal-sleep-threshold` | number (ms) | 5 | todo |
-| `ui.scroll-snap-min-distance` | bool | 0.5 | todo |
+| `ui.scroll-snap-min-distance` | float | 0.5 | todo |
