@@ -9,7 +9,7 @@ const currentSourcePath2 = currentSourcePath()
 include module_base
 
 # Implementation
-when implModule or true:
+when implModule:
   import misc/[custom_logger, util, id, event, myjsonutils]
   import text_component, event_service, document_editor, document, dynamic_view, layout, command_component, events, platform_service
   import nimsumtree/[buffer, clock]
@@ -28,15 +28,15 @@ when implModule or true:
   type
     AsciiGraphCell* = tuple[col: int, char: char, nodeLineIndex: int, color: Color, style: UINodeFlags]
     SeqLine* = object
-      graphLine*: seq[AsciiGraphCell]
+      cells*: seq[AsciiGraphCell]
       isBranch*: bool
       nodeIdx*: int32 = -1
-    Line2Seq* = seq[SeqLine]
+    LineSeq* = seq[SeqLine]
 
     UndoTreeView* = ref object of DynamicView
       lastEditorView: Option[View]
       eventHandlers*: Table[string, EventHandler]
-      cachedLines: Line2Seq
+      cachedLines: LineSeq
       cachedBufferId: BufferID
       cachedLen: int
       cachedMaxCol: int
@@ -68,9 +68,9 @@ when implModule or true:
   proc getUndoTreeViewEventHandlers(self: UndoTreeView, inject: Table[string, EventHandler]): seq[EventHandler] =
     result.add self.getUndoTreeViewEventHandler("undotree")
 
-  proc getOrCreate(t: var Line2Seq, i: int): var SeqLine =
+  proc getOrCreate(t: var LineSeq, i: int): var SeqLine =
     while t.len < i + 1:
-      t.add(SeqLine(graphLine: newSeq[AsciiGraphCell]()))
+      t.add(SeqLine(cells: newSeq[AsciiGraphCell]()))
     return t[i]
 
   proc getMaxCol(line: openArray[AsciiGraphCell]): int =
@@ -97,16 +97,16 @@ when implModule or true:
       gLine.add((col, barChar))
     return col
 
-  proc newBranchLine(line2seq: var Line2Seq, lnum, col: int, isMerge: bool, active: bool, depth = 0): int =
+  proc newBranchLine(line2seq: var LineSeq, lnum, col: int, isMerge: bool, active: bool, depth = 0): int =
     let barChar = '|'
-    var newline = SeqLine(isBranch: true, graphLine: newSeq[AsciiGraphCell]())
-    let pLine = getOrCreate(line2seq, lnum - 1).graphLine
+    var newline = SeqLine(isBranch: true, cells: newSeq[AsciiGraphCell]())
+    let pLine = getOrCreate(line2seq, lnum - 1).cells
     let pLen = pLine.len
-    let cLine = getOrCreate(line2seq, lnum).graphLine
+    let cLine = getOrCreate(line2seq, lnum).cells
     let cLen = cLine.len
     # log "  ".repeat(depth), &"newBranchLine lnum={lnum} col={col} merge={isMerge} {pLine} - {cLine}"
     if cLen == 0 and not isMerge:
-      newline.graphLine.add (1, barChar)
+      newline.cells.add (1, barChar)
 
     var pc = 0
     var cc = 0
@@ -114,7 +114,7 @@ when implModule or true:
       let pcol = pLine[pc].col
       let ccol = cLine[cc].col
       if pcol == ccol:
-        newline.graphLine.add (pcol, barChar)
+        newline.cells.add (pcol, barChar)
         inc pc
         inc cc
       elif pcol > ccol:
@@ -125,31 +125,31 @@ when implModule or true:
     var finalCol = col
     if isMerge:
       finalCol = col - 2
-      newline.graphLine.add((finalCol + 1, '\\'))
+      newline.cells.add((finalCol + 1, '\\'))
     else:
-      if col > newline.graphLine.getMaxCol():
-        newline.graphLine.add (col, barChar)
+      if col > newline.cells.getMaxCol():
+        newline.cells.add (col, barChar)
 
       finalCol = col + 2
-      newline.graphLine.add((finalCol - 1, '/'))
+      newline.cells.add((finalCol - 1, '/'))
 
     line2seq.insert(newline, lnum)
     # log "  ".repeat(depth), &"newBranchLine {lnum} -> {newline}"
     return finalCol
 
-  proc putSeqNode(line2seq: var Line2Seq, lnum, col: int, splitNode: bool, nodeIdx: int32, active: bool, depth = 0): tuple[lnum, col: int] =
+  proc putSeqNode(line2seq: var LineSeq, lnum, col: int, splitNode: bool, nodeIdx: int32, active: bool, depth = 0): tuple[lnum, col: int] =
     var lnum = lnum
     var col = col
     var sLine = getOrCreate(line2seq, lnum).addr
-    let curCol = getMaxCol(sLine.graphLine)
+    let curCol = getMaxCol(sLine.cells)
     let barChar = '|'
 
     # log "  ".repeat(depth), &"putSeqNode lnum={lnum} col={col} maxCol={curCol} split={splitNode} node={nodeIdx} {sLine[]}"
     if sLine.isBranch:
       if splitNode:
-        sLine.graphLine.add((col, barChar))
+        sLine.cells.add((col, barChar))
       else:
-        col = adjustBranchLine(sLine.graphLine, col, active, depth + 1)
+        col = adjustBranchLine(sLine.cells, col, active, depth + 1)
       inc lnum
     elif splitNode:
       discard newBranchLine(line2seq, lnum, col, false, active, depth + 1)
@@ -160,15 +160,15 @@ when implModule or true:
 
     sLine = getOrCreate(line2seq, lnum).addr
     if active:
-      sLine.graphLine.add((col, '*'))
+      sLine.cells.add((col, '*'))
     else:
-      sLine.graphLine.add((col, '+'))
+      sLine.cells.add((col, '+'))
     sLine.nodeIdx = nodeIdx
     # log "  ".repeat(depth), &"putSeqNode {lnum} -> {sLine[]}"
 
     return (lnum, col)
 
-  proc parseRecursively(tree: UndoTree, line2seq: var Line2Seq, lnum, col: int, splitNode: bool, nodeIdx: int32, parentIdx: int32, active: bool, depth = 0) =
+  proc parseRecursively(tree: UndoTree, line2seq: var LineSeq, lnum, col: int, splitNode: bool, nodeIdx: int32, parentIdx: int32, active: bool, depth = 0) =
     assert nodeIdx in 0..tree.nodes.high
     if tree.nodes[nodeIdx].firstChild != -1: assert tree.nodes[nodeIdx].firstChild > nodeIdx
     if tree.nodes[nodeIdx].nextSibling != -1: assert tree.nodes[nodeIdx].nextSibling > nodeIdx
@@ -185,11 +185,11 @@ when implModule or true:
       var sLine = getOrCreate(line2seq, lnum).addr
       # log "  ".repeat(depth), &"while {remaining} > 0: lnum={lnum} {sLine[]}"
       if sLine.isBranch:
-        col = adjustBranchLine(sLine.graphLine, col, active, depth + 1)
+        col = adjustBranchLine(sLine.cells, col, active, depth + 1)
       else:
-        let curCol = getMaxCol(sLine.graphLine)
+        let curCol = getMaxCol(sLine.cells)
         if col - 2 == curCol:
-          sLine.graphLine.add((col, barChar))
+          sLine.cells.add((col, barChar))
         elif col > curCol:
           col = newBranchLine(line2seq, lnum, col, true, active, depth + 1)
           inc lnum
@@ -216,7 +216,6 @@ when implModule or true:
         parseRecursively(tree, line2seq, lnum + 1, col, children.len > 1 and i < children.high, children[i], nodeIdx, active and node.activeChild == children[i], depth + 1)
     # log "  ".repeat(depth), &"parseRecursively {parentIdx}:{nodeIdx}, lnum={lnum} col={col} split={splitNode} C:\n  ", "  ".repeat(depth), line2seq.join("\n  " & "  ".repeat(depth))
 
-
   proc formatTimeAgo*(now: int64, timestamp: int64): string =
     if timestamp == 0:
       return "base"
@@ -234,131 +233,6 @@ when implModule or true:
       return $ (delta div (60 * 60)) & " hours ago"
     else:
       return $ (delta div (60 * 60 * 24)) & " days ago"
-
-  proc renderUndoTree*(tree: UndoTree): seq[string] =
-    result = @[]
-    if tree.nodes.len == 0:
-      return result
-
-    if tree.nodes.len == 1:
-      let node = tree.nodes[1]
-      let seqNum = node.transaction.id.asNumber
-      result.add &"*1  {seqNum} (base)"
-      return result
-
-    var line2seq: Line2Seq = newSeq[SeqLine]()
-    parseRecursively(tree, line2seq, 0, 1, false, 0, -1, true)
-
-    line2seq.reverse()
-
-    var maxCol = 1
-    for line in line2seq:
-      for cell in line.graphLine:
-        if cell.col > maxCol:
-          maxCol = cell.col
-
-    maxCol = maxCol + 2
-    var prevNodes: seq[tuple[col: int, leaf: int32]] = @[]
-    var newPrevNodes: seq[tuple[col: int, leaf: int32]] = @[]
-    proc prevLeaf(col: int, c: char): int =
-      let offset = case c
-      of '/': 1
-      of '\\': -1
-      else: 0
-
-      for i, n in prevNodes:
-        if n.col == col + offset:
-          return i
-      return -1
-
-    let colors = [
-      "\x1b[38;2;197;197;15m",   # red
-      "\x1b[38;2;15;130;15m",   # blue
-      "\x1b[38;2;15;130;130m",  # cyan
-      "\x1b[38;2;130;130;15m",  # yellow
-      "\x1b[38;2;15;15;130m",   # magenta
-      "\x1b[38;2;15;130;15m",   # light blue
-      "\x1b[38;2;130;15;130m",  # pink
-      "\x1b[38;2;130;130;130m", # gray
-    ]
-    let resetColor = "\x1b[0m"
-
-    for i, line in line2seq:
-      newPrevNodes = prevNodes
-      let isCurrent = (line.nodeIdx == tree.current)
-      var lineStr = ""
-      var lineLen = 0
-      var col = 0
-      for k, cell in line.graphLine:
-        var prev = prevLeaf(cell.col, cell.char)
-        if prev == -1:
-          newPrevNodes.add (cell.col, line.nodeIdx)
-          prev = newPrevNodes.high
-
-        let color = colors[prev mod colors.len]
-        lineStr.add color
-
-        let targetColumn = cell.col - 1
-
-        if targetColumn > col:
-          lineStr &= " ".repeat(targetColumn - col)
-          lineLen += targetColumn - col
-          col = targetColumn
-
-        if isCurrent and cell.char in {'+', '*'}:
-          lineStr.add "("
-          lineStr.add $cell.char
-          lineStr.add ")"
-          col += 3
-          lineLen += 3
-        else:
-          if cell.col > col:
-            lineStr &= " ".repeat(cell.col - col)
-            lineLen += cell.col - col
-            col = cell.col
-
-          lineStr.add $cell.char
-          col += 1
-          lineLen += 1
-
-        let offset = case cell.char
-        of '/': -1
-        of '\\': 1
-        else: 0
-        newPrevNodes[prev].col = cell.col + offset
-
-      lineStr.add " " & resetColor
-      col += 1
-      lineLen += 1
-
-      if line.nodeIdx >= 0:
-        let node = tree.nodes[line.nodeIdx]
-        let seqNum = line.nodeIdx
-        let saveMark = if line.nodeIdx == tree.current: ">" else: " "
-        let timeStr = " (" & formatTimeAgo(90067, node.transaction.timestampUnix) & ")"
-        lineStr &= " ".repeat(max(0, maxCol - lineLen))
-        lineStr &= saveMark & $seqNum & timeStr
-
-      result.add lineStr
-      prevNodes = newPrevNodes
-
-  proc visualize*(tree: UndoTree): string =
-    let lines = tree.renderUndoTree
-    result = ""
-    for line in lines:
-      result.add line
-      result.add "\n"
-
-  static:
-    let undoTree = UndoTree(current: 1, nodes: @[
-      UndoTreeNode(parent: -1, firstChild: 1, activeChild: 2, nextSibling: -1, transaction: Transaction(timestampUnix: 0)), # 0
-      UndoTreeNode(parent: 0, firstChild: 3, activeChild: 3, nextSibling: 2, transaction: Transaction(timestampUnix: 86400)), # 1
-      UndoTreeNode(parent: 0, firstChild: 5, activeChild: 5, nextSibling: 4, transaction: Transaction(timestampUnix: 90000)), # 2
-      UndoTreeNode(parent: 1, firstChild: -1, activeChild: -1, nextSibling: -1, transaction: Transaction(timestampUnix:  90060)), # 3
-      UndoTreeNode(parent: 0, firstChild: -1, activeChild: -1, nextSibling: -1, transaction: Transaction(timestampUnix: 90066)), # 4
-      UndoTreeNode(parent: 2, firstChild: -1, activeChild: -1, nextSibling: -1, transaction: Transaction(timestampUnix: 90067)), # 5
-    ])
-    echo "\n============================ Undo Tree:\n", visualize(undoTree)
 
   proc renderUndoTreeDirect*(self: UndoTreeView, document: Document, buffer: Buffer, builder: UINodeBuilder, renderCommands: var RenderCommands) =
     let tree {.cursor.} = buffer.history.undoTree
@@ -425,7 +299,7 @@ when implModule or true:
       # Calculate colors
       for lineIndex, line in self.cachedLines.mpairs:
         newPrevNodes = prevNodes
-        for cell in line.graphLine.mitems:
+        for cell in line.cells.mitems:
           var prev = prevLeaf(cell.col, cell.char)
           if prev == -1:
             newPrevNodes.add (cell.col, line.nodeIdx, lineIndex)
@@ -449,7 +323,7 @@ when implModule or true:
 
       self.cachedMaxCol = 1
       for line in self.cachedLines:
-        for cell in line.graphLine:
+        for cell in line.cells:
           if cell.col > self.cachedMaxCol:
             self.cachedMaxCol = cell.col
 
@@ -486,7 +360,7 @@ when implModule or true:
         commands.fillRect(rect(0, 0, builder.currentParent.bounds.w, builder.textHeight), selectionColor)
 
       let isCurrent = (line.nodeIdx == tree.current)
-      for cell in line.graphLine:
+      for cell in line.cells:
         let bounds = rect(cell.col.float * charWidth, 0, charWidth, lineHeight)
         if isCurrent and cell.char in {'+', '*'}:
           commands.drawText("(" & $cell.char & ")", bounds - vec2(charWidth, 0), cell.color, cell.style)
@@ -735,10 +609,10 @@ when implModule or true:
       let tree = text.buffer.history.undoTree
       if view.selected in 0..view.cachedLines.high:
         let line {.cursor.} = view.cachedLines[view.selected]
-        for i in 0..<line.graphLine.high:
-          if line.graphLine[i].char == '|' and line.graphLine[i + 1].char == '/':
-            if line.graphLine[i].nodeLineIndex != -1:
-              view.selected = line.graphLine[i].nodeLineIndex
+        for i in 0..<line.cells.high:
+          if line.cells[i].char == '|' and line.cells[i + 1].char == '/':
+            if line.cells[i].nodeLineIndex != -1:
+              view.selected = line.cells[i].nodeLineIndex
               applySelected(editor)
               break
 
@@ -746,10 +620,10 @@ when implModule or true:
       let tree = text.buffer.history.undoTree
       if view.selected in 0..view.cachedLines.high:
         let line {.cursor.} = view.cachedLines[view.selected]
-        for i in 0..<line.graphLine.high:
-          if line.graphLine[i].char == '|' and line.graphLine[i + 1].char == '/':
-            if line.graphLine[i + 1].nodeLineIndex != -1:
-              view.selected = line.graphLine[i + 1].nodeLineIndex
+        for i in 0..<line.cells.high:
+          if line.cells[i].char == '|' and line.cells[i + 1].char == '/':
+            if line.cells[i + 1].nodeLineIndex != -1:
+              view.selected = line.cells[i + 1].nodeLineIndex
               applySelected(editor)
               break
 
