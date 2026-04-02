@@ -1456,6 +1456,20 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
     self.drawHighlight(builder, sn, selectionColor, selectionsNode.renderCommands, state, ropeCursor, false)
 
+  # Scroll bar
+  if self.uiSettings.scrollBar.get():
+    buildCommands(selectionsNode.renderCommands):
+      if self.scrollBox.items.len > 0:
+        let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
+        let topScrollOffset = clamp(self.scrollBox.items[0].index.float / self.displayMap.endDisplayPoint.row.float, 0, 1)
+        let bottomScrollOffset = clamp(self.scrollBox.items[^1].index.float / self.displayMap.endDisplayPoint.row.float, 0, 1)
+        let y = topScrollOffset * currentNode.bounds.h
+        let y2 = bottomScrollOffset * currentNode.bounds.h
+        let centerY = (y + y2) * 0.5
+        let h = clamp(y2 - y, builder.textHeight, currentNode.bounds.h * 0.5)
+        let w = ceil(builder.charWidth * 0.5)
+        fillRect(rect(currentNode.bounds.w - w, floor(centerY - h * 0.5), w, ceil(h)), scrollBarColor)
+
   selectionsNode.markDirty(builder)
   currentNode.markDirty(builder)
 

@@ -26,6 +26,8 @@
         "focusBorder": "#665c54",
         "breadcrumbPicker.background": "#38382a",
 
+        "scrollBar": "#52504f",
+
         "diffEditor.insertedTextBackground": "#b8bb2620",
         "diffEditor.removedTextBackground": "#fb493422",
         "diffEditor.changedTextBackground": "#fabd2f20",

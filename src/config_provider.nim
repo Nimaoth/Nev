@@ -1155,6 +1155,9 @@ declareSettings UiSettings, "ui":
   ## Configures what to show in the status line.
   declare statusLine, seq[JsonNodeEx], @[newJexString"mode", newJexString"layout", newJexString"vcs.status", newJexString"session"]
 
+  ## Whether a scrollbar is shown.
+  declare scrollBar, bool, true
+
 # declareSettings LanguageSettings, "languages.*":
 #   ## Name of the github repository or link to git repository for the treesitter parser.
 #   declare treesitter, string, ""
