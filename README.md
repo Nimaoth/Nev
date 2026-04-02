@@ -12,7 +12,7 @@ There is a [Discord server](https://discord.gg/eJjBMcgP2V) where you can ask que
 ## Features
 - Vim motions (incomplete)
 - [LSP](docs/lsp.md) (incomplete)
-- [Syntax highlighting](docs/treesitter.md) using treesitter (no support for nested languages yet)
+- [Syntax highlighting](docs/treesitter.md) using treesitter with support for nested languages
 - Basic debugging using DAP
 - [Fuzzy search for various things](docs/finders.md)
 - [Sessions](docs/sessions.md)
@@ -21,6 +21,7 @@ There is a [Discord server](https://discord.gg/eJjBMcgP2V) where you can ask que
 - [Builtin terminal emulator](docs/docs.md#Terminal) support multiple shells (e.g `bash`, `powershell`, `wsl`)
 - [Flexible layout system](docs/docs.md#Layout)
 - [Nice looking markdown](docs/markdown.md)
+- [Undo Trees](undo_tree.md)
 - And many more smaller features...
 
 ## Planned features
@@ -37,7 +38,7 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 - [Zed](https://github.com/zed-industries/zed)
 
 ## Important notes if you intend to use it
-- Currently only UTF-8 encoded files are supported
+- Nev currently only supports saving files as UTF-8
 - Carriage return (`0xD`) will be removed when loading, and not added back when saving.
 - Language servers and debug adapters have to installed manually at the moment, treesitter parsers require [emscripten](https://github.com/emscripten-core/emscripten)
 - Read the [docs](docs/getting_started.md)
