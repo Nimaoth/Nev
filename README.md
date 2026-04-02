@@ -21,7 +21,7 @@ There is a [Discord server](https://discord.gg/eJjBMcgP2V) where you can ask que
 - [Builtin terminal emulator](docs/docs.md#Terminal) support multiple shells (e.g `bash`, `powershell`, `wsl`)
 - [Flexible layout system](docs/docs.md#Layout)
 - [Nice looking markdown](docs/markdown.md)
-- [Undo Trees](undo_tree.md)
+- [Undo Trees](docs/undo_tree.md)
 - And many more smaller features...
 
 ## Planned features
