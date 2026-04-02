@@ -2077,6 +2077,12 @@ proc insertIndent*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.edit(self.selections, self.selections, insertTexts).mapIt(
     it.last.toSelection)
 
+proc startTransaction*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.document.startTransaction()
+
+proc endTransaction*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.document.endTransaction()
+
 proc undo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("editor.text").} =
   if self.document.undo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
@@ -2085,6 +2091,24 @@ proc undo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("edit
 
 proc redo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("editor.text").} =
   if self.document.redo(self.selections, true, checkpoint).getSome(selections):
+    self.selections = selections
+    self.scrollToCursor(Last)
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
+
+proc undoToPreviousSibling*(self: TextDocumentEditor, redoUntilBranch: bool = false) {.expose("editor.text").} =
+  if self.document.undoToPreviousSibling(redoUntilBranch).getSome(selections):
+    self.selections = selections
+    self.scrollToCursor(Last)
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
+
+proc undoToNextSibling*(self: TextDocumentEditor, redoUntilBranch: bool = false) {.expose("editor.text").} =
+  if self.document.undoToNextSibling(redoUntilBranch).getSome(selections):
+    self.selections = selections
+    self.scrollToCursor(Last)
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
+
+proc switchUndoBranch*(self: TextDocumentEditor, targetNode: int32) {.expose("editor.text").} =
+  if self.document.switchUndoBranch(targetNode).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
     self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
@@ -2145,6 +2169,8 @@ proc pasteAsync*(self: TextDocumentEditor, selections: seq[Selection], registerN
       self.document.edit(selections, selections, [register.text.move], notify=true, record=true, inclusiveEnd=inclusiveEnd)
     of RegisterKind.Rope:
       self.document.edit(selections, selections, [register.rope.move], notify=true, record=true, inclusiveEnd=inclusiveEnd)
+
+  self.document.endTransaction()
 
   self.`selections=`(newSelections, addToHistory = true.some)
   self.`selections=`(newSelections.mapIt(it.last.toSelection), addToHistory = true.some)

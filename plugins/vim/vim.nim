@@ -241,6 +241,7 @@ proc normalMode(editor: TextEditor) {.exposeActive(editorContext).} =
     editor.setSelection editor.getSelection.last.toSelection
     editor.clearTabStops()
   editor.setMode("vim.normal")
+  discard editor.command(ws"end-transaction", ws"")
 
 proc visualMode(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.setMode "vim.visual"
@@ -645,7 +646,8 @@ proc moveParagraph(editor: TextEditor, backwards: bool, count: int = 1) {.expose
 proc deleteLeft*(editor: TextEditor) {.exposeActive(editorContext).} =
   yankedLines = editor.vimState.selectLines
   editor.copy(ws"", inclusiveEnd = false)
-  editor.addNextCheckpoint ws"insert"
+  if editor.mode != ws"vim.insert":
+    editor.addNextCheckpoint ws"insert"
   let selections = editor.multiMove(editor.getSelections, "(column -1) (join)")
   editor.setSelections editor.edit(selections, @@[ws""], inclusive=false)
   discard editor.command(ws"auto-show-signature-help", ws("\"\""))
@@ -653,7 +655,8 @@ proc deleteLeft*(editor: TextEditor) {.exposeActive(editorContext).} =
 proc deleteRight*(editor: TextEditor) {.exposeActive(editorContext).} =
   yankedLines = editor.vimState.selectLines
   editor.copy(ws"", inclusiveEnd = false)
-  editor.addNextCheckpoint ws"insert"
+  if editor.mode != ws"vim.insert":
+    editor.addNextCheckpoint ws"insert"
   let selections = editor.getSelections
   editor.setSelections editor.edit(selections, @@[ws""], inclusive=true)
 

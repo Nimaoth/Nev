@@ -9,12 +9,15 @@ include dynlib_export
 
 type TextComponent* = ref object of Component
   onEdit*: Event[tuple[oldText: Rope, patch: Patch[Point]]]
+  onEditTransaction*: Event[Transaction]
+  onUndoTransaction*: Event[Transaction]
+  onRedoTransaction*: Event[Transaction]
 
 # DLL API
 var TextComponentId* {.apprtl.}: ComponentTypeId
 
 proc textComponentContent*(self: TextComponent): Rope {.apprtl, gcsafe, raises: [].}
-proc textComponentBuffer*(self: TextComponent): lent Buffer {.apprtl, gcsafe, raises: [].}
+proc textComponentBuffer*(self: TextComponent): var Buffer {.apprtl, gcsafe, raises: [].}
 proc getTextComponent*(self: ComponentOwner): Option[TextComponent] {.apprtl, gcsafe, raises: [].}
 proc textComponentEditString(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
 proc textComponentEditRope(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
@@ -75,18 +78,30 @@ when implModule:
   proc textComponentContent*(self: TextComponent): Rope =
     return self.TextComponentImpl.buffer.visibleText
 
-  proc textComponentBuffer*(self: TextComponent): lent Buffer =
+  proc textComponentBuffer*(self: TextComponent): var Buffer =
     return self.TextComponentImpl.buffer
 
   proc initBuffer*(self: TextComponent, replicaId: ReplicaId = 0.ReplicaId, content: string = "", remoteId: BufferId = 1.BufferId) =
     self.TextComponentImpl.buffer = initBuffer(replicaId, content, remoteId)
+    self.TextComponentImpl.buffer.onEditTransaction = proc(buffer: Buffer, transaction: Transaction) {.gcsafe, raises: [].} =
+      self.TextComponentImpl.onEditTransaction.invoke transaction
+    self.TextComponentImpl.buffer.onUndoTransaction = proc(buffer: Buffer, transaction: Transaction) {.gcsafe, raises: [].} =
+      self.TextComponentImpl.onUndoTransaction.invoke transaction
+    self.TextComponentImpl.buffer.onRedoTransaction = proc(buffer: Buffer, transaction: Transaction) {.gcsafe, raises: [].} =
+      self.TextComponentImpl.onRedoTransaction.invoke transaction
 
   proc initBuffer*(self: TextComponent, replicaId: ReplicaId, content: sink Rope, remoteId: BufferId = 1.BufferId) =
     self.TextComponentImpl.buffer = initBuffer(replicaId, content, remoteId)
+    self.TextComponentImpl.buffer.onEditTransaction = proc(buffer: Buffer, transaction: Transaction) {.gcsafe, raises: [].} =
+      self.TextComponentImpl.onEditTransaction.invoke transaction
+    self.TextComponentImpl.buffer.onUndoTransaction = proc(buffer: Buffer, transaction: Transaction) {.gcsafe, raises: [].} =
+      self.TextComponentImpl.onUndoTransaction.invoke transaction
+    self.TextComponentImpl.buffer.onRedoTransaction = proc(buffer: Buffer, transaction: Transaction) {.gcsafe, raises: [].} =
+      self.TextComponentImpl.onRedoTransaction.invoke transaction
 
   proc textComponentEditString(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] =
     self.TextComponentImpl.editString(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd, checkpoint).mapIt(it.toRange)
   proc textComponentEditRope(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] =
     self.TextComponentImpl.editRope(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd, checkpoint).mapIt(it.toRange)
 
-proc buffer*(self: TextComponent): lent Buffer {.inline.} = self.textComponentBuffer()
+proc buffer*(self: TextComponent): var Buffer {.inline.} = self.textComponentBuffer()

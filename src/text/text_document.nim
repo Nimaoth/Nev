@@ -198,8 +198,8 @@ type
     onDiagnostics*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
     onLanguageChanged*: Event[tuple[document: TextDocument]]
 
-    undoSelections*: Table[Lamport, Selections]
-    redoSelections*: Table[Lamport, Selections]
+    undoSelections*: Table[TransactionId, Selections]
+    redoSelections*: Table[TransactionId, Selections]
 
     configService: ConfigService
     config*: ConfigStore
@@ -224,6 +224,8 @@ type
     moveFallbacks: MoveFunction
 
     currentDisplayMap: DisplayMap
+
+    savedVersion: TransactionId
 
   DiagnosticsData* = object
     languageServer*: LanguageServer
@@ -449,16 +451,18 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
   self.revision.inc
   self.undoableRevision.inc
 
+  if self.nextCheckpoints.len > 0:
+    discard self.buffer.startTransaction()
+    if oldSelections.len > 0:
+      self.undoSelections[self.buffer.currentTransaction.id] = @oldSelections
+
   let oldText = self.rope
-  let op = self.buffer.edit(ranges)
+  let (transactionId, op) = self.buffer.edit(ranges)
   self.recordSnapshotForDiagnostics()
 
   for tsChange in tsChanges:
     self.addTreesitterChange(tsChange.startByte, tsChange.oldEndByte, tsChange.newEndByte, tsChange.startPoint, tsChange.oldEndPoint, tsChange.newEndPoint)
 
-  let last {.cursor.} = self.buffer.history.undoStack[^1]
-  if self.nextCheckpoints.len > 0:
-    self.checkpoints[last.transaction.id] = self.nextCheckpoints
   self.nextCheckpoints.setLen 0
 
   self.onOperation.invoke (self, op)
@@ -469,9 +473,7 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
     patch.edits.add initEdit(e.old.toRange, e.new.toRange)
   self.textComponent.onEdit.invoke (oldText, patch)
 
-  if oldSelections.len > 0:
-    self.undoSelections[op.timestamp] = @oldSelections
-  self.redoSelections[op.timestamp] = result.mapIt(it.last.toSelection)
+  self.redoSelections[transactionId] = result.mapIt(it.last.toSelection)
   self.treesitterComponent.syntaxMap.currentContentFailedToParse = false
 
   if notify:
@@ -487,6 +489,7 @@ proc replaceAll*(self: TextDocument, value: sink Rope) =
   let fullRange = ((0, 0), self.rope.summary().lines.toCursor)
   self.nextCheckpoints.incl ""
   discard self.edit([fullRange], [], [value])
+  discard self.buffer.endTransaction()
 
 proc replaceAll*(self: TextDocument, value: sink string) =
   let invalidUtf8Index = value.validateUtf8
@@ -503,6 +506,7 @@ proc replaceAll*(self: TextDocument, value: sink string) =
   let fullRange = ((0, 0), self.rope.summary().lines.toCursor)
   self.nextCheckpoints.incl ""
   discard self.edit([fullRange], [], [value[index..^1]])
+  discard self.buffer.endTransaction()
 
 proc rebuildBuffer*(self: TextDocument, replicaId: ReplicaId, bufferId: BufferId, content: string) =
   self.content = content
@@ -747,13 +751,13 @@ proc applyMoveFallback*(self: TextDocument, move: string, selections: openArray[
           for captures in self.treesitterComponent.textObjectsQuery.query(self.tsTree, s):
             var captureSelections = newSeqOfCap[Selection](captures.len)
             if self.moveDatabase.debugMoves:
-              echo &"move 'ts' {move}: {captures.len} captures"
+              debugf"move 'ts' {move}: {captures.len} captures"
             for (node, nodeCapture) in captures:
               if capture == "" or capture == nodeCapture:
                 var sel = node.getRange().toSelection
                 captureSelections.add sel
                 if self.moveDatabase.debugMoves:
-                  echo &"    {sel}"
+                  debugf"    {sel}"
 
             let captureSelectionsTransformed = self.moveDatabase.applyMove(self.displayMap, captureMove, captureSelections, env, self.moveFallbacks)
 
@@ -860,6 +864,7 @@ proc newTextDocument*(
     discard self.lsComponent.addLanguageServer(languageServer.get)
 
   self.editors.registerDocument(self)
+  self.eventBus.emit(&"document/{self.id}/registered", $self.id)
 
 method deinit*(self: TextDocument) =
   # debugf"[deinit] Destroying text document '{self.filename}'"
@@ -941,6 +946,8 @@ proc saveAsync*(self: TextDocument) {.async.} =
     if not self.isInitialized:
       return
 
+    discard self.buffer.endTransaction()
+
     self.lastSavedTimer = startTimer()
     await self.vfs.write(self.filename, self.rope.slice())
     self.lastSavedTimer = startTimer()
@@ -950,6 +957,8 @@ proc saveAsync*(self: TextDocument) {.async.} =
 
     self.isBackedByFile = true
     self.lastSavedRevision = self.undoableRevision
+    # todo: what if someone changes the document while saving?
+    self.savedVersion = self.buffer.history.undoTree.nodes[self.buffer.history.undoTree.current].transaction.id
     self.onSaved.invoke()
     self.onDocumentSaved.invoke(self)
     self.eventBus.emit(&"document/{self.id}/saved", $self.id)
@@ -1043,6 +1052,7 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]
           texts.add edit.text.clone()
 
         result = self.edit(selections, [], texts)
+        discard self.buffer.endTransaction()
 
         when defined(appCheckDiffReload):
           if $self.rope != $rope:
@@ -1116,6 +1126,7 @@ proc loadAsync*(self: TextDocument, isReload: bool, filename: string, temp: bool
 
   if not temp:
     self.lastSavedRevision = self.undoableRevision
+    self.savedVersion = self.buffer.history.undoTree.nodes[self.buffer.history.undoTree.current].transaction.id
   self.isLoadingAsync = false
   self.onLoaded.invoke (self, changedRegions)
   self.onDocumentLoaded.invoke self
@@ -1636,30 +1647,36 @@ proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
   self.onEdit.invoke (self, edits)
   self.textComponent.onEdit.invoke (oldText, pointPatch)
 
+proc updateDirtyAfterUndo(self: TextDocument) =
+  if self.buffer.history.undoTree.nodes[self.buffer.history.undoTree.current].transaction.id == self.savedVersion:
+    self.lastSavedRevision = self.undoableRevision
+
 proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   result = seq[Selection].none
   if self.readOnly:
     return
 
+  discard self.buffer.endTransaction()
   let oldText = self.buffer.snapshot().visibleText.clone()
   let numPatchesBefore = self.buffer.patches.len
 
-  var lastUndo: UndoOperation
+  var lastTransaction: TransactionId
   while true:
     let undoOp = self.buffer.undo()
     if undoOp.isNone:
       break
     self.onOperation.invoke (self, undoOp.get.op)
-    lastUndo = undoOp.get.op.undo
-    if untilCheckpoint.len == 0 or (undoOp.get.transactionId in self.checkpoints and
-        (untilCheckpoint in self.checkpoints[undoOp.get.transactionId] or
-        "" in self.checkpoints[undoOp.get.transactionId])):
+    lastTransaction = undoOp.get.transactionId
+    if untilCheckpoint == "Y":
+      if not hasMoreThanOneChild(self.buffer.history.undoTree, self.buffer.history.undoTree.current):
+        continue
+      else:
+        break
+    else:
       break
 
-  for editId in lastUndo.counts.keys:
-    self.undoSelections.withValue(editId, selections):
-      result = selections[].some
-      break
+  self.undoSelections.withValue(lastTransaction, selections):
+    result = selections[].some
 
   self.recordSnapshotForDiagnostics()
 
@@ -1672,35 +1689,36 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   self.revision.inc
   self.undoableRevision.inc
   self.notifyTextChanged()
+
+  self.updateDirtyAfterUndo()
 
 proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   result = seq[Selection].none
   if self.readOnly:
     return
 
+  discard self.buffer.endTransaction()
   let oldText = self.buffer.snapshot().visibleText.clone()
   let numPatchesBefore = self.buffer.patches.len
 
-  var lastRedo: UndoOperation
+  var lastTransaction: TransactionId
   while true:
     let redoOp = self.buffer.redo()
     if redoOp.isNone:
       break
     self.onOperation.invoke (self, redoOp.get.op)
-    lastRedo = redoOp.get.op.undo
-    if untilCheckpoint.len == 0 or self.buffer.history.redoStack.len == 0:
+    lastTransaction = redoOp.get.transactionId
+    if untilCheckpoint == "Y":
+      if hasMoreThanOneChild(self.buffer.history.undoTree, self.buffer.history.undoTree.current):
+        break
+      else:
+        continue
+    else:
       break
 
-    let nextRedo {.cursor.} = self.buffer.history.redoStack[^1]
-    if nextRedo.transaction.id in self.checkpoints and
-        (untilCheckpoint in self.checkpoints[nextRedo.transaction.id] or
-        "" in self.checkpoints[nextRedo.transaction.id]):
-      break
 
-  for editId in lastRedo.counts.keys:
-    self.redoSelections.withValue(editId, selections):
-      result = selections[].some
-      break
+  self.redoSelections.withValue(lastTransaction, selections):
+    result = selections[].some
 
   self.recordSnapshotForDiagnostics()
 
@@ -1713,6 +1731,162 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   self.revision.inc
   self.undoableRevision.inc
   self.notifyTextChanged()
+
+  self.updateDirtyAfterUndo()
+
+proc startTransaction*(self: TextDocument) =
+  discard self.buffer.startTransaction()
+
+proc endTransaction*(self: TextDocument) =
+  discard self.buffer.endTransaction()
+
+proc undoToPreviousSibling*(self: TextDocument, redoUntilBranch: bool = false): Option[seq[Selection]] =
+  result = seq[Selection].none
+  if self.readOnly:
+    return
+
+  discard self.buffer.endTransaction()
+  let tree = self.buffer.history.undoTree.addr
+  if tree.current <= 0:
+    return
+
+  let (targetSiblingIdx, undoCount) = findPreviousSiblingRecursive(tree[], tree.current)
+  if targetSiblingIdx == -1:
+    return
+
+  let oldText = self.buffer.snapshot().visibleText.clone()
+  let numPatchesBefore = self.buffer.patches.len
+
+  for i in 0..<undoCount:
+    let undoOp = self.buffer.undo()
+    if undoOp.isSome:
+      self.onOperation.invoke (self, undoOp.get.op)
+
+  var lastRedoTransaction = TransactionId.default
+  let redoNode = tree.nodes[targetSiblingIdx]
+  var redoOp = self.buffer.redo(redoNode.transaction.id.some)
+  if redoOp.isSome:
+    lastRedoTransaction = redoOp.get.transactionId
+    self.onOperation.invoke (self, redoOp.get.op)
+
+  if redoUntilBranch:
+    while tree.current > 0:
+      if hasMoreThanOneChild(tree[], tree.current):
+        break
+      redoOp = self.buffer.redo()
+      if redoOp.isSome:
+        lastRedoTransaction = redoOp.get.transactionId
+        self.onOperation.invoke (self, redoOp.get.op)
+      else:
+        break
+
+  self.recordSnapshotForDiagnostics()
+
+  var patch = Patch[uint32]()
+  for i in numPatchesBefore..self.buffer.patches.high:
+    patch = patch.compose(self.buffer.patches[i].patch.edits)
+
+  self.handlePatch(oldText, patch)
+  self.redoSelections.withValue(lastRedoTransaction, selections):
+    result = selections[].some
+
+  self.revision.inc
+  self.undoableRevision.inc
+  self.notifyTextChanged()
+
+  self.updateDirtyAfterUndo()
+
+proc undoToNextSibling*(self: TextDocument, redoUntilBranch: bool = false): Option[seq[Selection]] =
+  result = seq[Selection].none
+  if self.readOnly:
+    return
+
+  discard self.buffer.endTransaction()
+  let tree = self.buffer.history.undoTree.addr
+  if tree.current <= 0:
+    return
+
+  let (targetSiblingIdx, undoCount) = findNextSiblingRecursive(tree[], tree.current)
+  if targetSiblingIdx == -1:
+    return
+
+  let oldText = self.buffer.snapshot().visibleText.clone()
+  let numPatchesBefore = self.buffer.patches.len
+
+  for i in 0..<undoCount:
+    let undoOp = self.buffer.undo()
+    if undoOp.isSome:
+      self.onOperation.invoke (self, undoOp.get.op)
+
+  var lastRedoTransaction = TransactionId.default
+  let redoNode = tree.nodes[targetSiblingIdx]
+  var redoOp = self.buffer.redo(redoNode.transaction.id.some)
+  if redoOp.isSome:
+    lastRedoTransaction = redoOp.get.transactionId
+    self.onOperation.invoke (self, redoOp.get.op)
+
+  if redoUntilBranch:
+    while tree.current > 0:
+      if hasMoreThanOneChild(tree[], tree.current):
+        break
+      redoOp = self.buffer.redo()
+      if redoOp.isSome:
+        lastRedoTransaction = redoOp.get.transactionId
+        self.onOperation.invoke (self, redoOp.get.op)
+      else:
+        break
+
+  self.recordSnapshotForDiagnostics()
+
+  var patch = Patch[uint32]()
+  for i in numPatchesBefore..self.buffer.patches.high:
+    patch = patch.compose(self.buffer.patches[i].patch.edits)
+
+  self.handlePatch(oldText, patch)
+  self.redoSelections.withValue(lastRedoTransaction, selections):
+    result = selections[].some
+
+  self.revision.inc
+  self.undoableRevision.inc
+  self.notifyTextChanged()
+
+  self.updateDirtyAfterUndo()
+
+proc switchUndoBranch*(self: TextDocument, targetNode: int32): Option[seq[Selection]] =
+  result = seq[Selection].none
+  if self.readOnly:
+    return
+
+  let oldText = self.buffer.snapshot().visibleText.clone()
+  let numPatchesBefore = self.buffer.patches.len
+
+  var res = self.buffer.switchUndoBranch(targetNode)
+  if res.isNone:
+    return
+  for op in res.get.ops.mitems:
+    self.onOperation.invoke (self, op)
+
+  if res.get.wasRedo:
+    self.redoSelections.withValue(res.get.lastTransaction, selections):
+      result = selections[].some
+
+  else:
+    self.undoSelections.withValue(res.get.lastTransaction, selections):
+      result = selections[].some
+
+  self.recordSnapshotForDiagnostics()
+
+  var patch = Patch[uint32]()
+  for i in numPatchesBefore..self.buffer.patches.high:
+    patch = patch.compose(self.buffer.patches[i].patch.edits)
+
+  self.handlePatch(oldText, patch)
+
+  self.revision.inc
+  self.undoableRevision.inc
+  self.notifyTextChanged()
+
+  self.updateDirtyAfterUndo()
 
 proc addNextCheckpoint*(self: TextDocument, checkpoint: string) =
   self.nextCheckpoints.incl checkpoint

@@ -117,7 +117,7 @@
     "nimsumtree.Nimaoth.github.com": {
       "dir": "$deps/nimsumtree.Nimaoth.github.com",
       "url": "https://github.com/Nimaoth/nimsumtree",
-      "commit": "42f6182179aca10cb3d7cd4d4ff84a3e7cd88db8",
+      "commit": "c1b8c53ca430ef2cf175328c07854b02e2d09bc1",
       "version": ""
     },
     "asynctools.Nimaoth.github.com": {
@@ -332,7 +332,7 @@
       "requires \"https://github.com/Nimaoth/boxy#cb4ab84\"",
       "requires \"https://github.com/Nimaoth/nimtreesitter-api#893dd71\"",
       "requires \"https://github.com/Nimaoth/nimwasmtime#2a33f8b\"",
-      "requires \"https://github.com/Nimaoth/nimsumtree#42f6182\"",
+      "requires \"https://github.com/Nimaoth/nimsumtree#c1b8c53\"",
       "requires \"https://github.com/Nimaoth/asynctools#214b057\"",
       "requires \"https://github.com/Nimaoth/zippy >= 0.10.17\"",
       "requires \"libssh2 >= 0.1.9\"",

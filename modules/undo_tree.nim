@@ -1,0 +1,790 @@
+#use command_component
+import std/[options, algorithm, strutils, times, tables, json]
+import service, dynamic_view
+import component
+
+export component
+
+const currentSourcePath2 = currentSourcePath()
+include module_base
+
+# Implementation
+when implModule or true:
+  import misc/[custom_logger, util, id, event, myjsonutils]
+  import text_component, event_service, document_editor, document, dynamic_view, layout, command_component, events, platform_service
+  import nimsumtree/[buffer, clock]
+  import ui/node
+  import command_service
+  import vmath, chroma
+  import theme
+  import misc/[render_command, timer]
+  import events
+  import scroll_box
+
+  logCategory "undo-tree"
+
+  var UndoTreeComponentId: ComponentTypeId = componentGenerateTypeId()
+
+  type
+    AsciiGraphCell* = tuple[col: int, char: char, nodeLineIndex: int, color: Color, style: UINodeFlags]
+    SeqLine* = object
+      graphLine*: seq[AsciiGraphCell]
+      isBranch*: bool
+      nodeIdx*: int32 = -1
+    Line2Seq* = seq[SeqLine]
+
+    UndoTreeView* = ref object of DynamicView
+      lastEditorView: Option[View]
+      eventHandlers*: Table[string, EventHandler]
+      cachedLines: Line2Seq
+      cachedBufferId: BufferID
+      cachedLen: int
+      cachedMaxCol: int
+      selected*: int
+      scrollBox*: ScrollBox
+      autoApply*: bool = false
+
+  proc add(line: var seq[AsciiGraphCell], item: tuple[col: int, char: char]) =
+    line.add (item.col, item.char, -1, color(0, 0, 0), 0.UINodeFlags)
+
+  proc getUndoTreeViewEventHandler(self: UndoTreeView, context: string): EventHandler =
+    let events = getServiceChecked(EventHandlerService)
+    if context notin self.eventHandlers:
+      var eventHandler: EventHandler
+      assignEventHandler(eventHandler, events.getEventHandlerConfig(context)):
+        onAction:
+          if getServiceChecked(CommandService).executeCommand(action & " " & arg, false).isSome:
+            Handled
+          else:
+            Ignored
+        onInput:
+          Ignored
+
+      self.eventHandlers[context] = eventHandler
+      return eventHandler
+
+    return self.eventHandlers[context]
+
+  proc getUndoTreeViewEventHandlers(self: UndoTreeView, inject: Table[string, EventHandler]): seq[EventHandler] =
+    result.add self.getUndoTreeViewEventHandler("undotree")
+
+  proc getOrCreate(t: var Line2Seq, i: int): var SeqLine =
+    while t.len < i + 1:
+      t.add(SeqLine(graphLine: newSeq[AsciiGraphCell]()))
+    return t[i]
+
+  proc getMaxCol(line: openArray[AsciiGraphCell]): int =
+    if line.len == 0:
+      return -1
+    return line[^1].col
+
+  proc adjustBranchLine(gLine: var seq[AsciiGraphCell], col: int, active: bool, depth = 0): int =
+    # log "  ".repeat(depth), &"adjustBranchLine col={col} {gLine}"
+    if gLine.len == 0:
+      return col
+    let cell = gLine[^1]
+    if cell.char == '/' and (cell.col == col + 1 or cell.col == col - 1):
+      if cell.col != col + 1:
+        gLine.add((col + 1, '/'))
+      return col + 2
+    elif cell.char == '\\':
+      if cell.col != col - 1:
+        gLine.add((col - 1, '\\'))
+      return col - 2
+
+    if cell.col != col:
+      let barChar = '|'
+      gLine.add((col, barChar))
+    return col
+
+  proc newBranchLine(line2seq: var Line2Seq, lnum, col: int, isMerge: bool, active: bool, depth = 0): int =
+    let barChar = '|'
+    var newline = SeqLine(isBranch: true, graphLine: newSeq[AsciiGraphCell]())
+    let pLine = getOrCreate(line2seq, lnum - 1).graphLine
+    let pLen = pLine.len
+    let cLine = getOrCreate(line2seq, lnum).graphLine
+    let cLen = cLine.len
+    # log "  ".repeat(depth), &"newBranchLine lnum={lnum} col={col} merge={isMerge} {pLine} - {cLine}"
+    if cLen == 0 and not isMerge:
+      newline.graphLine.add (1, barChar)
+
+    var pc = 0
+    var cc = 0
+    while pc < pLen and cc < cLen:
+      let pcol = pLine[pc].col
+      let ccol = cLine[cc].col
+      if pcol == ccol:
+        newline.graphLine.add (pcol, barChar)
+        inc pc
+        inc cc
+      elif pcol > ccol:
+        inc cc
+      else:
+        inc pc
+
+    var finalCol = col
+    if isMerge:
+      finalCol = col - 2
+      newline.graphLine.add((finalCol + 1, '\\'))
+    else:
+      if col > newline.graphLine.getMaxCol():
+        newline.graphLine.add (col, barChar)
+
+      finalCol = col + 2
+      newline.graphLine.add((finalCol - 1, '/'))
+
+    line2seq.insert(newline, lnum)
+    # log "  ".repeat(depth), &"newBranchLine {lnum} -> {newline}"
+    return finalCol
+
+  proc putSeqNode(line2seq: var Line2Seq, lnum, col: int, splitNode: bool, nodeIdx: int32, active: bool, depth = 0): tuple[lnum, col: int] =
+    var lnum = lnum
+    var col = col
+    var sLine = getOrCreate(line2seq, lnum).addr
+    let curCol = getMaxCol(sLine.graphLine)
+    let barChar = '|'
+
+    # log "  ".repeat(depth), &"putSeqNode lnum={lnum} col={col} maxCol={curCol} split={splitNode} node={nodeIdx} {sLine[]}"
+    if sLine.isBranch:
+      if splitNode:
+        sLine.graphLine.add((col, barChar))
+      else:
+        col = adjustBranchLine(sLine.graphLine, col, active, depth + 1)
+      inc lnum
+    elif splitNode:
+      discard newBranchLine(line2seq, lnum, col, false, active, depth + 1)
+      inc lnum
+    elif col - 2 > curCol:
+      col = newBranchLine(line2seq, lnum, col, true, active, depth + 1)
+      inc lnum
+
+    sLine = getOrCreate(line2seq, lnum).addr
+    if active:
+      sLine.graphLine.add((col, '*'))
+    else:
+      sLine.graphLine.add((col, '+'))
+    sLine.nodeIdx = nodeIdx
+    # log "  ".repeat(depth), &"putSeqNode {lnum} -> {sLine[]}"
+
+    return (lnum, col)
+
+  proc parseRecursively(tree: UndoTree, line2seq: var Line2Seq, lnum, col: int, splitNode: bool, nodeIdx: int32, parentIdx: int32, active: bool, depth = 0) =
+    assert nodeIdx in 0..tree.nodes.high
+    if tree.nodes[nodeIdx].firstChild != -1: assert tree.nodes[nodeIdx].firstChild > nodeIdx
+    if tree.nodes[nodeIdx].nextSibling != -1: assert tree.nodes[nodeIdx].nextSibling > nodeIdx
+    assert tree.nodes[nodeIdx].parent < nodeIdx
+    let distance = nodeIdx - parentIdx - 1
+    let barChar = '|'
+
+    var lnum = lnum
+    var col = col
+    var remaining = distance
+    # log "  ".repeat(depth), &"parseRecursively {parentIdx}:{nodeIdx}, lnum={lnum} col={col} split={splitNode} distance={distance}  ==============================="
+
+    while remaining > 0:
+      var sLine = getOrCreate(line2seq, lnum).addr
+      # log "  ".repeat(depth), &"while {remaining} > 0: lnum={lnum} {sLine[]}"
+      if sLine.isBranch:
+        col = adjustBranchLine(sLine.graphLine, col, active, depth + 1)
+      else:
+        let curCol = getMaxCol(sLine.graphLine)
+        if col - 2 == curCol:
+          sLine.graphLine.add((col, barChar))
+        elif col > curCol:
+          col = newBranchLine(line2seq, lnum, col, true, active, depth + 1)
+          inc lnum
+          continue
+
+        dec remaining
+      inc lnum
+
+
+    # log "  ".repeat(depth), &"parseRecursively {parentIdx}:{nodeIdx}, lnum={lnum} col={col} split={splitNode} A:\n  ", "  ".repeat(depth), line2seq.join("\n  " & "  ".repeat(depth))
+    (lnum, col) = putSeqNode(line2seq, lnum, col, splitNode, nodeIdx, active, depth)
+    # log "  ".repeat(depth), &"parseRecursively {parentIdx}:{nodeIdx}, lnum={lnum} col={col} split={splitNode} B:\n  ", "  ".repeat(depth), line2seq.join("\n  " & "  ".repeat(depth))
+
+    let node = tree.nodes[nodeIdx]
+    if node.firstChild > 0:
+      var child = node.firstChild
+      var children: seq[int32] = newSeq[int32]()
+      while child != -1:
+        children.add child
+        child = tree.nodes[child].nextSibling
+
+      for i in 0..<children.len:
+        let isNotFirst = i != 0
+        parseRecursively(tree, line2seq, lnum + 1, col, children.len > 1 and i < children.high, children[i], nodeIdx, active and node.activeChild == children[i], depth + 1)
+    # log "  ".repeat(depth), &"parseRecursively {parentIdx}:{nodeIdx}, lnum={lnum} col={col} split={splitNode} C:\n  ", "  ".repeat(depth), line2seq.join("\n  " & "  ".repeat(depth))
+
+
+  proc formatTimeAgo*(now: int64, timestamp: int64): string =
+    if timestamp == 0:
+      return "base"
+    let delta = now - timestamp
+    if delta == 0:
+      return "just now"
+    elif delta < 5:
+      return "1 second ago"
+    elif delta < 60:
+      let delta = ((delta.float / 5).floor * 5).int
+      return $delta & " seconds ago"
+    elif delta < 3600:
+      return $ (delta div 60) & " minutes ago"
+    elif delta < 86400:
+      return $ (delta div (60 * 60)) & " hours ago"
+    else:
+      return $ (delta div (60 * 60 * 24)) & " days ago"
+
+  proc renderUndoTree*(tree: UndoTree): seq[string] =
+    result = @[]
+    if tree.nodes.len == 0:
+      return result
+
+    if tree.nodes.len == 1:
+      let node = tree.nodes[1]
+      let seqNum = node.transaction.id.asNumber
+      result.add &"*1  {seqNum} (base)"
+      return result
+
+    var line2seq: Line2Seq = newSeq[SeqLine]()
+    parseRecursively(tree, line2seq, 0, 1, false, 0, -1, true)
+
+    line2seq.reverse()
+
+    var maxCol = 1
+    for line in line2seq:
+      for cell in line.graphLine:
+        if cell.col > maxCol:
+          maxCol = cell.col
+
+    maxCol = maxCol + 2
+    var prevNodes: seq[tuple[col: int, leaf: int32]] = @[]
+    var newPrevNodes: seq[tuple[col: int, leaf: int32]] = @[]
+    proc prevLeaf(col: int, c: char): int =
+      let offset = case c
+      of '/': 1
+      of '\\': -1
+      else: 0
+
+      for i, n in prevNodes:
+        if n.col == col + offset:
+          return i
+      return -1
+
+    let colors = [
+      "\x1b[38;2;197;197;15m",   # red
+      "\x1b[38;2;15;130;15m",   # blue
+      "\x1b[38;2;15;130;130m",  # cyan
+      "\x1b[38;2;130;130;15m",  # yellow
+      "\x1b[38;2;15;15;130m",   # magenta
+      "\x1b[38;2;15;130;15m",   # light blue
+      "\x1b[38;2;130;15;130m",  # pink
+      "\x1b[38;2;130;130;130m", # gray
+    ]
+    let resetColor = "\x1b[0m"
+
+    for i, line in line2seq:
+      newPrevNodes = prevNodes
+      let isCurrent = (line.nodeIdx == tree.current)
+      var lineStr = ""
+      var lineLen = 0
+      var col = 0
+      for k, cell in line.graphLine:
+        var prev = prevLeaf(cell.col, cell.char)
+        if prev == -1:
+          newPrevNodes.add (cell.col, line.nodeIdx)
+          prev = newPrevNodes.high
+
+        let color = colors[prev mod colors.len]
+        lineStr.add color
+
+        let targetColumn = cell.col - 1
+
+        if targetColumn > col:
+          lineStr &= " ".repeat(targetColumn - col)
+          lineLen += targetColumn - col
+          col = targetColumn
+
+        if isCurrent and cell.char in {'+', '*'}:
+          lineStr.add "("
+          lineStr.add $cell.char
+          lineStr.add ")"
+          col += 3
+          lineLen += 3
+        else:
+          if cell.col > col:
+            lineStr &= " ".repeat(cell.col - col)
+            lineLen += cell.col - col
+            col = cell.col
+
+          lineStr.add $cell.char
+          col += 1
+          lineLen += 1
+
+        let offset = case cell.char
+        of '/': -1
+        of '\\': 1
+        else: 0
+        newPrevNodes[prev].col = cell.col + offset
+
+      lineStr.add " " & resetColor
+      col += 1
+      lineLen += 1
+
+      if line.nodeIdx >= 0:
+        let node = tree.nodes[line.nodeIdx]
+        let seqNum = line.nodeIdx
+        let saveMark = if line.nodeIdx == tree.current: ">" else: " "
+        let timeStr = " (" & formatTimeAgo(90067, node.transaction.timestampUnix) & ")"
+        lineStr &= " ".repeat(max(0, maxCol - lineLen))
+        lineStr &= saveMark & $seqNum & timeStr
+
+      result.add lineStr
+      prevNodes = newPrevNodes
+
+  proc visualize*(tree: UndoTree): string =
+    let lines = tree.renderUndoTree
+    result = ""
+    for line in lines:
+      result.add line
+      result.add "\n"
+
+  static:
+    let undoTree = UndoTree(current: 1, nodes: @[
+      UndoTreeNode(parent: -1, firstChild: 1, activeChild: 2, nextSibling: -1, transaction: Transaction(timestampUnix: 0)), # 0
+      UndoTreeNode(parent: 0, firstChild: 3, activeChild: 3, nextSibling: 2, transaction: Transaction(timestampUnix: 86400)), # 1
+      UndoTreeNode(parent: 0, firstChild: 5, activeChild: 5, nextSibling: 4, transaction: Transaction(timestampUnix: 90000)), # 2
+      UndoTreeNode(parent: 1, firstChild: -1, activeChild: -1, nextSibling: -1, transaction: Transaction(timestampUnix:  90060)), # 3
+      UndoTreeNode(parent: 0, firstChild: -1, activeChild: -1, nextSibling: -1, transaction: Transaction(timestampUnix: 90066)), # 4
+      UndoTreeNode(parent: 2, firstChild: -1, activeChild: -1, nextSibling: -1, transaction: Transaction(timestampUnix: 90067)), # 5
+    ])
+    echo "\n============================ Undo Tree:\n", visualize(undoTree)
+
+  proc renderUndoTreeDirect*(self: UndoTreeView, document: Document, buffer: Buffer, builder: UINodeBuilder, renderCommands: var RenderCommands) =
+    let tree {.cursor.} = buffer.history.undoTree
+    if tree.nodes.len == 0:
+      return
+
+    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+    let backgroundColor = builder.theme.color("editor.background", color(25/255, 25/255, 40/255))
+
+    let branchColors = [
+      (builder.theme.color("terminal.ansiBrightYellow", color(1.0, 1.0, 0.7)), &{TextBold}),
+      (builder.theme.color("terminal.ansiRed", color(1.0, 0.5, 0.5)), 0.UINodeFlags),
+      (builder.theme.color("terminal.ansiGreen", color(0.5, 1.0, 0.5)), 0.UINodeFlags),
+      (builder.theme.color("terminal.ansiBlue", color(0.5, 0.5, 1.0)), 0.UINodeFlags),
+      (builder.theme.color("terminal.ansiMagenta", color(1.0, 0.5, 1.0)), 0.UINodeFlags),
+      (builder.theme.color("terminal.ansiCyan", color(0.5, 1.0, 1.0)), 0.UINodeFlags),
+      (builder.theme.color("terminal.ansiYellow", color(1.0, 1.0, 0.5)), 0.UINodeFlags),
+    ]
+
+    let charWidth = builder.charWidth
+    let lineHeight = builder.textHeight.float
+
+    var headerColor = if self.active: builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+    self.scrollBox.defaultItemHeight = builder.textHeight
+    self.scrollBox.updateScroll(getServiceChecked(PlatformService).platform.deltaTime)
+
+    buildCommands(renderCommands):
+      let b = rect(0, 0, builder.currentParent.bounds.w, lineHeight)
+      fillRect(b, headerColor)
+      let (path, name) = document.filename.splitPath
+      drawText("Undo History for " & name & " - " & path, b, textColor, 0.UINodeFlags)
+
+    if buffer.remoteId != self.cachedBufferId or buffer.history.undoTree.nodes.len != self.cachedLen:
+      # let t = startTimer()
+      # defer:
+      #   echo &"parse took {t.elapsed.ms}ms"
+      if buffer.remoteId != self.cachedBufferId:
+        self.selected = 0
+
+      let lastSelected = self.cachedLines.len > 1 and self.selected == self.cachedLines.high
+      self.cachedBufferId = buffer.remoteId
+      self.cachedLen = buffer.history.undoTree.nodes.len
+      self.cachedLines.setLen(0)
+      parseRecursively(tree, self.cachedLines, 0, 1, false, 0, -1, true)
+      self.cachedLines.reverse()
+      self.selected = self.selected.clamp(0, self.cachedLines.high)
+
+      if lastSelected:
+        self.selected = self.cachedLines.high
+
+      var prevNodes: seq[tuple[col: int, leaf: int32, child: int]] = @[]
+      var newPrevNodes: seq[tuple[col: int, leaf: int32, child: int]] = @[]
+      proc prevLeaf(col: int, c: char): int =
+        let offset = case c
+        of '/': 1
+        of '\\': -1
+        else: 0
+
+        for i, n in prevNodes:
+          if n.col == col + offset:
+            return i
+        return -1
+
+      # Calculate colors
+      for lineIndex, line in self.cachedLines.mpairs:
+        newPrevNodes = prevNodes
+        for cell in line.graphLine.mitems:
+          var prev = prevLeaf(cell.col, cell.char)
+          if prev == -1:
+            newPrevNodes.add (cell.col, line.nodeIdx, lineIndex)
+            prev = newPrevNodes.high
+
+          let (charColor, charStyle) = branchColors[prev mod branchColors.len]
+          cell.color = charColor
+          cell.style = charStyle
+          if prev in 0..prevNodes.high:
+            cell.nodeLineIndex = prevNodes[prev].child
+
+          let offset = case cell.char
+          of '/': -1
+          of '\\': 1
+          else: 0
+          newPrevNodes[prev].col = cell.col + offset
+          if line.nodeIdx != -1 and (cell.char == '*' or cell.char == '+'):
+            newPrevNodes[prev].child = lineIndex
+
+        prevNodes = newPrevNodes
+
+      self.cachedMaxCol = 1
+      for line in self.cachedLines:
+        for cell in line.graphLine:
+          if cell.col > self.cachedMaxCol:
+            self.cachedMaxCol = cell.col
+
+      self.cachedMaxCol = self.cachedMaxCol + 3
+
+    if tree.nodes.len == 1:
+      let node = tree.nodes[0]
+      let text = "*1 " & $node.transaction.id.asNumber & " (base)"
+      let bounds = rect(0, lineHeight * 2, text.len.float * charWidth, lineHeight)
+      buildCommands(renderCommands):
+        fillRect(bounds, backgroundColor)
+        drawText(text, bounds, textColor, 0.UINodeFlags)
+      return
+
+    let now = getTime().toUnix().int64
+
+    let selectionColor = builder.theme.color("list.activeSelectionBackground", color(0.8, 0.8, 0.8))
+    self.scrollBox.beginRender(builder.currentParent.bounds.wh - 2 * lineHeight, 0.UINodeFlags, self.cachedLines.high)
+
+    proc drawLine(commands: var RenderCommands, index: int): Option[Vec2] =
+      if index notin 0..self.cachedLines.high:
+        return
+
+      let line {.cursor.} = self.cachedLines[index]
+
+      # Add a transform render command for which we later override the y offset to the correct y offset calculated by the
+      # scroll box. Every render command for a line can then just use (0, 0) as the origin.
+      commands.startTransform(vec2(0))
+      defer:
+        commands.endTransform()
+
+      let isSelected = (index == self.selected)
+      if isSelected:
+        commands.fillRect(rect(0, 0, builder.currentParent.bounds.w, builder.textHeight), selectionColor)
+
+      let isCurrent = (line.nodeIdx == tree.current)
+      for cell in line.graphLine:
+        let bounds = rect(cell.col.float * charWidth, 0, charWidth, lineHeight)
+        if isCurrent and cell.char in {'+', '*'}:
+          commands.drawText("(" & $cell.char & ")", bounds - vec2(charWidth, 0), cell.color, cell.style)
+        else:
+          commands.drawText($cell.char, bounds, cell.color, cell.style)
+
+      if line.nodeIdx >= 0:
+        let node = tree.nodes[line.nodeIdx]
+        let seqNum = line.nodeIdx
+        let saveMark = if line.nodeIdx == tree.current: ">" else: " "
+        let timeStr = " (" & formatTimeAgo(now, node.transaction.timestampUnix) & ")"
+        let nodeText = $seqNum
+        let bounds = rect(self.cachedMaxCol.float * charWidth, 0, nodeText.len.float * charWidth, lineHeight)
+        commands.drawText(saveMark, bounds, textColor.lighten(0.1), 0.UINodeFlags)
+        commands.drawText(nodeText, bounds + vec2(charWidth, 0), textColor, 0.UINodeFlags)
+        commands.drawText(timeStr, bounds + vec2(charWidth + nodeText.len.float * charWidth, 0), textColor.darken(0.1), &{TextItalic})
+
+      return vec2(builder.currentParent.bounds.w, lineHeight).some
+
+    # List of TransformStart render command indices where we need to fix the offset when we know it the offset after rendering all lines.
+    var fixups = newSeq[tuple[line: int, renderCommandHead: int]]()
+
+    while true:
+      let renderedItem = self.scrollBox.renderItemT:
+        let renderCommandHead = renderCommands.commands.len
+        let size = drawLine(renderCommands, self.scrollBox.currentIndex)
+        if size.isSome:
+          fixups.add (self.scrollBox.currentIndex, renderCommandHead)
+        size
+
+      if not renderedItem:
+        break
+
+    fixups.sort(proc(a, b: auto): int = cmp(a.line, b.line))
+    # Fixup chunk bounds and Transform render commands now that we know the line bounds
+    assert fixups.len == self.scrollBox.items.len
+    for i in 0..<fixups.len:
+      assert fixups[i].line == self.scrollBox.items[i].index
+      let fix = fixups[i]
+      let lineBounds = self.scrollBox.items[i].bounds
+
+      # Offset TransformStart render command according to scroll box item bounds
+      if fix.renderCommandHead in 0..renderCommands.commands.high and
+          renderCommands.commands[fix.renderCommandHead].kind == RenderCommandKind.TransformStart:
+        renderCommands.commands[fix.renderCommandHead] = RenderCommand(
+          kind: RenderCommandKind.TransformStart,
+          bounds: rect((vec2(0, lineHeight * 2 + lineBounds.y)), vec2(0)),
+        )
+
+    self.scrollBox.endRender()
+    self.scrollBox.clamp(self.cachedLines.high)
+
+    # Scroll bar
+    buildCommands(renderCommands):
+      if self.scrollBox.items.len > 0:
+        let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
+        let topScrollOffset = clamp(self.scrollBox.items[0].index.float / self.cachedLines.high.float, 0, 1)
+        let bottomScrollOffset = clamp(self.scrollBox.items[^1].index.float / self.cachedLines.high.float, 0, 1)
+        let y = topScrollOffset * builder.currentParent.bounds.h
+        let y2 = bottomScrollOffset * builder.currentParent.bounds.h
+        let centerY = (y + y2) * 0.5
+        let h = clamp(y2 - y, builder.textHeight, builder.currentParent.bounds.h * 0.5)
+        let w = ceil(builder.charWidth * 0.5)
+        fillRect(rect(builder.currentParent.bounds.w - w, floor(centerY - h * 0.5), w, ceil(h)), scrollBarColor)
+
+  proc applySelected(view: UndoTreeView) =
+    let curView = view.lastEditorView
+    if curView.isSome and curView.get of EditorView:
+      let editorView = curView.get.EditorView
+      let editor {.inject.} = editorView.editor
+      if editor.getCommandComponent().getSome(cmd):
+        if view.selected in 0..view.cachedLines.high:
+          let nodeIndex = view.cachedLines[view.selected].nodeIdx
+          if nodeIndex != -1:
+            cmd.executeCommand(&"switch-undo-branch {nodeIndex}")
+
+  proc newUndoTreeView*(): UndoTreeView =
+    result = UndoTreeView()
+    result.renderImpl = proc(view: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] =
+      let undoView = view.UndoTreeView
+      var backgroundColor = if undoView.active: builder.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(-0.025)
+      let services = getServices()
+      let layout = services.getService(LayoutService).get
+
+      builder.panel(&{FillBackground, FillX, FillY, MaskContent}, backgroundColor = backgroundColor):
+        onScroll:
+          undoView.scrollBox.scroll(delta.y * builder.textHeight * 5)
+        onClickAny btn:
+          if btn == Left:
+            for item in undoView.scrollBox.items:
+              if item.bounds.contains(pos - builder.textHeight * 2):
+                undoView.selected = item.index
+          elif btn == DoubleClick:
+            for item in undoView.scrollBox.items:
+              if item.bounds.contains(pos - builder.textHeight * 2):
+                undoView.selected = item.index
+            undoView.applySelected()
+          getServiceChecked(LayoutService).tryActivateView(undoView)
+
+        currentNode.renderCommands.clear()
+        var curView = layout.tryGetCurrentView()
+        if curView.isNone or not (curView.get of EditorView):
+          curView = undoView.lastEditorView
+        if curView.isSome and curView.get of EditorView:
+          undoView.lastEditorView = curView
+          let editor = curView.get.EditorView.editor
+          if editor != nil and editor.currentDocument != nil:
+            if editor.currentDocument.getTextComponent().getSome(textComp):
+              renderUndoTreeDirect(undoView, editor.currentDocument, textComp.buffer, builder, currentNode.renderCommands)
+        currentNode.markDirty(builder)
+
+    result.getEventHandlersImpl = proc(self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] =
+      getUndoTreeViewEventHandlers(self.UndoTreeView, inject)
+
+  proc init_module_undo_tree*() {.cdecl, exportc, dynlib.} =
+    let services = getServices()
+    if services == nil:
+      log lvlWarn, "Failed to initialize init_module_undo_tree: no services found"
+      return
+
+    let events = services.getService(EventService)
+    let documents = services.getService(DocumentEditorService).get
+    let layout = services.getService(LayoutService).get
+    let commands = services.getService(CommandService).get
+
+    var view: UndoTreeView = newUndoTreeView()
+
+    proc parseTime(args: string): int =
+      try:
+        let args = args.parseJson.jsonTo(string)
+        var unitIndex = 0
+        while unitIndex < args.len and args[unitIndex] in {'0'..'9'}:
+          inc unitIndex
+        let num = args[0..<unitIndex].parseInt.catch:
+          return 0
+        let unit = case args[unitIndex..^1]
+        of "s": 1
+        of "m": 60
+        of "h": 60 * 60
+        of "d": 60 * 60 * 24
+        else: 60
+        return num * unit
+      except CatchableError:
+        discard
+
+    template defineCommand(inName: string, desc: string, body: untyped): untyped =
+      discard commands.registerCommand(command_service.Command(
+        namespace: "undotree",
+        name: "undotree." & inName,
+        description: desc,
+        parameters: @[],
+        returnType: "void",
+        execute: proc(args {.inject.}: string): string {.gcsafe, raises: [CatchableError].} =
+          let curView = view.lastEditorView
+          if curView.isSome and curView.get of EditorView:
+            let editorView = curView.get.EditorView
+            if editorView.editor.currentDocument.getTextComponent.getSome(textComp):
+              let editor {.inject.} = editorView.editor
+              let document {.inject.} = editor.currentDocument
+              let text {.inject.} = textComp
+              body
+          return ""
+      ))
+
+    discard commands.registerCommand(command_service.Command(
+      namespace: "undotree",
+      name: "undotree.show",
+      description: "Show undo tree for current buffer",
+      parameters: @[],
+      returnType: "void",
+      execute: proc(argsString: string): string {.gcsafe, raises: [CatchableError].} =
+        layout.addView(view, slot = "#small-left", focus = false)
+        return ""
+    ))
+
+    proc applySelected(editor: DocumentEditor, force = false) =
+      view.scrollBox.scrollTo(view.selected)
+      if (view.autoApply or force) and editor.getCommandComponent().getSome(cmd):
+        if view.selected in 0..view.cachedLines.high:
+          let nodeIndex = view.cachedLines[view.selected].nodeIdx
+          if nodeIndex != -1:
+            cmd.executeCommand(&"switch-undo-branch {nodeIndex}")
+
+    defineCommand("toggle-auto-apply", "Toggle the auto apply setting"):
+      view.autoApply = not view.autoApply
+
+    defineCommand("prev-change", "Go to previous change in undo tree"):
+      let tree = text.buffer.history.undoTree
+      if view.selected < view.cachedLines.high:
+        inc view.selected
+        applySelected(editor)
+
+    defineCommand("next-change", "Go to next change in undo tree"):
+      let tree = text.buffer.history.undoTree
+      if view.selected > 0:
+        dec view.selected
+        applySelected(editor)
+
+    defineCommand("prev-change-time", "Go to previous change by stepping by a certain time interval in undo tree"):
+      let tree = text.buffer.history.undoTree
+      if view.selected >= 0 and view.selected < view.cachedLines.high:
+        let time = parseTime(args)
+        var current = view.selected
+        while current < view.cachedLines.high and view.cachedLines[current].nodeIdx == -1:
+          inc current
+        if view.cachedLines[current].nodeIdx == -1:
+          return
+        let currentTime = tree.nodes[view.cachedLines[current].nodeIdx].transaction.timestampUnix
+        while current < view.cachedLines.high:
+          inc current
+          let nodeIdx = view.cachedLines[current].nodeIdx
+          if nodeIdx != -1 and currentTime - tree.nodes[nodeIdx].transaction.timestampUnix >= time:
+            break
+        view.selected = current
+        applySelected(editor)
+
+    defineCommand("next-change-time", "Go to next change by stepping by a certain time interval in undo tree"):
+      let tree = text.buffer.history.undoTree
+      if view.selected > 0 and view.selected <= view.cachedLines.high:
+        let time = parseTime(args)
+        var current = view.selected
+        while current > 0 and view.cachedLines[current].nodeIdx == -1:
+          dec current
+        if view.cachedLines[current].nodeIdx == -1:
+          return
+        let currentTime = tree.nodes[view.cachedLines[current].nodeIdx].transaction.timestampUnix
+        while current > 0:
+          dec current
+          let nodeIdx = view.cachedLines[current].nodeIdx
+          if nodeIdx != -1 and tree.nodes[nodeIdx].transaction.timestampUnix - currentTime >= time:
+            break
+        view.selected = current
+        applySelected(editor)
+
+    defineCommand("first-change", "Go to first change in undo tree"):
+      let tree = text.buffer.history.undoTree
+      view.selected = view.cachedLines.high
+      applySelected(editor)
+
+    defineCommand("last-change", "Go to last change in undo tree"):
+      let tree = text.buffer.history.undoTree
+      view.selected = 0
+      applySelected(editor)
+
+    defineCommand("left-change", "Go to next change on the left branch in the undo tree"):
+      let tree = text.buffer.history.undoTree
+      if view.selected in 0..view.cachedLines.high:
+        let line {.cursor.} = view.cachedLines[view.selected]
+        for i in 0..<line.graphLine.high:
+          if line.graphLine[i].char == '|' and line.graphLine[i + 1].char == '/':
+            if line.graphLine[i].nodeLineIndex != -1:
+              view.selected = line.graphLine[i].nodeLineIndex
+              applySelected(editor)
+              break
+
+    defineCommand("right-change", "Go to next change on the right branch in the undo tree"):
+      let tree = text.buffer.history.undoTree
+      if view.selected in 0..view.cachedLines.high:
+        let line {.cursor.} = view.cachedLines[view.selected]
+        for i in 0..<line.graphLine.high:
+          if line.graphLine[i].char == '|' and line.graphLine[i + 1].char == '/':
+            if line.graphLine[i + 1].nodeLineIndex != -1:
+              view.selected = line.graphLine[i + 1].nodeLineIndex
+              applySelected(editor)
+              break
+
+    defineCommand("active-child", "Go to the active child of the current change in the undo tree"):
+      let tree = text.buffer.history.undoTree
+      if view.selected in 0..view.cachedLines.high:
+        let line {.cursor.} = view.cachedLines[view.selected]
+        if line.nodeIdx != -1 and line.nodeIdx in 0..tree.nodes.high:
+          let activeChild = tree.nodes[line.nodeIdx].activeChild
+          for i in countdown(view.selected, 0):
+            if view.cachedLines[i].nodeIdx == activeChild:
+              view.selected = i
+              applySelected(editor)
+              break
+
+    defineCommand("parent-change", "Go to parent of the current change in the undo tree"):
+      let tree = text.buffer.history.undoTree
+      if view.selected in 0..view.cachedLines.high:
+        let line {.cursor.} = view.cachedLines[view.selected]
+        if line.nodeIdx != -1 and line.nodeIdx in 0..tree.nodes.high:
+          let parent = tree.nodes[line.nodeIdx].parent
+          for i in view.selected..view.cachedLines.high:
+            if view.cachedLines[i].nodeIdx == parent:
+              view.selected = i
+              applySelected(editor)
+              break
+
+    defineCommand("select-current", "Go to current change in undo tree"):
+      let tree = text.buffer.history.undoTree
+      for i in 0..view.cachedLines.high:
+        if view.cachedLines[i].nodeIdx == tree.current:
+          view.selected = i
+          view.scrollBox.scrollTo(view.selected)
+
+    defineCommand("apply-selected", "Make the selected change the current one."):
+      let tree = text.buffer.history.undoTree
+      if editor.getCommandComponent().getSome(cmd):
+        applySelected(editor, force=true)
