@@ -571,7 +571,7 @@
         "g<*-k>t": ["undo-to-next-sibling", false],
         "g<*-k>N": ["undo-to-previous-sibling", true],
         "g<*-k>T": ["undo-to-next-sibling", true],
-        "gK": ["undotree.show"],
+        "gK": ["undotree.toggle"],
 
 
         // vcs

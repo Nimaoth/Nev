@@ -1012,11 +1012,15 @@
         "slots.debugger-threads": "*.right.+",
         "slots.debugger-stacktrace": "*.right.+",
         "slots.debugger-toolbar": "*.right.+",
-        "slots.debugger-variables": "*.left",
+        "slots.debugger-variables": "*.left.+",
+        "slots.small-left": "*.left.+",
         "slots.debugger-output": "*.bottom",
         "kind": "tab",
         "childTemplate": {
             "kind": "center",
+            "leftTemplate": {
+                "kind": "vertical",
+            },
             "rightTemplate": {
                 "kind": "vertical",
                 "split-ratios": [0.1, 0.25],

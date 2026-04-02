@@ -837,6 +837,37 @@ method tryGetPrevView*(self: Layout): View {.base.} =
       if self.children[i] != nil:
         return self.children[i]
 
+method nearestNonNilIndex*(self: Layout, index: int): int {.base.} =
+  if self.children.len == 0:
+    return 0
+  let index = index.clamp(0, self.children.high)
+  if self.children[index] != nil:
+    return index
+  for i in (index + 1)..self.children.high:
+    if self.children[i] != nil:
+      return i
+  for i in countdown(index - 1, 0):
+    if self.children[i] != nil:
+      return i
+  return 0
+
+method nearestNonNilIndex*(self: CenterLayout, index: int): int =
+  let index = index.clamp(0, self.children.high)
+  if self.children[index] != nil:
+    return index
+  if self.children[MainLayoutCenter] != nil: return MainLayoutCenter
+  if self.children[MainLayoutLeft] != nil: return MainLayoutLeft
+  if self.children[MainLayoutRight] != nil: return MainLayoutRight
+  if self.children[MainLayoutTop] != nil: return MainLayoutTop
+  if self.children[MainLayoutBottom] != nil: return MainLayoutBottom
+  return MainLayoutCenter
+
+proc validateActiveIndex*(self: Layout) =
+  self.activeIndex = self.nearestNonNilIndex(self.activeIndex)
+  for c in self.children:
+    if c != nil and c of Layout:
+      c.Layout.validateActiveIndex()
+
 method tryGetViewDown*(self: TabLayout): View =
   if self.children.len > 0:
     return self.children[self.activeIndex].tryGetViewDown()

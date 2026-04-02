@@ -10,6 +10,7 @@ include module_base
 
 # Implementation
 when implModule:
+  import std/sets
   import misc/[custom_logger, util, id, event, myjsonutils]
   import text_component, event_service, document_editor, document, dynamic_view, layout, command_component, events, platform_service
   import nimsumtree/[buffer, clock]
@@ -479,6 +480,19 @@ when implModule:
           let w = ceil(builder.charWidth * 0.5)
           fillRect(rect(builder.currentParent.bounds.w - w, floor(centerY - h * 0.5), w, ceil(h)), scrollBarColor)
 
+  proc dump(self: UndoTreeView): string = "UndoTreeView" & $(self[])
+  proc kind(self: UndoTreeView): string = "undotree"
+  proc desc(self: UndoTreeView): string = "UndoTree"
+  proc display(self: UndoTreeView): string = "UndoTree"
+  proc copy(self: UndoTreeView): View = self
+  proc saveLayout(self: UndoTreeView, discardedViews: HashSet[Id]): JsonNode =
+    result = newJObject()
+    result["kind"] = "undotree".toJson
+
+  proc saveState(self: UndoTreeView): JsonNode =
+    result = newJObject()
+    result["kind"] = "undotree".toJson
+
   proc newUndoTreeView*(): UndoTreeView =
     result = UndoTreeView()
     result.renderImpl = proc(view: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] =
@@ -487,6 +501,14 @@ when implModule:
 
     result.getEventHandlersImpl = proc(self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] =
       getUndoTreeViewEventHandlers(self.UndoTreeView, inject)
+
+    result.kindImpl = proc(self: DynamicView): string = kind(self.UndoTreeView)
+    result.descImpl = proc(self: DynamicView): string = desc(self.UndoTreeView)
+    result.displayImpl = proc(self: DynamicView): string = display(self.UndoTreeView)
+    result.copyImpl = proc(self: DynamicView): View = copy(self.UndoTreeView)
+    result.saveLayoutImpl = proc(self: DynamicView, discardedViews: HashSet[Id]): JsonNode = saveLayout(self.UndoTreeView, discardedViews)
+    result.saveStateImpl = proc(self: DynamicView): JsonNode = saveState(self.UndoTreeView)
+
 
   proc init_module_undo_tree*() {.cdecl, exportc, dynlib.} =
     let services = getServices()
@@ -500,6 +522,9 @@ when implModule:
     let commands = services.getService(CommandService).get
 
     var view: UndoTreeView = newUndoTreeView()
+
+    layout.addViewFactory "undotree", proc(config: JsonNode): View {.raises: [].} =
+      return view
 
     proc parseTime(args: string): int =
       try:
@@ -540,12 +565,15 @@ when implModule:
 
     discard commands.registerCommand(command_service.Command(
       namespace: "undotree",
-      name: "undotree.show",
+      name: "undotree.toggle",
       description: "Show undo tree for current buffer",
       parameters: @[],
       returnType: "void",
       execute: proc(argsString: string): string {.gcsafe, raises: [CatchableError].} =
-        layout.addView(view, slot = "#small-left", focus = false)
+        if layout.isViewVisible(view):
+          layout.closeView(view, keepHidden = false, restoreHidden = false)
+        else:
+          layout.addView(view, slot = "#small-left", focus = false)
         return ""
     ))
 

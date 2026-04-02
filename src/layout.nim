@@ -207,15 +207,15 @@ when implModule:
             if view != nil:
               self.children[i] = layouts.getExistingView(c)
               self.activeIndex = self.activeIndex.clamp(0, self.children.high)
-        elif c.hasKey("kind"):
-          let subLayout = createLayout(c, resolve, createView)
-          self.children.add(subLayout)
-          self.activeIndex = self.activeIndex.clamp(0, self.children.high)
         elif self.childTemplate != nil:
           let newChild = self.childTemplate.copy().Layout
           self.children.add(newChild)
           self.activeIndex = self.activeIndex.clamp(0, self.children.high)
           newChild.createViews(c, layouts)
+        elif c.hasKey("kind"):
+          let subLayout = createLayout(c, resolve, createView)
+          self.children.add(subLayout)
+          self.activeIndex = self.activeIndex.clamp(0, self.children.high)
         else:
           let view = layouts.getExistingView(c)
           if view != nil:
@@ -260,18 +260,15 @@ when implModule:
         if i < self.children.len:
           if self.children[i] != nil and self.children[i] of Layout:
             self.children[i].Layout.createViews(c, layouts)
-          elif c.hasKey("kind"):
-            let subLayout = createLayout(c, resolve, createView)
-            self.children[i] = subLayout
-            self.activeIndex = i
           elif self.childTemplates[i] != nil:
             let newChild = self.childTemplates[i].copy().Layout
             self.children[i] = newChild
-            self.activeIndex = i
             newChild.createViews(c, layouts)
+          elif c.hasKey("kind"):
+            let subLayout = createLayout(c, resolve, createView)
+            self.children[i] = subLayout
           else:
             self.children[i] = layouts.getExistingView(c)
-            self.activeIndex = i
         else:
           log lvlError, &"Too many children for main layout (max 5): {children.len}"
 
@@ -433,6 +430,8 @@ when implModule:
           for key, state in layouts.fields.pairs:
             if key in self.layouts:
               self.layouts[key].createViews(state, self)
+          for layout in self.layouts.values:
+            layout.validateActiveIndex()
 
         if data.hasKey("layout"):
           self.layoutName = data["layout"].jsonTo(string)
@@ -458,6 +457,9 @@ when implModule:
             self.layouts[name].createViews(state, self)
           except Exception as e:
             log lvlError, &"Failed to create layout from session data: {e.msg}\n{state.pretty}"
+
+        for layout in self.layouts.values:
+          layout.validateActiveIndex()
 
         if self.layoutName in states:
           self.layout = self.layouts[self.layoutName]
