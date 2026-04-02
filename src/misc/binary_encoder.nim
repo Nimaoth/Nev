@@ -1,4 +1,4 @@
-import std/[macros, genasts, strformat, sequtils]
+import std/[macros, genasts, strformat]
 import util
 
 type

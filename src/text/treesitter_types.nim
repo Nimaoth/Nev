@@ -1,4 +1,4 @@
-import std/[tables, options, strformat]
+import std/[tables, options]
 import misc/[custom_async, array_view, arena]
 import treesitter/api as ts
 

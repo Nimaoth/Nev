@@ -711,8 +711,10 @@ proc updateTextures(self: GuiPlatform) =
             textures[].set(tex.id, texture)
       except CatchableError as e:
         log lvlError, &"Failed to create texture: {e.msg}"
+        textures[].del(tex.id)
       except GLerror as e:
         log lvlError, &"Failed to create texture: {e.msg}"
+        textures[].del(tex.id)
     for texId in texturesToDelete:
       try:
         if textures[].tryGet(texId).getSome(texture):
@@ -720,12 +722,9 @@ proc updateTextures(self: GuiPlatform) =
             glDeleteTextures(1, texture.textureId.addr)
           textures[].del(texId)
       except CatchableError as e:
-        log lvlError, &"Failed to create texture: {e.msg}"
+        log lvlError, &"Failed to delete texture: {e.msg}"
       except GLerror as e:
-        log lvlError, &"Failed to create texture: {e.msg}"
-
-    if texturesToDelete.len > 30:
-      echo &"{textures[].len} active ----------------"
+        log lvlError, &"Failed to delete texture: {e.msg}"
 
 method render*(self: GuiPlatform, rerender: bool) =
   try:
@@ -943,7 +942,8 @@ proc handleRenderCommand(platform: GuiPlatform, renderCommands: ptr RenderComman
     platform.boxy.strokeRect(command.bounds + offset, command.color)
   of RenderCommandKind.Image:
     {.gcsafe.}:
-      if gTextures.tryGet(command.textureId).getSome(tex):
+      if gTextures.contains(command.textureId):
+        let tex = gTextures[command.textureId]
         if tex != nil:
           let glTexId = tex.textureId
           platform.boxy.drawUvRect(offset + command.bounds.xy, offset + command.bounds.xy + command.bounds.wh, command.uv0, command.uv1, command.color, glTexId)

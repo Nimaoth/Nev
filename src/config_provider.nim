@@ -439,7 +439,6 @@ macro declareSettingsTemplate*(name: untyped, prefix: static string, body: untyp
 
 when implModule:
   import std/[algorithm, macrocache]
-  import misc/[timer]
   import scripting/expose
   import platform/platform
   import platform_service, dispatch_tables
