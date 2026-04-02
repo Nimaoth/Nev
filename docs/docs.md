@@ -10,6 +10,8 @@ This file contains documentation about features that don't fit into any of the o
 - [Virtual filesystem](docs/virtual_file_system.md)
 - [Moves](docs/moves.md)
 - [Markdown](docs/markdown.md)
+- [Dashboard](docs/dashboard.md)
+- [Undo Tree](docs/undo_tree.md)
 
 ## Layout
 

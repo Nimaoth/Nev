@@ -22,7 +22,9 @@
 - Lots of bug fixes (and new bugs)
 - Rerender on resize
 - On windows: change title bar color to match theme
-
+- [Undo tree](docs/undo_tree.md)
+- Scroll bars (not interactable)
+- Support for loading UTF-16 encoded files (**No support for saving as anything other than UTF-8!**)
 
 ## [0.4.0](https://github.com/Nimaoth/Nev/compare/v0.3.0...v0.4.0) (2025-05-01)
 
