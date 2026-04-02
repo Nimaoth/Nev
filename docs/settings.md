@@ -1,5 +1,5 @@
 
-# Incompleted list of all settings
+# Incomplete list of all settings
 
 For examples and default values see [here](../config/settings.json)
 
@@ -17,8 +17,8 @@ For examples and default values see [here](../config/settings.json)
 | `editor.max-views` | number | 2 | Maximum number of views (files or other UIs) which can be shown. |
 | `editor.record-input-history` | bool | false | Whether the editor shows a history of the last few pressed buttons in the status bar |
 | `editor.clear-input-history-delay` | number (ms) | 3000 | After how many milliseconds of no input the input history is cleared. |
-| `editor.lsp` | object | --- | Language server configuration per langugae. [More info](lsp.md) |
-| `language-mappings` | object | --- | Mapping of regex to language id, used to assign langugae ids by file extension/path. |
+| `editor.lsp` | object | --- | Language server configuration per language. [More info](lsp.md) |
+| `language-mappings` | object | --- | Mapping of regex to language id, used to assign language ids by file extension/path. |
 | `languages` | object | --- | Mapping of language id to language config, used to specify various settings per language. See [here](../config/settings.json) |
 | `text.reload-diff` | bool | true | If true, when reloading a text document from disk, the editor will calculate the diff between the version on disk and in memory, and apply that diff, instead of overriding the entire file content in memory. This can save memory in the long run, but increases memory usage while loading and potentially increases loading time. |
 | `text.reload-diff-timeout` | number (ms) | 250 | When `text.reload-diff` is true, the diff process is canceled after this time and the file is reloaded normally. |

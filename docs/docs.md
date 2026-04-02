@@ -75,7 +75,7 @@ You can also use `**` as a slot to refer to the layout containing active view.
 
 #### Named slots
 
-You can defined named slots per layout in `ui.layout.<layout-name>.slots.<slot-name>` and then use `#slot-name` as a slot.
+You can define named slots per layout in `ui.layout.<layout-name>.slots.<slot-name>` and then use `#slot-name` as a slot.
 This allows you to define e.g. keybindings using named slots so that they can work for different layouts.
 
 #### Examples
@@ -231,7 +231,7 @@ Layout config:
 
 To create arbitrary splits like in e.g. Vim you can use the `wrap-layout` command to wrap the current view
 in either a `horizontal` or `vertical` layout, and specify the `temporary` flag so that the layout is
-automatically replaced by it's last remaining child if you close a child view and only one child remains.
+automatically replaced by its last remaining child if you close a child view and only one child remains.
 
 Example keybindings:
 ```json
@@ -303,7 +303,7 @@ To create an alias for a command add this to a config file:
 }
 ```
 
-This defines two aliases `w` and `wq`. When you run the `w` command it will run `quit`,
+This defines two aliases `q` and `wq`. When you run the `q` command it will run `quit`,
 and if you run `wq` then it will run `write-file` and then `quit`.
 
 Aliases can use other aliases, so the following is possible:

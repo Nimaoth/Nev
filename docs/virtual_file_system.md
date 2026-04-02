@@ -82,7 +82,7 @@ After running this command the path `nimble://package_name/package.nim` would re
 ### Mount a local folder as plugin source.
 The `browse-keybinds` finder shows you the source code which defined keybindings (if available). It reads this source code from `plugs://<plugin_name>/<source_file>.nim`, which by default is mounted as an in memory VFS, containing embedded source code from the wasm binary.
 
-If you develop you're own plugin you might want that to link to you're source code on your local file system instead.
+If you develop your own plugin you might want that to link to your source code on your local file system instead.
 
 To do this you can remount the filesystem for your plugin like this:
 ```json

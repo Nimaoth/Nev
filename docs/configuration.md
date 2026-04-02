@@ -69,7 +69,7 @@ When the application reads the value of a setting, depending on the context it r
                ^                        ^
                |------------            |
                |           |            |
-            a.nim        b.nim        c.cpp             // Document layer. Every document has it's own settings store.
+            a.nim        b.nim        c.cpp             // Document layer. Every document has its own settings store.
                ^           ^            ^
                |           |            |-----------
                |           |            |          |

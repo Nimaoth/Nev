@@ -29,13 +29,13 @@ The following LSP features are currently supported:
 
 Configuration for language servers should be put in the user settings (`~/.nev/settings.json`) or the workspace settings (`{workspace_dir}/.nev/settings.json`)
 
-Some language servers are already configured in the [app settings](../config/settings.json), so when you add you're own language server configuration make sure to use `"+lsp"` to extend the LSP configurations, unless you want to completely override the defaults:
+Some language servers are already configured in the [app settings](../config/settings.json), so when you add your own language server configuration make sure to use `"+lsp"` to extend the LSP configurations, unless you want to completely override the defaults:
 - `nim`: `nimlangserver`
 - `C`: `clangd`
 - `C++`: `clangd`
 - `Zig`: `zls`
 - `Odin`: `ols`
-- `Rust`: `rust-analizer`
+- `Rust`: `rust-analyzer`
 
 Nev supports attaching multiple language servers to a document. The merge strategy for merging results from multiple
 language servers is not configurable yet.

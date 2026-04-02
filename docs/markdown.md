@@ -59,7 +59,7 @@ These commands are not bound to any key by default. Bind them in your `keybindin
 
 The markdown plugin renders images inline in the editor for image links in the format `![alt](path)`.
 
-Supported formats: PNG, JPEG, GIF, BPM, QOI, PPM.
+Supported formats: PNG, JPEG, GIF, BMP, QOI, PPM.
 
 ![A markdown file containing image links where the images are rendered directly inline in the editor below the link text](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/markdown-inline-images.png)
 

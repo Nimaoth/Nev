@@ -157,7 +157,7 @@
 | :arrow_down: | :pts[elect]            | like ":tselect" but show tag in preview window                        |
 | :arrow_down: | :ptj[ump]              | like ":tjump" but show tag in preview window                          |
 | :arrow_down: | :pc[lose]              | close tag preview window                                              |
-| :arrow_down: | CTRL-W z               | close tag preview window`                                             |
+| :arrow_down: | CTRL-W z               | close tag preview window                                              |
 
 ## Scrolling
 
