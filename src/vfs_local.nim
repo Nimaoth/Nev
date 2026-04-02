@@ -1,4 +1,5 @@
 import std/[os, options, unicode, strutils, streams, atomics, sequtils, pathnorm, tables]
+import encodings
 import nimsumtree/[rope, static_array, arc]
 import malebolgia
 import misc/[custom_async, custom_logger, util, timer, regex, id]
@@ -104,20 +105,87 @@ method watchImpl*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent])
 
 # todo: unwatch
 
+type
+  BomKind = enum
+    bomNone
+    bomUtf8
+    bomUtf16Le
+    bomUtf16Be
+
+proc checkBom(s: Stream): tuple[bom: BomKind, bomLen: int] =
+  try:
+    var header: array[3, char]
+    let pos = s.getPosition
+    let bytesRead = s.readData(header[0].addr, 3)
+    s.setPosition(pos)
+
+    if bytesRead >= 3 and header[0] == '\xEF' and header[1] == '\xBB' and header[2] == '\xBF':
+      return (bomUtf8, 3)
+    if bytesRead >= 2 and header[0] == '\xFF' and header[1] == '\xFE':
+      return (bomUtf16Le, 2)
+    if bytesRead >= 2 and header[0] == '\xFE' and header[1] == '\xFF':
+      return (bomUtf16Be, 2)
+    return (bomNone, 0)
+  except IOError, OSError:
+    return (bomNone, 0)
+
+proc loadFileFromStream(s: Stream, flags: set[ReadFlag]): tuple[data: string, invalidUtf8Error: bool] {.raises: [IOError, OSError, ValueError].} =
+  if ReadFlag.Binary in flags:
+    return (s.readAll(), false)
+
+  let (bom, bomLen) = checkBom(s)
+
+  if bom in {bomUtf16Le, bomUtf16Be}:
+    # Read all and convert to UTF-8
+    s.setPosition(bomLen)
+    var raw = s.readAll
+    if bom == bomUtf16Be:
+      # Swap bytes for big endian
+      for i in countup(0, raw.len - 2, 2):
+        swap(raw[i], raw[i + 1])
+    return (convert(raw, "UTF-8", "UTF-16"), false)
+
+  if bom == bomUtf8:
+    s.setPosition(bomLen)
+
+  # Read all as UTF-8 (or binary)
+  var data = s.readAll
+  if data.len == 0:
+    return (data.ensureMove, false)
+
+  # Validate UTF-8
+  let invalidUtf8Index = data.validateUtf8
+  if invalidUtf8Index < 0:
+    return (data.ensureMove, false)
+
+  # Try converting from CP1252
+  var converted = convert(data, "UTF-8", "CP1252")
+  if converted.validateUtf8 < 0:
+    return (converted.ensureMove, false)
+
+  return (&"Invalid utf-8 byte at {invalidUtf8Index}", true)
+
 proc loadFileThread(args: tuple[path: string, data: ptr string, invalidUtf8Error: ptr bool, flags: set[ReadFlag]]): bool =
   try:
-    args.data[] = readFile(args.path)
+    let fileSize = getFileSize(args.path).int
+    let s = newFileStream(args.path, fmRead, max(1024, fileSize))
+    if s.isNil:
+      args.data[] = &"Failed to open file for reading: {args.path}"
+      return false
 
-    if ReadFlag.Binary notin args.flags:
-      let invalidUtf8Index = args.data[].validateUtf8
-      if invalidUtf8Index >= 0:
-        args.data[] = &"Invalid utf-8 byte at {invalidUtf8Index}"
-        args.invalidUtf8Error[] = true
-        return false
+    defer:
+      s.close()
 
+    var (data, invalidUtf8) = loadFileFromStream(s, args.flags)
+    if invalidUtf8:
+      args.data[] = data.ensureMove
+      args.invalidUtf8Error[] = true
+      return false
+
+    args.data[] = data.ensureMove
     return true
 
-  except:
+  except CatchableError:
     args.data[] = getCurrentExceptionMsg()
     return false
 
@@ -181,7 +249,7 @@ method readImpl*(self: VFSLocal, path: string, flags: set[ReadFlag]): Future[str
 
 proc loadFileRopeThread(args: tuple[path: string, data: ptr Rope, err: ptr ref CatchableError, cancel: ptr Atomic[bool], threadDone: ptr Atomic[bool]]) =
   try:
-    let s = newFileStream(args.path, fmRead, 1024)
+    let s = newFileStream(args.path, fmRead, 1024 * 1024)
     if s.isNil:
       args.err[] = newException(IOError, &"Failed to open file for reading: {args.path}")
       args.threadDone[].store(true)
@@ -189,6 +257,22 @@ proc loadFileRopeThread(args: tuple[path: string, data: ptr Rope, err: ptr ref C
 
     defer:
       s.close()
+
+    let (bom, bomLen) = checkBom(s)
+
+    if bom in {bomUtf16Le, bomUtf16Be}:
+      # Non-UTF-8 BOM: use helper to load and convert, then create rope from string
+      var (data, invalidUtf8) = loadFileFromStream(s, {})
+      if invalidUtf8:
+        args.err[] = newException(IOError, data)
+      else:
+        args.data[] = Rope.new(data.ensureMove)
+      args.threadDone[].store(true)
+      return
+
+    # UTF-8 BOM or no BOM: use existing stream-based rope loading
+    if bom == bomUtf8:
+      s.setPosition(bomLen)
 
     proc readImpl(buffer: var string, bytesToRead: int) {.gcsafe, raises: [].} =
       if args.cancel[].load:
