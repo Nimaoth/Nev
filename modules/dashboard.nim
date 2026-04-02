@@ -58,7 +58,7 @@ const logos = @[
 when implModule:
   import std/[tables, options, strformat, strutils, sequtils, random, json, algorithm, math]
   import vmath, chroma
-  import misc/[custom_logger, util, custom_async, custom_unicode, jsonex, myjsonutils]
+  import misc/[custom_logger, util, custom_async, custom_unicode, jsonex, myjsonutils, timer]
   import ui/node
   import view, dynamic_view, layout, service, events, command_service
   import theme
@@ -137,6 +137,7 @@ when implModule:
       eventHandlers*: Table[string, EventHandler]
       sections*: seq[SectionInfo]
       sectionRenderers*: Table[string, SectionRenderFunc]
+      uptimeTimer: Timer
 
   proc drawSection(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo, sectionRenderers: Table[string, SectionRenderFunc], x, y, w: float, textColor, sectionColor: Color) =
     let cx = builder.charWidth
@@ -607,6 +608,16 @@ when implModule:
     let availableWidth = builder.currentParent.bounds.w
 
     builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
+      var uptime = self.uptimeTimer.elapsed.ms.int div 1000
+      var uptimeUnit = "s"
+      if uptime >= 60:
+        uptime = uptime div 60
+        uptimeUnit = "min"
+      if uptime >= 60:
+        uptime = uptime div 60
+        uptimeUnit = "h"
+      state.stats.set("Uptime", uptime, uptimeUnit)
+
       for (name, stat) in state.stats.stats.pairs:
         let valueText = $stat.value & stat.unit
         let valueX = availableWidth - valueText.len.float * cx - cx * 2
@@ -700,6 +711,7 @@ when implModule:
       events: events,
       commandService: commandService,
       sections: sections,
+      uptimeTimer: startTimer(),
     )
 
     view.sectionRenderers["logo"] = renderLogo
