@@ -698,12 +698,12 @@
         },
         "markdown": {
             "+text": {
+                "context-lines.enabled": false,
                 "color-highlight": {
                     "enable": false,
                     "regex": "#([0-9a-fA-F]{6})",
                     "kind": "hex",
                 },
-                "context-lines": false,
                 "treesitter.repository": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown",
                 "treesitter.queries": "tree-sitter-markdown/queries",
                 "tab-width": 2,
