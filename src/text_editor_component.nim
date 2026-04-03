@@ -155,7 +155,7 @@ when implModule:
     let displayPoint = self.displayMap.toDisplayPoint(point)
     debugf"textEditorComponentCenterCursor {point}, {relativePosition}, {snap}, {self.scrollBox.size.y * relativePosition}"
     if snap and self.scrollBox.size.y != 0:
-      self.scrollBox.scrollXToY(displayPoint.row.int, self.scrollBox.size.y * relativePosition)
+      self.scrollBox.scrollToY(displayPoint.row.int, self.scrollBox.size.y * relativePosition)
     else:
       self.scrollBox.scrollTo(displayPoint.row.int, center = true, snap = snap)
 

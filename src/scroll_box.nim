@@ -207,7 +207,7 @@ proc itemIndex*(sv: var ScrollBox, index: int): Option[int] =
       return item.index.some
   return int.none
 
-proc scrollXToY*(sv: var ScrollBox, index: int, y: float) =
+proc scrollToY*(sv: var ScrollBox, index: int, y: float) =
   if sv.itemBounds(index).getSome(b) and b.y == y:
     # Item is already it the correct location
     return

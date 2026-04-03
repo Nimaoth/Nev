@@ -1,12 +1,13 @@
 import std/[tables, options, json]
 import misc/[jsonex, myjsonutils]
+import config_provider
 import component
 export component
 
 include dynlib_export
 
 type ConfigComponent* = ref object of Component
-  discard
+  config*: ConfigStore
 
 # DLL API
 var ConfigComponentId* {.apprtl.}: ComponentTypeId
@@ -45,12 +46,10 @@ proc set*[T](self: ConfigComponent, key: string, value: T) {.inline.} =
 # Implementation
 when implModule:
   import misc/[util]
-  import config_provider
 
   ConfigComponentId = componentGenerateTypeId()
 
   type ConfigComponentImpl* = ref object of ConfigComponent
-    config*: ConfigStore
 
   proc getConfigComponent*(self: ComponentOwner): Option[ConfigComponent] {.gcsafe, raises: [].} =
     return self.getComponent(ConfigComponentId).mapIt(it.ConfigComponent)

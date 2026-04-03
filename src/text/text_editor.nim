@@ -1053,13 +1053,13 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   self.markDirty()
 
 proc scrollToTop*(self: TextDocumentEditor) =
-  self.scrollBox.scrollXToY(0, 0)
+  self.scrollBox.scrollToY(0, 0)
   self.textEditorComponent.onScroll.invoke()
 
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5, snap: bool = false) =
   let displayPoint = self.displayMap.toDisplayPoint(cursor.toPoint)
   if snap and self.scrollBox.size.y > 0:
-    self.scrollBox.scrollXToY(displayPoint.row.int, self.scrollBox.size.y * 0.5)
+    self.scrollBox.scrollToY(displayPoint.row.int, self.scrollBox.size.y * 0.5)
   else:
     self.scrollBox.scrollTo(displayPoint.row.int, center = true, centerOffscreen = false, snap = snap)
 
@@ -2822,12 +2822,12 @@ proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBe
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   let displayPoint = self.displayMap.toDisplayPoint(self.getCursor(cursor).toPoint)
-  self.scrollBox.scrollXToY(displayPoint.row.int, offset)
+  self.scrollBox.scrollToY(displayPoint.row.int, offset)
   self.markDirty()
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, cursor: Cursor, offset: float) =
   let displayPoint = self.displayMap.toDisplayPoint(cursor.toPoint)
-  self.scrollBox.scrollXToY(displayPoint.row.int, offset * self.platform.totalLineHeight)
+  self.scrollBox.scrollToY(displayPoint.row.int, offset * self.platform.totalLineHeight)
   self.markDirty()
 
 proc getContentBounds*(self: TextDocumentEditor): Vec2 =
@@ -4949,7 +4949,7 @@ proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapM
     if minCenterIndex >= 0:
       let point = old.toInputPoint(wrapPoint(minCenterIndex, 0))
       let newDisplayPoint = wrapMap.toWrapPoint(point)
-      self.scrollBox.scrollXToY(newDisplayPoint.row.int, minCenterBounds.y)
+      self.scrollBox.scrollToY(newDisplayPoint.row.int, minCenterBounds.y)
 
   if self.diffDocument.isNil:
     return
