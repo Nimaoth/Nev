@@ -5,13 +5,22 @@ This file contains documentation about features that don't fit into any of the o
 - [Getting started](getting_started.md)
 - [Cheat sheet](cheatsheet.md)
 - [Configuration](configuration.md)
+- [Settings](settings.md)
+- [Keybindings](keybindings.md)
 - [Finders](finders.md)
-- [Plugin API](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html).
+- [Sessions](sessions.md)
+- [Language servers](lsp.md)
+- [Treesitter](treesitter.md)
+- [Debugger](debugger.md)
+- [Plugins](plugins.md)
 - [Virtual filesystem](virtual_file_system.md)
 - [Moves](moves.md)
 - [Markdown](markdown.md)
 - [Dashboard](dashboard.md)
+- [Harpoon](harpoon.md)
 - [Undo Tree](undo_tree.md)
+- [Internals](internals.md)
+- [Supported Vim keybindings](supported_vim_keybindings.md)
 
 ## Layout
 
@@ -359,7 +368,7 @@ Here are some examples of running these aliases and the commands that will be ex
 ## Terminal
 
 Nev has a builtin terminal. To create a terminal view there are two commands:
-- `create-terminal <command> [<options>]` - Creates a new terminal view, running the specified command. Usually the command is something like `bash` or `powershell`:
+- `terminal.create <command> [<options>]` - Creates a new terminal view, running the specified command. Usually the command is something like `bash` or `powershell`:
 ```nim
   ## Opens a new terminal by running `command`.
   ## `command`                   Program name and arguments for the process. Usually a shell.
@@ -375,7 +384,7 @@ Nev has a builtin terminal. To create a terminal view there are two commands:
   ## `options.focus`             Whether to focus the terminal view. `true` by default.
 ```
 
-- `run-in-terminal <shell> <command> [<options>]` - Runs a command in a terminal, assuming the terminal is running some shell like program.
+- `terminal.run <shell> <command> [<options>]` - Runs a command in a terminal, assuming the terminal is running some shell like program.
 ```nim
   ## Run the given `command` in a terminal with the specified shell.
   ## `command` is executed in the shell by sending it as if typed using the keyboard, followed by `<ENTER>`.
@@ -425,16 +434,16 @@ In normal mode only some keys are send to the terminal by default (e.g. arrow ke
 ### Open hidden terminals
 
 To open a hidden terminal you can't use the `choose-open` command, as that command only shows files you have open.
-You need to use the `select-terminal` command instead (`<SPACE>to` by default, `to` standing for "terminal open").
+You need to use the `terminal.select` command instead (`<SPACE>to` by default, `to` standing for "terminal open").
 
-The `select-terminal` command show all hidden terminals, and allows you to use the terminal directly from within
+The `terminal.select` command show all hidden terminals, and allows you to use the terminal directly from within
 the popup by focusing the preview using `<TAB>`.
 
 To open the terminal in the main view just press `<ENTER>` or `<C-y>`.
 
 ### Defining shells
 
-To use the `run-in-terminal` command you need to define the shell command in the settings.
+To use the `terminal.run` command you need to define the shell command in the settings.
 
 The following shells are already defined by default: `bash`, `sh`, `zsh`, `powershell`, `wsl` and `default`.
 `default` is `bash` on Linux and `powershell` on windows.
@@ -450,7 +459,7 @@ Additional shells can be specified like this:
 }
 ```
 
-You can the use a shell like this: `run-in-terminal "bash-no-profile" "ls"`
+You can the use a shell like this: `terminal.run "bash-no-profile" "ls"`
 
 ### Examples
 
@@ -461,7 +470,7 @@ You can the use a shell like this: `run-in-terminal "bash-no-profile" "ls"`
 {
   "editor": {
     "<SPACE>ts": [
-      "run-in-terminal",
+      "terminal.run",
       "bash",
       "", // Empty command, so the terminal is just opened and ready for you to enter something.
       {
@@ -487,7 +496,7 @@ With this configuration you can then do the following:
     "<SPACE>zb": [
       "all", // Runs all arguments as commands, allowing you to bind multiple commands in a single key combination.
       [
-        "run-in-terminal",
+        "terminal.run",
         "bash",
         "clear; nimble build", // Clear the screen, the run `nimble build`
         {
@@ -507,7 +516,7 @@ With this configuration you can then do the following:
 {
   "editor": {
     "<SPACE>tn": [
-      "create-terminal",
+      "terminal.create",
       "bash",
       {
         "autoRunCommand": "nvim ; exit" // Run NeoVim, then exit the shell.

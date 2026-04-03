@@ -8,23 +8,23 @@ Language servers currently have to be installed manually. If you already have a 
 
 The following LSP features are currently supported:
 
-| Feature | Vim | VSCode | Note |
-| ----------- | --- | --- | --- |
-| `textDocument/definition` | `gd` | `<C-g><C-d>` or `<F12>` |  |
-| `textDocument/declaration` | `gD` | `<C-g><CS-d>` |  |
-| `textDocument/typeDefinition` | `gT` | `<C-g><CS-t>` |  |
-| `textDocument/implementation` | `gi` | `<C-g><C-i>` |  |
-| `textDocument/documentSymbol` | `gs` | `<C-g><C-s>` or `<CS-o>` |  |
-| `textDocument/references` | `gr` | `<C-g><C-r>` or `<S-F12>` |  |
-| `textDocument/hover` | `K` | `<C-g><C-k>` |  |
-| `textDocument/signatureHelp` | `H` |  | Show function signature help. |
-| `textDocument/diagnostic` |  | `<C-g><C-h>` |  |
-| `textDocument/codeAction` | `ga` | `<C-g><C-a>` | Opens the code action picker for the selected diagnostic. |
-| `textDocument/rename` | `gR` |  | Opens a prompt to rename a variable. |
-| `textDocument/switchSourceHeader` | `go` | `<C-g><C-o>` | Only for C/C++ with `clangd` |
-| `workspace/symbol` | `gw` | `<C-g><C-w>` or `<C-t>` |  |
-| `textDocument/inlayHints` |  |  | No keybindings necessary |
-| `textDocument/completion` |  |  | See below |
+| Feature | Command | Vim | VSCode | Note |
+| ----------- | --- | --- | --- | --- |
+| `textDocument/definition` | `goto-definition` | `gd` | `<C-g><C-d>` or `<F12>` |  |
+| `textDocument/declaration` | `goto-declaration` | `gD` | `<C-g><CS-d>` |  |
+| `textDocument/typeDefinition` | `goto-type-definition` | `gT` | `<C-g><CS-t>` |  |
+| `textDocument/implementation` | `goto-implementation` | `gi` | `<C-g><C-i>` |  |
+| `textDocument/documentSymbol` | `goto-symbol` | `gs` | `<C-g><C-s>` or `<CS-o>` |  |
+| `textDocument/references` | `goto-references` | `gr` | `<C-g><C-r>` or `<S-F12>` |  |
+| `textDocument/hover` | `hover.toggle` | `K` | `<C-g><C-k>` |  |
+| `textDocument/signatureHelp` | `toggle-signature-help` | `H` |  | Show function signature help. |
+| `textDocument/diagnostic` | `show-diagnostics-for-current` |  | `<C-g><C-h>` |  |
+| `textDocument/codeAction` | `select-code-action` | `ga` | `<C-g><C-a>` | Opens the code action picker for the selected diagnostic. |
+| `textDocument/rename` | `rename` | `gR` |  | Opens a prompt to rename a variable. |
+| `textDocument/switchSourceHeader` | `switch-source-header` | `go` | `<C-g><C-o>` | Only for C/C++ with `clangd` |
+| `workspace/symbol` | `goto-workspace-symbol` | `gw` | `<C-g><C-w>` or `<C-t>` |  |
+| `textDocument/inlayHints` |  |  |  | No keybindings necessary |
+| `textDocument/completion` |  |  |  | See below |
 
 ## Configuration
 

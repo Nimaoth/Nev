@@ -44,7 +44,7 @@ vim.base             ← bottom (from `editor.base-modes`)    -  This one is alw
 | `editor.command-line-result-mode-high` | Mode active during **command-line result** (high)             |
 | `terminal.base-mode`                   | Always-active mode when **terminal** is focused               |
 | `terminal.default-mode`                | Optional additional terminal mode                             |
-| `selector.base-mode`                   | Always-active mode when a **selector popup** is open          |
+| `selector.base-mode`                   | Always-active mode when a **selector popup** is open (defaults to `popup.selector`) |
 
 ### Selector Popup Mode Composition
 
