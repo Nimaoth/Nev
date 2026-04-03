@@ -248,8 +248,6 @@ proc createInlineDiff(self: ptr DiffMapSnapshot, mapping: ptr LineMapping): tupl
   let srcLines = srcEndLine - srcStartLine
   let dstLines = dstEndLine - dstStartLine
   let changed = min(srcLines, dstLines)
-  srcEndLine = srcStartLine + changed
-  dstEndLine = dstStartLine + changed
 
   var srcLineRange = point(srcStartLine, 0)...point(srcEndLine, 0)
   var dstLineRange = point(dstStartLine, 0)...point(dstEndLine, 0)

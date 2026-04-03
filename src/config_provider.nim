@@ -1159,6 +1159,9 @@ declareSettings UiSettings, "ui":
   ## Whether a scrollbar is shown.
   declare scrollBar, bool, true
 
+  ## Whether changes within a line should be highlighted in the diff view
+  declare highlightInlineChanges, bool, true
+
 declareSettings GeneralSettings, "editor":
   use openSession, OpenSessionSettings
 

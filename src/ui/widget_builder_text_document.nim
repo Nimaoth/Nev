@@ -67,6 +67,7 @@ type
     informationColor: Color
     hintColor: Color
 
+    highlightInlineChanges: bool
     textColor: Color
     backgroundColor: Color
     signColumnWidth: int
@@ -1160,7 +1161,8 @@ proc drawLines(state: var LineDrawerState, commands: var RenderCommands, backgro
     backgroundCommands.fillRect(b + state.bounds.xy, state.backgroundColor.lighten(0.05))
 
   state.drawDiffBackgrounds(backgroundCommands, scrollBox)
-  state.drawPreciseDiffHighlights(backgroundCommands, scrollBox, false)
+  if state.highlightInlineChanges:
+    state.drawPreciseDiffHighlights(backgroundCommands, scrollBox, false)
 
 proc drawDiffLines(state: var LineDrawerState, commands: var RenderCommands, backgroundCommands: var RenderCommands, scrollBox: var ScrollBox) =
   let maxNumLines = max(ceil(state.bounds.h / state.builder.textHeight).int + 15, 1)
@@ -1193,7 +1195,8 @@ proc drawDiffLines(state: var LineDrawerState, commands: var RenderCommands, bac
     backgroundCommands.fillRect(b + state.bounds.xy, state.backgroundColor.lighten(0.05))
 
   state.drawDiffBackgrounds(backgroundCommands, scrollBox)
-  state.drawPreciseDiffHighlights(backgroundCommands, scrollBox, true)
+  if state.highlightInlineChanges:
+    state.drawPreciseDiffHighlights(backgroundCommands, scrollBox, true)
 
   commands.endScissor()
 
@@ -1410,6 +1413,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     cursorLine: cursorLine,
     cursorDisplayLine: cursorDisplayLine,
 
+    highlightInlineChanges: self.uiSettings.highlightInlineChanges.get(),
     textColor: textColor,
     errorColor: builder.theme.tokenColor("error", color(0.8, 0.2, 0.2)),
     warningColor: builder.theme.tokenColor("warning", color(0.8, 0.8, 0.2)),
@@ -1447,6 +1451,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     cursorLine: if self.diffChanges.isSome: self.diffChanges.get.mapLine(cursorLine, true).get((-1, false)).line else: -1,
     cursorDisplayLine: cursorDisplayLine,
 
+    highlightInlineChanges: self.uiSettings.highlightInlineChanges.get(),
     textColor: textColor,
     errorColor: builder.theme.tokenColor("error", color(0.8, 0.2, 0.2)),
     warningColor: builder.theme.tokenColor("warning", color(0.8, 0.8, 0.2)),
