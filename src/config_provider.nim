@@ -1001,7 +1001,7 @@ when implModule:
     proc markdown(s: string): string = s
 
     proc generateDocs() =
-      var text = markdown"""|  |  |  |  |
+      var text = markdown"""| . | . | . | . |
 """
 
       var sortedDescriptions = descriptions
@@ -1024,7 +1024,7 @@ when implModule:
         text.add "| `" & desc.fullName & "` | " & typeName.escape() & " | " & desc.default.escape() & " | " & docs.escape() & " |\n"
 
       var current = readFile("docs/settings.md")
-      let index = current.find("|  |  |  |  |")
+      let index = current.find("| . | . | . | . |")
       assert index != -1
       let new = current[0..<index] & text
       writeFile("docs/settings.md", new)
@@ -1054,7 +1054,7 @@ declareSettings UiSettings, "ui":
   use background, BackgroundSettings
 
   ## VFS path of the theme.
-  declare theme, string, "app://themes/tokyo-night-color-theme.json"
+  declare theme, string, "app://themes/gruvbox-dark.json"
 
   ## Full path to regular font file.
   declare fontFamily, string, "app://fonts/DejaVuSansMono.ttf"

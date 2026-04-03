@@ -12,7 +12,7 @@ declareSettings ContextLineSettings, "context-lines":
   declare enabled, bool, true
   declare style, string, "breadcrumb"
   declare separator, string, "»"
-  declare show, RegexSetting, """(definition\.(function|macro|class|struct|type|method))|(controlflow.*)"""
+  declare show, RegexSetting, """(definition\.(.*))"""
   declare showConditionals, bool, true
   declare showClasses, bool, true
   declare showFunctions, bool, true

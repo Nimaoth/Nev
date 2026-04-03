@@ -9,10 +9,10 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `snippets` | object |  | Snippets per language. |
 | `startup-commands` | array |  | List of commands to execute at startup. |
 | `keybindings.preset` | "vim" "vscode" | "vim" | Which kind of keybindings to load at startup. |
-|  |  |  |  |
+| . | . | . | . |
 | `context-lines.enabled` | bool | true |  |
 | `context-lines.separator` | string | "»" |  |
-| `context-lines.show` | regex | "(definition\\.(function\|macro\|class\|struct\|type\|method))\|(controlflow.*)" |  |
+| `context-lines.show` | regex | "(definition\\.(.*))" |  |
 | `context-lines.show-classes` | bool | true |  |
 | `context-lines.show-conditionals` | bool | true |  |
 | `context-lines.show-functions` | bool | true |  |
@@ -157,7 +157,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `ui.status-line` | JsonNodeEx[] | ["mode","layout","vcs.status","session"] | Configures what to show in the status line. |
 | `ui.syntax-highlighting` | bool | true | Enable syntax highlighting. |
 | `ui.tab-header-width` | int | 30 | Width of tab layout headers in characters |
-| `ui.theme` | string | "app://themes/tokyo-night-color-theme.json" | VFS path of the theme. |
+| `ui.theme` | string | "app://themes/gruvbox-dark.json" | VFS path of the theme. |
 | `ui.toast-animation` | bool | true | Animate toast positions |
 | `ui.toast-duration` | int | 8000 | How long toasts are displayed for, in milliseconds. |
 | `ui.vsync` | bool | true | Enable vertical sync to prevent screen tearing. |
