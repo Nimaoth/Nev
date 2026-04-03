@@ -324,8 +324,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   bIsRecordingCurrentCommand: bool = false # True while running a command which is being recorded
 
   disableScrolling*: bool
-  scrollOffset*: Vec2
-  interpolatedScrollOffset*: Vec2
 
   currentCenterCursor*: Cursor # Cursor representing the center of the screen
   currentCenterCursorRelativeYPos*: float # 0: top of screen, 1: bottom of screen
@@ -637,7 +635,6 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.hoverComponent.clearHoverView()
     self.hoverComponent.showHover = false
     self.showSignatureHelp = false
-    self.scrollOffset = vec2(0, 0)
     self.snippetComponent.currentSnippetData = SnippetData.none
     self.onDocumentChanged.invoke((document.Document,))
 
@@ -1014,7 +1011,7 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   let targetPoint = cursor.toPoint
   let charWidth = self.platform.charWidth
   let displayPoint = self.displayMap.toDisplayPoint(targetPoint)
-  let targetColumnX = displayPoint.column.float32 * charWidth + self.interpolatedScrollOffset.x
+  let targetColumnX = displayPoint.column.float32 * charWidth + self.scrollBox.currentOffset.x
 
   # todo: make this configurable
   let marginX = charWidth * 5
@@ -1036,18 +1033,20 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
 
   self.scrollBox.scrollTo(displayPoint.row.int, center = centerY, centerOffscreen = centerOffscreenY)
 
-  if self.scrollOffset.x != 0 or not self.settings.wrapLines.get():
+  if self.scrollBox.offset.x != 0 or not self.settings.wrapLines.get():
+    let cursorX = displayPoint.column.float * charWidth
+    let currentX = self.scrollBox.currentOffset.x
     if centerX:
-      self.scrollOffset.x = self.lastContentBounds.w * 0.5 - (displayPoint.column.float + 0.5) * charWidth
+      self.scrollBox.scrollToX(cursorX - self.lastContentBounds.w * 0.5 + charWidth * 0.5)
     else:
       case scrollBehaviour.get(self.defaultScrollBehaviour)
       of TopOfScreen:
-        self.scrollOffset.x = self.lastContentBounds.w * 0.5 - (displayPoint.column.float + 0.5) * charWidth
+        self.scrollBox.scrollToX(cursorX - self.lastContentBounds.w * 0.5 + charWidth * 0.5)
       else:
-        if targetColumnX < marginX:
-          self.scrollOffset.x = marginX - displayPoint.column.float * charWidth
-        elif targetColumnX + charWidth > self.lastContentBounds.w - marginX:
-          self.scrollOffset.x = self.lastContentBounds.w - marginX - charWidth - displayPoint.column.float * charWidth
+        if cursorX + currentX < marginX:
+          self.scrollBox.scrollWithMomentum(vec2(marginX - cursorX - currentX, 0))
+        elif cursorX + currentX + charWidth > self.lastContentBounds.w - self.lineNumberWidth - marginX:
+          self.scrollBox.scrollWithMomentum(vec2(self.lastContentBounds.w - self.lineNumberWidth - marginX - charWidth - cursorX - currentX, 0))
 
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
@@ -1143,19 +1142,6 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor,
       )
       self.selections = selections
     self.scrollToCursor(self.selection.last)
-
-method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
-  if self.disableScrolling:
-    return
-
-  let scrollAmount = scroll * self.uiSettings.scrollSpeed.get()
-  # todo
-  # if not self.lastCompletionsWidget.isNil and
-  #     self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
-  #   self.completionsScrollOffset += scrollAmount
-  # else:
-  self.scrollOffset += scrollAmount
-  self.markDirty()
 
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
   {.gcsafe.}:
@@ -1256,16 +1242,7 @@ proc visibleDisplayRange*(self: TextDocumentEditor, buffer: int = 0): Range[Disp
     let lastDisplayLine = self.scrollBox.items[^1].index
     return displayPoint(firstDisplayLine, 0)...displayPoint(lastDisplayLine + 1, 0).clamp(displayPoint(), self.displayMap.endDisplayPoint)
 
-  # if self.platform.totalLineHeight == 0:
   return displayPoint(0, 0)...displayPoint(0, 0)
-  # let baseLine = int(-self.interpolatedScrollOffset.y / self.platform.totalLineHeight)
-  # var displayRange: Range[DisplayPoint]
-  # displayRange.a.row = clamp(baseLine - buffer, 0, self.numDisplayLines - 1).uint32
-  # displayRange.b.row = clamp(baseLine + self.screenLineCount + buffer + 1, 0, self.numDisplayLines).uint32
-  # if displayRange.b > self.endDisplayPoint:
-  #   displayRange.b = self.endDisplayPoint
-
-  # return displayRange
 
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
   let displayRange = self.visibleDisplayRange(buffer)
@@ -2185,7 +2162,6 @@ proc paste*(self: TextDocumentEditor, registerName: string = "", inclusiveEnd: b
 proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:
     return
-  self.scrollOffset.y += amount
   self.scrollBox.scrollWithMomentum(amount)
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
@@ -2193,7 +2169,7 @@ proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.tex
 proc scrollTextHorizontal*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:
     return
-  self.scrollOffset.x += amount * self.platform.charWidth
+  self.scrollBox.scrollWithMomentum(vec2(amount * self.platform.charWidth, 0))
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
 
@@ -2203,7 +2179,6 @@ proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").
   if self.disableScrolling:
     return
 
-  self.scrollOffset.y += self.platform.totalLineHeight * amount.float
   self.scrollBox.scrollWithMomentum(self.platform.totalLineHeight * amount.float)
   self.textEditorComponent.onScroll.invoke()
 
@@ -2817,8 +2792,6 @@ proc setDefaultSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSna
 
 proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour) =
   self.nextSnapBehaviour = snapBehaviour.some
-  # if snapBehaviour == Always:
-  #   self.interpolatedScrollOffset = self.scrollOffset
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   let displayPoint = self.displayMap.toDisplayPoint(self.getCursor(cursor).toPoint)
