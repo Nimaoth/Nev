@@ -51,9 +51,10 @@ else: Backend.none
 var logToFile = false
 var logToConsole = true
 var disableLogging = false
+const version = "0.5.1"
 
 const helpText = &"""
-    nev [options] [file]
+    nev {version}  [options] [file]
 
 Options:
   -g, --gui              Launch gui version (if available)
@@ -190,6 +191,10 @@ block: ## Parse command line options
 
       of "ts-mem-tracking":
         enableTreesitterMemoryTracking()
+
+      of "version":
+        echo version
+        quit(1)
 
     of cmdEnd: assert(false) # cannot happen
 
