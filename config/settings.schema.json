@@ -333,12 +333,6 @@
                         }
                     }
                 },
-                "restore-open-workspaces": {
-                    "type": "boolean"
-                },
-                "restore-open-editors": {
-                    "type": "boolean"
-                },
                 "max-views": {
                     "type": "integer"
                 },
@@ -372,13 +366,13 @@
                     "default": "app://fonts/DejaVuSansMono.ttf"
                 },
                 "^fontFamilyBold$": {
-                    "type": "string", 
+                    "type": "string",
                     "description": "Full path to bold font file.",
                     "default": "app://fonts/DejaVuSansMono-Bold.ttf"
                 },
                 "^fontFamilyItalic$": {
                     "type": "string",
-                    "description": "Full path to italic font file.", 
+                    "description": "Full path to italic font file.",
                     "default": "app://fonts/DejaVuSansMono-Oblique.ttf"
                 },
                 "^fontFamilyBoldItalic$": {

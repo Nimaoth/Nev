@@ -5,7 +5,7 @@
 
 ## Settings
 
-[List of (most) settings](settings.gen.md)
+[List of settings](settings.md)
 
 Settings are specified using JSON files.
 These files contain simple values like `ui.background.transparent` as well as more complex things

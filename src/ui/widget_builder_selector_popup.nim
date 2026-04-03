@@ -80,7 +80,8 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
   proc filterCommand(s: string): bool =
     return not excluded.anyIt(s.toLowerAscii.startsWith(it))
   let nextPossibleInputs = app.getNextPossibleInputs(false, (handler) => handler.config.context.startsWith("popup.selector")).filterIt(filterCommand(it.description))
-  var whichKeyHeight = app.config.runtime.get("ui.selector-popup.which-key-height", 5)
+  let uiSettings = UiSettings.new(app.config.runtime)
+  var whichKeyHeight = uiSettings.popupWhichKeyHeight.get()
   whichKeyHeight = (nextPossibleInputs.len + 1) div 2
 
   builder.panel(&{FillBackground, DrawBorder, DrawBorderTerminal}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, border = border(1),

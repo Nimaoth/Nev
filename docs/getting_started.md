@@ -14,7 +14,7 @@ To open this document at any time run the command `help` or `explore-help`.
 ## Configuration
 [Go here](configuration.md) to learn how to configure the editor.
 
-[Go here](settings.gen.md) to see a list of most settings.
+[Go here](settings.md) to see a list of settings.
 
 ## Sessions
 [Go here](sessions.md) to learn how to create sessions to persist editor state when closing (e.g. open files, workspace folders, breakpoints)

@@ -1001,13 +1001,7 @@ when implModule:
     proc markdown(s: string): string = s
 
     proc generateDocs() =
-      var text = markdown"""
-# List of (most) settings
-
-For examples and default values see [here](../config/settings.json)
-
-| Key | Type | Default | Description |
-| ----------- | --- | --- | ------ |
+      var text = markdown"""|  |  |  |  |
 """
 
       var sortedDescriptions = descriptions
@@ -1029,7 +1023,11 @@ For examples and default values see [here](../config/settings.json)
 
         text.add "| `" & desc.fullName & "` | " & typeName.escape() & " | " & desc.default.escape() & " | " & docs.escape() & " |\n"
 
-      writeFile("docs/settings.gen.md", text)
+      var current = readFile("docs/settings.md")
+      let index = current.find("|  |  |  |  |")
+      assert index != -1
+      let new = current[0..<index] & text
+      writeFile("docs/settings.md", new)
 
     static:
       generateDocs()
@@ -1081,6 +1079,9 @@ declareSettings UiSettings, "ui":
 
   ## How many rows tall the window showing next possible inputs should be.
   declare whichKeyHeight, int, 6
+
+  ## How many rows tall the window showing next possible inputs should be when showing in a popup.
+  declare popupWhichKeyHeight, int, 5
 
   ## Maximum number of views (files or other UIs) which can be shown.
   declare maxViews, int, 2
@@ -1157,18 +1158,6 @@ declareSettings UiSettings, "ui":
 
   ## Whether a scrollbar is shown.
   declare scrollBar, bool, true
-
-# declareSettings LanguageSettings, "languages.*":
-#   ## Name of the github repository or link to git repository for the treesitter parser.
-#   declare treesitter, string, ""
-
-#   ## Name of the sub directory of the git repository where the treesitter queries are located.
-#   ## If empty or not specified the editor will search for the queries in the repository.
-#   declare treesitterQueries, string, ""
-
-# declareSettings LanguagesSettings, "":
-#   ## Map from language id to language config.
-#   declare languages, Table[string, LanguageSettings], initTable[string, LanguageSettings]()
 
 declareSettings GeneralSettings, "editor":
   use openSession, OpenSessionSettings
