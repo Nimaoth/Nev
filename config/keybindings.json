@@ -800,6 +800,12 @@
         "<C-p>": ["choose-file"],
         "<CS-f>": ["search-global-interactive"],
 
+        "<F9>": ["toggle-breakpoint"],
+        "<F5>": ["continue-execution"],
+        "<F10>": ["step-over"],
+        "<F11>": ["step-in"],
+        "<F8>": ["step-out"],
+
         "<A-n>": "focus-view-left",
         "<A-t>": "focus-view-right",
         "<A-g>": "focus-view-up",
