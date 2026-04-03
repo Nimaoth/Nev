@@ -169,53 +169,80 @@ when implModule:
 
     return (lnum, col)
 
-  proc parseRecursively(tree: UndoTree, line2seq: var LineSeq, lnum, col: int, splitNode: bool, nodeIdx: int32, parentIdx: int32, active: bool, depth = 0) =
-    assert nodeIdx in 0..tree.nodes.high
-    if tree.nodes[nodeIdx].firstChild != -1: assert tree.nodes[nodeIdx].firstChild > nodeIdx
-    if tree.nodes[nodeIdx].nextSibling != -1: assert tree.nodes[nodeIdx].nextSibling > nodeIdx
-    assert tree.nodes[nodeIdx].parent < nodeIdx
-    let distance = nodeIdx - parentIdx - 1
+  type
+    ParseStackFrame = object
+      nodeIdx: int32
+      lnum: int32
+      col: int16
+      splitNode: bool
+      active: bool
+
+  proc parseUndoTreeLines(tree: UndoTree, line2seq: var LineSeq, lnum, col: int, splitNode: bool, nodeIdx: int32, parentIdx: int32, active: bool) =
+    var stack = newSeqOfCap[ParseStackFrame](tree.nodes.len)
+    stack.add(ParseStackFrame(
+      nodeIdx: nodeIdx,
+      lnum: lnum.int32,
+      col: col.int16,
+      splitNode: splitNode,
+      active: active,
+    ))
+
     let barChar = '|'
+    var children = newSeq[int32]()
 
-    var lnum = lnum
-    var col = col
-    var remaining = distance
-    # log "  ".repeat(depth), &"parseRecursively {parentIdx}:{nodeIdx}, lnum={lnum} col={col} split={splitNode} distance={distance}  ==============================="
+    while stack.len > 0:
+      var frame = stack[^1]
 
-    while remaining > 0:
-      var sLine = getOrCreate(line2seq, lnum).addr
-      # log "  ".repeat(depth), &"while {remaining} > 0: lnum={lnum} {sLine[]}"
-      if sLine.isBranch:
-        col = adjustBranchLine(sLine.cells, col, active, depth + 1)
-      else:
-        let curCol = getMaxCol(sLine.cells)
-        if col - 2 == curCol:
-          sLine.cells.add((col, barChar))
-        elif col > curCol:
-          col = newBranchLine(line2seq, lnum, col, true, active, depth + 1)
-          inc lnum
-          continue
+      assert frame.nodeIdx in 0..tree.nodes.high
+      if tree.nodes[frame.nodeIdx].firstChild != -1: assert tree.nodes[frame.nodeIdx].firstChild > frame.nodeIdx
+      if tree.nodes[frame.nodeIdx].nextSibling != -1: assert tree.nodes[frame.nodeIdx].nextSibling > frame.nodeIdx
+      assert tree.nodes[frame.nodeIdx].parent < frame.nodeIdx
+      var parentIdx = tree.nodes[frame.nodeIdx].parent
+      if parentIdx == frame.nodeIdx:
+        parentIdx = -1
+      let distance = frame.nodeIdx - parentIdx - 1
 
-        dec remaining
-      inc lnum
+      var lnum = frame.lnum.int
+      var col = frame.col.int
+      var remaining = distance
 
+      while remaining > 0:
+        var sLine = getOrCreate(line2seq, lnum).addr
+        if sLine.isBranch:
+          col = adjustBranchLine(sLine.cells, col, frame.active, stack.len + 1)
+        else:
+          let curCol = getMaxCol(sLine.cells)
+          if col - 2 == curCol:
+            sLine.cells.add((col, barChar))
+          elif col > curCol:
+            col = newBranchLine(line2seq, lnum, col, true, frame.active, stack.len + 1)
+            inc lnum
+            continue
 
-    # log "  ".repeat(depth), &"parseRecursively {parentIdx}:{nodeIdx}, lnum={lnum} col={col} split={splitNode} A:\n  ", "  ".repeat(depth), line2seq.join("\n  " & "  ".repeat(depth))
-    (lnum, col) = putSeqNode(line2seq, lnum, col, splitNode, nodeIdx, active, depth)
-    # log "  ".repeat(depth), &"parseRecursively {parentIdx}:{nodeIdx}, lnum={lnum} col={col} split={splitNode} B:\n  ", "  ".repeat(depth), line2seq.join("\n  " & "  ".repeat(depth))
+          dec remaining
+        inc lnum
 
-    let node = tree.nodes[nodeIdx]
-    if node.firstChild > 0:
-      var child = node.firstChild
-      var children: seq[int32] = newSeq[int32]()
-      while child != -1:
-        children.add child
-        child = tree.nodes[child].nextSibling
+      (lnum, col) = putSeqNode(line2seq, lnum, col, frame.splitNode, frame.nodeIdx, frame.active, stack.len)
 
-      for i in 0..<children.len:
-        let isNotFirst = i != 0
-        parseRecursively(tree, line2seq, lnum + 1, col, children.len > 1 and i < children.high, children[i], nodeIdx, active and node.activeChild == children[i], depth + 1)
-    # log "  ".repeat(depth), &"parseRecursively {parentIdx}:{nodeIdx}, lnum={lnum} col={col} split={splitNode} C:\n  ", "  ".repeat(depth), line2seq.join("\n  " & "  ".repeat(depth))
+      let node = tree.nodes[frame.nodeIdx]
+      children.setLen(0)
+      if node.firstChild > 0:
+        var child = node.firstChild
+        while child != -1:
+          children.add child
+          child = tree.nodes[child].nextSibling
+
+      children.reverse()
+
+      discard stack.pop()
+      for i, child in children:
+        stack.add(ParseStackFrame(
+          nodeIdx: child,
+          lnum: lnum.int32 + 1,
+          col: col.int16,
+          splitNode: children.len > 1 and i > 0,
+          active: frame.active and tree.nodes[frame.nodeIdx].activeChild == children[i],
+        ))
 
   proc formatTimeAgo*(now: int64, timestamp: int64): string =
     if timestamp == 0:
@@ -269,7 +296,7 @@ when implModule:
     self.cachedBufferId = buffer.remoteId
     self.cachedLen = buffer.history.undoTree.nodes.len
     self.cachedLines.setLen(0)
-    parseRecursively(tree, self.cachedLines, 0, 1, false, 0, -1, true)
+    parseUndoTreeLines(tree, self.cachedLines, 0, 1, false, 0, -1, true)
     self.cachedLines.reverse()
     self.selected = self.selected.clamp(0, self.cachedLines.high)
 
