@@ -26,6 +26,12 @@ The `#` markers on heading lines are hidden when your cursor is not on that line
 
 ![Two views: left shows `#` markers visible with cursor on a header line, right shows markers hidden and a subtle underline rendered below the heading](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/markdown-header-hiding.png)
 
+### Hiding on cursor lines
+
+By default the hiding doesn't happen on lines which contain a cursor as *if* the editor mode is in `markdown.disable-on-cursor-lines-modes`.
+
+If `markdown.disable-on-cursor-lines-modes` is `["vim.insert"]` then delimiter hiding is disabled when in `vim.insert` mode.
+
 ## Toggle Commands
 
 Four commands are available for toggling inline formatting on the current selection or word. If the selection already has the style, it is removed. If not, it is wrapped. If a different style is present, it is converted.

@@ -260,6 +260,16 @@ when implModule:
     let editor = self.owner.DocumentEditor
     if editor.currentDocument.isNil:
       return false
+    let config = editor.getConfigComponent().getOr:
+      return false
+
+    let modes = config.get("text.modes", seq[string])
+    let disableOnCursorLines = config.get("markdown.disable-on-cursor-lines-modes", seq[string])
+    if modes.toSet.disjoint(disableOnCursorLines.toSet):
+      result = self.currentLines.len > 0
+      self.currentLines.clear()
+      return
+
     let edit = editor.getTextEditorComponent().getOr:
       return false
     var newCurrentLines = initHashSet[int]()
@@ -681,6 +691,14 @@ when implModule:
 
     res.updateHeadersTask = startDelayedPaused(1, false):
       asyncSpawn res.updateHeaderHidingAsync()
+
+    if editor.getConfigComponent().getSome(config):
+      discard config.config.onConfigChanged.subscribe proc(key: string) =
+        if key == "text.modes":
+          if res.updateCursorLines():
+            asyncSpawn res.updateDelimiterHidingAsync()
+            if res.updateHeadersTask.isNotNil:
+              res.updateHeadersTask.schedule()
 
     if editor.getTextEditorComponent().getSome(edit):
       discard edit.onSelectionsChanged2.subscribe proc(arg: tuple[editor: TextEditorComponent, old: seq[Range[Point]]]) =
