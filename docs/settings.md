@@ -140,6 +140,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `ui.font-family-bold-italic` | string | "app://fonts/DejaVuSansMono-BoldOblique.ttf" | Full path to bold italic font file. |
 | `ui.font-family-italic` | string | "app://fonts/DejaVuSansMono-Oblique.ttf" | Full path to italic font file. |
 | `ui.hide-tab-bar-when-single` | bool | false | When true then tab layouts don't render a tab bar when they only have one tab. |
+| `ui.highlight-inline-changes` | bool | true | Whether changes within a line should be highlighted in the diff view |
 | `ui.indent-guide` | bool | true | Enable indent guides to show the indentation of the current line. |
 | `ui.line-numbers` | "none" \| "absolute" \| "relative" | "absolute" | How line numbers should be displayed. |
 | `ui.max-views` | int | 2 | Maximum number of views (files or other UIs) which can be shown. |

@@ -526,6 +526,53 @@ With this configuration you can then do the following:
 }
 ```
 
+## Formatting
+
+Nev supports code formatting through external formatter commands.
+
+### Configuration
+
+Configure the formatter command in your settings:
+
+```json
+// ~/.nev/settings.json
+{
+    // Command to run. First entry is the formatter program, subsequent entries are arguments.
+    "formatter.command": ["nph"],
+
+    // Run the formatter automatically when saving
+    "formatter.on-save": false,
+}
+```
+
+For language-specific formatters, you can override per language:
+
+```json
+{
+    // Use nph for Nim
+    "lang.nim.formatter.command": ["nph"],
+
+    // Use black for Python
+    "lang.python.formatter.command": ["black", "-"],
+}
+```
+
+### Usage
+
+- Run `format` to format the current document.
+- If `formatter.on-save` is `true`, the formatter runs automatically when you save.
+
+### Example keybinding
+
+```json
+// ~/.nev/keybindings.json
+{
+    "vim.normal": {
+        "<LEADER>ff": ["format"]
+    }
+}
+```
+
 ## Context Lines
 
 Context lines show the names of surrounding functions, classes etc at the top.
