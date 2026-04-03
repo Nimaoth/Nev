@@ -70,6 +70,124 @@ This describes how Nev works under the hood, and is mainly useful for contributo
 
 ```
 
+## Modules
+
+Modules allow parts of the editor to be compiled as separate DLLs. This is primarily used for **development speed** -- the CI build is statically linked. Modules can only interact with exposed APIs (with the `apprtl` pragma).
+
+### Architecture
+
+Modules live in the `modules/` directory and can be either:
+- **Single-file modules**: e.g. `stats.nim`, `dashboard.nim`
+- **Multi-file modules**: a directory with a main file matching the directory name, e.g. `terminal/terminal.nim`
+
+Modules fall into two categories:
+- **Core modules**: depended on by the core (`src/`). E.g. `stats` and `terminal`.
+- **Extra modules**: the core does not depend on them, but they depend on the core. Examples: `dashboard`, `vcs_git`, `language_server_lsp`, `terminal`, `debugger`, etc.
+
+```
+                    (((core) core_modules) extra_modules)
+
+    core (src/) ──depends on──> stats, terminal
+          │
+          └── loaded via ──> module_imports.nim (static) OR native_plugins/*.dll (dynlib)
+                                    │
+                                    ├── extra_modules (core doesn't depend on these)
+                                    │   ├── dashboard
+                                    │   ├── vcs_git, vcs_perforce
+                                    │   ├── language_server_lsp, language_server_ctags, ...
+                                    │   ├── debugger
+                                    │   └── ...
+                                    │
+                                    └── core_modules (core depends on these)
+                                        ├── stats
+                                        ├── command_component, hover_component, ...
+                                        └── terminal
+```
+
+### How Modules Work
+
+The key mechanism is `module_base.nim`, which sets up the `implModule` compile-time constant and the `rtl` pragma:
+
+- When **not** compiled with `-d:useDynlib`: everything is statically linked, `implModule` is always true
+- When compiled with `-d:useDynlib`: `implModule` is true only for the module being built as a DLL (matched via `-d:nevModuleName=<name>`)
+
+Dependencies between modules are declared via `#use` comments at the top of the main `.nim` file:
+```nim
+#use stats
+```
+
+### Creating a Module
+
+A minimal module requires:
+
+1. **Include `module_base`** with the `currentSourcePath2` setup
+2. **Declare the public API** (types, procs) outside the `implModule` block
+3. **Mark exported procs** with the `rtl` pragma
+4. **Provide an `init_module_<name>` proc** for initialization
+5. **Put implementation** inside `when implModule:`
+
+```nim
+# modules/my_module.nim
+import service
+
+const currentSourcePath2 = currentSourcePath()
+include module_base
+
+type
+  MyService* = ref object of DynamicService
+    value*: int
+
+func serviceName*(_: typedesc[MyService]): string = "MyService"
+
+# DLL API -- visible to both static and dynlib builds. Make sure name is unique.
+{.push rtl, gcsafe, raises: [].}
+proc myServiceGetValue(self: MyService): int
+{.pop.}
+
+# Wrapper
+{.push inline.}
+proc getValue*(self: MyService): int = self.myServiceGetValue()
+{.pop.}
+
+# Implementation -- only compiled once
+when implModule:
+  import misc/custom_logger
+
+  logCategory "my-module"
+
+  proc myServiceGetValue(self: MyService): int =
+    self.value
+
+  # Required: init function called when the module is loaded
+  proc init_module_my_module*() {.cdecl, exportc, dynlib.} =
+    log lvlInfo, "Initializing my_module"
+    let services = getServices()
+    if services == nil:
+      return
+    services.addService(MyService())
+
+  # Optional: shutdown function called when the editor exits
+  proc shutdown_module_my_module*() {.cdecl, exportc, dynlib.} =
+    log lvlInfo, "Shutting down my_module"
+```
+
+### Building Modules
+
+**Static (default, used by CI):**
+All modules are compiled into the main binary. The `build.nim` script generates `src/module_imports.nim` which imports all modules and provides `initModules()` / `shutdownModules()` procs.
+
+**Dynamic (development):**
+Run `nim c build.nim && nim c -r build.nim` to build dirty modules as DLLs into `native_plugins/`. Use `-f` to force rebuild, `-s` for single-threaded, `-r` for release mode.
+
+### Module Loading
+
+In `desktop_main.nim`, modules are loaded after services are initialized:
+
+- **Static**: `import module_imports; initModules()` -- calls each module's init function
+- **Dynamic**: Walks `native_plugins/` directory, loads each `.dll` with `loadLib()`, resolves and calls `init_module_<name>` by symbol lookup
+
+On shutdown, `shutdown_module_<name>` is called for each loaded module (or `shutdownModules()` for static builds).
+
 ## Plugins
 
 Important terms: `Host` refers to the editor (native code), `guest` or `plugin` refers to the wasm side
