@@ -1818,7 +1818,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
         let view = v.EditorView
         let document = view.editor.getDocument
         let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
-        let dirtyMarker = if isDirty: "*" else: " "
+        let dirtyMarker = if isDirty: " * " else: "   "
         let (directory, name) = document.filename.splitPath
         let (root, relativeDirectory) = self.workspace.getRelativePathAndWorkspaceSync(directory).get(("", directory))
         items.add FinderItem(
@@ -1833,7 +1833,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
         let view = v.EditorView
         let document = view.editor.getDocument
         let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
-        let dirtyMarker = if isDirty: "*" else: " "
+        let dirtyMarker = if isDirty: "* " else: "  "
         let activeMarker = if view.View == activeView:
           "#"
         else:
