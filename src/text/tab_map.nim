@@ -250,9 +250,9 @@ proc setInput*(self: TabMap, input: sink InputMapSnapshot) =
     input: input.ensureMove,
   )
 
-proc validate*(self: TabMapSnapshot) =
+proc validate*(self: TabMapSnapshot): bool =
   # log &"validate {self.buffer.remoteId}{self.buffer.version}"
-  discard
+  return true
 
 proc edit*(self: var TabMapSnapshot, input: sink InputMapSnapshot, patch: Patch[InputPoint]): Patch[TabPoint] =
   if self.buffer.remoteId == input.buffer.remoteId and self.buffer.version == input.buffer.version and self.input.version == input.version:

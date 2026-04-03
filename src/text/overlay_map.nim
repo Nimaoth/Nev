@@ -352,7 +352,7 @@ proc setBuffer*(self: OverlayMap, buffer: sink InputMapSnapshot) =
     buffer: buffer.ensureMove,
   )
 
-proc validate*(self: OverlayMapSnapshot) =
+proc validate*(self: OverlayMapSnapshot): bool =
   # log &"validate {self.buffer.remoteId}{self.buffer.version}"
   var c = self.map.initCursor(OverlayMapChunkSummary)
   var endPos = Point()
@@ -362,13 +362,13 @@ proc validate*(self: OverlayMapSnapshot) =
     c.next()
 
   if endPos != self.buffer.visibleText.summary.lines:
-    debugEcho &"--------------------------------\n-------------------------------\nInvalid overlay map {self.buffer.remoteId}{self.buffer.version}, endpos {endPos} != {self.buffer.visibleText.summary.lines}\n{self}\n---------------------------------------"
-    return
+    # debugEcho &"--------------------------------\n-------------------------------\nInvalid overlay map {self.buffer.remoteId}{self.buffer.version}, endpos {endPos} != {self.buffer.visibleText.summary.lines}\n{self}\n---------------------------------------"
+    return false
 
   if self.map.summary.src != self.buffer.visibleText.summary.lines:
-    debugEcho &"--------------------------------\n-------------------------------\nInvalid overlay map {self.buffer.remoteId}{self.buffer.version}, summary {self.map.summary.src} != {self.buffer.visibleText.summary.lines}\n{self}\n---------------------------------------"
-    return
-
+    # debugEcho &"--------------------------------\n-------------------------------\nInvalid overlay map {self.buffer.remoteId}{self.buffer.version}, summary {self.map.summary.src} != {self.buffer.visibleText.summary.lines}\n{self}\n---------------------------------------"
+    return false
+  return true
 
 proc clear*(self: var OverlayMapSnapshot, id: int = -1): Patch[OverlayPoint]
 
@@ -598,7 +598,8 @@ proc edit*(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch: P
     # todo: composed correctly?
     result.edits.add self.editImpl(buffer.clone(), p, bytePatch.edits[i], version, old).edits
 
-  self.validate()
+  if not self.validate():
+    result = result.compose(self.clear().edits)
 
 proc edit*(self: OverlayMap, buffer: sink InputMapSnapshot, patch: Patch[Point]): Patch[OverlayPoint] =
   self.snapshot.edit(buffer, patch)

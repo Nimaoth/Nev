@@ -240,7 +240,15 @@ proc toWrapBytes*(self: WrapMapSnapshot, point: WrapPoint, bias: Bias = Bias.Rig
     let inputBytes = self.input.toOutputBytes(inputPoint, bias)
     return inputBytes + lineDiff + wrappedIndentBytes
 
-proc validate*(self: WrapMapSnapshot) =
+proc clear*(self: var WrapMapSnapshot) =
+  let endPoint = self.input.endOutputPoint
+  self = WrapMapSnapshot(
+    map: SumTree[WrapMapChunk].new([WrapMapChunk(src: endPoint, dst: endPoint.WrapPoint)]),
+    input: self.input.clone(),
+    interpolated: false,
+    version: self.version + 1)
+
+proc validate*(self: WrapMapSnapshot): bool =
   var c = self.map.initCursor(WrapMapChunkSummary)
   var endPos = inputPoint()
   c.next()
@@ -249,12 +257,13 @@ proc validate*(self: WrapMapSnapshot) =
     c.next()
 
   if endPos != self.input.endOutputPoint:
-    echo &"--------------------------------\n-------------------------------\nInvalid wrap map {self.desc}, endpos {endPos} != {self.input.endOutputPoint}\n{self}\n---------------------------------------"
-    return
+    # echo &"--------------------------------\n-------------------------------\nInvalid wrap map {self.desc}, endpos {endPos} != {self.input.endOutputPoint}\n{self}\n---------------------------------------"
+    return false
 
   if self.map.summary.src != self.input.endOutputPoint:
-    echo &"--------------------------------\n-------------------------------\nInvalid wrap map {self.desc}, summary {self.map.summary.src} != {self.input.endOutputPoint}\n{self}\n---------------------------------------"
-    return
+    # echo &"--------------------------------\n-------------------------------\nInvalid wrap map {self.desc}, summary {self.map.summary.src} != {self.input.endOutputPoint}\n{self}\n---------------------------------------"
+    return false
+  return true
 
 proc editImpl(self: var WrapMapSnapshot, input: sink InputMapSnapshot, patch: Patch[InputPoint]): Patch[WrapPoint] =
   logMapUpdate &"WrapMapSnapshot.editImpl {self.desc} -> {input.desc} | {patch}"
@@ -503,7 +512,8 @@ proc update*(self: var WrapMapSnapshot, input: sink InputMapSnapshot, wrapWidth:
       ), ())
 
   self = WrapMapSnapshot(map: newMap.ensureMove, input: input.ensureMove, interpolated: false, version: self.version + 1)
-  self.validate()
+  if not self.validate():
+    self.clear()
 
 proc updateThread(self: ptr WrapMapSnapshot, input: ptr InputMapSnapshot, wrapWidth: int, wrappedIndent: int): int =
   self[].update(input[].clone(), wrapWidth, wrappedIndent)
@@ -566,7 +576,8 @@ proc updateAsync(self: WrapMap) {.async.} =
         if self.pendingEdits[i].input.buffer.version.changedSince(snapshot.buffer.version):
           # todo: return val
           discard snapshot.edit(self.pendingEdits[i].input.clone(), self.pendingEdits[i].patch)
-    snapshot.validate()
+    if not snapshot.validate():
+      snapshot.clear()
 
     let oldSnapshot = self.snapshot.clone()
     self.snapshot = snapshot.clone()
@@ -578,14 +589,6 @@ proc updateAsync(self: WrapMap) {.async.} =
       return
 
     b = self.snapshot.input.clone()
-
-proc clear*(self: var WrapMapSnapshot) =
-  let endPoint = self.input.endOutputPoint
-  self = WrapMapSnapshot(
-    map: SumTree[WrapMapChunk].new([WrapMapChunk(src: endPoint, dst: endPoint.WrapPoint)]),
-    input: self.input.clone(),
-    interpolated: false,
-    version: self.version + 1)
 
 proc clear*(self: WrapMap) =
   let oldSnapshot = self.snapshot.clone()

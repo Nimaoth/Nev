@@ -250,9 +250,9 @@ proc setBuffer*(self: DisplayMap, buffer: sink BufferSnapshot) =
   self.diffMap.setInput(self.wrapMap.snapshot.clone())
 
 proc validate*(self: DisplayMapSnapshot) =
-  self.overlay.validate()
-  self.tabMap.validate()
-  self.wrapMap.validate()
+  discard self.overlay.validate()
+  discard self.tabMap.validate()
+  discard self.wrapMap.validate()
   self.diffMap.validate()
 
 proc edit*(self: var DisplayMapSnapshot, buffer: sink BufferSnapshot, patch: Patch[Point]) =
