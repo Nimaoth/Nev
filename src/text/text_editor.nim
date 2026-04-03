@@ -5008,6 +5008,8 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
   discard self.displayMap.onUpdated.subscribe (args: (DisplayMap, DisplayMapSnapshot)) => self.handleDisplayMapUpdated(args[0], args[1])
   discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap, DisplayMapSnapshot)) => self.handleDisplayMapUpdated(args[0], args[1])
+  discard self.displayMap.diffMap.onInlineDiffsUpdated.subscribe (args: (DiffMap,)) => self.markDirty()
+  discard self.diffDisplayMap.diffMap.onInlineDiffsUpdated.subscribe (args: (DiffMap,)) => self.markDirty()
 
   self.config = self.configService.addStore("editor/" & $self.id, &"settings://editor/{self.id}")
   discard self.config.onConfigChanged.subscribe proc(key: string) =

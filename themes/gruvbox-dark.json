@@ -28,12 +28,12 @@
 
         "scrollBar": "#52504f",
 
-        "diffEditor.insertedTextBackground": "#b8bb2620",
-        "diffEditor.removedTextBackground": "#fb493422",
-        "diffEditor.changedTextBackground": "#fabd2f20",
+        "diffEditor.insertedTextBackground": "#b8bb2640",
+        "diffEditor.removedTextBackground": "#fb493442",
+        "diffEditor.changedTextBackground": "#fabd2f40",
         "diffEditor.insertedLineBackground": "#98971a20",
         "diffEditor.removedLineBackground": "#cc241d22",
-        "diffEditor.changedLineBackground": "#d7992130",
+        "diffEditor.changedLineBackground": "#d7992120",
 
         "editorHoverWidget.background": "#32302f",
         "editorHoverWidget.border": "#504945",

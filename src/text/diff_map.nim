@@ -4,6 +4,11 @@ import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
 import diff, syntax_map, overlay_map, wrap_map
 import nimsumtree/sumtree except mapIt
 import theme
+import malebolgia
+
+{.push warning[Deprecated]:off.}
+import std/[threadpool]
+{.pop.}
 
 type InputMapSnapshot = WrapMapSnapshot
 type InputChunkIterator = WrapChunkIterator
@@ -93,6 +98,7 @@ type
     input*: InputMapSnapshot
     otherInput*: InputMapSnapshot
     mappings*: Option[seq[LineMapping]] # todo: this is not thread safe
+    inlineMappings*: seq[tuple[diff: RopeDiff[Point], srcBase: Point, dstBase: Point]]
     reverse*: bool
 
   DiffMap* = ref object
@@ -100,6 +106,7 @@ type
     # pendingEdits: seq[tuple[buffer: InputMapSnapshot, patch: Patch[InputPoint]]]
     updatingAsync: bool
     onUpdated*: Event[tuple[map: DiffMap, old: DiffMapSnapshot]]
+    onInlineDiffsUpdated*: Event[tuple[map: DiffMap]]
 
   DiffChunkIterator* = object
     inputChunks*: InputChunkIterator
@@ -217,16 +224,89 @@ proc toInputPoint*(self: DiffMap, point: DiffPoint, bias: Bias = Bias.Right): In
 func endDiffPoint*(self: DiffMapSnapshot): DiffPoint {.inline.} = self.toDiffPoint(self.input.endOutputPoint)
 func endDiffPoint*(self: DiffMap): DiffPoint {.inline.} = self.snapshot.endDiffPoint
 
-proc createIdentityDiffMap(input: sink InputMapSnapshot): DiffMapSnapshot =
+proc createIdentityDiffMap(input: sink InputMapSnapshot, version: int = 0): DiffMapSnapshot =
   logMapUpdate &"createIdentityDiffMap {input.buffer.remoteId}, input summary = {input.map.summary}"
   let endOutputPoint = input.endOutputPoint
 
   return DiffMapSnapshot(
     map: SumTree[DiffMapChunk].new([DiffMapChunk(summary: DiffMapChunkSummary(src: endOutputPoint.row + 1, dst: endOutputPoint.row + 1))]),
     input: input.ensureMove,
+    version: version,
   )
 
-proc createDiffMap(input: sink InputMapSnapshot, mappings: openArray[LineMapping], otherInput: InputMapSnapshot, reverse: bool): DiffMapSnapshot =
+proc createInlineDiff(self: ptr DiffMapSnapshot, mapping: ptr LineMapping): tuple[diff: RopeDiff[Point], srcBase: Point, dstBase: Point] =
+  var (srcStartLine, srcEndLine) = if not self.reverse:
+    (mapping.source.first, mapping.source.last)
+  else:
+    (mapping.target.first, mapping.target.last)
+
+  var (dstStartLine, dstEndLine) = if not self.reverse:
+    (mapping.target.first, mapping.target.last)
+  else:
+    (mapping.source.first, mapping.source.last)
+
+  let srcLines = srcEndLine - srcStartLine
+  let dstLines = dstEndLine - dstStartLine
+  let changed = min(srcLines, dstLines)
+  srcEndLine = srcStartLine + changed
+  dstEndLine = dstStartLine + changed
+
+  var srcLineRange = point(srcStartLine, 0)...point(srcEndLine, 0)
+  var dstLineRange = point(dstStartLine, 0)...point(dstEndLine, 0)
+
+  let srcRopeSlice = self.input.buffer.visibleText.slice(srcLineRange)
+  let dstRopeSlice = self.otherInput.buffer.visibleText.slice(dstLineRange)
+
+  let ropeDiff = diff(srcRopeSlice, dstRopeSlice)
+  return (ropeDiff, srcLineRange.a, dstLineRange.a)
+
+proc createInlineDiffs(self: sink DiffMapSnapshot): seq[tuple[diff: RopeDiff[Point], srcBase: Point, dstBase: Point]] =
+  let mappings = self.mappings.get.addr
+  result.setLen(mappings[].len)
+  if true:
+    try:
+      var m = createMaster()
+      m.awaitAll:
+        for i in 0..<mappings[].len:
+          m.spawn createInlineDiff(self.unsafeAddr, mappings[][i].unsafeAddr) -> result[i]
+      return
+    except ValueError:
+      discard
+  for i in 0..<mappings[].len:
+    result[i] = createInlineDiff(self.unsafeAddr, mappings[][i].unsafeAddr)
+
+proc updateLineDiffsAsync(self: DiffMap) {.async.} =
+  if self.updatingAsync:
+    return
+  self.updatingAsync = true
+  defer:
+    self.updatingAsync = false
+
+  while true:
+    let version = self.snapshot.version
+
+    if self.snapshot.mappings.isNone:
+      self.snapshot.inlineMappings.setLen(0)
+      return
+
+    let flowVar = threadpool.spawn createInlineDiffs(self.snapshot.clone())
+    while not flowVar.isReady:
+      await sleepAsync(1.milliseconds)
+
+    if self.snapshot.version != version:
+      continue
+
+    self.snapshot.inlineMappings = ^flowVar
+    self.onInlineDiffsUpdated.invoke (self,)
+    return
+
+proc updateLineDiffs(self: DiffMap) =
+  if self.snapshot.mappings.isNone:
+    return
+
+  asyncSpawn self.updateLineDiffsAsync()
+
+proc createDiffMap(input: sink InputMapSnapshot, mappings: openArray[LineMapping], otherInput: InputMapSnapshot, reverse: bool, version: int = 0): DiffMapSnapshot =
   logMapUpdate &"createDiffMap {input.buffer.remoteId}@{input.buffer.version}, input summary = {input.map.summary} + {otherInput.buffer.remoteId}@{otherInput.buffer.version} {otherInput.map.summary}, reverse = {reverse}"
   # echo "  line mappings"
   # echo mappings.mapIt(&"    {it}").join("\n")
@@ -303,6 +383,7 @@ proc createDiffMap(input: sink InputMapSnapshot, mappings: openArray[LineMapping
     mappings: some(@mappings),
     otherInput: otherInput.clone(),
     reverse: reverse,
+    version: version,
   )
 
   # echo result
@@ -311,7 +392,7 @@ proc setInput*(self: DiffMap, input: sink InputMapSnapshot) =
   if self.snapshot.input.buffer.remoteId == input.buffer.remoteId and self.snapshot.input.buffer.version == input.buffer.version:
     return
   # logMapUpdate &"DiffMap.setInput {self.snapshot.desc} -> {input.desc}"
-  self.snapshot = createIdentityDiffMap(input.ensureMove)
+  self.snapshot = createIdentityDiffMap(input.ensureMove, self.snapshot.version + 1)
 
 proc validate*(self: DiffMapSnapshot) =
   discard
@@ -322,36 +403,42 @@ proc edit*(self: var DiffMapSnapshot, buffer: sink InputMapSnapshot, patch: Patc
 proc edit*(self: DiffMap, input: sink InputMapSnapshot, patch: Patch[InputPoint]) =
   logMapUpdate &"DiffMap.edit {self.snapshot.desc} -> {input.desc} | {patch}"
   if self.snapshot.mappings.isSome:
-    self.snapshot = createDiffMap(input.ensureMove, self.snapshot.mappings.get, self.snapshot.otherInput, self.snapshot.reverse)
+    self.snapshot = createDiffMap(input.ensureMove, self.snapshot.mappings.get, self.snapshot.otherInput, self.snapshot.reverse, self.snapshot.version + 1)
+    if not self.updatingAsync:
+      asyncSpawn self.updateLineDiffs()
   else:
-    self.snapshot = createIdentityDiffMap(input.ensureMove)
+    self.snapshot = createIdentityDiffMap(input.ensureMove, self.snapshot.version + 1)
 
-proc update*(self: var DiffMapSnapshot, input: sink InputMapSnapshot) =
+proc update(self: var DiffMapSnapshot, input: sink InputMapSnapshot) =
   logMapUpdate &"DiffMapSnapshot.updateInput {self.desc} -> {input.desc}"
   if self.mappings.isSome:
-    self = createDiffMap(input.ensureMove, self.mappings.get, self.otherInput, self.reverse)
+    self = createDiffMap(input.ensureMove, self.mappings.get, self.otherInput, self.reverse, self.version + 1)
   else:
-    self = createIdentityDiffMap(input.ensureMove)
+    self = createIdentityDiffMap(input.ensureMove, self.version + 1)
 
-proc update*(self: var DiffMapSnapshot, mappings: Option[seq[LineMapping]], otherInput: InputMapSnapshot, reverse: bool) =
+proc update(self: var DiffMapSnapshot, mappings: Option[seq[LineMapping]], otherInput: InputMapSnapshot, reverse: bool) =
   logMapUpdate &"DiffMapSnapshot.updateLineMappings {self.desc} -> {otherInput.desc}"
   if mappings.isSome:
-    self = createDiffMap(self.input.clone(), mappings.get, otherInput, reverse)
+    self = createDiffMap(self.input.clone(), mappings.get, otherInput, reverse, self.version + 1)
   else:
-    self = createIdentityDiffMap(self.input.clone())
+    self = createIdentityDiffMap(self.input.clone(), self.version + 1)
 
 proc clear*(self: var DiffMapSnapshot) =
-  self = createIdentityDiffMap(self.input.clone())
+  self = createIdentityDiffMap(self.input.clone(), self.version + 1)
 
 proc update*(self: DiffMap, input: sink InputMapSnapshot, force: bool = false) =
   logMapUpdate &"DiffMap.updateInput: {self.snapshot.desc} -> {input.desc}"
   let oldSnapshot = self.snapshot.clone()
   self.snapshot.update(input.ensureMove)
+  if not self.updatingAsync:
+    asyncSpawn self.updateLineDiffs()
   self.onUpdated.invoke((self, oldSnapshot))
 
 proc update*(self: DiffMap, mappings: Option[seq[LineMapping]], otherInput: InputMapSnapshot, reverse: bool, force: bool = false) =
   let oldSnapshot = self.snapshot.clone()
   self.snapshot.update(mappings, otherInput, reverse)
+  if not self.updatingAsync:
+    asyncSpawn self.updateLineDiffs()
   self.onUpdated.invoke((self, oldSnapshot))
 
 proc clear*(self: DiffMap) =

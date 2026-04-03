@@ -56,6 +56,9 @@ type
     diffReverse: bool
     fillLineNumberBackground: bool
     lineNumberBackgroundColor: Color
+    insertedLineBackgroundColor: Color
+    deletedLineBackgroundColor: Color
+    changedLineBackgroundColor: Color
     insertedTextBackgroundColor: Color
     deletedTextBackgroundColor: Color
     changedTextBackgroundColor: Color
@@ -415,12 +418,14 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   if completionsPanel.bounds.xw > completionsPanel.parent.bounds.w:
     completionsPanel.rawX = max(completionsPanel.parent.bounds.w - completionsPanel.bounds.w, 0)
 
-proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selection, color: Color, renderCommands: var RenderCommands, state: var LineDrawerState, cursor: var RopeCursorT[Point], drawEmpty: bool) =
+proc drawHighlight(builder: UINodeBuilder, sn: Selection, color: Color, renderCommands: var RenderCommands, state: var LineDrawerState, cursor: var RopeCursorT[Point], drawEmpty: bool, debug = false) =
 
   let r = sn.first.toPoint...sn.last.toPoint
 
   let (_, firstIndexNormalized) = state.chunkBounds.toOpenArray().binarySearchRange(r.a, Bias.Right, cmp)
   let (_, lastIndexNormalized) = state.chunkBounds.toOpenArray().binarySearchRange(r.b, Bias.Right, cmp)
+  if debug:
+    debugf"drawHighlight {r} {color}: firstLastNormalized = {firstIndexNormalized}...{lastIndexNormalized}, chunk bounds: {state.chunkBounds.len}"
   if state.chunkBounds.len > 0:
     let firstIndexClamped = if firstIndexNormalized != -1:
       firstIndexNormalized
@@ -440,6 +445,8 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
     else:
       -1
 
+    if debug:
+      debugf"  firstIndexClamped={firstIndexClamped}, lastIndexClamped={lastIndexClamped}"
     if firstIndexClamped != -1 and lastIndexClamped != -1:
       for i in firstIndexClamped..lastIndexClamped:
         let drawEmpty = drawEmpty and i == firstIndexClamped
@@ -483,6 +490,9 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
         else:
           bounds.displayChunk.toOpenArray.runeLen.int
 
+        if debug:
+          debugf"  firstOffset={firstOffset}, lastOffset={lastOffset}"
+
         if firstOffset == lastOffset and not drawEmpty:
           continue
 
@@ -492,13 +502,17 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
 
         let firstIndexClamped = firstOffset.clamp(0, bounds.charsRange.len - 1)
         let lastIndexClamped = lastOffset.clamp(0, bounds.charsRange.len)
+
+        if debug:
+          debugf"  firstIndexClamped={firstIndexClamped}, lastIndexClamped={lastIndexClamped}"
+
         if firstIndexClamped != -1 and lastIndexClamped != -1 and lastIndexClamped > firstIndexClamped:
           let firstBounds = state.charBounds[bounds.charsRange.a + firstIndexClamped] + bounds.bounds.xy
           let lastBounds = state.charBounds[bounds.charsRange.a + lastIndexClamped - 1] + bounds.bounds.xy
           selectionBounds = rect(firstBounds.xy, vec2(lastBounds.xw - firstBounds.x, max(builder.textHeight, bounds.bounds.h)))
 
         if selectionBounds.w == 0:
-          selectionBounds.w = ceil(builder.charWidth * 0.5)
+          selectionBounds.w = ceil(builder.charWidth * 0.25)
 
         if renderCommands.commands.len > 0:
           let last = renderCommands.commands[^1].addr
@@ -581,7 +595,7 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
       if lastIndex in 0..<state.chunkBounds.len and p in state.chunkBounds[lastIndex].range:
         let chunk = state.chunkBounds[lastIndex]
         # if lastIndex + 2 < state.chunkBounds.len:
-        #   echo &"  {chunk}\n  {state.chunkBounds[lastIndex + 1]}\n  {state.chunkBounds[lastIndex + 2]}"
+        #   debugf"  {chunk}\n  {state.chunkBounds[lastIndex + 1]}\n  {state.chunkBounds[lastIndex + 2]}"
 
         let relativeOffset = p.column.int - chunk.range.a.column.int
         let runeOffset = if p.column.int == chunk.range.b.column.int:
@@ -966,15 +980,65 @@ proc drawDiffBackgrounds(state: var LineDrawerState, backgroundCommands: var Ren
       let diffRow = state.diffChanges[].mapLine(line.row.int, state.diffReverse)
       if diffRow.getSome(d):
         if d.changed:
-          backgroundCommands.fillRect(item.bounds + state.bounds.xy, state.changedTextBackgroundColor)
+          backgroundCommands.fillRect(item.bounds + state.bounds.xy, state.changedLineBackgroundColor)
       else:
-        let color = if state.diffReverse: state.insertedTextBackgroundColor else: state.deletedTextBackgroundColor
+        let color = if state.diffReverse: state.insertedLineBackgroundColor else: state.deletedLineBackgroundColor
         backgroundCommands.fillRect(item.bounds + state.bounds.xy, color)
 
       let diffLine = state.diffDisplayMap.toPoint(displayPoint(item.index, 0))
       let row = state.diffChanges[].mapLine(diffLine.row.int, not state.diffReverse)
       if row.isNone:
         backgroundCommands.fillRect(item.bounds + state.bounds.xy, state.backgroundColor.darken(0.03))
+
+proc drawPreciseDiffHighlights(state: var LineDrawerState, backgroundCommands: var RenderCommands, scrollBox: var ScrollBox, reverse: bool) =
+  if not state.renderDiff or scrollBox.items.len == 0:
+    return
+
+  let insertedColor = state.insertedTextBackgroundColor
+  let deletedColor = state.deletedTextBackgroundColor
+  let changedColor = state.changedTextBackgroundColor
+
+  let firstDisplayLine = scrollBox.items[0].index
+  let lastDisplayLine = scrollBox.items[^1].index
+
+  let firstPoint = state.displayMap.toPoint(displayPoint(firstDisplayLine, 0))
+  let lastPoint = state.displayMap.toPoint(displayPoint(lastDisplayLine, 0) + displayPoint(1, 0))
+
+  let visibleRange = firstPoint...lastPoint
+
+  var ropeCursor = state.displayMap.buffer.visibleText.cursorT(Point)
+
+  for ropeDiff in state.displayMap.diffMap.snapshot.inlineMappings:
+    if ropeDiff.diff.edits.len == 0:
+      continue
+    let mappingStart = ropeDiff.srcBase
+    let mappingEnd = ropeDiff.srcBase + ropeDiff.diff.edits[^1].old.b
+
+    if mappingStart.row > visibleRange.b.row:
+      break
+    if mappingEnd.row < visibleRange.a.row:
+      continue
+
+    for edit in ropeDiff.diff.edits:
+      let startPt = ropeDiff.srcBase + edit.old.a
+
+      var deletedRangeRel: Point = edit.new.b - edit.new.a
+      var insertedRangeRel: Point = edit.old.b - edit.old.a
+      let changedRangeRel = min(deletedRangeRel, insertedRangeRel)
+      let changedRange = startPt...(startPt + changedRangeRel)
+      var deletedRange = changedRange.b...changedRange.b
+      var insertedRange = changedRange.b...(startPt + insertedRangeRel)
+
+      if reverse:
+        swap deletedRange, insertedRange
+        swap deletedRangeRel, insertedRangeRel
+
+      drawHighlight(state.builder, (changedRange).toSelection, changedColor, backgroundCommands, state, ropeCursor, false)
+
+      if insertedRangeRel > deletedRangeRel:
+        drawHighlight(state.builder, (insertedRange).toSelection, insertedColor, backgroundCommands, state, ropeCursor, true)
+      elif insertedRangeRel < deletedRangeRel:
+        drawHighlight(state.builder, (deletedRange).toSelection, deletedColor, backgroundCommands, state, ropeCursor, true)
 
 proc fixupRenderCommandsAndChunkBounds(state: var LineDrawerState, i: int, commands: var RenderCommands, lineBounds: Rect) =
   var line = state.chunkBoundsPerLine[i].addr
@@ -1096,6 +1160,7 @@ proc drawLines(state: var LineDrawerState, commands: var RenderCommands, backgro
     backgroundCommands.fillRect(b + state.bounds.xy, state.backgroundColor.lighten(0.05))
 
   state.drawDiffBackgrounds(backgroundCommands, scrollBox)
+  state.drawPreciseDiffHighlights(backgroundCommands, scrollBox, false)
 
 proc drawDiffLines(state: var LineDrawerState, commands: var RenderCommands, backgroundCommands: var RenderCommands, scrollBox: var ScrollBox) =
   let maxNumLines = max(ceil(state.bounds.h / state.builder.textHeight).int + 15, 1)
@@ -1115,11 +1180,20 @@ proc drawDiffLines(state: var LineDrawerState, commands: var RenderCommands, bac
       commands.commands[head] = RenderCommand(kind: RenderCommandKind.TransformStart, bounds: item.bounds)
     fixupRenderCommandsAndChunkBounds(state, i, commands, item.bounds)
 
-    # Draw highlighted background for display line containing the last cursor
-    if scrollBox.itemBounds(state.cursorDisplayLine).getSome(b):
-      backgroundCommands.fillRect(b + state.bounds.xy, state.backgroundColor.lighten(0.05))
+  if state.chunkBoundsPerLine.len > 0:
+    var total = 0
+    for line in state.chunkBoundsPerLine.toOpenArray():
+      total += line.chunks.len
+    state.chunkBounds = state.builder.arena.allocEmptyArray(total, ChunkBounds)
+    for line in state.chunkBoundsPerLine.toOpenArray():
+      state.chunkBounds.add(line.chunks)
+
+  # Draw highlighted background for display line containing the last cursor
+  if scrollBox.itemBounds(state.cursorDisplayLine).getSome(b):
+    backgroundCommands.fillRect(b + state.bounds.xy, state.backgroundColor.lighten(0.05))
 
   state.drawDiffBackgrounds(backgroundCommands, scrollBox)
+  state.drawPreciseDiffHighlights(backgroundCommands, scrollBox, true)
 
   commands.endScissor()
 
@@ -1256,9 +1330,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let showContextLines = not renderDiff and self.contextLineComponent.settings.enabled.get()
 
   let selectionColor = builder.theme.color("selection.background", color(200/255, 200/255, 200/255))
-  let insertedTextBackgroundColor = builder.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
-  let deletedTextBackgroundColor = builder.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
-  var changedTextBackgroundColor = builder.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
+  var insertedLineBackgroundColor = builder.theme.color(@["diffEditor.insertedLineBackground", "diffEditor.insertedTextBackground"], color(0.1, 0.2, 0.1))
+  var deletedLineBackgroundColor = builder.theme.color(@["diffEditor.removedLineBackground", "diffEditor.removedTextBackground"], color(0.2, 0.1, 0.1))
+  var changedLineBackgroundColor = builder.theme.color(@["diffEditor.changedLineBackground", "diffEditor.changedTextBackground"], color(0.2, 0.2, 0.1))
+  var insertedTextBackgroundColor = builder.theme.color("diffEditor.insertedTextBackground", insertedLineBackgroundColor.lighten(0.1))
+  var deletedTextBackgroundColor = builder.theme.color("diffEditor.removedTextBackground", deletedLineBackgroundColor.lighten(0.1))
+  var changedTextBackgroundColor = builder.theme.color("diffEditor.changedTextBackground", changedLineBackgroundColor.lighten(0.1))
 
   let cursorLine = self.selection.last.line
   let cursorDisplayLine = self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int
@@ -1342,6 +1419,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     insertedTextBackgroundColor: insertedTextBackgroundColor,
     deletedTextBackgroundColor: deletedTextBackgroundColor,
     changedTextBackgroundColor: changedTextBackgroundColor,
+    insertedLineBackgroundColor: insertedLineBackgroundColor,
+    deletedLineBackgroundColor: deletedLineBackgroundColor,
+    changedLineBackgroundColor: changedLineBackgroundColor,
 
     signShow: signShow,
     signColumnPixelWidth: signColumnPixelWidth,
@@ -1377,6 +1457,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     insertedTextBackgroundColor: insertedTextBackgroundColor,
     deletedTextBackgroundColor: deletedTextBackgroundColor,
     changedTextBackgroundColor: changedTextBackgroundColor,
+    insertedLineBackgroundColor: insertedLineBackgroundColor,
+    deletedLineBackgroundColor: deletedLineBackgroundColor,
+    changedLineBackgroundColor: changedLineBackgroundColor,
 
     signColumnPixelWidth: signColumnPixelWidth,
     signColumnWidth: signColumnWidth,
@@ -1443,7 +1526,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       if sn.last < visibleTextRange.first or sn.first > visibleTextRange.last:
         continue
       let color = builder.theme.color(s.color, color(200/255, 200/255, 200/255)) * s.tint
-      self.drawHighlight(builder, sn, color, selectionsNode.renderCommands, state, ropeCursor, true)
+      drawHighlight(builder, sn, color, selectionsNode.renderCommands, state, ropeCursor, true)
 
   for s in self.selections:
     var sn = s.normalized
@@ -1454,7 +1537,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if sn.last < visibleTextRange.first or sn.first > visibleTextRange.last:
       continue
 
-    self.drawHighlight(builder, sn, selectionColor, selectionsNode.renderCommands, state, ropeCursor, false)
+    drawHighlight(builder, sn, selectionColor, selectionsNode.renderCommands, state, ropeCursor, false)
 
   # Scroll bar
   if self.uiSettings.scrollBar.get():
