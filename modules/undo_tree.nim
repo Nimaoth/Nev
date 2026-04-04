@@ -396,6 +396,8 @@ when implModule:
 
       var headerColor = if self.active: builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
       self.scrollBox.defaultItemHeight = builder.textHeight
+      self.scrollBox.scrollSpeed = builder.textHeight * 2
+      self.scrollBox.margin = (5 * builder.textHeight).min(builder.currentParent.bounds.h - 10 * builder.textHeight).max(0)
       self.scrollBox.updateScroll(getServiceChecked(PlatformService).platform.deltaTime)
 
       buildCommands(currentNode.renderCommands):
