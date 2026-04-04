@@ -4721,6 +4721,10 @@ proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
       return
 
     let text = self.document.contentString(selection, inclusive)
+    if text.isEmptyOrWhitespace:
+      self.decorations.clearCustomHighlights(wordHighlightId)
+      return
+
     var regex = text.escapeRegex
     if addWordBoundary:
       regex = "\\b" & regex & "\\b"
