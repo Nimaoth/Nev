@@ -1,0 +1,19 @@
+{
+	"name": "Harpoon",
+	"version": "0.0.1",
+	"authors": ["Nimaoth"],
+	"repository": "https://github.com/Nimaoth/Nev/plugins/harpoon",
+	"wasm": "harpoon.m.wasm",
+	"autoLoad": false,
+	"autoReload": true,
+	"commands": {
+		"select": {},
+		"set": {},
+		"list": {},
+	},
+	"permissions": {
+		"commands": {
+			"allow": ["current-file-path", "open"]
+		}
+	},
+}
