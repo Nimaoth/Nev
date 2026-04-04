@@ -99,7 +99,7 @@
     "boxy.Nimaoth.github.com": {
       "dir": "$deps/boxy.Nimaoth.github.com",
       "url": "https://github.com/Nimaoth/boxy",
-      "commit": "cb4ab84eafae04e19890b6ec4535bc28c4e2905f",
+      "commit": "1ec24ebe4915d6c8655e29bb559ad58b6553b342",
       "version": ""
     },
     "nimtreesitter-api.Nimaoth.github.com": {
@@ -329,7 +329,7 @@
       "# requires \"https://github.com/Nimaoth/ws >= 0.5.0\"",
       "requires \"https://github.com/Nimaoth/windy#ae1627e\"",
       "requires \"https://github.com/Nimaoth/lrucache.nim#479d4cf\"",
-      "requires \"https://github.com/Nimaoth/boxy#cb4ab84\"",
+      "requires \"https://github.com/Nimaoth/boxy#1ec24eb\"",
       "requires \"https://github.com/Nimaoth/nimtreesitter-api#893dd71\"",
       "requires \"https://github.com/Nimaoth/nimwasmtime#2a33f8b\"",
       "requires \"https://github.com/Nimaoth/nimsumtree#5b0b191\"",
