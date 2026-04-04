@@ -26,6 +26,8 @@
 - Scroll bars (not interactable)
 - Support for loading UTF-16 encoded files (**No support for saving as anything other than UTF-8!**)
 - Highlight changes within lines in diff view.
+- Highlight parenthesis in different colors
+- Nimble no longer supported for installing dependencies (use `atlas` instead. `nimble build*` commands should still work)
 
 ## [0.4.0](https://github.com/Nimaoth/Nev/compare/v0.3.0...v0.4.0) (2025-05-01)
 
