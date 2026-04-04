@@ -238,6 +238,7 @@ type
     currentNode: TSNode
     regexCache: ArrayTable[cstring, Regex]
     layerIterator: LayerIterator
+    treeCursor: Option[TSTreeCursor]
 
   InjectionJob = object
     languageName: string
@@ -277,7 +278,7 @@ proc buildLayerIndex*(layers: openArray[SyntaxLayer], text: Rope): SumTree[Synta
           index: 0,
           depth: lastLayerDepth,
           bytes: text.len - lastByte,
-          lines: text.endPoint - lastPoint,
+          lines: max(text.endPoint, lastPoint) - lastPoint,
         ), ())
 
       lastLayerDepth = layer.depth
@@ -296,7 +297,7 @@ proc buildLayerIndex*(layers: openArray[SyntaxLayer], text: Rope): SumTree[Synta
         index: 0,
         depth: layer.depth,
         bytes: startByte - lastByte,
-        lines: startPoint - lastPoint,
+        lines: max(startPoint, lastPoint) - lastPoint,
       ), ())
       lastByte = startByte
       lastPoint = startPoint
@@ -306,7 +307,7 @@ proc buildLayerIndex*(layers: openArray[SyntaxLayer], text: Rope): SumTree[Synta
       index: i,
       depth: layer.depth,
       bytes: endByte - startByte,
-      lines: endPoint - startPoint,
+      lines: max(endPoint, startPoint) - startPoint,
     ), ())
     lastByte = endByte
     lastPoint = endPoint
@@ -317,7 +318,7 @@ proc buildLayerIndex*(layers: openArray[SyntaxLayer], text: Rope): SumTree[Synta
       index: 0,
       depth: lastLayerDepth,
       bytes: text.len - lastByte,
-      lines: text.endPoint - lastPoint,
+      lines: max(text.endPoint, lastPoint) - lastPoint,
     ), ())
 
 proc layersOverlapping*(self: SyntaxMapSnapshot, range: Range[int]): seq[int] =
@@ -1141,6 +1142,8 @@ proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, highlighter: 
   result.hintColor = result.defaultColor
   if result.highlighter.isSome:
     result.layerIterator = result.highlighter.get.snapshot[].layerIterator
+    if result.highlighter.get.snapshot[].layers.len > 0:
+      result.treeCursor = initTreeCursor(result.highlighter.get.snapshot[].layers[0].tree.root).some
 
   if theme != nil:
     result.defaultColor = theme.color("editor.foreground", color(1, 1, 1))
@@ -1279,12 +1282,6 @@ proc addHighlight(highlights: var seq[Highlight], nextHighlight: sink Highlight,
 
   highlights = merged
 
-proc depth(n: TSNode): int =
-  var n = n
-  while not n.parent.isNull:
-    inc result
-    n = n.parent
-
 proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
   if self.atEnd:
     return
@@ -1312,15 +1309,17 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
 
       # Rainbow parens: use root layer (index 0)
       let rootTree = snap.layers[0].tree
-      if h.rainbowParens and rootTree.isNotNil and currentChunk.toOpenArray.len == 1 and currentChunk.toOpenArray[0] in {'(', ')', '{', '}', '[', ']'} and self.parenColors.len > 0:
-        let n = rootTree.root.descendantForRange((currentChunk.point...currentChunk.point).tsRange)
+      if h.rainbowParens and rootTree.isNotNil and currentChunk.toOpenArray.len == 1 and currentChunk.toOpenArray[0] in {'(', ')', '{', '}', '[', ']'} and self.parenColors.len > 0 and self.treeCursor.isSome:
+        self.treeCursor.get.seek(currentChunk.point.tsPoint)
+        let n = self.treeCursor.get.currentNode
         if n != self.currentNode:
           self.depthOffset = 0
         else:
           if currentChunk.toOpenArray[0] in {')', '}', ']'}:
             dec self.depthOffset
             self.depthOffset = max(self.depthOffset, 0)
-        let depth = n.depth + self.depthOffset
+
+        let depth = self.treeCursor.get.currentDepth + self.depthOffset
         let colorIndex = depth mod self.parenColors.len
         let color = self.parenColors[colorIndex]
         let r = currentChunk.point...point(currentChunk.point.row, currentChunk.point.column + 1)

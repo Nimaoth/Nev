@@ -93,6 +93,7 @@ proc scroll*(sv: var ScrollBox, offset: Vec2) =
   if offset != vec2(0):
     sv.offset += offset
     sv.currentOffset += offset
+    sv.clampLeft()
 
 proc scroll*(sv: var ScrollBox, y: float) =
   sv.scroll(vec2(0, y))
@@ -103,6 +104,8 @@ proc updateScroll*(sv: var ScrollBox, dt: float) =
     sv.offset += delta
     sv.currentOffset += delta
     sv.scrollMomentum -= delta
+
+  sv.clampLeft()
 
 proc scrollWithMomentum*(sv: var ScrollBox, offset: Vec2) =
   if sv.smoothScroll:

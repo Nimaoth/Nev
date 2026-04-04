@@ -199,6 +199,83 @@ proc currentDepth*(cursor: var TSTreeCursor): int = currentDepth(cursor.impl).in
 proc currentFieldName*(cursor: var TSTreeCursor): cstring = currentFieldName(cursor.impl)
 proc currentFieldId*(cursor: var TSTreeCursor): ts.TSFieldId = currentFieldId(cursor.impl)
 
+proc `<`*(a, b: TSPoint): bool =
+  if a.row == b.row:
+    return a.column < b.column
+  return a.row < b.row
+
+proc `<=`*(a, b: TSPoint): bool = a == b or a < b
+
+proc `>`*(a, b: TSPoint): bool = b < a
+
+proc seek*(cursor: var TSTreeCursor, target: TSPoint) =
+  var direction = 0
+  var previousChildIndex = -1
+  while true:
+    let current = cursor.currentNode
+    let startPoint = current.startPoint
+    let endPoint = current.endPoint
+
+    if target >= startPoint and target < endPoint:
+      break
+
+    if direction > 0 and target < startPoint:
+      return
+    elif direction < 0 and target >= endPoint:
+      return
+
+    if target < startPoint:
+      direction = -1
+      previousChildIndex = -1
+      if not cursor.gotoPreviousSibling():
+        # previousChildIndex = cursor.currentDescendantIndex
+        if not cursor.gotoParent():
+          return
+    else:
+      direction = 1
+      previousChildIndex = -1
+      if not cursor.gotoNextSibling():
+        # previousChildIndex = cursor.currentDescendantIndex
+        if not cursor.gotoParent():
+          return
+
+  while true:
+    let current = cursor.currentNode
+    let childCount = current.len
+    if childCount == 0:
+      return
+
+    var found = false
+    if direction >= 0:
+      if previousChildIndex != -1 and previousChildIndex + 1 < childCount:
+        discard cursor.gotoDescendant(previousChildIndex + 1)
+      else:
+        discard cursor.gotoFirstChild()
+      previousChildIndex = -1
+      for i in 0..<childCount:
+        let child = cursor.currentNode
+        if target >= child.startPoint and target < child.endPoint:
+          found = true
+          break
+        if not cursor.gotoNextSibling():
+          break
+    else:
+      if previousChildIndex > 0:
+        discard cursor.gotoDescendant(previousChildIndex - 1)
+      else:
+        discard cursor.gotoLastChild()
+      previousChildIndex = -1
+      for i in 0..<childCount:
+        let child = cursor.currentNode
+        if target >= child.startPoint and target < child.endPoint:
+          found = true
+          break
+        if not cursor.gotoPreviousSibling():
+          break
+
+    if not found:
+      return
+
 proc setPointRange*(cursor: ptr ts.TSQueryCursor, rang: TSRange) =
   discard cursor.tsQueryCursorSetPointRange(rang.first.toTsPoint, rang.last.toTsPoint)
 
