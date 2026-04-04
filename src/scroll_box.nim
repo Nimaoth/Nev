@@ -56,17 +56,9 @@ proc clampTop(sv: var ScrollBox) =
     return
 
 proc clampLeft(sv: var ScrollBox) =
-  if sv.items.len == 0:
-    return
-  let first = sv.items[0]
-  if first.bounds.x > 0:
-    let offset = first.bounds.x
-    sv.offset.x -= offset
-    sv.currentOffset.x -= offset
+  sv.offset.x = min(sv.offset.x, 0.0)
+  if sv.offset.x == 0.0 and sv.scrollMomentum.x > 0.0:
     sv.scrollMomentum.x = 0
-    for item in sv.items.mitems:
-      item.bounds.x -= offset
-    return
 
 proc clamp*(sv: var ScrollBox, maxIndex: int) =
   if sv.items.len == 0:
