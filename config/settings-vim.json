@@ -52,4 +52,6 @@
     "editor.text.cursor.movement.vim.visual": "last",
     "editor.text.cursor.wide.vim.visual-line": true,
     "editor.text.cursor.movement.vim.visual-line": "last",
+
+    "markdown.disable-on-cursor-lines-modes": ["vim.insert"],
 }

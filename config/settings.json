@@ -1112,4 +1112,8 @@
         }
     },
 
+    "markdown.enabled": true,
+    "markdown.languages": ["markdown"],
+
+    "text.signature-help-trigger-on-edit-in-args": false,
 }

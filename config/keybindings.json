@@ -54,6 +54,8 @@
         "<LEADER>ws": ["wrap-layout", "vertical-temp"],
         "<LEADER>wv": ["wrap-layout", "horizontal-temp"],
         "<LEADER>ww": ["toggle-flag", "text.wrap-lines"],
+        "<LEADER>wd": ["toggle-flag", "ui.highlight-inline-changes"],
+        "<LEADER>wmm": ["toggle-flag", "markdown.enabled"],
 
         "<A-n>": "focus-view-left",
         "<A-t>": "focus-view-right",

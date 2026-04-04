@@ -29,4 +29,6 @@
     "editor.text.cursor.movement.vscode": "both",
     "editor.text.cursor.wide.": false,
     "editor.text.cursor.wide.vscode": false,
+
+    "markdown.disable-on-cursor-lines-modes": ["vscode"],
 }
