@@ -4,7 +4,7 @@ import misc/[util, custom_logger, array_set]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
 import ui/[widget_builders_base, widget_library]
-import theme, view, document_editor, document_editor_render
+import theme, view, document_editor, document_editor_render, layout, service
 import types_impl, debugger, dap_client
 
 import ui/node
@@ -144,6 +144,7 @@ proc createVariables*(self: VariablesView, builder: UINodeBuilder, debugger: Deb
         self.markDirty()
       return true
     onClickAny btn:
+      getServiceChecked(LayoutService).tryActivateView(self)
       for line in self.lastRenderedCursors:
         if pos in line.bounds:
           if btn == MouseButton.Left:

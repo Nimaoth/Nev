@@ -287,7 +287,6 @@ when implModule:
   proc createOutputView*(debugger: Debugger): OutputView =
     let self = createDebuggerView[OutputView](debugger)
     self.getActiveEditorImpl = proc(view: DynamicView): Option[DocumentEditor] =
-      echo &"get active editor {debugger.outputEditor != nil}"
       if debugger.outputEditor != nil:
         debugger.outputEditor.some
       else:

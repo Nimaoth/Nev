@@ -1588,6 +1588,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if self.document.isNil:
       return
 
+    if event == Click:
+      self.layout.tryActivateEditor(self)
+
     var (_, index) = chunkBounds.binarySearchRange(pos, Bias.Left, cmp)
     if index notin 0..chunkBounds.high:
       return
@@ -1633,7 +1636,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       self.scrollToCursor(Last)
       self.updateTargetColumn(Last)
-      self.layout.tryActivateEditor(self)
       self.markDirty()
 
     of Click:
@@ -1652,7 +1654,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       self.scrollToCursor(Last)
       self.updateTargetColumn(Last)
-      self.layout.tryActivateEditor(self)
       self.markDirty()
 
     of Hover:

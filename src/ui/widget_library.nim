@@ -1,6 +1,6 @@
 import std/[strformat, strutils, os]
 import misc/[custom_unicode, custom_logger]
-import document, ui/node, view, theme, config_provider, widget_builders_base
+import document, ui/node, view, theme, config_provider, widget_builders_base, layout
 import chroma
 import service
 
@@ -344,6 +344,9 @@ proc renderView*(self: View, builder: UINodeBuilder,
   builder.panel(&{OverlappingChildren, MouseHover} + sizeFlags, userId = self.id.newPrimaryId, tag = "view-hover"):
     onHover:
       discard
+
+    onClickAny btn:
+      getServiceChecked(LayoutService).tryActivateView(self)
 
     builder.panel(&{LayoutVertical} + sizeFlags):
       # Header

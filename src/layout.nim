@@ -615,14 +615,14 @@ when implModule:
 
     return View.none
 
-  proc getViewForEditor*(self: LayoutService, editor: DocumentEditor): Option[EditorView] =
+  proc getViewForEditor*(self: LayoutService, editor: DocumentEditor): Option[View] =
     ## Returns the index of the view for the given editor.
     let self = self.LayoutServiceImpl
     for i, view in self.mAllViews:
-      if view of EditorView and view.EditorView.editor == editor:
-        return view.EditorView.some
+      if view.getActiveEditor() == editor.some:
+        return view.some
 
-    return EditorView.none
+    return View.none
 
   proc recordFocusHistoryEntry(self: LayoutService, view: View) =
     let self = self.LayoutServiceImpl
