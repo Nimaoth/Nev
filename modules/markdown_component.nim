@@ -53,6 +53,12 @@ when implModule:
     currentLines: HashSet[int]
     query: TSQuery
 
+  proc isEnabled(self: MarkdownComponent): bool =
+    let editor = self.owner.DocumentEditor
+    let config = editor.getConfigComponent().getOr:
+      return false
+    return config.get("markdown.enabled", true)
+
   proc query(self: MarkdownComponent, language: string, name: string, text: string): Future[Option[TSQuery]] {.async.} =
     let language = getLoadedLanguage(language)
     if language.isNil:
@@ -141,6 +147,11 @@ when implModule:
     let decorations = editor.getDecorationComponent().getOr:
       return
     let treesitter = editor.currentDocument.getTreesitterComponent().getOr:
+      return
+
+    if not self.isEnabled:
+      if self.tableOverlayId.isSome:
+        decorations.clearOverlays(self.tableOverlayId.get)
       return
 
     let text = editor.currentDocument.getTextComponent().getOr:
@@ -298,6 +309,12 @@ when implModule:
       return
     let decorations = editor.getDecorationComponent().getOr:
       return
+
+    if not self.isEnabled:
+      if self.delimiterOverlayId.isSome:
+        decorations.clearOverlays(self.delimiterOverlayId.get)
+      return
+
     let treesitter = editor.currentDocument.getTreesitterComponent().getOr:
       return
 
@@ -339,10 +356,8 @@ when implModule:
 
       block:
         let endPoint = text.content.endPoint
-        let visibleRange = edit.visibleTextRange(10)
         var visibleOverlays = newSeqOfCap[OverlayDef](overlays.len)
         for overlayRange in overlays:
-          # if overlayRange.a in visibleRange:
           if overlayRange.a.row.int in self.currentLines or overlayRange.a > endPoint:
             continue
           visibleOverlays.add (overlayRange, "", "comment", Bias.Right, 0, OverlayRenderLocation.Inline)
@@ -381,6 +396,12 @@ when implModule:
       return
     let decorations = editor.getDecorationComponent().getOr:
       return
+
+    if not self.isEnabled:
+      if self.headerOverlayId.isSome:
+        decorations.clearOverlays(self.headerOverlayId.get)
+      return
+
     let treesitter = editor.currentDocument.getTreesitterComponent().getOr:
       return
 
@@ -415,7 +436,6 @@ when implModule:
     overlays = ^overlaysFlowVar
 
     let endPoint = text.content.endPoint
-    let visibleRange = edit.visibleTextRange(10)
     var visibleOverlays = newSeqOfCap[OverlayDef](overlays.len)
     for overlayRange in overlays:
       if overlayRange.a.row.int in self.currentLines or overlayRange.a > endPoint:
@@ -699,6 +719,12 @@ when implModule:
             asyncSpawn res.updateDelimiterHidingAsync()
             if res.updateHeadersTask.isNotNil:
               res.updateHeadersTask.schedule()
+        if key == "" or key == "markdown" or key == "markdown.enabled":
+          asyncSpawn res.updateDelimiterHidingAsync()
+          if res.updateHeadersTask.isNotNil:
+            res.updateHeadersTask.schedule()
+          if res.updateTask.isNotNil:
+            res.updateTask.schedule()
 
     if editor.getTextEditorComponent().getSome(edit):
       discard edit.onSelectionsChanged2.subscribe proc(arg: tuple[editor: TextEditorComponent, old: seq[Range[Point]]]) =
@@ -706,11 +732,6 @@ when implModule:
           asyncSpawn res.updateDelimiterHidingAsync()
           if res.updateHeadersTask.isNotNil:
             res.updateHeadersTask.schedule()
-      discard edit.onScroll.subscribe proc() =
-        if res.updateDelimitersTask.isNotNil:
-          res.updateDelimitersTask.schedule()
-        if res.updateHeadersTask.isNotNil:
-          res.updateHeadersTask.schedule()
       discard edit.onOverlaysChanged.subscribe proc(args: tuple[ids: seq[int]]) =
         if -1 in args.ids or res.tableOverlayId.isNone or res.tableOverlayId.get notin args.ids:
           if res.updateTask.isNotNil:
