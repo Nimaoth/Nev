@@ -86,6 +86,7 @@ jobs:
       - run: nimble install https://github.com/Nimaoth/nimgen@0.5.4 -y
 
       - run: atlas rep
+      - run: atlas install
 
       # linux builds
       # - run: cd plugins/vim; nimble --legacy --disablevalidation --verbose setup; nim c -d:release --skipParentCfg --passL:"-o vim.m.wasm" vim.nim; cd ../..
@@ -155,6 +156,7 @@ jobs:
       - run: nimble install https://github.com/Nimaoth/nimgen@0.5.4 -y
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         run: atlas rep
+      - run: atlas install
 
       - run: Invoke-WebRequest -Uri "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe" -OutFile "./rcedit-x64.exe"
 
@@ -227,6 +229,7 @@ jobs:
 
       - run: nimble install https://github.com/Nimaoth/nimgen@0.5.4 -y
       - run: atlas rep
+      - run: atlas install
 
       - run: "echo 'import wasmtime' > src/temp.nim && nim c -d:nimWasmtimeBuild src/temp.nim"
 
