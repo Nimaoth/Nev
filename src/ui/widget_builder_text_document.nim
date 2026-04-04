@@ -74,6 +74,7 @@ type
     signColumnPixelWidth: float
     lineNumberWidth: float
     lineNumberBounds: Vec2
+    fillLineNumberBackground: bool
     signShow: SignColumnShowKind
     cursorLine: int
     cursorDisplayLine: int
@@ -948,6 +949,9 @@ proc drawLine*(state: var LineDrawerState, commands: var RenderCommands, lineNum
     state.chunkBoundsPerLine[^1].lineNumberRenderCommandIndex = lineNumberCommands.commands.len
     lineNumberCommands.startTransform(vec2(0))
 
+    if state.lineNumbers != LineNumbers.None and state.fillLineNumberBackground:
+      lineNumberCommands.fillRect(rect(vec2(0), vec2(state.lineNumberBounds.x, height)), state.backgroundColor)
+
     # Draw signs
     if state.signs != nil:
       state.signs[].withValue(chunk.point.row.int, value):
@@ -1216,6 +1220,7 @@ proc drawContextLines(state: var LineDrawerState, commands: var RenderCommands, 
   state.diagnosticsPerLS = nil
   state.signs = nil
   state.customOverlayRenderers = nil
+  state.fillLineNumberBackground = true
 
   let maxNumLines = contextLines.len
   state.chunkBoundsPerLine = state.builder.arena.allocEmptyArray(maxNumLines, LineBounds)
@@ -1242,7 +1247,7 @@ proc drawContextLines(state: var LineDrawerState, commands: var RenderCommands, 
     fixupRenderCommandsAndChunkBounds(state, i, commands, lineNumberCommands, lineBounds)
     y += size.get.y
 
-proc drawContextBreadcrumbs*(state: var LineDrawerState, commands: var RenderCommands, backgroundCommands: var RenderCommands, entries: openArray[ContextLineEntry], separator: string, maxEntryLength: int) =
+proc drawContextBreadcrumbs*(state: var LineDrawerState, commands: var RenderCommands, backgroundCommands: var RenderCommands, lineNumberCommands: var RenderCommands, entries: openArray[ContextLineEntry], separator: string, maxEntryLength: int) =
   let contextBackgroundColor = state.builder.theme.color(@["breadcrumbPicker.background"], state.backgroundColor.lighten(0.05))
   let backgroundColor = contextBackgroundColor.darken(0.05)
   let separatorColor = state.builder.theme.color(@["breadcrumb.foreground"], state.textColor.darken(0.3))
@@ -1263,6 +1268,7 @@ proc drawContextBreadcrumbs*(state: var LineDrawerState, commands: var RenderCom
   entryState.signs = nil
   entryState.customOverlayRenderers = nil
   entryState.scrollOffset =  vec2(0)
+  entryState.fillLineNumberBackground = true
 
   var x = 0.0
   var y = 0.0
@@ -1277,7 +1283,7 @@ proc drawContextBreadcrumbs*(state: var LineDrawerState, commands: var RenderCom
     let columnRange = startDisplayPoint.column.int...(startDisplayPoint.column.int + maxEntryLength)
 
     entryState.lineNumbers = if i == 0: state.lineNumbers else: LineNumbers.None # Only draw line numbers on first line
-    let size = drawLine(entryState, commands, commands, iter, startDisplayPoint.row.int, columnRange.some)
+    let size = drawLine(entryState, commands, lineNumberCommands, iter, startDisplayPoint.row.int, columnRange.some)
     if size.isNone:
       continue
 
@@ -1292,7 +1298,7 @@ proc drawContextBreadcrumbs*(state: var LineDrawerState, commands: var RenderCom
     let transformIndex = head + 1
     if transformIndex in 0..commands.commands.high and commands.commands[transformIndex].kind == RenderCommandKind.TransformStart:
       commands.commands[transformIndex] = RenderCommand(kind: RenderCommandKind.TransformStart, bounds: rect(x, y, 0, 0))
-    fixupRenderCommandsAndChunkBounds(entryState, i, commands, commands, lineBounds)
+    fixupRenderCommandsAndChunkBounds(entryState, i, commands, lineNumberCommands, lineBounds)
     h = max(h, entryState.lineBounds.h)
     x += entryState.lineBounds.w
 
@@ -1519,7 +1525,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if style == "breadcrumb":
       let separator = self.contextLineComponent.settings.separator.get()
       const maxEntryLength = 50
-      drawContextBreadcrumbs(state, currentNode.renderCommands, selectionsNode.renderCommands, contextLines, separator, maxEntryLength)
+      drawContextBreadcrumbs(state, currentNode.renderCommands, selectionsNode.renderCommands, lineNumberNode.renderCommands, contextLines, separator, maxEntryLength)
     else:
       drawContextLines(state, currentNode.renderCommands, selectionsNode.renderCommands, lineNumberNode.renderCommands, contextLines)
 
