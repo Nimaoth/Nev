@@ -223,7 +223,7 @@ proc escapeRegex*(s: string): string =
       result.add("\\x")
       result.add(toHex(ord(c), 2))
 
-import pkg/regex as reg
+import "../../deps/nim-regex.nitely.github.com/src/regex.nim" as reg
 export reg.RegexError
 
 type Regex* = reg.Regex2

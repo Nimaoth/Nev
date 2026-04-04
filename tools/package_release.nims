@@ -31,7 +31,7 @@ template catch(exp: untyped, then: untyped): untyped =
 
 ############################################################################################################
 
-const version = "0.4.0"
+const version = "0.5.0"
 const releaseWindows = &"nev-{version}-x86_64-pc-windows-gnu"
 const releaseLinux = &"nev-{version}-x86_64-unknown-linux-gnu"
 const releaseLinuxMusl = &"nev-{version}-x86_64-unknown-linux-musl"
@@ -43,6 +43,8 @@ proc copySharedFilesTo(dir: string) =
   cpDir2 "themes", dir
   cpDir2 "docs", dir
   cpDir2 "res", dir
+  cpDir2 "plugins", dir
+  cpDir2 "plugin_api", dir
   mkDir dir / "src"
   mkDir dir / "src/misc"
   cpFile2 "src/input_api.nim", dir / "src"
