@@ -27,6 +27,7 @@ when implModule:
   import ui/node
   import nimsumtree/[rope, buffer]
   import text_component, text_editor_component, language_server_component, decoration_component, inlay_hint_component, treesitter_component, hover_component, move_component
+  import event_service
   import types_impl
 
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -283,10 +284,21 @@ when implModule:
     debugger.variableViews.add self
     return self
 
-  proc waitForApp(self: Debugger) {.async: (raises: []).} =
+  proc createOutputView*(debugger: Debugger): OutputView =
+    let self = createDebuggerView[OutputView](debugger)
+    self.getActiveEditorImpl = proc(view: DynamicView): Option[DocumentEditor] =
+      echo &"get active editor {debugger.outputEditor != nil}"
+      if debugger.outputEditor != nil:
+        debugger.outputEditor.some
+      else:
+        DocumentEditor.none
+
+    return self
+
+  proc delayedInit(self: Debugger) {.async: (raises: []).} =
+    # Let app render one frame first, this doesn't need to happen immediately
     try:
-      # todo
-      await sleepAsync(10.milliseconds)
+      await sleepAsync(20.milliseconds)
     except CancelledError:
       discard
 
@@ -345,7 +357,7 @@ when implModule:
       return self.createVariablesView()
 
     self.layout.addViewFactory "debugger.output", proc(config: JsonNode): View {.raises: [].} =
-      return createDebuggerView[OutputView](self)
+      return createOutputView(self)
 
     self.layout.addViewFactory "debugger.toolbar", proc(config: JsonNode): View {.raises: [].} =
       return createDebuggerView[ToolbarView](self)
@@ -393,7 +405,10 @@ when implModule:
     let session = self.services.getService(SessionService).get
     session.addSaveHandler "debugger", save, load
 
-    asyncSpawn self.waitForApp()
+    let events = self.services.getService(EventService)
+    events.get.listen(newId(), "app/initialized"):
+      proc(event, payload: string) =
+        asyncSpawn self.delayedInit()
 
     return ok()
 
@@ -2118,9 +2133,12 @@ when implModule:
         self.layout.showView(v, slot, focus = focus)
 
     if existing.len == 0:
-      let view = createDebuggerView[T](self)
-      when T is VariablesView:
-        self.variableViews.add view
+      let view = when T is VariablesView:
+        createVariablesView(self)
+      elif T is OutputView:
+        createOutputView(self)
+      else:
+        createDebuggerView[T](self)
       self.layout.addView(view, slot, focus = focus)
 
   proc closeDebuggerViews*(self: Debugger) =
@@ -2174,7 +2192,7 @@ when implModule:
     if existing.len > 0:
       self.layout.showView(existing[0], slot, focus = focus)
     else:
-      self.layout.addView(createDebuggerView[OutputView](self), slot, focus = focus)
+      self.layout.addView(createOutputView(self), slot, focus = focus)
 
   proc showDebuggerToolbar*(self: Debugger, focus: bool = true, slot: string = "#debugger-toolbar") =
     let existing = self.layout.getViews(ToolbarView)

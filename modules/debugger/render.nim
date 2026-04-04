@@ -402,7 +402,7 @@ proc createUI*(self: OutputView, builder: UINodeBuilder, debugger: Debugger): se
       if debugger.outputEditor != nil:
         let wasActive = debugger.outputEditor.active
         debugger.outputEditor.active = self.active
-        return debugger.outputEditor.render(builder)
+        return documentEditorRender(debugger.outputEditor, builder)
     ,
     proc(): seq[OverlayFunction] =
       builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Output")

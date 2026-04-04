@@ -533,6 +533,7 @@ when implModule:
     self.kindImpl = proc (self: DynamicView): string = editorViewKind(self.EditorView)
     self.displayImpl = proc (self: DynamicView): string = editorViewDisplay(self.EditorView)
     self.saveStateImpl = proc (self: DynamicView): JsonNode = editorViewSaveState(self.EditorView)
+    self.getActiveEditorImpl = proc (self: DynamicView): Option[DocumentEditor] = editorViewGetActiveEditor(self.EditorView)
     # self.onClick = editorViewHandleClick
     # self.onScroll = editorViewHandleScroll
     # self.onDrag = editorViewHandleDrag
@@ -591,8 +592,8 @@ when implModule:
     if self.mPopups.len > 0 and self.mPopups[self.mPopups.high].getActiveEditor().getSome(editor):
       return editor.some
 
-    if self.tryGetCurrentEditorView().getSome(view):
-      return view.editor.some
+    if self.tryGetCurrentView().getSome(view):
+      return view.getActiveEditor()
 
     return DocumentEditor.none
 

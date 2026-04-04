@@ -832,6 +832,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   except CatchableError:
     discard
 
+  let eventBus = getServices().getServiceChecked(EventService)
+  eventBus.emit(&"app/initialized", "")
   return self
 
 proc setupSessionAndWorkspace*(self: App) {.async.} =
@@ -2934,8 +2936,8 @@ proc getActiveEditor*(self: App): Option[DocumentEditor] =
   if self.layout.popups.len > 0 and self.layout.popups[self.layout.popups.high].getActiveEditor().getSome(editor):
     return editor.some
 
-  if self.layout.tryGetCurrentEditorView().getSome(view):
-    return view.editor.some
+  if self.layout.tryGetCurrentView().getSome(view):
+    return view.getActiveEditor()
 
   return DocumentEditor.none
 

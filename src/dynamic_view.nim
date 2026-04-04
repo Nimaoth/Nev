@@ -2,7 +2,7 @@
 import std/[tables, json, sets]
 import misc/[custom_logger, util]
 import view, events, layouts
-import ui/node
+import ui/node, document_editor
 
 export view
 
@@ -18,7 +18,7 @@ type
     checkDirtyImpl*: proc(view: DynamicView) {.gcsafe, raises: [].}
     markDirtyImpl*: proc(view: DynamicView, notify: bool = true) {.gcsafe, raises: [].}
     getEventHandlersImpl*: proc(view: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].}
-    # getActiveEditorImpl*: proc(view: DynamicView): Option[DocumentEditor] {.gcsafe, raises: [].}
+    getActiveEditorImpl*: proc(view: DynamicView): Option[DocumentEditor] {.gcsafe, raises: [].}
     saveLayoutImpl*: proc(view: DynamicView, discardedViews: HashSet[Id]): JsonNode {.gcsafe, raises: [].}
     saveStateImpl*: proc(view: DynamicView): JsonNode {.gcsafe, raises: [].}
     descImpl*: proc(self: DynamicView): string {.gcsafe, raises: [].}
@@ -63,9 +63,9 @@ method getEventHandlers*(view: DynamicView, inject: Table[string, EventHandler])
   if view.getEventHandlersImpl != nil:
     return view.getEventHandlersImpl(view, inject)
 
-# method getActiveEditor*(view: DynamicView): Option[DocumentEditor] =
-#   if view.getActiveEditorImpl != nil:
-#     return view.getActiveEditorImpl(view)
+method getActiveEditor*(view: DynamicView): Option[DocumentEditor] =
+  if view.getActiveEditorImpl != nil:
+    return view.getActiveEditorImpl(view)
 
 method saveLayout*(self: DynamicView, discardedViews: HashSet[Id]): JsonNode =
   if self.saveLayoutImpl != nil:

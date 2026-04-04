@@ -6,7 +6,7 @@ include dynlib_export
 type OverlayRenderFunc* = proc() {.closure, gcsafe, raises: [].}
 
 # DLL API
-proc documentEditorRender(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayRenderFunc] {.apprtl, gcsafe, raises: [].}
+proc documentEditorRender*(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayRenderFunc] {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
 # proc render*(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayRenderFunc] {.inline.} = documentEditorRender(self, builder)
