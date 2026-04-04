@@ -65,6 +65,7 @@ jobs:
         with:
           path: |
             deps
+            nimcache
             emsdk
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('atlas.lock') }}
 
@@ -143,6 +144,7 @@ jobs:
         with:
           path: |
             deps
+            nimcache
             emsdk
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('atlas.lock') }}
 
@@ -226,7 +228,9 @@ jobs:
         env:
           cache-name: cache-nimble-modules-5
         with:
-          path: deps
+          path: |
+            deps
+            nimcache
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('atlas.lock') }}
 
       - run: nimble install https://github.com/Nimaoth/nimgen@0.5.4 -y
