@@ -55,7 +55,7 @@ type
 
     inputParser: TerminalInputParser
     useKittyKeyboard: bool
-    kittyKeyboardFlags: int = 0b1001
+    kittyKeyboardFlags: int = 0b0
 
     gridSize: IVec2
     pixelSize: IVec2
