@@ -555,6 +555,10 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   if state.chunkBounds.len == 0:
     return
 
+  renderCommands.startScissor(state.bounds)
+  defer:
+    renderCommands.endScissor()
+
   let cursorForegroundColor = builder.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
   let cursorBackgroundColor = builder.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
   let cursorTrailColor = cursorForegroundColor.darken(0.1)
@@ -671,13 +675,6 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
               drawText($currentRune, charBounds, cursorBackgroundColor, textFlags, fontScale)
 
         self.lastCursorLocationBounds = (cursorBounds + currentNode.boundsAbsolute.xy).some
-
-        # if i == self.selections.high:
-        #   if cursorBounds.x > currentNode.w - currentNode.x - 5 * builder.charWidth:
-        #     self.scrollOffset.x += cursorBounds.x - (currentNode.w - currentNode.x - 5 * builder.charWidth)
-        #   if cursorBounds.x < 5 * builder.charWidth:
-        #     self.scrollOffset.x += cursorBounds.x
-        #   self.scrollOffset.x = max(self.scrollOffset.x, 0)
 
       if i == self.selections.high:
         let dp = self.displayMap.toDisplayPoint(s.last.toPoint)
@@ -981,26 +978,35 @@ proc drawLine*(state: var LineDrawerState, commands: var RenderCommands, lineNum
   return vec2(state.bounds.w, height).some
 
 proc drawDiffBackgrounds(state: var LineDrawerState, backgroundCommands: var RenderCommands, scrollBox: var ScrollBox) =
+  backgroundCommands.startScissor(state.bounds)
+  defer:
+    backgroundCommands.endScissor()
+
   # Draw backgrounds for added/removed/changed lines in the diff view
   if state.renderDiff and state.diffChanges != nil:
     for item in scrollBox.items:
       let line = state.displayMap.toPoint(displayPoint(item.index, 0))
+      let bounds = rect(vec2(state.bounds.x, state.bounds.y + item.bounds.y), item.bounds.wh)
       let diffRow = state.diffChanges[].mapLine(line.row.int, state.diffReverse)
       if diffRow.getSome(d):
         if d.changed:
-          backgroundCommands.fillRect(item.bounds + state.bounds.xy, state.changedLineBackgroundColor)
+          backgroundCommands.fillRect(bounds, state.changedLineBackgroundColor)
       else:
         let color = if state.diffReverse: state.insertedLineBackgroundColor else: state.deletedLineBackgroundColor
-        backgroundCommands.fillRect(item.bounds + state.bounds.xy, color)
+        backgroundCommands.fillRect(bounds, color)
 
       let diffLine = state.diffDisplayMap.toPoint(displayPoint(item.index, 0))
       let row = state.diffChanges[].mapLine(diffLine.row.int, not state.diffReverse)
       if row.isNone:
-        backgroundCommands.fillRect(item.bounds + state.bounds.xy, state.backgroundColor.darken(0.03))
+        backgroundCommands.fillRect(bounds, state.backgroundColor.darken(0.03))
 
 proc drawPreciseDiffHighlights(state: var LineDrawerState, backgroundCommands: var RenderCommands, scrollBox: var ScrollBox, reverse: bool) =
   if not state.renderDiff or scrollBox.items.len == 0:
     return
+
+  backgroundCommands.startScissor(state.bounds)
+  defer:
+    backgroundCommands.endScissor()
 
   let insertedColor = state.insertedTextBackgroundColor
   let deletedColor = state.deletedTextBackgroundColor
@@ -1115,7 +1121,7 @@ proc drawLines(state: var LineDrawerState, commands: var RenderCommands, backgro
   state.charBounds = state.builder.arena.allocEmptyArray(maxNumLines * maxNumCharsPerLine, Rect)
 
   if state.lineNumbers != LineNumbers.None:
-    lineNumberCommands.fillRect(rect(vec2(0), vec2(state.lineNumberBounds.x, state.bounds.h)), state.backgroundColor)
+    lineNumberCommands.fillRect(rect(state.bounds.xy, vec2(state.lineNumberBounds.x, state.bounds.h)), state.backgroundColor)
 
   # List of TransformStart render command indices where we need to fix the offset when we know it the offset after rendering all lines.
   var fixups = state.builder.arena.allocEmptyArray(maxNumLines, tuple[line: int, renderCommandHead: int])
@@ -1181,7 +1187,7 @@ proc drawDiffLines(state: var LineDrawerState, commands: var RenderCommands, bac
   state.charBounds = state.builder.arena.allocEmptyArray(maxNumLines * maxNumCharsPerLine, Rect)
 
   if state.lineNumbers != LineNumbers.None:
-    lineNumberCommands.fillRect(rect(vec2(0), vec2(state.lineNumberBounds.x, state.bounds.h)), state.backgroundColor)
+    lineNumberCommands.fillRect(rect(state.bounds.xy, vec2(state.lineNumberBounds.x, state.bounds.h)), state.backgroundColor)
 
   commands.startScissor(state.bounds)
   var iter = state.createIter()
