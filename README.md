@@ -9,11 +9,13 @@ Nev is still relatively new, so many things are still missing or need improvemen
 
 There is a [Discord server](https://discord.gg/eJjBMcgP2V) where you can ask questions as well.
 
+**I'm doing this for fun and only work on Nev in my free time. Use Nev at your own risk!**
+
 ## Features
-- Vim motions (incomplete)
-- [LSP](docs/lsp.md) (incomplete)
+- Vim motions
+- [LSP](docs/lsp.md)
 - [Syntax highlighting](docs/treesitter.md) using treesitter with support for nested languages
-- Basic debugging using DAP
+- Debugging using DAP
 - [Fuzzy search for various things](docs/finders.md)
 - [Sessions](docs/sessions.md)
 - [WASM plugins](docs/configuration.md)
@@ -22,12 +24,12 @@ There is a [Discord server](https://discord.gg/eJjBMcgP2V) where you can ask que
 - [Flexible layout system](docs/docs.md#Layout)
 - [Nice looking markdown](docs/markdown.md)
 - [Undo Trees](docs/undo_tree.md)
-- And many more smaller features...
+- And many more features...
 
 ## Planned features
-- Collaborative editing (the foundation exists already, the editor is using CRDTs based on [Zeds](https://github.com/zed-industries/zed) implementation)
+- Expand plugin API
 - Fine grained permissions for plugins
-- Generic tree/table view with fuzzy searching, collapsing nodes, support for large trees. This will be used for e.g. file tree, document symbol outlines, type hierarchies, etc.
+- Performance and memory usage improvements
 
 ## Installation
 Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build from source](docs/building_from_source.md)
@@ -56,37 +58,15 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 - [Moves](docs/moves.md)
 - [Markdown](docs/markdown.md)
 
-## Screenshots
 
-Some of these screenshots and GIFs are quite old and things might look different.
+## Showcase
 
-### Nev running inside Windows Terminal -> WSL -> Zellij with transparent background
-![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/transparent_background.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/dashboard.png)
 
 ---
 
-### LSP integration
-![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/lsp.gif)
-
----
-
-### Git integration
-![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git.gif)
-
----
-
-### Debugging support (breakpoints aren't rendered correctly in the GIF because of recording with asciinema and they use unicode symbols, see screenshot above)
+### Debugging
 ![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/debug.gif)
-
----
-
-### Global and open file finders (and more)
-![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/finders.gif)
-
----
-
-### Global search
-![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/search.gif)
 
 ---
 
@@ -95,31 +75,11 @@ Some of these screenshots and GIFs are quite old and things might look different
 
 ---
 
-### LSP completions
-![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/lsp_completions.png)
-
----
-
-### Diagnostics, inlay hints and hover information
+### Diagnostics and inlay hints
 ![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/lsp_diagnostics_inlay_hints_hover.png)
-There is a [Discord server](https://discord.gg/eJjBMcgP2V) where you can ask questions as well.
 
 ---
 
-### Fuzzy search for document symbols
-![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/lsp_document_symbols.png)
-![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/lsp_document_symbols.png)
-
----
-
-### View changed/added files in git, and open the diff for files directly, or stage/unstage/revert them
-![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git_changed_files.png)
-![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git_changed_files.png)
-
----
-
-### View the git diff in the editor
+### Diff View
 ![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git_diff.png)
-![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git_diff.png)
-
 ---

@@ -29,6 +29,8 @@ If you get a compile error, try building with `--passC:-Wno-incompatible-pointer
 - Compile the desired language to wasm. The specified directory is the one containing the `src` folder which in turn contains the `grammar.js`
   - `target/release/tree-sitter build-wasm ../dev/nimtreesitter/treesitter_nim/treesitter_nim/nim`
 
-## Compiling Nim config files to wasm
-- You need to have Emscripten installed.
-- Run `nimble buildNimConfigWasm` from the root folder of the repository
+## Compiling plugins to wasm
+
+Use this command to build a plugin (inside the plugins directory):
+
+    nim c -d:release --skipParentCfg --passL:\"-o plugin_name.m.wasm\" plugin_name.nim
