@@ -64,6 +64,8 @@ type
 
   DiagnosticsLocation* = enum LineEnd = "line-end", Below = "below", LineEndOrBelow = "line-end-or-below"
 
+  ToastStyle* = enum Minimal = "minimal", Box = "box"
+
 func serviceName*(_: typedesc[ConfigService]): string = "ConfigService"
 
 const defaultToJsonOptions = ToJsonOptions(enumMode: joptEnumString, jsonNodeMode: joptJsonNodeAsRef)
@@ -294,6 +296,9 @@ proc typeNameToJson*(T: typedesc[LineNumbers]): string =
 
 proc typeNameToJson*(T: typedesc[DiagnosticsLocation]): string =
   return "\"line-end\" | \"below\" | \"line-end-or-below\""
+
+proc typeNameToJson*(T: typedesc[ToastStyle]): string =
+  return "\"minimal\" | \"box\""
 
 macro addJsonTypeName(key: static[string], name: static[string]) =
   settingToJsonTypeNames[key] = name
@@ -1039,6 +1044,19 @@ declareSettings BackgroundSettings, "":
   ## How much to change the brightness for inactive views.
   declare inactiveBrightnessChange, float, -0.025
 
+declareSettings ToastSettings, "":
+  ## Animate toast positions
+  declare style, ToastStyle, ToastStyle.Minimal
+
+  ## How long toasts are displayed for, in milliseconds.
+  declare duration, int, 8000
+
+  ## Animate toast positions
+  declare animation, bool, true
+
+  ## Max number of toast to show at a time
+  declare max, int, 5
+
 declareSettings OpenSessionSettings, "":
   ## If true then Nev will detect if it's running inside a multiplexer like tmux, zellij or wezterm (by using environment variables)
   ## and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij` or `editor.open-session.wezterm`
@@ -1052,6 +1070,8 @@ declareSettings OpenSessionSettings, "":
 
 declareSettings UiSettings, "ui":
   use background, BackgroundSettings
+
+  use toast, ToastSettings
 
   ## VFS path of the theme.
   declare theme, string, "app://themes/gruvbox-dark.json"
@@ -1134,12 +1154,6 @@ declareSettings UiSettings, "ui":
   ## "line-end" renders the first diagnostic inline at the end of the line.
   ## "line-end-or-below" renders below on the cursor line, at line-end elsewhere (default).
   declare diagnosticsLocation, DiagnosticsLocation, DiagnosticsLocation.LineEnd
-
-  ## How long toasts are displayed for, in milliseconds.
-  declare toastDuration, int, 8000
-
-  ## Animate toast positions
-  declare toastAnimation, bool, true
 
   # Defines the way views are layed out.
   # declare layout, JsonNodeEx, newJexObject()

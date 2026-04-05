@@ -40,7 +40,7 @@ method init*(self: ToastService): Future[Result[void, ref CatchableError]] {.asy
 
 proc updateToasts(self: ToastService) {.async.} =
   boolLock(self.isUpdating)
-  let maxTime = self.uiSettings.toastDuration.get().float64
+  let maxTime = self.uiSettings.toast.duration.get().float64
   while self.toasts.len > 0:
     var removed = false
     var i = 0

@@ -1002,10 +1002,13 @@ proc handleRenderCommand(platform: GuiPlatform, renderCommands: ptr RenderComman
       # log lvlError, &"Unbalanced ScisscorStart/End pairs"
       return
     let bounds = maskBounds.pop()
-    platform.boxy.pushLayer()
-    platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
-    platform.boxy.popLayer(blendMode = MaskBlend)
-    platform.boxy.popLayer()
+    if UINodeFlag.BlendAlpha in command.flags:
+      platform.boxy.popLayer(command.color)
+    else:
+      platform.boxy.pushLayer()
+      platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
+      platform.boxy.popLayer(blendMode = MaskBlend)
+      platform.boxy.popLayer()
   of RenderCommandKind.TransformStart:
     offsets.add offset
     offset += command.bounds.xy
@@ -1046,10 +1049,13 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
       platform.boxy.pushLayer()
     defer:
       if MaskContent in node.flags:
-        platform.boxy.pushLayer()
-        platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
-        platform.boxy.popLayer(blendMode = MaskBlend)
-        platform.boxy.popLayer()
+        if UINodeFlag.BlendAlpha in node.flags:
+          platform.boxy.popLayer(node.backgroundColor)
+        else:
+          platform.boxy.pushLayer()
+          platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
+          platform.boxy.popLayer(blendMode = MaskBlend)
+          platform.boxy.popLayer()
 
     if DrawText in node.flags:
       platform.drawText(node.text, nodePos, node.boundsRaw, node.textColor, node.textColor, node.flags, node.underlineColor, fontScale = node.fontScale)

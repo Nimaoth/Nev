@@ -1116,4 +1116,10 @@
     "markdown.languages": ["markdown"],
 
     "text.signature-help-trigger-on-edit-in-args": false,
+
+    "text.hover.command": {
+        "{}": "",
+        "{Control}": "hover.show-at-mouse",
+        "{Alt}": "evaluate-mouse-hover",
+    },
 }

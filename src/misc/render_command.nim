@@ -48,6 +48,7 @@ defineBitFlagSized(uint64):
     CursorUnderline
     CursorBlinking
     DrawChildrenReverse
+    BlendAlpha
 
 type
   RenderCommandKind* {.pure.} = enum
@@ -184,7 +185,8 @@ proc write*(self: var BinaryEncoder, command: RenderCommand) =
   of RenderCommandKind.ScissorStart:
     self.write(command.bounds)
   of RenderCommandKind.ScissorEnd:
-    discard
+    self.write(command.color)
+    self.write(command.flags)
   of RenderCommandKind.TransformStart:
     self.write(command.bounds.xy)
   of RenderCommandKind.TransformEnd:
@@ -227,7 +229,9 @@ iterator decodeRenderCommands*(self: var BinaryDecoder): RenderCommand =
       let bounds = self.read(Rect)
       yield RenderCommand(kind: RenderCommandKind.ScissorStart, bounds: bounds)
     of RenderCommandKind.ScissorEnd:
-      yield RenderCommand(kind: RenderCommandKind.ScissorEnd)
+      let color = self.read(Color)
+      let flags = self.read(UINodeFlags)
+      yield RenderCommand(kind: RenderCommandKind.ScissorEnd, color: color, flags: flags)
     of RenderCommandKind.TransformStart:
       let offset = self.read(Vec2)
       yield RenderCommand(kind: RenderCommandKind.TransformStart, bounds: rect(offset, vec2(0, 0)))
@@ -353,8 +357,10 @@ proc drawText*(self: var BinaryEncoder, inText: openArray[char], inBounds: Rect,
 proc startScissor*(self: var BinaryEncoder, inBounds: Rect) =
   self.write(RenderCommandKind.ScissorStart.uint8 + 1.uint8)
   self.write(inBounds)
-proc endScissor*(self: var BinaryEncoder) =
+proc endScissor*(self: var BinaryEncoder, color: Color = color(1, 1, 1, 1), flags: UINodeFlags = 0.UINodeFlags) =
   self.write(RenderCommandKind.ScissorEnd.uint8 + 1.uint8)
+  self.write(color)
+  self.write(0.UINodeFlags)
 proc startTransform*(self: var BinaryEncoder, offset: Vec2) =
   self.write(RenderCommandKind.TransformStart.uint8 + 1.uint8)
   self.write(offset)
@@ -406,8 +412,8 @@ proc drawText*(renderCommands: var RenderCommands, inText: openArray[char], arra
   renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: arrangementIndex.uint32, underlineColor: inUnderlineColor))
 proc startScissor*(renderCommands: var RenderCommands, inBounds: Rect) =
   renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorStart, bounds: inBounds))
-proc endScissor*(renderCommands: var RenderCommands) =
-  renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorEnd))
+proc endScissor*(renderCommands: var RenderCommands, color: Color = color(1, 1, 1, 1), flags: UINodeFlags = 0.UINodeFlags) =
+  renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorEnd, color: color, flags: flags))
 
 proc startTransform*(self: var RenderCommands, offset: Vec2) =
   self.commands.add(RenderCommand(kind: RenderCommandKind.TransformStart, bounds: rect(offset, vec2(0, 0))))
@@ -440,8 +446,8 @@ template buildCommands*(renderCommands: var RenderCommands, body: untyped) =
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: arrangementIndex.uint32, underlineColor: inUnderlineColor, fontScale: inFontScale))
     template startScissor(inBounds: Rect): untyped {.used.} =
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorStart, bounds: inBounds))
-    template endScissor(): untyped {.used.} =
-      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorEnd))
+    template endScissor(inColor: Color = color(1, 1, 1, 1), inFlags: UINodeFlags = 0.UINodeFlags): untyped {.used.} =
+      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorEnd, color: inColor, flags: inFlags))
 
     body
 
@@ -478,8 +484,10 @@ template buildCommands*(self: var BinaryEncoder, body: untyped) =
     template startScissor(inBounds: Rect): untyped {.used.} =
       self.write(RenderCommandKind.ScissorStart.uint8 + 1.uint8)
       self.write(inBounds)
-    template endScissor(): untyped {.used.} =
+    template endScissor(inColor: Color = color(1, 1, 1, 1), inFlags: UINodeFlags = 0.UINodeFlags): untyped {.used.} =
       self.write(RenderCommandKind.ScissorEnd.uint8 + 1.uint8)
+      self.write(inColor)
+      self.write(inFlags)
 
     body
 

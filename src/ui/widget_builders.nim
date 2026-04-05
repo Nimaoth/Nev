@@ -471,38 +471,76 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     if self.platform.backend == scripting_api.Terminal:
       padding = 0
 
-    let toastWidth = floor(currentNode.w * 0.3)
-    let toastMaxTime = self.uiSettings.toastDuration.get().float64 * 0.001
-    let animateToasts = self.uiSettings.toastAnimation.get()
-    builder.panel(&{LayoutVerticalReverse}, x = floor(currentNode.w * 0.7), y = mainBounds.y, w = toastWidth, h = mainBounds.h, border = border(builder.defaultBorderWidth), tag = "toasts"):
-      for i in countdown(self.toast.toasts.high, 0):
-        let toast {.cursor.} = self.toast.toasts[i]
-        let color = self.themes.theme.tokenColor(toast.color, textColor)
+    let toastStyle = self.uiSettings.toast.style.get()
+    let toastMaxTime = self.uiSettings.toast.duration.get().float64 * 0.001
+    let animateToasts = self.uiSettings.toast.animation.get()
+    let maxToasts = self.uiSettings.toast.max.get()
+    case toastStyle
+    of Box:
+      let toastWidth = floor(currentNode.w * 0.3)
+      builder.panel(&{LayoutVerticalReverse}, x = floor(currentNode.w * 0.7), y = mainBounds.y, w = toastWidth, h = mainBounds.h, border = border(builder.defaultBorderWidth), tag = "toasts"):
+        let maxLen = 200
+        for i in 0..<min(self.toast.toasts.len, maxToasts):
+          let toast {.cursor.} = self.toast.toasts[self.toast.toasts.high - i]
+          let color = self.themes.theme.tokenColor(toast.color, textColor)
 
-        var xOffset = 0.0
-        if animateToasts:
-          let fadeOutTime = 0.175 / max(toastMaxTime, 1)
-          let t = clamp((toast.progress - (1 - fadeOutTime)) / fadeOutTime, 0, 1)
-          xOffset = toastWidth * t * t
-          if xOffset > 0:
-            self.platform.requestRender(true)
+          var xOffset = 0.0
+          if animateToasts:
+            let fadeOutTime = 0.175 / max(toastMaxTime, 1)
+            let t = clamp((toast.progress - (1 - fadeOutTime)) / fadeOutTime, 0, 1)
+            xOffset = toastWidth * t * t
+            if xOffset > 0:
+              self.platform.requestRender(true)
 
-        builder.panel(&{FillX, SizeToContentY, LayoutVertical, FillBackground, DrawBorder, DrawBorderTerminal}, border = border(1), pivot = vec2(0, 1), backgroundColor = headerColor, borderColor = borderColor, tag = "toast"):
-          currentNode.rawX = currentNode.boundsRaw.x + xOffset
-          builder.panel(&{FillX, SizeToContentY, LayoutVertical}, border = border(padding)):
-            if padding > 0: builder.panel(&{FillX}, h = padding)
-            let contentWidth = currentNode.w - currentNode.border.left - currentNode.border.right
-            builder.panel(&{SizeToContentY, DrawText, TextWrap}, w = contentWidth, text = toast.title, textColor = color)
-            if padding > 0: builder.panel(&{FillX}, h = padding)
-            builder.panel(&{SizeToContentY, DrawText, TextWrap}, w = contentWidth, text = toast.message, textColor = textColor)
-            if padding > 0: builder.panel(&{FillX}, h = padding)
-            builder.panel(&{DrawBorder, DrawBorderTerminal}, border = border(0, 0, builder.defaultBorderWidth, 0), w = (contentWidth - 2) * (1 - toast.progress), h = builder.defaultBorderWidth, borderColor = color, backgroundColor = headerColor, tag = "progress bar")
+          if i > 0:
+            builder.panel(&{FillX}, h = builder.defaultBorderWidth, pivot = vec2(0, 1))
+            builder.updateSizeToContent(builder.currentChild)
 
-            if padding > 0: builder.panel(&{FillX}, h = padding)
+          builder.panel(&{FillX, SizeToContentY, LayoutVertical, FillBackground, DrawBorder, DrawBorderTerminal}, border = border(1), pivot = vec2(0, 1), backgroundColor = headerColor, borderColor = borderColor, tag = "toast"):
+            currentNode.rawX = currentNode.boundsRaw.x + xOffset
+            builder.panel(&{FillX, SizeToContentY, LayoutVertical}, border = border(padding)):
+              if padding > 0: builder.panel(&{FillX}, h = padding)
+              let contentWidth = currentNode.w - currentNode.border.left - currentNode.border.right
+              builder.panel(&{SizeToContentY, DrawText, TextWrap}, w = contentWidth, text = toast.title, textColor = color)
+              if padding > 0: builder.panel(&{FillX}, h = padding)
+              let max = min(toast.message.len, maxLen)
+              if max < toast.message.len:
+                builder.panel(&{SizeToContentY, DrawText, TextWrap}, w = contentWidth, text = toast.message[0..<max], textColor = textColor)
+              else:
+                builder.panel(&{SizeToContentY, DrawText, TextWrap}, w = contentWidth, text = toast.message, textColor = textColor)
+              if padding > 0: builder.panel(&{FillX}, h = padding)
+              builder.panel(&{DrawBorder, DrawBorderTerminal}, border = border(0, 0, builder.defaultBorderWidth, 0), w = (contentWidth - 2) * (1 - toast.progress), h = builder.defaultBorderWidth, borderColor = color, backgroundColor = headerColor, tag = "progress bar")
 
-        builder.updateSizeToContent(builder.currentChild)
-        if i > 0:
-          builder.panel(&{FillX}, h = builder.defaultBorderWidth, pivot = vec2(0, 1))
+              if padding > 0: builder.panel(&{FillX}, h = padding)
+
+    of Minimal:
+      let toastWidth = max(floor(currentNode.w - builder.charWidth * 10), 1)
+      builder.panel(&{LayoutVerticalReverse}, x = builder.charWidth * 5, y = mainBounds.y - builder.textHeight * 2, w = toastWidth, h = mainBounds.h, tag = "toasts"):
+        for i in 0..<min(self.toast.toasts.len, maxToasts):
+          let toast {.cursor.} = self.toast.toasts[self.toast.toasts.high - i]
+          let color = self.themes.theme.tokenColor(toast.color, textColor)
+
+          let a = (maxToasts.float - i.float) / maxToasts.float
+
+          if i > 0:
+            builder.panel(&{FillX}, h = floor(builder.textHeight * 0.5), pivot = vec2(0, 1))
+
+          builder.panel(&{SizeToContentX, SizeToContentY, MaskContent, BlendAlpha}, backgroundColor = color(1, 1, 1, a), pivot = vec2(0, 1), tag = "toast"):
+            builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal, FillBackground}, backgroundColor = headerColor):
+              let contentWidth = currentNode.w - currentNode.border.left - currentNode.border.right
+              builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = toast.title, textColor = color)
+              builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = " - ", textColor = textColor)
+              let maxLen = ((toastWidth - builder.currentChild.bounds.xw) / builder.charWidth).int
+              var nlIndex = toast.message.find("\n")
+              if nlIndex == -1:
+                nlIndex = toast.message.len
+              let max = min(nlIndex, maxLen)
+              if max < toast.message.len:
+                builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = toast.message[0..<max], textColor = color)
+              else:
+                builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = toast.message, textColor = color)
+      if self.toast.toasts.len > 0:
+        self.platform.requestRender(true)
 
     builder.panel(&{FlushBorders})
 

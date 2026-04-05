@@ -152,6 +152,7 @@
     },
 
     "dashboard": {
+        "<ESCAPE>": ["dashboard.logo.randomize"],
         "r": ["dashboard.logo.randomize"],
         "a": ["dashboard.logo.randomize"],
         "1": ["dashboard.session.open", 0],
@@ -317,6 +318,7 @@
     },
 
     "terminal.normal": {
+        "<ESCAPE>": ["terminal.set-terminal-mode", "normal"],
         "i": ["terminal.set-terminal-mode", "insert"],
         "a": ["all", ["terminal.set-terminal-mode", "insert"], ["terminal.send-terminal-input", "<RIGHT>"]],
         "I": ["all", ["terminal.set-terminal-mode", "insert"], ["terminal.send-terminal-input", "<HOME>"]],
