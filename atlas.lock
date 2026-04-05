@@ -87,7 +87,7 @@
     "windy.Nimaoth.github.com": {
       "dir": "$deps/windy.Nimaoth.github.com",
       "url": "https://github.com/Nimaoth/windy",
-      "commit": "ae1627ebe73f2d9e72e2e2695a1d3ab2a0dc0d75",
+      "commit": "212963e341eefa252dc82676e38d5e8ce9a2f6cb",
       "version": ""
     },
     "lrucache.nim.Nimaoth.github.com": {
@@ -301,7 +301,7 @@
       "  import system/nimscript",
       "  var commandLineParams: seq[string]",
       "",
-      "version       = \"0.4.0\"",
+      "version       = \"0.5.0\"",
       "author        = \"Nimaoth\"",
       "description   = \"Text Editor\"",
       "license       = \"MIT\"",
@@ -327,7 +327,7 @@
       "requires \"https://github.com/Araq/malebolgia#ab17bef\"",
       "requires \"https://github.com/Nimaoth/fsnotify >= 0.1.6\"",
       "# requires \"https://github.com/Nimaoth/ws >= 0.5.0\"",
-      "requires \"https://github.com/Nimaoth/windy#ae1627e\"",
+      "requires \"https://github.com/Nimaoth/windy#212963e\"",
       "requires \"https://github.com/Nimaoth/lrucache.nim#479d4cf\"",
       "requires \"https://github.com/Nimaoth/boxy#1ec24eb\"",
       "requires \"https://github.com/Nimaoth/nimtreesitter-api#893dd71\"",
