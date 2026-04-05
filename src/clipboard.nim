@@ -6,17 +6,15 @@ logCategory "clipboard"
 import compilation_config
 
 when enableWindyClipboard:
-  import windy
+  import platform_service, service
   static:
     hint("Building with windy clipboard")
 
   proc setSystemClipboardText*(str: string) =
-    {.gcsafe.}:
-      setClipboardString(str)
+    getServiceChecked(PlatformService).platform.setClipboardText(str)
 
   proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
-    {.gcsafe.}:
-      return getClipboardString().replace("\r", "").some
+    getServiceChecked(PlatformService).platform.getClipboardText().await
 
 else:
   static:

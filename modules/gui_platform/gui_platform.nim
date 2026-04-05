@@ -1110,6 +1110,14 @@ when implModule:
       discard ShowWindow(self.window.platformHandle, SW_SHOW)
       self.window.maximized = true
 
+  proc setClipboardTextGuiPlatform(self: GuiPlatform, str: string) {.gcsafe, raises: [].} =
+    {.gcsafe.}:
+      setClipboardString(str)
+
+  proc getClipboardTextGuiPlatform(self: GuiPlatform): Future[Option[string]] {.async: (raises: []).} =
+    {.gcsafe.}:
+      return getClipboardString().replace("\r", "").some
+
   {.pop.} # gcsafe
 
   proc newGuiPlatform*(): Platform {.raises: [].} =
@@ -1136,6 +1144,8 @@ when implModule:
     res.setVsyncImpl = proc(self: Platform, enabled: bool) = self.GuiPlatform.setVsyncGuiPlatform(enabled)
     res.moveToMonitorImpl = proc(self: Platform, index: int) = self.GuiPlatform.moveToMonitorGuiPlatform(index)
     res.focusWindowImpl = proc(self: Platform) = self.GuiPlatform.focusWindowGuiPlatform()
+    res.setClipboardTextImpl = proc(self: Platform, str: string) = self.GuiPlatform.setClipboardTextGuiPlatform(str)
+    res.getClipboardTextImpl = proc(self: Platform): Future[Option[string]] {.async: (raises: [])} = self.GuiPlatform.getClipboardTextGuiPlatform().await
 
     return res
 

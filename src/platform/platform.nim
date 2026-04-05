@@ -1,7 +1,7 @@
-import std/[locks]
+import std/[locks, options]
 import vmath, chroma
 import ui/node
-import misc/[event, timer]
+import misc/[event, timer, custom_async]
 import nimsumtree/[arc]
 import input, vfs, app_options, scripting_api, pixie
 
@@ -31,6 +31,8 @@ type
   SetVsyncImpl* = proc(self: Platform, enabled: bool) {.gcsafe, raises: [].}
   MoveToMonitorImpl* = proc(self: Platform, index: int) {.gcsafe, raises: [].}
   FocusWindowImpl* = proc(self: Platform) {.gcsafe, raises: [].}
+  SetClipboardTextImpl* = proc(self: Platform, str: string) {.gcsafe, raises: [].}
+  GetClipboardTextImpl* = proc(self: Platform): Future[Option[string]] {.gcsafe, async: (raises: []).}
 
   WLayoutOptions* = object
     getTextBounds*: proc(text: string, fontSizeIncreasePercent: float = 0): Vec2
@@ -86,6 +88,8 @@ type
     setVsyncImpl*: SetVsyncImpl
     moveToMonitorImpl*: MoveToMonitorImpl
     focusWindowImpl*: FocusWindowImpl
+    setClipboardTextImpl*: SetClipboardTextImpl
+    getClipboardTextImpl*: GetClipboardTextImpl
 
 proc requestRender*(self: Platform, redrawEverything = false) =
   if self.requestRenderImpl != nil:
@@ -181,6 +185,15 @@ proc moveToMonitor*(self: Platform, index: int) =
 proc focusWindow*(self: Platform) =
   if self.focusWindowImpl != nil:
     self.focusWindowImpl(self)
+
+proc setClipboardText*(self: Platform, str: string) =
+  if self.setClipboardTextImpl != nil:
+    self.setClipboardTextImpl(self, str)
+
+proc getClipboardText*(self: Platform): Future[Option[string]] {.async.} =
+  if self.getClipboardTextImpl != nil:
+    return self.getClipboardTextImpl(self).await
+  return string.none
 
 include dynlib_export
 
