@@ -83,7 +83,8 @@ proc destroy*(process: AsyncProcess) =
   process.dontRestart = true
 
   if not process.process.isNil:
-    process.process.kill()
+    discard process.process.waitForExit(10)
+    process.process.close()
 
   process.inputStreamChannel.getMutUnsafe.channel.send ProcessObj.none
   process.outputStreamChannel.getMutUnsafe.channel.send ProcessObj.none
@@ -387,7 +388,8 @@ proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[stri
           break
 
     try:
-      process.kill()
+      discard process.waitForExit()
+      process.close()
     except CatchableError:
       discard
 
