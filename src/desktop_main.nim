@@ -257,8 +257,7 @@ case backend.get
 of Terminal:
   when enableTerminal:
     log(lvlInfo, "Creating terminal renderer")
-    plat = new TerminalPlatform
-    plat[] = default(typeof(TerminalPlatform()[]))
+    plat = newTerminalPlatform()
     plat.backend = Terminal
   else:
     echo "[error] Terminal backend not available in this build"
