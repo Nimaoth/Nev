@@ -12,14 +12,15 @@ import "../modules/language_server_regex.nim"
 import "../modules/lsp_server.nim"
 import "../modules/unsaved_saver.nim"
 import "../modules/workspace_edit.nim"
+import "../modules/gui_platform/gui_platform.nim"
 import "../modules/language_server_document_completion.nim"
 import "../modules/markdown_component.nim"
-import "../modules/undo_tree.nim"
 import "../modules/command_component.nim"
 import "../modules/snippet_component.nim"
 import "../modules/terminal/terminal.nim"
 import "../modules/language_server_lsp/language_server_lsp.nim"
 import "../modules/language_server_paths.nim"
+import "../modules/undo_tree.nim"
 import "../modules/formatting_component.nim"
 import "../modules/angelscript_formatter.nim"
 import "../modules/language_server_ue_as.nim"
@@ -40,14 +41,15 @@ proc initModules*() =
   when declared(init_module_lsp_server): init_module_lsp_server()
   when declared(init_module_unsaved_saver): init_module_unsaved_saver()
   when declared(init_module_workspace_edit): init_module_workspace_edit()
+  when declared(init_module_gui_platform): init_module_gui_platform()
   when declared(init_module_language_server_document_completion): init_module_language_server_document_completion()
   when declared(init_module_markdown_component): init_module_markdown_component()
-  when declared(init_module_undo_tree): init_module_undo_tree()
   when declared(init_module_command_component): init_module_command_component()
   when declared(init_module_snippet_component): init_module_snippet_component()
   when declared(init_module_terminal): init_module_terminal()
   when declared(init_module_language_server_lsp): init_module_language_server_lsp()
   when declared(init_module_language_server_paths): init_module_language_server_paths()
+  when declared(init_module_undo_tree): init_module_undo_tree()
   when declared(init_module_formatting_component): init_module_formatting_component()
   when declared(init_module_angelscript_formatter): init_module_angelscript_formatter()
   when declared(init_module_language_server_ue_as): init_module_language_server_ue_as()
@@ -68,14 +70,15 @@ proc shutdownModules*() =
   when declared(shutdown_module_lsp_server): shutdown_module_lsp_server()
   when declared(shutdown_module_unsaved_saver): shutdown_module_unsaved_saver()
   when declared(shutdown_module_workspace_edit): shutdown_module_workspace_edit()
+  when declared(shutdown_module_gui_platform): shutdown_module_gui_platform()
   when declared(shutdown_module_language_server_document_completion): shutdown_module_language_server_document_completion()
   when declared(shutdown_module_markdown_component): shutdown_module_markdown_component()
-  when declared(shutdown_module_undo_tree): shutdown_module_undo_tree()
   when declared(shutdown_module_command_component): shutdown_module_command_component()
   when declared(shutdown_module_snippet_component): shutdown_module_snippet_component()
   when declared(shutdown_module_terminal): shutdown_module_terminal()
   when declared(shutdown_module_language_server_lsp): shutdown_module_language_server_lsp()
   when declared(shutdown_module_language_server_paths): shutdown_module_language_server_paths()
+  when declared(shutdown_module_undo_tree): shutdown_module_undo_tree()
   when declared(shutdown_module_formatting_component): shutdown_module_formatting_component()
   when declared(shutdown_module_angelscript_formatter): shutdown_module_angelscript_formatter()
   when declared(shutdown_module_language_server_ue_as): shutdown_module_language_server_ue_as()

@@ -2,6 +2,7 @@ import std/[locks]
 import vmath, chroma
 import ui/node
 import misc/[event, timer]
+import nimsumtree/[arc]
 import input, vfs, app_options, scripting_api, pixie
 
 export input, event
@@ -29,7 +30,6 @@ type
   LayoutTextImpl* = proc(self: Platform, text: string): seq[Rect] {.gcsafe, raises: [].}
   SetVsyncImpl* = proc(self: Platform, enabled: bool) {.gcsafe, raises: [].}
   MoveToMonitorImpl* = proc(self: Platform, index: int) {.gcsafe, raises: [].}
-  CreateTextureImpl* = proc(self: Platform, image: Image): TextureId {.gcsafe, raises: [].}
   FocusWindowImpl* = proc(self: Platform) {.gcsafe, raises: [].}
 
   WLayoutOptions* = object
@@ -59,11 +59,10 @@ type
     layoutOptions*: WLayoutOptions
     logNextFrameTime*: bool
     lastEventTime*: Timer
-    vfs*: VFS
+    vfs*: Arc[VFS2]
     backend*: Backend
     currentModifiers*: Modifiers
 
-  DynamicPlatform* = ref object of Platform
     requestRenderImpl*: RequestRenderImpl
     renderImpl*: RenderImpl
     sizeChangedImpl*: SizeChangedImpl
@@ -86,137 +85,112 @@ type
     layoutTextImpl*: LayoutTextImpl
     setVsyncImpl*: SetVsyncImpl
     moveToMonitorImpl*: MoveToMonitorImpl
-    createTextureImpl*: CreateTextureImpl
     focusWindowImpl*: FocusWindowImpl
 
-method requestRender*(self: Platform, redrawEverything = false) {.base, gcsafe, raises: [].} = discard
-method render*(self: Platform, rerender: bool) {.base, gcsafe, raises: [].} = discard
-method sizeChanged*(self: Platform): bool {.base, gcsafe, raises: [].} = discard
-method size*(self: Platform): Vec2 {.base, gcsafe, raises: [].} = discard
-method init*(self: Platform, options: AppOptions) {.base, raises: [].} = discard
-method deinit*(self: Platform) {.base, raises: [].} = discard
-method processEvents*(self: Platform): int {.base, gcsafe, raises: [].} = discard
-method `fontSize=`*(self: Platform, fontSize: float) {.base, gcsafe, raises: [].} = discard
-method `lineDistance=`*(self: Platform, lineDistance: float) {.base, gcsafe, raises: [].} = discard
-method setFont*(self: Platform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) {.base, gcsafe, raises: [].} = discard
-method getFontInfo*(self: Platform, fontSize: float, flags: UINodeFlags): ptr FontInfo {.base, gcsafe, raises: [].} = discard
-method fontSize*(self: Platform): float {.base, gcsafe, raises: [].} = discard
-method lineDistance*(self: Platform): float {.base, gcsafe, raises: [].} = discard
-method lineHeight*(self: Platform): float {.base, gcsafe, raises: [].} = discard
-method charWidth*(self: Platform): float {.base, gcsafe, raises: [].} = discard
-method charGap*(self: Platform): float {.base, gcsafe, raises: [].} = discard
-method measureText*(self: Platform, text: string): Vec2 {.base, gcsafe, raises: [].} = discard
-method preventDefault*(self: Platform) {.base, gcsafe, raises: [].} = discard
-method getStatisticsString*(self: Platform): string {.base, gcsafe, raises: [].} = discard
-method layoutText*(self: Platform, text: string): seq[Rect] {.base, gcsafe, raises: [].} = discard
-method setVsync*(self: Platform, enabled: bool) {.base, gcsafe, raises: [].} = discard
-method moveToMonitor*(self: Platform, index: int) {.base, gcsafe, raises: [].} = discard
-method createTexture*(self: Platform, image: Image): TextureId {.base, gcsafe, raises: [].} = discard
-method focusWindow*(self: Platform) {.base, gcsafe, raises: [].} = discard
-
-method requestRender*(self: DynamicPlatform, redrawEverything = false) =
+proc requestRender*(self: Platform, redrawEverything = false) =
   if self.requestRenderImpl != nil:
     self.requestRenderImpl(self, redrawEverything)
   else:
     self.requestedRender = true
     self.redrawEverything = self.redrawEverything or redrawEverything
 
-method render*(self: DynamicPlatform, rerender: bool) =
+proc render*(self: Platform, rerender: bool) =
   if self.renderImpl != nil:
     self.renderImpl(self, rerender)
 
-method sizeChanged*(self: DynamicPlatform): bool =
+proc sizeChanged*(self: Platform): bool =
   if self.sizeChangedImpl != nil:
     return self.sizeChangedImpl(self)
 
-method size*(self: DynamicPlatform): Vec2 =
+proc size*(self: Platform): Vec2 =
   if self.sizeImpl != nil:
     return self.sizeImpl(self)
 
-method init*(self: DynamicPlatform, options: AppOptions) =
+proc init*(self: Platform, options: AppOptions) =
   if self.initImpl != nil:
     self.initImpl(self, options)
 
-method deinit*(self: DynamicPlatform) =
+proc deinit*(self: Platform) =
   if self.deinitImpl != nil:
     self.deinitImpl(self)
 
-method processEvents*(self: DynamicPlatform): int =
+proc processEvents*(self: Platform): int =
   if self.processEventsImpl != nil:
     return self.processEventsImpl(self)
 
-method `fontSize=`*(self: DynamicPlatform, fontSize: float) =
+proc `fontSize=`*(self: Platform, fontSize: float) =
   if self.fontSizeSetImpl != nil:
     self.fontSizeSetImpl(self, fontSize)
 
-method `lineDistance=`*(self: DynamicPlatform, lineDistance: float) =
+proc `lineDistance=`*(self: Platform, lineDistance: float) =
   if self.lineDistanceSetImpl != nil:
     self.lineDistanceSetImpl(self, lineDistance)
 
-method setFont*(self: DynamicPlatform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) =
+proc setFont*(self: Platform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) =
   if self.setFontImpl != nil:
     self.setFontImpl(self, fontRegular, fontBold, fontItalic, fontBoldItalic, fallbackFonts)
 
-method getFontInfo*(self: DynamicPlatform, fontSize: float, flags: UINodeFlags): ptr FontInfo =
+proc getFontInfo*(self: Platform, fontSize: float, flags: UINodeFlags): ptr FontInfo =
   if self.getFontInfoImpl != nil:
     return self.getFontInfoImpl(self, fontSize, flags)
 
-method fontSize*(self: DynamicPlatform): float =
+proc fontSize*(self: Platform): float =
   if self.fontSizeImpl != nil:
     return self.fontSizeImpl(self)
 
-method lineDistance*(self: DynamicPlatform): float =
+proc lineDistance*(self: Platform): float =
   if self.lineDistanceImpl != nil:
     return self.lineDistanceImpl(self)
 
-method lineHeight*(self: DynamicPlatform): float =
+proc lineHeight*(self: Platform): float =
   if self.lineHeightImpl != nil:
     return self.lineHeightImpl(self)
 
-method charWidth*(self: DynamicPlatform): float =
+proc charWidth*(self: Platform): float =
   if self.charWidthImpl != nil:
     return self.charWidthImpl(self)
 
-method charGap*(self: DynamicPlatform): float =
+proc charGap*(self: Platform): float =
   if self.charGapImpl != nil:
     return self.charGapImpl(self)
 
-method measureText*(self: DynamicPlatform, text: string): Vec2 =
+proc measureText*(self: Platform, text: string): Vec2 =
   if self.measureTextImpl != nil:
     return self.measureTextImpl(self, text)
 
-method preventDefault*(self: DynamicPlatform) =
+proc preventDefault*(self: Platform) =
   if self.preventDefaultImpl != nil:
     self.preventDefaultImpl(self)
 
-method getStatisticsString*(self: DynamicPlatform): string =
+proc getStatisticsString*(self: Platform): string =
   if self.getStatisticsStringImpl != nil:
     return self.getStatisticsStringImpl(self)
 
-method layoutText*(self: DynamicPlatform, text: string): seq[Rect] =
+proc layoutText*(self: Platform, text: string): seq[Rect] =
   if self.layoutTextImpl != nil:
     return self.layoutTextImpl(self, text)
 
-method setVsync*(self: DynamicPlatform, enabled: bool) =
+proc setVsync*(self: Platform, enabled: bool) =
   if self.setVsyncImpl != nil:
     self.setVsyncImpl(self, enabled)
 
-method moveToMonitor*(self: DynamicPlatform, index: int) =
+proc moveToMonitor*(self: Platform, index: int) =
   if self.moveToMonitorImpl != nil:
     self.moveToMonitorImpl(self, index)
 
-method createTexture*(self: DynamicPlatform, image: Image): TextureId =
-  if self.createTextureImpl != nil:
-    return self.createTextureImpl(self, image)
-
-method focusWindow*(self: DynamicPlatform) =
+proc focusWindow*(self: Platform) =
   if self.focusWindowImpl != nil:
     self.focusWindowImpl(self)
 
-var texturesToUpload: seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.ColorRGBX], dynamic: bool]]
-var texturesToDelete: seq[TextureId]
-var texturesLock*: Lock
-texturesLock.initLock()
+include dynlib_export
+
+var texturesToUpload {.apprtl.}: seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.ColorRGBX], dynamic: bool]]
+var texturesToDelete {.apprtl.}: seq[TextureId]
+var texturesLock* {.apprtl.}: Lock
+var reserveTextureImpl* {.apprtl.}: proc(): TextureId {.gcsafe, raises: [].}
+
+when implModule:
+  texturesLock.initLock()
 
 proc takeTexturesToUpload*(): seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.ColorRGBX], dynamic: bool]] =
   {.gcsafe.}:
@@ -228,7 +202,6 @@ proc takeTexturesToDelete*(): seq[TextureId] =
     withLock(texturesLock):
       swap(result, texturesToDelete)
 
-var reserveTextureImpl*: proc(): TextureId {.gcsafe, raises: [].}
 proc createTexture*(width: int, height: int, data: sink seq[chroma.ColorRGBX], dynamic: bool = false): TextureId =
   {.gcsafe.}:
     withLock(texturesLock):
@@ -250,7 +223,7 @@ proc deleteTexture*(id: TextureId) =
         return
       texturesToDelete.add(id)
 
-func totalLineHeight*(self: Platform): float = self.lineHeight + self.lineDistance
+proc totalLineHeight*(self: Platform): float = self.lineHeight + self.lineDistance
 
 proc totalBounds*(bounds: openArray[Rect]): Vec2 {.raises: [].} =
   for i in 0 ..< bounds.len:

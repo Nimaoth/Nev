@@ -43,7 +43,7 @@ when implModule:
       Xterm256Color = "xterm-256color"
 
   type
-    TerminalPlatform* = ref object of DynamicPlatform
+    TerminalPlatform* = ref object of Platform
       buffer: TerminalBuffer
       borderBuffer: BoxBuffer
       trueColorSupport*: bool

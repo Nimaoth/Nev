@@ -1,1105 +1,1143 @@
-import std/[tables, strutils, options, sets, os, strformat, locks]
-import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
-import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer, generational_seq]
-import ui/node
-import platform
-import input, monitors, lrucache, compilation_config, vfs, app_options, theme, service
+import platform/platform
 
-export platform
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
-{.push raises: [].}
-{.push gcsafe.}
+proc newGuiPlatform*(): Platform {.rtl, raises: [].}
 
-logCategory "gui-platform"
+when implModule:
+  import std/[tables, strutils, options, sets, os, strformat, locks]
+  import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
+  import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer, generational_seq]
+  import ui/node
+  import nimsumtree/[arc]
+  import input, monitors, lrucache, compilation_config, vfs, app_options, theme, service
 
-const logDeletedImageCount = true
+  {.push raises: [].}
+  {.push gcsafe.}
 
-type
-  GuiPlatform* = ref object of Platform
-    window: Window
-    ctx*: Context
-    boxy: Boxy
-    currentMouseButtons: set[MouseButton]
+  logCategory "gui-platform"
 
-    fontRegular: string
-    fontBold*: string
-    fontItalic*: string
-    fontBoldItalic*: string
+  const logDeletedImageCount = true
 
-    fallbackFonts*: seq[string]
+  type
+    GuiPlatform* = ref object of Platform
+      window: Window
+      ctx*: Context
+      boxy: Boxy
+      currentMouseButtons: set[MouseButton]
 
-    lastSize: Vec2
-    renderedSomethingLastFrame: bool
+      fontRegular: string
+      fontBold*: string
+      fontItalic*: string
+      fontBoldItalic*: string
 
-    lastFontSize: float
-    mLineHeight: float
-    mLineDistance: float = 1
-    mCharWidth: float
-    mCharGap: float
+      fallbackFonts*: seq[string]
 
-    framebufferId: GLuint
-    framebuffer: Texture
+      lastSize: Vec2
+      renderedSomethingLastFrame: bool
 
-    textures: Table[string, Texture]
+      lastFontSize: float
+      mLineHeight: float
+      mLineDistance: float = 1
+      mCharWidth: float
+      mCharGap: float
 
-    defaultTypeface: Typeface
-    fallbackTypefaces*: seq[Future[Typeface]]
-    fontCache1: Table[(string, float32), Font]
-    fontCache2: Table[(UINodeFlags, float32), Font]
-    fontInfoCache: Table[(UINodeFlags, float32), FontInfo]
-    typefaces: Table[string, Future[Typeface]]
-    glyphCache: LruCache[ImageKey, ImageKey]
-    asciiGlyphCache: array[128, uint64]
+      framebufferId: GLuint
+      framebuffer: Texture
 
-    lastEvent: Option[(int64, Modifiers, Button)]
+      textures: Table[string, Texture]
 
-    drawnNodes: seq[UINode]
+      defaultTypeface: Typeface
+      fallbackTypefaces*: seq[Future[Typeface]]
+      fontCache1: Table[(string, float32), Font]
+      fontCache2: Table[(UINodeFlags, float32), Font]
+      fontInfoCache: Table[(UINodeFlags, float32), FontInfo]
+      typefaces: Table[string, Future[Typeface]]
+      glyphCache: LruCache[ImageKey, ImageKey]
+      asciiGlyphCache: array[128, uint64]
 
-    vsync: bool
+      lastEvent: Option[(int64, Modifiers, Button)]
 
-proc toInput(rune: Rune): int64
-proc toInput(button: Button): int64
-proc centerWindowOnMonitor*(window: Window, monitor: int)
-proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
-proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
-proc handleThemeChanged(self: GuiPlatform, theme: Theme)
+      drawnNodes: seq[UINode]
 
-const defaultTypefaceText = staticRead("../fonts/DejaVuSansMono.ttf")
+      vsync: bool
 
-method moveToMonitor*(self: GuiPlatform, index: int) {.gcsafe, raises: [].} =
-  centerWindowOnMonitor(self.window, index)
+  proc toInput(rune: Rune): int64
+  proc toInput(button: Button): int64
+  proc centerWindowOnMonitor*(window: Window, monitor: int)
+  proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
+  proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
+  proc handleThemeChanged(self: GuiPlatform, theme: Theme)
 
-method getStatisticsString*(self: GuiPlatform): string =
-  result.add &"Typefaces: {self.typefaces.len}\n"
-  result.add &"Glyph Cache: {self.glyphCache.len}\n"
-  result.add &"Drawn Nodes: {self.drawnNodes.len}\n"
+  const defaultTypefaceText = staticRead("../fonts/DejaVuSansMono.ttf")
 
-{.pop.} # gcsafe
+  proc moveToMonitorGuiPlatform(self: GuiPlatform, index: int) {.gcsafe, raises: [].} =
+    centerWindowOnMonitor(self.window, index)
+
+  proc getStatisticsStringGuiPlatform(self: GuiPlatform): string =
+    result.add &"Typefaces: {self.typefaces.len}\n"
+    result.add &"Glyph Cache: {self.glyphCache.len}\n"
+    result.add &"Drawn Nodes: {self.drawnNodes.len}\n"
+
+  {.pop.} # gcsafe
 
 
-var gTextures: GenerationalSeq[Texture, TextureId]
-reserveTextureImpl = proc(): TextureId {.gcsafe, raises: [].} =
-  {.gcsafe.}:
-    return gTextures.add(nil)
+  var gTextures: GenerationalSeq[Texture, TextureId]
+  reserveTextureImpl = proc(): TextureId {.gcsafe, raises: [].} =
+    {.gcsafe.}:
+      return gTextures.add(nil)
 
-when defined(windows):
-  import winim/lean except Rect
+  when defined(windows):
+    import winim/lean except Rect
 
-when defined(windows):
-  proc DwmSetWindowAttribute*(
-    hwnd: HWND,
-    dwAttribute: DWORD,
-    pvAttribute: pointer,
-    cbAttribute: DWORD
-  ): HRESULT {.stdcall, importc.}
+  when defined(windows):
+    proc DwmSetWindowAttribute*(
+      hwnd: HWND,
+      dwAttribute: DWORD,
+      pvAttribute: pointer,
+      cbAttribute: DWORD
+    ): HRESULT {.stdcall, importc.}
 
-  const DWMWA_CAPTION_COLOR*: DWORD = 35
-  const DWMWA_TEXT_COLOR*: DWORD = 36
-  const DWMWA_SYSTEMBACKDROP_TYPE*: DWORD = 38
-  const
-    DWMSBT_AUTO: DWORD = 0
-    DWMSBT_NONE: DWORD = 1
-    DWMSBT_MAINWINDOW: DWORD = 2   # Mica
-    DWMSBT_TRANSIENTWINDOW: DWORD = 3 # Acrylic-like
-    DWMSBT_TABBEDWINDOW: DWORD = 4
+    const DWMWA_CAPTION_COLOR*: DWORD = 35
+    const DWMWA_TEXT_COLOR*: DWORD = 36
+    const DWMWA_SYSTEMBACKDROP_TYPE*: DWORD = 38
+    const
+      DWMSBT_AUTO: DWORD = 0
+      DWMSBT_NONE: DWORD = 1
+      DWMSBT_MAINWINDOW: DWORD = 2   # Mica
+      DWMSBT_TRANSIENTWINDOW: DWORD = 3 # Acrylic-like
+      DWMSBT_TABBEDWINDOW: DWORD = 4
 
-  proc RGB*(r, g, b: uint8): DWORD = (DWORD(r) or (DWORD(g) shl 8) or (DWORD(b) shl 16))
+    proc RGB*(r, g, b: uint8): DWORD = (DWORD(r) or (DWORD(g) shl 8) or (DWORD(b) shl 16))
 
-  proc setTitleBarColor*(hwnd: HWND, color: DWORD) =
-    var c = color
-    discard DwmSetWindowAttribute(
-      hwnd,
-      DWMWA_CAPTION_COLOR,
-      addr c,
-      DWORD(sizeof(c))
-    )
+    proc setTitleBarColor*(hwnd: HWND, color: DWORD) =
+      var c = color
+      discard DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_CAPTION_COLOR,
+        addr c,
+        DWORD(sizeof(c))
+      )
 
-  proc setTitleTextColor*(hwnd: HWND, color: DWORD) =
-    var c = color
-    discard DwmSetWindowAttribute(
-      hwnd,
-      DWMWA_TEXT_COLOR,
-      addr c,
-      DWORD(sizeof(c))
-    )
+    proc setTitleTextColor*(hwnd: HWND, color: DWORD) =
+      var c = color
+      discard DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_TEXT_COLOR,
+        addr c,
+        DWORD(sizeof(c))
+      )
 
-method init*(self: GuiPlatform, options: AppOptions) =
-  log lvlInfo, "Init GUI platform"
-  try:
-    self.glyphCache = newLruCache[ImageKey, ImageKey](5000, true)
-    self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=true)
-    self.window.runeInputEnabled = true
-    self.supportsThinCursor = true
-    self.focused = self.window.focused
-    self.vsync = true
-    self.defaultTypeface = parseTtf(defaultTypefaceText)
-
+  proc initGuiPlatform(self: GuiPlatform, options: AppOptions) =
+    log lvlInfo, "Init GUI platform"
     try:
-      log lvlInfo, "Read icon"
-      let icon = readImage("res/icon.png")
-      self.window.icon = icon
+      self.glyphCache = newLruCache[ImageKey, ImageKey](5000, true)
+      self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=true)
+      self.window.runeInputEnabled = true
+      self.supportsThinCursor = true
+      self.focused = self.window.focused
+      self.vsync = true
+      self.defaultTypeface = parseTtf(defaultTypefaceText)
+
+      try:
+        log lvlInfo, "Read icon"
+        let icon = readImage("res/icon.png")
+        self.window.icon = icon
+      except:
+        discard
+
+      # Use virtual key codes so that we can take into account the keyboard language
+      # and the behaviour is more consistent with the browser/terminal.
+      # todo: is this necessary on linux?
+      when defined(windows):
+        log lvlInfo, "Using virtual key codes instead of scan codes"
+        self.window.useVirtualKeyCodes = true
+
+      self.builder = newNodeBuilder()
+      self.builder.useInvalidation = true
+      self.builder.defaultBorderWidth = 5
+
+      if options.monitor.getSome(index):
+        when defined(windows):
+          self.window.centerWindowOnMonitor(index)
+        else:
+          log lvlWarn, &"Opening window on specific monitor not implemented on this platform yet."
+
+      self.window.maximized = true
+      makeContextCurrent(self.window)
+      loadExtensions()
+
+      # @todo
+      enableAutoGLerrorCheck(false)
+
+      self.framebuffer = Texture()
+      self.framebuffer.width = self.size.x.int32
+      self.framebuffer.height = self.size.y.int32
+      self.framebuffer.componentType = GL_UNSIGNED_BYTE
+      self.framebuffer.format = GL_RGBA
+      self.framebuffer.internalFormat = GL_RGBA8
+      self.framebuffer.minFilter = minLinear
+      self.framebuffer.magFilter = magLinear
+      bindTextureData(self.framebuffer, nil)
+
+      glGenFramebuffers(1, self.framebufferId.addr)
+      glBindFramebuffer(GL_FRAMEBUFFER, self.framebufferId)
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self.framebuffer.textureId, 0)
+      glBindFramebuffer(GL_FRAMEBUFFER, 0)
+
+      self.boxy = newBoxy(quadsPerBatch = 10 * 1024)
+      self.ctx = newContext(1, 1)
+      self.ctx.fillStyle = rgb(255, 255, 255)
+      self.ctx.strokeStyle = rgb(255, 255, 255)
+      self.ctx.font = "app://fonts/DejaVuSansMono.ttf"
+      self.ctx.textBaseline = TopBaseline
+
+      self.fontRegular = "app://fonts/DejaVuSansMono.ttf"
+      self.fontBold = "app://fonts/DejaVuSansMono-Bold.ttf"
+      self.fontItalic = "app://fonts/DejaVuSansMono-Oblique.ttf"
+      self.fontBoldItalic = "app://fonts/DejaVuSansMono-BoldOblique.ttf"
+
+      self.fallbackFonts.add "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
+      self.fallbackFonts.add "app://fonts/NotoEmoji/NotoEmoji.otf"
+
+      self.boxy.setTargetFramebuffer self.framebufferId
+
+      # This sets the font size of self.ctx and recalculates the char width
+      self.fontSize = 16
+
+      self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
+        let font = self.getFont(self.ctx.font, self.ctx.fontSize * (1 + fontSizeIncreasePercent))
+        if text.len == 0:
+          let arrangement = font.typeset(" ")
+          result = vec2(0, arrangement.layoutBounds().y)
+        else:
+          let arrangement = font.typeset(text, snapToPixel = false)
+          result = arrangement.layoutBounds()
+
+      self.builder.textWidthImpl = proc(node: UINode): float32 =
+        let font = self.getFont(self.ctx.fontSize * node.fontScale, node.flags)
+        let arrangement = font.typeset(node.text, snapToPixel = false)
+        result = arrangement.layoutBounds().x
+
+      self.builder.textWidthStringImpl = proc(text: string): float32 =
+        let font = self.getFont(self.ctx.fontSize, 0.UINodeFlags)
+        let arrangement = font.typeset(text, snapToPixel = false)
+        result = arrangement.layoutBounds().x
+
+      self.builder.textBoundsImpl = proc(node: UINode): Vec2 =
+        let font = self.getFont(self.ctx.fontSize * node.fontScale, node.flags)
+        let arrangement = font.typeset(node.text, bounds = node.bounds.wh, wrap = TextWrap in node.flags, snapToPixel = false)
+        result = arrangement.layoutBounds()
+
+      self.window.onFocusChange = proc() =
+        inc self.eventCounter
+        self.currentMouseButtons = {}
+        self.setMods({})
+        self.lastEvent = (int64, Modifiers, Button).none
+        self.onFocusChanged.invoke self.window.focused
+        self.focused = self.window.focused
+
+      self.window.onRune = proc(rune: Rune) =
+        inc self.eventCounter
+        if rune.int32 in char.low.ord .. char.high.ord:
+          case rune.char
+          of ' ': return
+          of 8.char: return # backspace
+          of 9.char: return # tab
+          of 13.char: return # enter
+          of 127.char: return # delete
+          else: discard
+
+        # debugf"rune {rune.int} '{rune}' {inputToString(rune.toInput, self.currentModifiers)}"
+        if self.lastEvent.isSome:
+          self.lastEvent = (int64, Modifiers, Button).none
+
+        self.onRune.invoke (rune.toInput, self.currentModifiers)
+
+      self.window.onScroll = proc() =
+        inc self.eventCounter
+        if not self.builder.handleMouseScroll(self.window.mousePos.vec2, self.window.scrollDelta, self.currentModifiers):
+          self.onScroll.invoke (self.window.mousePos.vec2, self.window.scrollDelta, self.currentModifiers)
+
+      self.window.onMouseMove = proc() =
+        # inc self.eventCounter
+        if not self.builder.handleMouseMoved(self.window.mousePos.vec2, self.currentMouseButtons, self.currentModifiers):
+          self.onMouseMove.invoke (self.window.mousePos.vec2, self.window.mouseDelta.vec2, self.currentModifiers, self.currentMouseButtons)
+
+      proc toMouseButton(button: Button): MouseButton =
+        inc self.eventCounter
+        result = case button:
+          of MouseLeft: MouseButton.Left
+          of MouseMiddle: MouseButton.Middle
+          of MouseRight: MouseButton.Right
+          of DoubleClick: MouseButton.DoubleClick
+          of TripleClick: MouseButton.TripleClick
+          else: MouseButton.Unknown
+
+      self.window.onResize = proc() =
+        inc self.eventCounter
+        self.onResize.invoke()
+
+      self.window.onButtonPress = proc(button: Button) =
+        inc self.eventCounter
+
+        if self.lastEvent.getSome(event):
+          # debugf"button last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
+          if not self.builder.handleKeyPressed(event[0], event[1]):
+            self.onKeyPress.invoke (event[0], event[1])
+          self.lastEvent = (int64, Modifiers, Button).none
+
+        # debugf"button k: {button}, input: {inputToString(button.toInput, self.currentModifiers)}"
+
+        case button
+        of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
+          self.currentMouseButtons.incl button.toMouseButton
+          if not self.builder.handleMousePressed(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
+            self.onMousePress.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
+        of KeyLeftShift, KeyRightShift: self.setMods(self.currentModifiers + {Shift})
+        of KeyLeftControl, KeyRightControl: self.setMods(self.currentModifiers + {Control})
+        of KeyLeftAlt, KeyRightAlt: self.setMods(self.currentModifiers + {Alt})
+        # of KeyLeftSuper, KeyRightSuper: self.setMods(self.currentModifiers + {Super})
+        else:
+          # debugf"last event k: {button}, input: {inputToString(button.toInput, self.currentModifiers)}"
+          self.lastEvent = (button.toInput, self.currentModifiers, button).some
+
+      self.window.onButtonRelease = proc(button: Button) =
+        inc self.eventCounter
+
+        if self.lastEvent.getSome(event):
+          # debugf"button release last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
+          if not self.builder.handleKeyPressed(event[0], event[1]):
+            self.onKeyPress.invoke (event[0], event[1])
+          self.lastEvent = (int64, Modifiers, Button).none
+
+        case button
+        of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
+          self.currentMouseButtons.excl button.toMouseButton
+          if not self.builder.handleMouseReleased(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
+            self.onMouseRelease.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
+        of KeyLeftShift, KeyRightShift: self.setMods(self.currentModifiers - {Shift})
+        of KeyLeftControl, KeyRightControl: self.setMods(self.currentModifiers - {Control})
+        of KeyLeftAlt, KeyRightAlt: self.setMods(self.currentModifiers - {Alt})
+        # of KeyLeftSuper, KeyRightSuper: self.setMods(self.currentModifiers - {Super})
+        else:
+          if not self.builder.handleKeyReleased(button.toInput, self.currentModifiers):
+            self.onKeyRelease.invoke (button.toInput, self.currentModifiers)
+
+      if getServices().getService(ThemeService).getSome(themeService):
+        if themeService.theme.isNotNil:
+          self.handleThemeChanged(themeService.theme)
+        discard themeService.onThemeChanged.subscribe proc(theme: Theme) =
+          self.handleThemeChanged(theme)
+    except:
+      log lvlError, &"Failed to create gui platform: {getCurrentExceptionMsg()}"
+      quit(0)
+
+  proc deinitGuiPlatform(self: GuiPlatform) =
+    self.window.close()
+
+  {.push gcsafe.}
+
+  proc requestRenderGuiPlatform(self: GuiPlatform, redrawEverything: bool) =
+    self.requestedRender = true
+    self.redrawEverything = self.redrawEverything or redrawEverything
+
+  proc readTypeface(vfs: Arc[VFS2], filePath: string): Future[Typeface] {.async: (raises: [IOError]).} =
+    try:
+      case splitFile(filePath).ext.toLowerAscii():
+      of ".ttf":
+        result = vfs.read(filePath, {Binary}).await.parseTtf()
+      of ".otf":
+        result = vfs.read(filePath, {Binary}).await.parseOtf()
+      of ".svg":
+        result = vfs.read(filePath, {Binary}).await.parseSvgFont()
+      else:
+        raise newException(IOError, "Unsupported font format")
+    except Exception as e:
+      raise newException(IOError, &"Failed to load typeface '{filePath}': " & e.msg, e)
+
+    result.filePath = filePath
+
+  proc clearFontCaches(self: GuiPlatform) =
+    self.fontCache1.clear()
+    self.fontCache2.clear()
+    self.fontInfoCache.clear()
+    try:
+      for image in self.glyphCache.removedKeys:
+        self.boxy.removeImage(image)
+
+      for (_, image) in self.glyphCache.pairs:
+        self.boxy.removeImage(image)
+
+      for image in self.asciiGlyphCache.mitems:
+        if image != 0:
+          self.boxy.removeImage(image)
+        image = 0
     except:
       discard
 
-    # Use virtual key codes so that we can take into account the keyboard language
-    # and the behaviour is more consistent with the browser/terminal.
-    # todo: is this necessary on linux?
-    when defined(windows):
-      log lvlInfo, "Using virtual key codes instead of scan codes"
-      self.window.useVirtualKeyCodes = true
+    self.glyphCache.clearRemovedKeys()
+    self.glyphCache.clear()
 
-    self.builder = newNodeBuilder()
-    self.builder.useInvalidation = true
-    self.builder.defaultBorderWidth = 5
-
-    if options.monitor.getSome(index):
-      when defined(windows):
-        self.window.centerWindowOnMonitor(index)
-      else:
-        log lvlWarn, &"Opening window on specific monitor not implemented on this platform yet."
-
-    self.window.maximized = true
-    makeContextCurrent(self.window)
-    loadExtensions()
-
-    # @todo
-    enableAutoGLerrorCheck(false)
-
-    self.framebuffer = Texture()
-    self.framebuffer.width = self.size.x.int32
-    self.framebuffer.height = self.size.y.int32
-    self.framebuffer.componentType = GL_UNSIGNED_BYTE
-    self.framebuffer.format = GL_RGBA
-    self.framebuffer.internalFormat = GL_RGBA8
-    self.framebuffer.minFilter = minLinear
-    self.framebuffer.magFilter = magLinear
-    bindTextureData(self.framebuffer, nil)
-
-    glGenFramebuffers(1, self.framebufferId.addr)
-    glBindFramebuffer(GL_FRAMEBUFFER, self.framebufferId)
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self.framebuffer.textureId, 0)
-    glBindFramebuffer(GL_FRAMEBUFFER, 0)
-
-    self.boxy = newBoxy(quadsPerBatch = 10 * 1024)
-    self.ctx = newContext(1, 1)
-    self.ctx.fillStyle = rgb(255, 255, 255)
-    self.ctx.strokeStyle = rgb(255, 255, 255)
-    self.ctx.font = "app://fonts/DejaVuSansMono.ttf"
-    self.ctx.textBaseline = TopBaseline
-
-    self.fontRegular = "app://fonts/DejaVuSansMono.ttf"
-    self.fontBold = "app://fonts/DejaVuSansMono-Bold.ttf"
-    self.fontItalic = "app://fonts/DejaVuSansMono-Oblique.ttf"
-    self.fontBoldItalic = "app://fonts/DejaVuSansMono-BoldOblique.ttf"
-
-    self.fallbackFonts.add "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
-    self.fallbackFonts.add "app://fonts/NotoEmoji/NotoEmoji.otf"
-
-    self.boxy.setTargetFramebuffer self.framebufferId
-
-    # This sets the font size of self.ctx and recalculates the char width
-    self.fontSize = 16
-
-    self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
-      let font = self.getFont(self.ctx.font, self.ctx.fontSize * (1 + fontSizeIncreasePercent))
-      if text.len == 0:
-        let arrangement = font.typeset(" ")
-        result = vec2(0, arrangement.layoutBounds().y)
-      else:
-        let arrangement = font.typeset(text, snapToPixel = false)
-        result = arrangement.layoutBounds()
-
-    self.builder.textWidthImpl = proc(node: UINode): float32 =
-      let font = self.getFont(self.ctx.fontSize * node.fontScale, node.flags)
-      let arrangement = font.typeset(node.text, snapToPixel = false)
-      result = arrangement.layoutBounds().x
-
-    self.builder.textWidthStringImpl = proc(text: string): float32 =
-      let font = self.getFont(self.ctx.fontSize, 0.UINodeFlags)
-      let arrangement = font.typeset(text, snapToPixel = false)
-      result = arrangement.layoutBounds().x
-
-    self.builder.textBoundsImpl = proc(node: UINode): Vec2 =
-      let font = self.getFont(self.ctx.fontSize * node.fontScale, node.flags)
-      let arrangement = font.typeset(node.text, bounds = node.bounds.wh, wrap = TextWrap in node.flags, snapToPixel = false)
-      result = arrangement.layoutBounds()
-
-    self.window.onFocusChange = proc() =
-      inc self.eventCounter
-      self.currentMouseButtons = {}
-      self.setMods({})
-      self.lastEvent = (int64, Modifiers, Button).none
-      self.onFocusChanged.invoke self.window.focused
-      self.focused = self.window.focused
-
-    self.window.onRune = proc(rune: Rune) =
-      inc self.eventCounter
-      if rune.int32 in char.low.ord .. char.high.ord:
-        case rune.char
-        of ' ': return
-        of 8.char: return # backspace
-        of 9.char: return # tab
-        of 13.char: return # enter
-        of 127.char: return # delete
-        else: discard
-
-      # debugf"rune {rune.int} '{rune}' {inputToString(rune.toInput, self.currentModifiers)}"
-      if self.lastEvent.isSome:
-        self.lastEvent = (int64, Modifiers, Button).none
-
-      self.onRune.invoke (rune.toInput, self.currentModifiers)
-
-    self.window.onScroll = proc() =
-      inc self.eventCounter
-      if not self.builder.handleMouseScroll(self.window.mousePos.vec2, self.window.scrollDelta, self.currentModifiers):
-        self.onScroll.invoke (self.window.mousePos.vec2, self.window.scrollDelta, self.currentModifiers)
-
-    self.window.onMouseMove = proc() =
-      # inc self.eventCounter
-      if not self.builder.handleMouseMoved(self.window.mousePos.vec2, self.currentMouseButtons, self.currentModifiers):
-        self.onMouseMove.invoke (self.window.mousePos.vec2, self.window.mouseDelta.vec2, self.currentModifiers, self.currentMouseButtons)
-
-    proc toMouseButton(button: Button): MouseButton =
-      inc self.eventCounter
-      result = case button:
-        of MouseLeft: MouseButton.Left
-        of MouseMiddle: MouseButton.Middle
-        of MouseRight: MouseButton.Right
-        of DoubleClick: MouseButton.DoubleClick
-        of TripleClick: MouseButton.TripleClick
-        else: MouseButton.Unknown
-
-    self.window.onResize = proc() =
-      inc self.eventCounter
-      self.onResize.invoke()
-
-    self.window.onButtonPress = proc(button: Button) =
-      inc self.eventCounter
-
-      if self.lastEvent.getSome(event):
-        # debugf"button last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
-        if not self.builder.handleKeyPressed(event[0], event[1]):
-          self.onKeyPress.invoke (event[0], event[1])
-        self.lastEvent = (int64, Modifiers, Button).none
-
-      # debugf"button k: {button}, input: {inputToString(button.toInput, self.currentModifiers)}"
-
-      case button
-      of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
-        self.currentMouseButtons.incl button.toMouseButton
-        if not self.builder.handleMousePressed(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
-          self.onMousePress.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
-      of KeyLeftShift, KeyRightShift: self.setMods(self.currentModifiers + {Shift})
-      of KeyLeftControl, KeyRightControl: self.setMods(self.currentModifiers + {Control})
-      of KeyLeftAlt, KeyRightAlt: self.setMods(self.currentModifiers + {Alt})
-      # of KeyLeftSuper, KeyRightSuper: self.setMods(self.currentModifiers + {Super})
-      else:
-        # debugf"last event k: {button}, input: {inputToString(button.toInput, self.currentModifiers)}"
-        self.lastEvent = (button.toInput, self.currentModifiers, button).some
-
-    self.window.onButtonRelease = proc(button: Button) =
-      inc self.eventCounter
-
-      if self.lastEvent.getSome(event):
-        # debugf"button release last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
-        if not self.builder.handleKeyPressed(event[0], event[1]):
-          self.onKeyPress.invoke (event[0], event[1])
-        self.lastEvent = (int64, Modifiers, Button).none
-
-      case button
-      of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
-        self.currentMouseButtons.excl button.toMouseButton
-        if not self.builder.handleMouseReleased(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
-          self.onMouseRelease.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
-      of KeyLeftShift, KeyRightShift: self.setMods(self.currentModifiers - {Shift})
-      of KeyLeftControl, KeyRightControl: self.setMods(self.currentModifiers - {Control})
-      of KeyLeftAlt, KeyRightAlt: self.setMods(self.currentModifiers - {Alt})
-      # of KeyLeftSuper, KeyRightSuper: self.setMods(self.currentModifiers - {Super})
-      else:
-        if not self.builder.handleKeyReleased(button.toInput, self.currentModifiers):
-          self.onKeyRelease.invoke (button.toInput, self.currentModifiers)
-
-    if getServices().getService(ThemeService).getSome(themeService):
-      if themeService.theme.isNotNil:
-        self.handleThemeChanged(themeService.theme)
-      discard themeService.onThemeChanged.subscribe proc(theme: Theme) =
-        self.handleThemeChanged(theme)
-  except:
-    log lvlError, &"Failed to create gui platform: {getCurrentExceptionMsg()}"
-    quit(0)
-
-method deinit*(self: GuiPlatform) =
-  self.window.close()
-
-{.push gcsafe.}
-
-method requestRender*(self: GuiPlatform, redrawEverything = false) =
-  self.requestedRender = true
-  self.redrawEverything = self.redrawEverything or redrawEverything
-
-proc readTypeface(vfs: VFS, filePath: string): Future[Typeface] {.async: (raises: [IOError]).} =
-  try:
-    case splitFile(filePath).ext.toLowerAscii():
-    of ".ttf":
-      result = vfs.read(filePath, {Binary}).await.parseTtf()
-    of ".otf":
-      result = vfs.read(filePath, {Binary}).await.parseOtf()
-    of ".svg":
-      result = vfs.read(filePath, {Binary}).await.parseSvgFont()
-    else:
-      raise newException(IOError, "Unsupported font format")
-  except Exception as e:
-    raise newException(IOError, &"Failed to load typeface '{filePath}': " & e.msg, e)
-
-  result.filePath = filePath
-
-proc clearFontCaches(self: GuiPlatform) =
-  self.fontCache1.clear()
-  self.fontCache2.clear()
-  self.fontInfoCache.clear()
-  try:
-    for image in self.glyphCache.removedKeys:
-      self.boxy.removeImage(image)
-
-    for (_, image) in self.glyphCache.pairs:
-      self.boxy.removeImage(image)
-
-    for image in self.asciiGlyphCache.mitems:
-      if image != 0:
-        self.boxy.removeImage(image)
-      image = 0
-  except:
-    discard
-
-  self.glyphCache.clearRemovedKeys()
-  self.glyphCache.clear()
-
-proc loadTypeface(self: GuiPlatform, font: string): Future[Typeface] {.async.} =
-  if font in self.typefaces:
-    return self.typefaces[font].await
-
-  try:
-    log lvlInfo, &"Reading font '{font}'"
-    let fallbackTypefaces = self.fallbackTypefaces
-    let typefaceFuture = self.vfs.readTypeface(font)
-    self.typefaces[font] = typefaceFuture
-
-    let typeface = await typefaceFuture
-    for fallbackFont in fallbackTypefaces:
-      typeface.fallbacks.add fallbackFont.await
-
-    self.clearFontCaches()
-    self.requestRender(true)
-
-    return typeface
-  except IOError as e:
-    log lvlError, &"Failed to load typeface '{font}': {e.msg}"
-    return nil
-
-proc getTypeface*(self: GuiPlatform, font: string): Typeface =
-  if font in self.typefaces:
-    let fut = self.typefaces[font]
-    if fut.finished:
-      try:
-        return fut.read
-      except CatchableError:
-        return self.defaultTypeface
-  asyncSpawn asyncDiscard self.loadTypeface(font)
-  return self.defaultTypeface
-
-proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font =
-  assert font != ""
-
-  let key = (font, fontSize)
-  if key in self.fontCache1:
-    return self.fontCache1[key]
-
-  let typeface = self.getTypeface(font)
-  result = newFont(typeface)
-  result.paint.color = color(1, 1, 1)
-  result.size = fontSize
-  self.fontCache1[key] = result
-
-proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font =
-  let key = (flags, fontSize)
-  if key in self.fontCache2:
-    return self.fontCache2[key]
-
-  if TextItalic in flags and TextBold in flags:
-    result = self.getFont(self.fontBoldItalic, fontSize)
-    self.fontCache2[key] = result
-    return
-  if TextItalic in flags:
-    result = self.getFont(self.fontItalic, fontSize)
-    self.fontCache2[key] = result
-    return
-  if TextBold in flags:
-    result = self.getFont(self.fontBold, fontSize)
-    self.fontCache2[key] = result
-    return
-  result = self.getFont(self.fontRegular, fontSize)
-  self.fontCache2[key] = result
-
-proc getTypeface*(self: GuiPlatform, flags: UINodeFlags): Typeface =
-  if TextItalic in flags and TextBold in flags:
-    return self.getTypeface(self.fontBoldItalic)
-  if TextItalic in flags:
-    return self.getTypeface(self.fontItalic)
-  if TextBold in flags:
-    return self.getTypeface(self.fontBold)
-  return self.getTypeface(self.fontRegular)
-
-proc getFontInfo2(self: GuiPlatform, fontSize: float, flags: UINodeFlags): ptr FontInfo {.gcsafe, raises: [].} =
-  let typeface = self.getTypeface(flags)
-  let fontScale = fontSize / typeface.scale
-  let lineHeight = round((typeface.ascent - typeface.descent + typeface.lineGap) * fontScale)
-
-  # todo
-  # proc kerningAdjustment(left, right: Rune): float =
-  #   return typeface.getKerningAdjustment(left, right)
-
-  proc advance (rune: Rune): float =
-    typeface.getAdvance(rune)
-
-  let key = (flags, fontSize.float32)
-  self.fontInfoCache[key] = FontInfo(
-    ascent: typeface.ascent,
-    lineHeight: lineHeight,
-    lineGap: typeface.lineGap,
-    scale: fontScale,
-    # kerningAdjustment: kerningAdjustment,
-    advance: advance,
-  )
-  self.fontInfoCache[key].addr
-
-method getFontInfo*(self: GuiPlatform, fontSize: float, flags: UINodeFlags): ptr FontInfo {.gcsafe, raises: [].} =
-  let key = (flags, fontSize.float32)
-  if key in self.fontInfoCache:
-    return self.fontInfoCache[key].addr
-
-  return self.getFontInfo2(fontSize, flags)
-
-method size*(self: GuiPlatform): Vec2 =
-  try:
-    let size = self.window.size
-    return vec2(size.x.float, size.y.float)
-  except:
-    return vec2(1, 1)
-
-method sizeChanged*(self: GuiPlatform): bool =
-  let s = self.size
-  return s.x != self.lastSize.x or s.y != self.lastSize.y
-
-proc updateCharWidth*(self: GuiPlatform) =
-  let font = self.getFont(self.ctx.font, self.ctx.fontSize)
-  let bounds = font.typeset(repeat("#_", 50), snapToPixel = false).layoutBounds()
-  let boundsSingle = font.typeset("#_", snapToPixel = false).layoutBounds()
-  self.mCharWidth = bounds.x / 100
-  self.mCharGap = (bounds.x / 100) - boundsSingle.x / 2
-  self.mLineHeight = bounds.y
-
-  self.builder.charWidth = self.mCharWidth
-  self.builder.lineHeight = self.mLineHeight
-  self.builder.lineGap = self.mLineDistance
-
-method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) =
-  log lvlInfo, fmt"Update font: {fontRegular}, {fontBold}, {fontItalic}, {fontBoldItalic}, fallbacks: {fallbackFonts}"
-  self.ctx.font = fontRegular
-  self.fontRegular = fontRegular
-  self.fontBold = fontBold
-  self.fontItalic = fontItalic
-  self.fontBoldItalic = fontBoldItalic
-  self.fallbackFonts = fallbackFonts
-  self.typefaces.clear()
-  self.clearFontCaches()
-  self.updateCharWidth()
-
-  for fallbackFont in self.fallbackFonts:
+  proc loadTypeface(self: GuiPlatform, font: string): Future[Typeface] {.async: (raises: []).} =
     try:
-      log lvlInfo, &"Reading fallback font '{fallbackFont}'"
-      let fallback = self.vfs.readTypeface(fallbackFont)
-      self.fallbackTypefaces.add(fallback)
-    except IOError as e:
-      log lvlError, &"Failed to load fallback font '{fallbackFont}': {e.msg}"
+      if font in self.typefaces:
+        return self.typefaces[font].await
 
-method `fontSize=`*(self: GuiPlatform, fontSize: float) =
-  self.ctx.fontSize = fontSize
-  self.updateCharWidth()
+      log lvlInfo, &"Reading font '{font}'"
+      let fallbackTypefaces = self.fallbackTypefaces
+      let typefaceFuture = self.vfs.readTypeface(font)
+      self.typefaces[font] = typefaceFuture
 
-method `lineDistance=`*(self: GuiPlatform, lineDistance: float) =
-  self.mLineDistance = lineDistance
-  self.updateCharWidth()
+      let typeface = await typefaceFuture
+      for fallbackFont in fallbackTypefaces:
+        typeface.fallbacks.add fallbackFont.await
 
-method fontSize*(self: GuiPlatform): float = self.ctx.fontSize
-method lineDistance*(self: GuiPlatform): float = self.mLineDistance
-method lineHeight*(self: GuiPlatform): float = self.mLineHeight
-method charWidth*(self: GuiPlatform): float = self.mCharWidth
-method charGap*(self: GuiPlatform): float = self.mCharGap
+      self.clearFontCaches()
+      self.requestRenderGuiPlatform(true)
 
-method measureText*(self: GuiPlatform, text: string): Vec2 = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text, snapToPixel = false).layoutBounds()
-method layoutText*(self: GuiPlatform, text: string): seq[Rect] = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).selectionRects
+      return typeface
+    except CatchableError as e:
+      log lvlError, &"Failed to load typeface '{font}': {e.msg}"
+      return nil
 
-method setVsync*(self: GuiPlatform, enabled: bool) {.gcsafe, raises: [].} =
-  try:
-    self.vsync = enabled
-    {.gcsafe.}:
-      self.window.vsync = enabled
-  except WindyError as e:
-    log lvlError, &"Failed to change vsync to {enabled}: {e.msg}"
+  proc getTypeface*(self: GuiPlatform, font: string): Typeface =
+    if font in self.typefaces:
+      let fut = self.typefaces[font]
+      if fut.finished:
+        try:
+          return fut.read
+        except CatchableError:
+          return self.defaultTypeface
+    asyncSpawn asyncDiscard self.loadTypeface(font)
+    return self.defaultTypeface
 
-method processEvents*(self: GuiPlatform): int =
-  self.eventCounter = 0
-  try:
-    {.gcsafe.}:
-      pollEvents()
-  except:
-    discard
+  proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font =
+    assert font != ""
 
-  if self.lastEvent.getSome(event):
-    # debugf"process last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
-    if not self.builder.handleKeyPressed(event[0], event[1]):
-      self.onKeyPress.invoke (event[0], event[1])
-    self.lastEvent = (int64, Modifiers, Button).none
+    let key = (font, fontSize)
+    if key in self.fontCache1:
+      return self.fontCache1[key]
 
-  if self.window.closeRequested:
-    inc self.eventCounter
-    self.onCloseRequested.invoke()
+    let typeface = self.getTypeface(font)
+    result = newFont(typeface)
+    result.paint.color = color(1, 1, 1)
+    result.size = fontSize
+    self.fontCache1[key] = result
 
-  return self.eventCounter
+  proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font =
+    let key = (flags, fontSize)
+    if key in self.fontCache2:
+      return self.fontCache2[key]
 
-proc handleThemeChanged(self: GuiPlatform, theme: Theme) =
-  if theme.isNil:
-    return
-  when defined(windows):
-    block:
-      let titleBarColor = theme.color(@["titleBar.background", "editor.background"])
-      let r = (titleBarColor.r * 255).uint8
-      let g = (titleBarColor.g * 255).uint8
-      let b = (titleBarColor.b * 255).uint8
-      self.window.platformHandle.setTitleBarColor(RGB(r, g, b))
+    if TextItalic in flags and TextBold in flags:
+      result = self.getFont(self.fontBoldItalic, fontSize)
+      self.fontCache2[key] = result
+      return
+    if TextItalic in flags:
+      result = self.getFont(self.fontItalic, fontSize)
+      self.fontCache2[key] = result
+      return
+    if TextBold in flags:
+      result = self.getFont(self.fontBold, fontSize)
+      self.fontCache2[key] = result
+      return
+    result = self.getFont(self.fontRegular, fontSize)
+    self.fontCache2[key] = result
 
-    block:
-      let titleTextColor = theme.color(@["titleBar.foreground", "editor.foreground"])
-      let r = (titleTextColor.r * 255).uint8
-      let g = (titleTextColor.g * 255).uint8
-      let b = (titleTextColor.b * 255).uint8
-      self.window.platformHandle.setTitleTextColor(RGB(r, g, b))
+  proc getTypeface*(self: GuiPlatform, flags: UINodeFlags): Typeface =
+    if TextItalic in flags and TextBold in flags:
+      return self.getTypeface(self.fontBoldItalic)
+    if TextItalic in flags:
+      return self.getTypeface(self.fontItalic)
+    if TextBold in flags:
+      return self.getTypeface(self.fontBold)
+    return self.getTypeface(self.fontRegular)
 
-proc toInput(rune: Rune): int64 =
-  return rune.int64
+  proc getFontInfo2(self: GuiPlatform, fontSize: float, flags: UINodeFlags): ptr FontInfo {.gcsafe, raises: [].} =
+    let typeface = self.getTypeface(flags)
+    let fontScale = fontSize / typeface.scale
+    let lineHeight = round((typeface.ascent - typeface.descent + typeface.lineGap) * fontScale)
 
-proc toInput(button: Button): int64 =
-  return case button
-  of KeyEnter: INPUT_ENTER
-  of KeyEscape: INPUT_ESCAPE
-  of KeyBackspace: INPUT_BACKSPACE
-  of KeySpace: INPUT_SPACE
-  of KeyDelete: INPUT_DELETE
-  of KeyTab: INPUT_TAB
-  of KeyLeft: INPUT_LEFT
-  of KeyRight: INPUT_RIGHT
-  of KeyUp: INPUT_UP
-  of KeyDown: INPUT_DOWN
-  of KeyHome: INPUT_HOME
-  of KeyEnd: INPUT_END
-  of KeyPageUp: INPUT_PAGE_UP
-  of KeyPageDown: INPUT_PAGE_DOWN
-  of KeyA..KeyZ: ord(button) - ord(KeyA) + ord('a')
-  of Key0..Key9: ord(button) - ord(Key0) + ord('0')
-  of Numpad0..Numpad9: ord(button) - ord(Numpad0) + ord('0')
-  of KeyF1..KeyF12: INPUT_F1 - (ord(button) - ord(KeyF1))
-  of NumpadAdd: ord '+'
-  of NumpadSubtract: ord '-'
-  of NumpadMultiply: ord '*'
-  of NumpadDivide: ord '/'
-  of NumpadDecimal: ord '.'
-  of NumpadEnter: INPUT_ENTER
-  of NumpadEqual: ord '='
+    # todo
+    # proc kerningAdjustment(left, right: Rune): float =
+    #   return typeface.getKerningAdjustment(left, right)
 
-  of KeyBacktick: ord '`'
-  of KeyMinus: ord '-'
-  of KeyEqual: ord '='
-  of KeyLeftBracket: ord '['
-  of KeyRightBracket: ord ']'
-  of KeyBackslash: ord '\\'
-  of KeySemicolon: ord ':'
-  of KeyApostrophe: ord '\''
-  of KeyComma: ord ','
-  of KeyPeriod: ord '.'
-  of KeySlash: ord '/'
+    proc advance (rune: Rune): float =
+      typeface.getAdvance(rune)
 
-  of KeyLeftShift: 0
-  of KeyCapsLock: 0
-  of KeyRightShift: 0
-  of KeyLeftControl: 0
-  of KeyLeftSuper: 0
-  of KeyLeftAlt: 0
-  of KeyRightAlt: 0
-  of KeyRightSuper: 0
-  of KeyMenu: 0
-  of KeyRightControl: 0
-  of KeyPrintScreen: 0
-  of KeyScrollLock: 0
-  of KeyPause: 0
-  of KeyNumLock: 0
-  of KeyInsert: 0
-  else: 0
+    let key = (flags, fontSize.float32)
+    self.fontInfoCache[key] = FontInfo(
+      ascent: typeface.ascent,
+      lineHeight: lineHeight,
+      lineGap: typeface.lineGap,
+      scale: fontScale,
+      # kerningAdjustment: kerningAdjustment,
+      advance: advance,
+    )
+    self.fontInfoCache[key].addr
 
-proc centerWindowOnMonitor*(window: Window, monitor: int) =
-  let monitorPos = getMonitorRect(monitor)
+  proc getFontInfoGuiPlatform(self: GuiPlatform, fontSize: float, flags: UINodeFlags): ptr FontInfo {.gcsafe, raises: [].} =
+    let key = (flags, fontSize.float32)
+    if key in self.fontInfoCache:
+      return self.fontInfoCache[key].addr
 
-  let left = float(monitorPos.left)
-  let right = float(monitorPos.right)
-  let top = float(monitorPos.top)
-  let bottom = float(monitorPos.bottom)
+    return self.getFontInfo2(fontSize, flags)
 
-  let windowWidth = float(window.size.x)
-  let windowHeight = float(window.size.y)
-  let monitorWidth = right - left
-  let monitorHeight = bottom - top
-  {.gcsafe.}:
-    window.pos = ivec2(int32(left + (monitorWidth - windowWidth) / 2),
-                       int32(top + (monitorHeight - windowHeight) / 2))
+  proc sizeGuiPlatform(self: GuiPlatform): Vec2 =
+    try:
+      let size = self.window.size
+      return vec2(size.x.float, size.y.float)
+    except:
+      return vec2(1, 1)
 
-proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false)
+  proc sizeChangedGuiPlatform(self: GuiPlatform): bool =
+    let s = self.sizeGuiPlatform
+    return s.x != self.lastSize.x or s.y != self.lastSize.y
 
-proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1, offset: float = 0) =
-  try:
-    let rect = rect.grow(vec2(thickness * offset, thickness * offset))
-    boxy.drawRect(rect.splitV(thickness.relative)[0].shrink(vec2(0, thickness)), color)
-    boxy.drawRect(rect.splitVInv(thickness.relative)[1].shrink(vec2(0, thickness)), color)
-    boxy.drawRect(rect.splitH(thickness.relative)[0], color)
-    boxy.drawRect(rect.splitHInv(thickness.relative)[1], color)
-  except GLerror, Exception:
-    discard
+  proc updateCharWidth*(self: GuiPlatform) =
+    let font = self.getFont(self.ctx.font, self.ctx.fontSize)
+    let bounds = font.typeset(repeat("#_", 50), snapToPixel = false).layoutBounds()
+    let boundsSingle = font.typeset("#_", snapToPixel = false).layoutBounds()
+    self.mCharWidth = bounds.x / 100
+    self.mCharGap = (bounds.x / 100) - boundsSingle.x / 2
+    self.mLineHeight = bounds.y
 
-proc drawBorder*(boxy: Boxy, bounds: Rect, color: Color, border: UIBorder) =
-  try:
-    boxy.drawRect(rect(bounds.x, bounds.y, border.left, bounds.h), color)
-    boxy.drawRect(rect(bounds.x, bounds.y, bounds.w, border.top), color)
-    boxy.drawRect(rect(bounds.xw - border.right, bounds.y, border.right, bounds.h), color)
-    boxy.drawRect(rect(bounds.x, bounds.yh - border.bottom, bounds.w, border.bottom), color)
-  except GLerror, Exception:
-    discard
+    self.builder.charWidth = self.mCharWidth
+    self.builder.lineHeight = self.mLineHeight
+    self.builder.lineGap = self.mLineDistance
 
-proc randomColor(node: UINode, a: float32): Color =
-  let h = node.id.hash
-  result.r = (((h shr 0) and 0xff).float32 / 255.0).sqrt
-  result.g = (((h shr 8) and 0xff).float32 / 255.0).sqrt
-  result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
-  result.a = a
+  proc setFontGuiPlatform(self: GuiPlatform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) =
+    log lvlInfo, fmt"Update font: {fontRegular}, {fontBold}, {fontItalic}, {fontBoldItalic}, fallbacks: {fallbackFonts}"
+    self.ctx.font = fontRegular
+    self.fontRegular = fontRegular
+    self.fontBold = fontBold
+    self.fontItalic = fontItalic
+    self.fontBoldItalic = fontBoldItalic
+    self.fallbackFonts = fallbackFonts
+    self.typefaces.clear()
+    self.clearFontCaches()
+    self.updateCharWidth()
 
-proc updateTextures(self: GuiPlatform) =
-  var texturesToUpload = takeTexturesToUpload()
-  var texturesToDelete = takeTexturesToDelete()
-
-  withLock(texturesLock):
-    let textures = ({.gcsafe.}: gTextures.addr)
-    for tex in texturesToUpload:
+    for fallbackFont in self.fallbackFonts:
       try:
-        if tex.id in textures[]:
-          let existing = textures[][tex.id]
-          if existing != nil:
-            if existing.streaming:
-              existing.streamImage(tex.data[0].addr)
+        log lvlInfo, &"Reading fallback font '{fallbackFont}'"
+        let fallback = self.vfs.readTypeface(fallbackFont)
+        self.fallbackTypefaces.add(fallback)
+      except IOError as e:
+        log lvlError, &"Failed to load fallback font '{fallbackFont}': {e.msg}"
+
+  proc fontSizeSetGuiPlatform(self: GuiPlatform, fontSize: float) =
+    self.ctx.fontSize = fontSize
+    self.updateCharWidth()
+
+  proc lineDistanceSetGuiPlatform(self: GuiPlatform, lineDistance: float) =
+    self.mLineDistance = lineDistance
+    self.updateCharWidth()
+
+  proc fontSizeGuiPlatform(self: GuiPlatform): float = self.ctx.fontSize
+  proc lineDistanceGuiPlatform(self: GuiPlatform): float = self.mLineDistance
+  proc lineHeightGuiPlatform(self: GuiPlatform): float = self.mLineHeight
+  proc charWidthGuiPlatform(self: GuiPlatform): float = self.mCharWidth
+  proc charGapGuiPlatform(self: GuiPlatform): float = self.mCharGap
+
+  proc measureTextGuiPlatform(self: GuiPlatform, text: string): Vec2 = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text, snapToPixel = false).layoutBounds()
+  proc layoutTextGuiPlatform(self: GuiPlatform, text: string): seq[Rect] = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).selectionRects
+
+  proc setVsyncGuiPlatform(self: GuiPlatform, enabled: bool) {.gcsafe, raises: [].} =
+    try:
+      self.vsync = enabled
+      {.gcsafe.}:
+        self.window.vsync = enabled
+    except WindyError as e:
+      log lvlError, &"Failed to change vsync to {enabled}: {e.msg}"
+
+  proc processEventsGuiPlatform(self: GuiPlatform): int =
+    self.eventCounter = 0
+    try:
+      {.gcsafe.}:
+        pollEvents()
+    except:
+      discard
+
+    if self.lastEvent.getSome(event):
+      # debugf"process last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
+      if not self.builder.handleKeyPressed(event[0], event[1]):
+        self.onKeyPress.invoke (event[0], event[1])
+      self.lastEvent = (int64, Modifiers, Button).none
+
+    if self.window.closeRequested:
+      inc self.eventCounter
+      self.onCloseRequested.invoke()
+
+    return self.eventCounter
+
+  proc handleThemeChanged(self: GuiPlatform, theme: Theme) =
+    if theme.isNil:
+      return
+    when defined(windows):
+      block:
+        let titleBarColor = theme.color(@["titleBar.background", "editor.background"])
+        let r = (titleBarColor.r * 255).uint8
+        let g = (titleBarColor.g * 255).uint8
+        let b = (titleBarColor.b * 255).uint8
+        self.window.platformHandle.setTitleBarColor(RGB(r, g, b))
+
+      block:
+        let titleTextColor = theme.color(@["titleBar.foreground", "editor.foreground"])
+        let r = (titleTextColor.r * 255).uint8
+        let g = (titleTextColor.g * 255).uint8
+        let b = (titleTextColor.b * 255).uint8
+        self.window.platformHandle.setTitleTextColor(RGB(r, g, b))
+
+  proc toInput(rune: Rune): int64 =
+    return rune.int64
+
+  proc toInput(button: Button): int64 =
+    return case button
+    of KeyEnter: INPUT_ENTER
+    of KeyEscape: INPUT_ESCAPE
+    of KeyBackspace: INPUT_BACKSPACE
+    of KeySpace: INPUT_SPACE
+    of KeyDelete: INPUT_DELETE
+    of KeyTab: INPUT_TAB
+    of KeyLeft: INPUT_LEFT
+    of KeyRight: INPUT_RIGHT
+    of KeyUp: INPUT_UP
+    of KeyDown: INPUT_DOWN
+    of KeyHome: INPUT_HOME
+    of KeyEnd: INPUT_END
+    of KeyPageUp: INPUT_PAGE_UP
+    of KeyPageDown: INPUT_PAGE_DOWN
+    of KeyA..KeyZ: ord(button) - ord(KeyA) + ord('a')
+    of Key0..Key9: ord(button) - ord(Key0) + ord('0')
+    of Numpad0..Numpad9: ord(button) - ord(Numpad0) + ord('0')
+    of KeyF1..KeyF12: INPUT_F1 - (ord(button) - ord(KeyF1))
+    of NumpadAdd: ord '+'
+    of NumpadSubtract: ord '-'
+    of NumpadMultiply: ord '*'
+    of NumpadDivide: ord '/'
+    of NumpadDecimal: ord '.'
+    of NumpadEnter: INPUT_ENTER
+    of NumpadEqual: ord '='
+
+    of KeyBacktick: ord '`'
+    of KeyMinus: ord '-'
+    of KeyEqual: ord '='
+    of KeyLeftBracket: ord '['
+    of KeyRightBracket: ord ']'
+    of KeyBackslash: ord '\\'
+    of KeySemicolon: ord ':'
+    of KeyApostrophe: ord '\''
+    of KeyComma: ord ','
+    of KeyPeriod: ord '.'
+    of KeySlash: ord '/'
+
+    of KeyLeftShift: 0
+    of KeyCapsLock: 0
+    of KeyRightShift: 0
+    of KeyLeftControl: 0
+    of KeyLeftSuper: 0
+    of KeyLeftAlt: 0
+    of KeyRightAlt: 0
+    of KeyRightSuper: 0
+    of KeyMenu: 0
+    of KeyRightControl: 0
+    of KeyPrintScreen: 0
+    of KeyScrollLock: 0
+    of KeyPause: 0
+    of KeyNumLock: 0
+    of KeyInsert: 0
+    else: 0
+
+  proc centerWindowOnMonitor*(window: Window, monitor: int) =
+    let monitorPos = getMonitorRect(monitor)
+
+    let left = float(monitorPos.left)
+    let right = float(monitorPos.right)
+    let top = float(monitorPos.top)
+    let bottom = float(monitorPos.bottom)
+
+    let windowWidth = float(window.size.x)
+    let windowHeight = float(window.size.y)
+    let monitorWidth = right - left
+    let monitorHeight = bottom - top
+    {.gcsafe.}:
+      window.pos = ivec2(int32(left + (monitorWidth - windowWidth) / 2),
+                         int32(top + (monitorHeight - windowHeight) / 2))
+
+  proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false)
+
+  proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1, offset: float = 0) =
+    try:
+      let rect = rect.grow(vec2(thickness * offset, thickness * offset))
+      boxy.drawRect(rect.splitV(thickness.relative)[0].shrink(vec2(0, thickness)), color)
+      boxy.drawRect(rect.splitVInv(thickness.relative)[1].shrink(vec2(0, thickness)), color)
+      boxy.drawRect(rect.splitH(thickness.relative)[0], color)
+      boxy.drawRect(rect.splitHInv(thickness.relative)[1], color)
+    except GLerror, Exception:
+      discard
+
+  proc drawBorder*(boxy: Boxy, bounds: Rect, color: Color, border: UIBorder) =
+    try:
+      boxy.drawRect(rect(bounds.x, bounds.y, border.left, bounds.h), color)
+      boxy.drawRect(rect(bounds.x, bounds.y, bounds.w, border.top), color)
+      boxy.drawRect(rect(bounds.xw - border.right, bounds.y, border.right, bounds.h), color)
+      boxy.drawRect(rect(bounds.x, bounds.yh - border.bottom, bounds.w, border.bottom), color)
+    except GLerror, Exception:
+      discard
+
+  proc randomColor(node: UINode, a: float32): Color =
+    let h = node.id.hash
+    result.r = (((h shr 0) and 0xff).float32 / 255.0).sqrt
+    result.g = (((h shr 8) and 0xff).float32 / 255.0).sqrt
+    result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
+    result.a = a
+
+  proc updateTextures(self: GuiPlatform) =
+    var texturesToUpload = takeTexturesToUpload()
+    var texturesToDelete = takeTexturesToDelete()
+
+    withLock(texturesLock):
+      let textures = ({.gcsafe.}: gTextures.addr)
+      for tex in texturesToUpload:
+        try:
+          if tex.id in textures[]:
+            let existing = textures[][tex.id]
+            if existing != nil:
+              if existing.streaming:
+                existing.streamImage(tex.data[0].addr)
+              else:
+                existing.updateSubImage(0, 0, tex.width, tex.height, tex.data[0].addr, existing.format, 0)
             else:
-              existing.updateSubImage(0, 0, tex.width, tex.height, tex.data[0].addr, existing.format, 0)
-          else:
-            var image = newImage(tex.width, tex.height)
-            image.data = tex.data
-            let texture = newTexture(image, streaming = tex.dynamic)
-            textures[].set(tex.id, texture)
-      except CatchableError as e:
-        log lvlError, &"Failed to create texture: {e.msg}"
-        textures[].del(tex.id)
-      except GLerror as e:
-        log lvlError, &"Failed to create texture: {e.msg}"
-        textures[].del(tex.id)
-    for texId in texturesToDelete:
-      try:
-        if textures[].tryGet(texId).getSome(texture):
-          if texture.textureId != 0:
-            glDeleteTextures(1, texture.textureId.addr)
-          textures[].del(texId)
-      except CatchableError as e:
-        log lvlError, &"Failed to delete texture: {e.msg}"
-      except GLerror as e:
-        log lvlError, &"Failed to delete texture: {e.msg}"
+              var image = newImage(tex.width, tex.height)
+              image.data = tex.data
+              let texture = newTexture(image, streaming = tex.dynamic)
+              textures[].set(tex.id, texture)
+        except CatchableError as e:
+          log lvlError, &"Failed to create texture: {e.msg}"
+          textures[].del(tex.id)
+        except GLerror as e:
+          log lvlError, &"Failed to create texture: {e.msg}"
+          textures[].del(tex.id)
+      for texId in texturesToDelete:
+        try:
+          if textures[].tryGet(texId).getSome(texture):
+            if texture.textureId != 0:
+              glDeleteTextures(1, texture.textureId.addr)
+            textures[].del(texId)
+        except CatchableError as e:
+          log lvlError, &"Failed to delete texture: {e.msg}"
+        except GLerror as e:
+          log lvlError, &"Failed to delete texture: {e.msg}"
 
-method render*(self: GuiPlatform, rerender: bool) =
-  try:
-    self.updateTextures()
+  proc renderGuiPlatform*(self: GuiPlatform, rerender: bool) =
+    try:
+      self.updateTextures()
 
-    if rerender:
-      if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
-        self.framebuffer.width = self.size.x.int32
-        self.framebuffer.height = self.size.y.int32
-        bindTextureData(self.framebuffer, nil)
-        self.redrawEverything = true
+      if rerender:
+        if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
+          self.framebuffer.width = self.size.x.int32
+          self.framebuffer.height = self.size.y.int32
+          bindTextureData(self.framebuffer, nil)
+          self.redrawEverything = true
 
-      # Clear the screen and begin a new frame.
-      self.boxy.beginFrame(self.window.size, clearFrame=false)
+        # Clear the screen and begin a new frame.
+        self.boxy.beginFrame(self.window.size, clearFrame=false)
 
-      var count = 0
-      for image in self.glyphCache.removedKeys:
-        self.boxy.removeImage(image)
-        inc count
+        var count = 0
+        for image in self.glyphCache.removedKeys:
+          self.boxy.removeImage(image)
+          inc count
 
-      if logDeletedImageCount and count > 0:
-        log lvlInfo, fmt"Cleared {count} images from cache"
+        if logDeletedImageCount and count > 0:
+          log lvlInfo, fmt"Cleared {count} images from cache"
 
-      self.glyphCache.clearRemovedKeys()
+        self.glyphCache.clearRemovedKeys()
 
-      if self.ctx.fontSize != self.lastFontSize:
-        self.lastFontSize = self.ctx.fontSize
-        self.clearFontCaches()
+        if self.ctx.fontSize != self.lastFontSize:
+          self.lastFontSize = self.ctx.fontSize
+          self.clearFontCaches()
 
-      if self.builder.root.lastSizeChange == self.builder.frameIndex:
-        self.redrawEverything = true
+        if self.builder.root.lastSizeChange == self.builder.frameIndex:
+          self.redrawEverything = true
 
-      self.drawnNodes.setLen 0
-      defer:
         self.drawnNodes.setLen 0
-
-      withLock(texturesLock):
-        self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
-
-      if self.showDrawnNodes:
-        let size = if self.showDrawnNodes: self.size * vec2(0.5, 1) else: self.size
-
-        self.boxy.pushLayer()
         defer:
+          self.drawnNodes.setLen 0
+
+        withLock(texturesLock):
+          self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
+
+        if self.showDrawnNodes:
+          let size = if self.showDrawnNodes: self.size * vec2(0.5, 1) else: self.size
+
           self.boxy.pushLayer()
-          self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(1, 0, 0, 1))
-          self.boxy.popLayer(blendMode = MaskBlend)
-          self.boxy.popLayer()
+          defer:
+            self.boxy.pushLayer()
+            self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(1, 0, 0, 1))
+            self.boxy.popLayer(blendMode = MaskBlend)
+            self.boxy.popLayer()
 
-        self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(0, 0, 0))
+          self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(0, 0, 0))
 
-        for node in self.drawnNodes:
-          let c = node.randomColor(0.3)
-          self.boxy.drawRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), c)
+          for node in self.drawnNodes:
+            let c = node.randomColor(0.3)
+            self.boxy.drawRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), c)
 
-          if DrawBorder in node.flags:
-            self.boxy.strokeRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), color(c.r, c.g, c.b, 0.5), 5, offset = 0.5)
+            if DrawBorder in node.flags:
+              self.boxy.strokeRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), color(c.r, c.g, c.b, 0.5), 5, offset = 0.5)
 
 
-      # End this frame, flushing the draw commands. Draw to framebuffer.
-      self.boxy.endFrame()
+        # End this frame, flushing the draw commands. Draw to framebuffer.
+        self.boxy.endFrame()
 
-      self.redrawEverything = false
-      self.lastSize = self.size
+        self.redrawEverything = false
+        self.lastSize = self.size
 
-    if rerender or self.renderedSomethingLastFrame:
-      glBindFramebuffer(GL_READ_FRAMEBUFFER, self.framebufferId)
-      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
-      glBlitFramebuffer(
-        0, 0, self.framebuffer.width.GLint, self.framebuffer.height.GLint,
-        0, 0, self.window.size.x.GLint, self.window.size.y.GLint,
-        GL_COLOR_BUFFER_BIT, GL_NEAREST.GLenum)
+      if rerender or self.renderedSomethingLastFrame:
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, self.framebufferId)
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
+        glBlitFramebuffer(
+          0, 0, self.framebuffer.width.GLint, self.framebuffer.height.GLint,
+          0, 0, self.window.size.x.GLint, self.window.size.y.GLint,
+          GL_COLOR_BUFFER_BIT, GL_NEAREST.GLenum)
 
-    if rerender or self.renderedSomethingLastFrame or self.vsync:
-      self.window.swapBuffers()
+      if rerender or self.renderedSomethingLastFrame or self.vsync:
+        self.window.swapBuffers()
 
-    self.renderedSomethingLastFrame = rerender
-  except:
-    discard
+      self.renderedSomethingLastFrame = rerender
+    except:
+      discard
 
-proc key(rune: Rune, flags: UINodeFlags, scale: float): ImageKey =
-  let fontScaleFixedPoint = (max(scale, 0) * 10000).uint64
-  let italicFlag: uint64 = if TextItalic in flags: 1 else: 0
-  let boldFlag: uint64 = if TextBold in flags: 1 else: 0
-  # 0                    32                  56            64
-  # |       32           |        24         |     8       |
-  # | unicode code point | fixed point scale | flags       |
-  #                                          |i|b|         |
-  #                                           | L bold
-  #                                           L__ italic
+  proc key(rune: Rune, flags: UINodeFlags, scale: float): ImageKey =
+    let fontScaleFixedPoint = (max(scale, 0) * 10000).uint64
+    let italicFlag: uint64 = if TextItalic in flags: 1 else: 0
+    let boldFlag: uint64 = if TextBold in flags: 1 else: 0
+    # 0                    32                  56            64
+    # |       32           |        24         |     8       |
+    # | unicode code point | fixed point scale | flags       |
+    #                                          |i|b|         |
+    #                                           | L bold
+    #                                           L__ italic
 
-  return cast[uint64](rune) or ((fontScaleFixedPoint and 0x00FFFFFF) shl 32) or (italicFlag shl 56) or (boldFlag shl 57)
+    return cast[uint64](rune) or ((fontScaleFixedPoint and 0x00FFFFFF) shl 32) or (italicFlag shl 56) or (boldFlag shl 57)
 
-var solidPaint = newPaint(SolidPaint)
-proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune, fontScale: float = 1.0) =
-  let wrap = TextWrap in flags
-  let wrapBounds = if flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
-    vec2(bounds.w, bounds.h)
-  else:
-    vec2(0, 0)
-
-  let hAlign = if TextAlignHorizontalLeft in flags:
-    HorizontalAlignment.LeftAlign
-  elif TextAlignHorizontalCenter in flags:
-    HorizontalAlignment.CenterAlign
-  elif TextAlignHorizontalRight in flags:
-    HorizontalAlignment.RightAlign
-  else:
-    HorizontalAlignment.LeftAlign
-
-  let vAlign = if TextAlignVerticalTop in flags:
-    VerticalAlignment.TopAlign
-  elif TextAlignVerticalCenter in flags:
-    VerticalAlignment.MiddleAlign
-  elif TextAlignVerticalBottom in flags:
-    VerticalAlignment.BottomAlign
-  else:
-    VerticalAlignment.TopAlign
-
-  let textFlags = flags * &{TextItalic, TextBold}
-
-  proc tintRune(r: Rune): bool =
-    return true
-
-  # todo: convert typeset to not use strings to avoid copying
-  try:
-    let font = platform.getFont(platform.ctx.fontSize * fontScale, flags)
-
-    let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap, snapToPixel = false)
-    template drawRune(i: int, rune: Rune, inColor: Color): untyped =
-      let color = if tintRune(rune):
-        inColor
-      else:
-        color(1, 1, 1)
-
-      let key = key(rune, textFlags, fontScale)
-      if rune.int < platform.asciiGlyphCache.len and textFlags == 0.UINodeFlags and fontScale == 1.0:
-        if platform.asciiGlyphCache[rune.int] == 0:
-          var path = font.typeface.getGlyphPath(rune)
-          let rect = arrangement.selectionRects[i]
-          path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
-          var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
-          for paint in font.paints:
-            image.fillPath(path, paint)
-          platform.boxy.addImage(key, image, genMipmaps=false)
-          platform.asciiGlyphCache[rune.int] = key
-
-        let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
-        platform.boxy.drawImage(platform.asciiGlyphCache[rune.int], pos, color)
-
-      else:
-        if not platform.glyphCache.contains(key):
-          var path = font.typeface.getGlyphPath(rune)
-          let rect = arrangement.selectionRects[i]
-          path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
-          var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
-          for paint in font.paints:
-            image.fillPath(path, paint)
-          platform.boxy.addImage(key, image, genMipmaps=false)
-          platform.glyphCache[key] = key
-
-        let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
-        platform.boxy.drawImage(key, pos, color)
-
-    if TextDrawSpaces in flags:
-      for i, rune in arrangement.runes:
-        let (rune, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
-        drawRune(i, rune, color)
+  var solidPaint = newPaint(SolidPaint)
+  proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune, fontScale: float = 1.0) =
+    let wrap = TextWrap in flags
+    let wrapBounds = if flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
+      vec2(bounds.w, bounds.h)
     else:
-      for i, rune in arrangement.runes:
-        drawRune(i, rune, color)
+      vec2(0, 0)
 
-    if TextUndercurl in flags:
-      platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
-
-  except GLerror, Exception:
-    discard
-
-proc drawText(platform: GuiPlatform, text: string, arrangement: render_command.Arrangement, indices: RenderCommandArrangement, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune, fontSizeScale: float = 1.0) =
-  let textFlags = flags * &{TextItalic, TextBold}
-
-  proc tintRune(r: Rune): bool =
-    return true
-
-  # todo: convert typeset to not use strings to avoid copying
-  try:
-    let typeface = platform.getTypeface(flags)
-    let fontScale = fontSizeScale * platform.ctx.fontSize / typeface.scale
-    let solidPaint = ({.cast(gcsafe).}: solidPaint)
-    solidPaint.color = color(1, 1, 1)
-    template drawRune(i: int, rune: Rune, inColor: Color): untyped =
-      let color = if tintRune(rune):
-        inColor
-      else:
-        color(1, 1, 1)
-
-      let key = key(rune, textFlags, fontSizeScale)
-      if rune.int < platform.asciiGlyphCache.len and textFlags == 0.UINodeFlags and fontSizeScale == 1.0:
-        if platform.asciiGlyphCache[rune.int] == 0:
-          var path = typeface.getGlyphPath(rune)
-          let rect = arrangement.selectionRects[i]
-          path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(fontScale)))
-          var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
-          image.fillPath(path, solidPaint)
-          platform.boxy.addImage(key, image, genMipmaps=false)
-          platform.asciiGlyphCache[rune.int] = key
-
-        let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
-        platform.boxy.drawImage(platform.asciiGlyphCache[rune.int], pos, color)
-
-      else:
-        if not platform.glyphCache.contains(key):
-          var path = typeface.getGlyphPath(rune)
-          let rect = arrangement.selectionRects[i]
-          path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(fontScale)))
-          var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
-          image.fillPath(path, solidPaint)
-          platform.boxy.addImage(key, image, genMipmaps=false)
-          platform.glyphCache[key] = key
-
-        let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
-        platform.boxy.drawImage(key, pos, color)
-
-    if TextDrawSpaces in flags:
-      for i in indices.runes:
-        let rune = arrangement.runes[i]
-        let (rune2, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
-        drawRune(i, rune2, color)
+    let hAlign = if TextAlignHorizontalLeft in flags:
+      HorizontalAlignment.LeftAlign
+    elif TextAlignHorizontalCenter in flags:
+      HorizontalAlignment.CenterAlign
+    elif TextAlignHorizontalRight in flags:
+      HorizontalAlignment.RightAlign
     else:
-      for i in indices.runes:
-        let rune = arrangement.runes[i]
-        drawRune(i, rune, color)
+      HorizontalAlignment.LeftAlign
 
-    if TextUndercurl in flags:
-      platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
-
-  except GLerror, Exception:
-    discard
-
-proc handleRenderCommand(platform: GuiPlatform, renderCommands: ptr RenderCommands, command: RenderCommand, spaceColor: Color, space: Rune, maskBounds: var seq[Rect], offsets: var seq[Vec2], offset: var Vec2) {.inline, raises: [Exception].} =
-  case command.kind
-  of RenderCommandKind.Rect:
-    platform.boxy.strokeRect(command.bounds + offset, command.color)
-  of RenderCommandKind.Image:
-    {.gcsafe.}:
-      if gTextures.contains(command.textureId):
-        let tex = gTextures[command.textureId]
-        if tex != nil:
-          let glTexId = tex.textureId
-          platform.boxy.drawUvRect(offset + command.bounds.xy, offset + command.bounds.xy + command.bounds.wh, command.uv0, command.uv1, command.color, glTexId)
-
-  of RenderCommandKind.FilledRect:
-    platform.boxy.drawRect(command.bounds + offset, command.color)
-  of RenderCommandKind.TextRaw:
-    # todo: don't copy string data
-    var text = newStringOfCap(command.len)
-    if command.len > 0:
-      text.setLen(command.len)
-      copyMem(text[0].addr, command.data, command.len)
-      platform.drawText(text, command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
-
-  of RenderCommandKind.Text:
-    # todo: don't copy string data
-    assert renderCommands != nil
-    let text = renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
-    if command.arrangementIndex == uint32.high:
-      platform.drawText(text, command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
+    let vAlign = if TextAlignVerticalTop in flags:
+      VerticalAlignment.TopAlign
+    elif TextAlignVerticalCenter in flags:
+      VerticalAlignment.MiddleAlign
+    elif TextAlignVerticalBottom in flags:
+      VerticalAlignment.BottomAlign
     else:
-      platform.drawText(text, renderCommands.arrangement, renderCommands.arrangements[command.arrangementIndex], command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
-  of RenderCommandKind.ScissorStart:
-    platform.boxy.pushLayer()
-    maskBounds.add(command.bounds + offset)
-  of RenderCommandKind.ScissorEnd:
-    if maskBounds.len == 0:
-      # log lvlError, &"Unbalanced ScisscorStart/End pairs"
-      return
-    let bounds = maskBounds.pop()
-    if UINodeFlag.BlendAlpha in command.flags:
-      platform.boxy.popLayer(command.color)
-    else:
-      platform.boxy.pushLayer()
-      platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
-      platform.boxy.popLayer(blendMode = MaskBlend)
-      platform.boxy.popLayer()
-  of RenderCommandKind.TransformStart:
-    offsets.add offset
-    offset += command.bounds.xy
-  of RenderCommandKind.TransformEnd:
-    if offsets.len > 0:
-      offset = offsets.pop()
+      VerticalAlignment.TopAlign
 
-proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
-  try:
-    var nodePos = offset
-    nodePos.x += node.boundsActual.x
-    nodePos.y += node.boundsActual.y
+    let textFlags = flags * &{TextItalic, TextBold}
 
-    var force = force
+    proc tintRune(r: Rune): bool =
+      return true
 
-    if builder.useInvalidation and not force and node.lastChange < builder.frameIndex:
-      return
+    # todo: convert typeset to not use strings to avoid copying
+    try:
+      let font = platform.getFont(platform.ctx.fontSize * fontScale, flags)
 
-    node.lastRenderTime = builder.frameIndex
-
-    if node.flags.any &{UINodeFlag.FillBackground, DrawBorder, DrawText}:
-      platform.drawnNodes.add node
-
-    if node.flags.any &{UINodeFlag.FillBackground, DrawText}:
-      force = true
-
-    node.lx = nodePos.x
-    node.ly = nodePos.y
-    node.lw = node.boundsActual.w
-    node.lh = node.boundsActual.h
-    let bounds = rect(nodePos.x, nodePos.y, node.boundsActual.w, node.boundsActual.h)
-
-    if FillBackground in node.flags:
-      platform.boxy.drawRect(bounds, node.backgroundColor)
-
-    # Mask the rest of the rendering is this function to the contentBounds
-    if MaskContent in node.flags:
-      platform.boxy.pushLayer()
-    defer:
-      if MaskContent in node.flags:
-        if UINodeFlag.BlendAlpha in node.flags:
-          platform.boxy.popLayer(node.backgroundColor)
+      let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap, snapToPixel = false)
+      template drawRune(i: int, rune: Rune, inColor: Color): untyped =
+        let color = if tintRune(rune):
+          inColor
         else:
-          platform.boxy.pushLayer()
-          platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
-          platform.boxy.popLayer(blendMode = MaskBlend)
-          platform.boxy.popLayer()
+          color(1, 1, 1)
 
-    if DrawText in node.flags:
-      platform.drawText(node.text, nodePos, node.boundsRaw, node.textColor, node.textColor, node.flags, node.underlineColor, fontScale = node.fontScale)
+        let key = key(rune, textFlags, fontScale)
+        if rune.int < platform.asciiGlyphCache.len and textFlags == 0.UINodeFlags and fontScale == 1.0:
+          if platform.asciiGlyphCache[rune.int] == 0:
+            var path = font.typeface.getGlyphPath(rune)
+            let rect = arrangement.selectionRects[i]
+            path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
+            var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
+            for paint in font.paints:
+              image.fillPath(path, paint)
+            platform.boxy.addImage(key, image, genMipmaps=false)
+            platform.asciiGlyphCache[rune.int] = key
 
-    for _, c in node.children:
-      builder.drawNode(platform, c, nodePos, force)
+          let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
+          platform.boxy.drawImage(platform.asciiGlyphCache[rune.int], pos, color)
 
-    if DrawBorder in node.flags:
-      if node.border != UIBorder():
-        platform.boxy.drawBorder(bounds, node.borderColor, node.border)
+        else:
+          if not platform.glyphCache.contains(key):
+            var path = font.typeface.getGlyphPath(rune)
+            let rect = arrangement.selectionRects[i]
+            path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
+            var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
+            for paint in font.paints:
+              image.fillPath(path, paint)
+            platform.boxy.addImage(key, image, genMipmaps=false)
+            platform.glyphCache[key] = key
 
-    var maskBounds: seq[Rect]
-    var offsets: seq[Vec2]
-    var currentOffset = nodePos
-    for list in node.renderCommandList:
+          let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
+          platform.boxy.drawImage(key, pos, color)
+
+      if TextDrawSpaces in flags:
+        for i, rune in arrangement.runes:
+          let (rune, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
+          drawRune(i, rune, color)
+      else:
+        for i, rune in arrangement.runes:
+          drawRune(i, rune, color)
+
+      if TextUndercurl in flags:
+        platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
+
+    except GLerror, Exception:
+      discard
+
+  proc drawText(platform: GuiPlatform, text: string, arrangement: render_command.Arrangement, indices: RenderCommandArrangement, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune, fontSizeScale: float = 1.0) =
+    let textFlags = flags * &{TextItalic, TextBold}
+
+    proc tintRune(r: Rune): bool =
+      return true
+
+    # todo: convert typeset to not use strings to avoid copying
+    try:
+      let typeface = platform.getTypeface(flags)
+      let fontScale = fontSizeScale * platform.ctx.fontSize / typeface.scale
+      let solidPaint = ({.cast(gcsafe).}: solidPaint)
+      solidPaint.color = color(1, 1, 1)
+      template drawRune(i: int, rune: Rune, inColor: Color): untyped =
+        let color = if tintRune(rune):
+          inColor
+        else:
+          color(1, 1, 1)
+
+        let key = key(rune, textFlags, fontSizeScale)
+        if rune.int < platform.asciiGlyphCache.len and textFlags == 0.UINodeFlags and fontSizeScale == 1.0:
+          if platform.asciiGlyphCache[rune.int] == 0:
+            var path = typeface.getGlyphPath(rune)
+            let rect = arrangement.selectionRects[i]
+            path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(fontScale)))
+            var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
+            image.fillPath(path, solidPaint)
+            platform.boxy.addImage(key, image, genMipmaps=false)
+            platform.asciiGlyphCache[rune.int] = key
+
+          let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
+          platform.boxy.drawImage(platform.asciiGlyphCache[rune.int], pos, color)
+
+        else:
+          if not platform.glyphCache.contains(key):
+            var path = typeface.getGlyphPath(rune)
+            let rect = arrangement.selectionRects[i]
+            path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(fontScale)))
+            var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
+            image.fillPath(path, solidPaint)
+            platform.boxy.addImage(key, image, genMipmaps=false)
+            platform.glyphCache[key] = key
+
+          let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
+          platform.boxy.drawImage(key, pos, color)
+
+      if TextDrawSpaces in flags:
+        for i in indices.runes:
+          let rune = arrangement.runes[i]
+          let (rune2, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
+          drawRune(i, rune2, color)
+      else:
+        for i in indices.runes:
+          let rune = arrangement.runes[i]
+          drawRune(i, rune, color)
+
+      if TextUndercurl in flags:
+        platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
+
+    except GLerror, Exception:
+      discard
+
+  proc handleRenderCommand(platform: GuiPlatform, renderCommands: ptr RenderCommands, command: RenderCommand, spaceColor: Color, space: Rune, maskBounds: var seq[Rect], offsets: var seq[Vec2], offset: var Vec2) {.inline, raises: [Exception].} =
+    case command.kind
+    of RenderCommandKind.Rect:
+      platform.boxy.strokeRect(command.bounds + offset, command.color)
+    of RenderCommandKind.Image:
+      {.gcsafe.}:
+        if gTextures.contains(command.textureId):
+          let tex = gTextures[command.textureId]
+          if tex != nil:
+            let glTexId = tex.textureId
+            platform.boxy.drawUvRect(offset + command.bounds.xy, offset + command.bounds.xy + command.bounds.wh, command.uv0, command.uv1, command.color, glTexId)
+
+    of RenderCommandKind.FilledRect:
+      platform.boxy.drawRect(command.bounds + offset, command.color)
+    of RenderCommandKind.TextRaw:
+      # todo: don't copy string data
+      var text = newStringOfCap(command.len)
+      if command.len > 0:
+        text.setLen(command.len)
+        copyMem(text[0].addr, command.data, command.len)
+        platform.drawText(text, command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
+
+    of RenderCommandKind.Text:
+      # todo: don't copy string data
+      assert renderCommands != nil
+      let text = renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
+      if command.arrangementIndex == uint32.high:
+        platform.drawText(text, command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
+      else:
+        platform.drawText(text, renderCommands.arrangement, renderCommands.arrangements[command.arrangementIndex], command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
+    of RenderCommandKind.ScissorStart:
+      platform.boxy.pushLayer()
+      maskBounds.add(command.bounds + offset)
+    of RenderCommandKind.ScissorEnd:
+      if maskBounds.len == 0:
+        # log lvlError, &"Unbalanced ScisscorStart/End pairs"
+        return
+      let bounds = maskBounds.pop()
+      if UINodeFlag.BlendAlpha in command.flags:
+        platform.boxy.popLayer(command.color)
+      else:
+        platform.boxy.pushLayer()
+        platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
+        platform.boxy.popLayer(blendMode = MaskBlend)
+        platform.boxy.popLayer()
+    of RenderCommandKind.TransformStart:
+      offsets.add offset
+      offset += command.bounds.xy
+    of RenderCommandKind.TransformEnd:
+      if offsets.len > 0:
+        offset = offsets.pop()
+
+  proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
+    try:
+      var nodePos = offset
+      nodePos.x += node.boundsActual.x
+      nodePos.y += node.boundsActual.y
+
+      var force = force
+
+      if builder.useInvalidation and not force and node.lastChange < builder.frameIndex:
+        return
+
+      node.lastRenderTime = builder.frameIndex
+
+      if node.flags.any &{UINodeFlag.FillBackground, DrawBorder, DrawText}:
+        platform.drawnNodes.add node
+
+      if node.flags.any &{UINodeFlag.FillBackground, DrawText}:
+        force = true
+
+      node.lx = nodePos.x
+      node.ly = nodePos.y
+      node.lw = node.boundsActual.w
+      node.lh = node.boundsActual.h
+      let bounds = rect(nodePos.x, nodePos.y, node.boundsActual.w, node.boundsActual.h)
+
+      if FillBackground in node.flags:
+        platform.boxy.drawRect(bounds, node.backgroundColor)
+
+      # Mask the rest of the rendering is this function to the contentBounds
+      if MaskContent in node.flags:
+        platform.boxy.pushLayer()
+      defer:
+        if MaskContent in node.flags:
+          if UINodeFlag.BlendAlpha in node.flags:
+            platform.boxy.popLayer(node.backgroundColor)
+          else:
+            platform.boxy.pushLayer()
+            platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
+            platform.boxy.popLayer(blendMode = MaskBlend)
+            platform.boxy.popLayer()
+
+      if DrawText in node.flags:
+        platform.drawText(node.text, nodePos, node.boundsRaw, node.textColor, node.textColor, node.flags, node.underlineColor, fontScale = node.fontScale)
+
+      for _, c in node.children:
+        builder.drawNode(platform, c, nodePos, force)
+
+      if DrawBorder in node.flags:
+        if node.border != UIBorder():
+          platform.boxy.drawBorder(bounds, node.borderColor, node.border)
+
+      var maskBounds: seq[Rect]
+      var offsets: seq[Vec2]
+      var currentOffset = nodePos
+      for list in node.renderCommandList:
+        offsets.setLen(0)
+        currentOffset = nodePos
+        for command in list.commands:
+          handleRenderCommand(platform, list[].addr, command, list.spacesColor, list.space, maskBounds, offsets, currentOffset)
+
+        offsets.setLen(0)
+        currentOffset = nodePos
+        for command in list[].decodeRenderCommands:
+          handleRenderCommand(platform, list[].addr, command, node.textColor, list.space, maskBounds, offsets, currentOffset)
+
       offsets.setLen(0)
       currentOffset = nodePos
-      for command in list.commands:
-        handleRenderCommand(platform, list[].addr, command, list.spacesColor, list.space, maskBounds, offsets, currentOffset)
+      for command in node.renderCommands.commands:
+        handleRenderCommand(platform, node.renderCommands.addr, command, node.renderCommands.spacesColor, node.renderCommands.space, maskBounds, offsets, currentOffset)
 
       offsets.setLen(0)
       currentOffset = nodePos
-      for command in list[].decodeRenderCommands:
-        handleRenderCommand(platform, list[].addr, command, node.textColor, list.space, maskBounds, offsets, currentOffset)
+      for command in node.renderCommands.decodeRenderCommands:
+        handleRenderCommand(platform, node.renderCommands.addr, command, node.textColor, node.renderCommands.space, maskBounds, offsets, currentOffset)
 
-    offsets.setLen(0)
-    currentOffset = nodePos
-    for command in node.renderCommands.commands:
-      handleRenderCommand(platform, node.renderCommands.addr, command, node.renderCommands.spacesColor, node.renderCommands.space, maskBounds, offsets, currentOffset)
+    except GLerror, Exception:
+      discard
 
-    offsets.setLen(0)
-    currentOffset = nodePos
-    for command in node.renderCommands.decodeRenderCommands:
-      handleRenderCommand(platform, node.renderCommands.addr, command, node.textColor, node.renderCommands.space, maskBounds, offsets, currentOffset)
+  proc focusWindowGuiPlatform*(self: GuiPlatform) {.gcsafe, raises: [].} =
+    when defined(windows):
+      if GetForegroundWindow() == self.window.platformHandle:
+        return
+      discard SetForegroundWindow(self.window.platformHandle)
+      discard SetFocus(self.window.platformHandle)
+      discard SetActiveWindow(self.window.platformHandle)
+      discard ShowWindow(self.window.platformHandle, SW_SHOW)
+      self.window.maximized = true
 
-  except GLerror, Exception:
+  {.pop.} # gcsafe
+
+  proc newGuiPlatform*(): Platform {.raises: [].} =
+    var res = GuiPlatform()
+    res.requestRenderImpl = proc(self: Platform, redrawEverything = false) = self.GuiPlatform.requestRenderGuiPlatform(redrawEverything)
+    res.renderImpl = proc(self: Platform, rerender: bool) = self.GuiPlatform.renderGuiPlatform(rerender)
+    res.sizeChangedImpl = proc(self: Platform): bool = self.GuiPlatform.sizeChangedGuiPlatform()
+    res.sizeImpl = proc(self: Platform): Vec2 = self.GuiPlatform.sizeGuiPlatform()
+    res.initImpl = proc(self: Platform, options: AppOptions) = self.GuiPlatform.initGuiPlatform(options)
+    res.deinitImpl = proc(self: Platform) = self.GuiPlatform.deinitGuiPlatform()
+    res.processEventsImpl = proc(self: Platform): int = self.GuiPlatform.processEventsGuiPlatform()
+    res.fontSizeSetImpl = proc(self: Platform, fontSize: float) = self.GuiPlatform.fontSizeSetGuiPlatform(fontSize)
+    res.lineDistanceSetImpl = proc(self: Platform, lineDistance: float) = self.GuiPlatform.lineDistanceSetGuiPlatform(lineDistance)
+    res.setFontImpl = proc(self: Platform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) = self.GuiPlatform.setFontGuiPlatform(fontRegular, fontBold, fontItalic, fontBoldItalic, fallbackFonts)
+    res.getFontInfoImpl = proc(self: Platform, fontSize: float, flags: UINodeFlags): ptr FontInfo = self.GuiPlatform.getFontInfoGuiPlatform(fontSize, flags)
+    res.fontSizeImpl = proc(self: Platform): float = self.GuiPlatform.fontSizeGuiPlatform()
+    res.lineDistanceImpl = proc(self: Platform): float = self.GuiPlatform.lineDistanceGuiPlatform()
+    res.lineHeightImpl = proc(self: Platform): float = self.GuiPlatform.lineHeightGuiPlatform()
+    res.charWidthImpl = proc(self: Platform): float = self.GuiPlatform.charWidthGuiPlatform()
+    res.charGapImpl = proc(self: Platform): float = self.GuiPlatform.charGapGuiPlatform()
+    res.measureTextImpl = proc(self: Platform, text: string): Vec2 = self.GuiPlatform.measureTextGuiPlatform(text)
+    res.getStatisticsStringImpl = proc(self: Platform): string = self.GuiPlatform.getStatisticsStringGuiPlatform()
+    res.layoutTextImpl = proc(self: Platform, text: string): seq[Rect] = self.GuiPlatform.layoutTextGuiPlatform(text)
+    res.setVsyncImpl = proc(self: Platform, enabled: bool) = self.GuiPlatform.setVsyncGuiPlatform(enabled)
+    res.moveToMonitorImpl = proc(self: Platform, index: int) = self.GuiPlatform.moveToMonitorGuiPlatform(index)
+    res.focusWindowImpl = proc(self: Platform) = self.GuiPlatform.focusWindowGuiPlatform()
+
+    return res
+
+  proc init_module_gui_platform*() {.cdecl, exportc, dynlib.} =
     discard
-
-method focusWindow*(self: GuiPlatform) {.gcsafe, raises: [].} =
-  when defined(windows):
-    if GetForegroundWindow() == self.window.platformHandle:
-      return
-    discard SetForegroundWindow(self.window.platformHandle)
-    discard SetFocus(self.window.platformHandle)
-    discard SetActiveWindow(self.window.platformHandle)
-    discard ShowWindow(self.window.platformHandle, SW_SHOW)
-    self.window.maximized = true

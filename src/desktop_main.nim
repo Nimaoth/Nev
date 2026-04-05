@@ -16,6 +16,7 @@ let startupTimer = startTimer()
 
 import std/[parseopt, options, macros, strutils, os, strformat]
 import misc/[custom_logger, util]
+import nimsumtree/arc
 import compilation_config, scripting_api, app_options
 import text/custom_treesitter
 
@@ -228,7 +229,8 @@ when enableTerminal:
   import "../modules/terminal_platform"/terminal_platform
 
 when enableGui:
-  import platform/[gui_platform, tui]
+  import platform/[tui]
+  import "../modules/gui_platform"/gui_platform
 
   if backend.get == Gui:
     let trueColorSupport = myEnableTrueColors()
@@ -266,8 +268,7 @@ of Terminal:
 of Gui:
   when enableGui:
     log(lvlInfo, "Creating GUI renderer")
-    plat = new GuiPlatform
-    plat[] = default(typeof(GuiPlatform()[]))
+    plat = newGuiPlatform()
     plat.backend = Gui
   else:
     echo "[error] GUI backend not available in this build"
@@ -340,11 +341,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, fra
       plat.onPreRender.invoke(plat)
       eventBus.emit(&"platform/prerender", "")
 
-      when enableGui:
-        let size = if plat of GuiPlatform and plat.GuiPlatform.showDrawnNodes: plat.size * vec2(0.5, 1) else: plat.size
-      else:
-        let size = plat.size
-
+      let size = plat.size
       var rerender = false
       if size != plat.builder.root.boundsActual.wh or plat.requestedRender:
         plat.requestedRender = false
@@ -427,7 +424,7 @@ import service
 gServices = Services()
 gServices.addBuiltinServices()
 
-plat.vfs = gServices.getService(VFSService).get.vfs
+plat.vfs = gServices.getService(VFSService).get.vfs2
 plat.init(gAppOptions)
 gServices.getService(PlatformService).get.setPlatform(plat)
 gServices.waitForServices()
@@ -486,10 +483,7 @@ proc main() =
     p.onPreRender.invoke(p)
     eventBus.emit(&"platform/prerender", "")
 
-    when enableGui:
-      let size = if p of GuiPlatform and p.GuiPlatform.showDrawnNodes: p.size * vec2(0.5, 1) else: p.size
-    else:
-      let size = p.size
+    let size = p.size
 
     p.requestedRender = false
     p.builder.beginFrame(size)
