@@ -41,8 +41,8 @@ if packageWindows:
   exec(&"nim c --out:nevc.exe -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={cacheHit} --cc:clang --passC:-Wno-incompatible-function-pointer-types \"--passL:-ladvapi32.lib -luser32.lib\" -d:enableSystemClipboard=false src/desktop_main.nim")
 
 if packageLinux:
-  exec(&"nim c --out:nev -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={cacheHit} src/desktop_main.nim")
-  exec(&"nim c --out:nevg -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={cacheHit} src/desktop_main.nim")
-  exec(&"nim c --out:nev-musl -D:enableGui=false -D:enableTerminal=true --app:console -d:musl -d:nimWasmtimeBuildMusl -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={cacheHit} src/desktop_main.nim")
+  exec(&"nim c --out:nev --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={cacheHit} src/desktop_main.nim")
+  exec(&"nim c --out:nevg --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={cacheHit} src/desktop_main.nim")
+  exec(&"nim c --out:nev-musl --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=false -D:enableTerminal=true --app:console -d:musl -d:nimWasmtimeBuildMusl -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={cacheHit} src/desktop_main.nim")
 
 quit exitCode
