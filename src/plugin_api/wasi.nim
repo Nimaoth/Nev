@@ -403,7 +403,7 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
 
     case fd
     of 1:
-      if file[].len > 0:
+      if file[].len > 0 and instance.stdout.isNotNil:
         try:
           instance.stdout.write(file[])
         except IOError:
@@ -415,7 +415,7 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
         log lvlNotice, file[]
 
     of 2:
-      if file[].len > 0:
+      if file[].len > 0 and instance.stderr.isNotNil:
         try:
           instance.stderr.write(file[])
         except IOError:
