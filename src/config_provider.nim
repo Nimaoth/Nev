@@ -1034,8 +1034,9 @@ when implModule:
       let new = current[0..<index] & text
       writeFile("docs/settings.md", new)
 
-    static:
-      generateDocs()
+    when not defined(useDynlib):
+      static:
+        generateDocs()
 
 declareSettings BackgroundSettings, "":
   ## If true the background is transparent.
