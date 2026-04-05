@@ -241,8 +241,9 @@ when implModule:
 
   proc runHoverCommand*(self: HoverComponent) =
     try:
-      let commands = getServices().getService(CommandService).get
-      var command = ".hover.show-at-mouse "
+      let commands = self.owner.getCommandComponent().getOr:
+        return
+      var command = "hover.show-at-mouse "
       var configCommand = self.settings.command.get()
       if configCommand != nil and configCommand.kind != JNull:
         let modsKey = $self.mouseHoverMods
@@ -253,10 +254,10 @@ when implModule:
         if name == "":
           return
         if ok:
-          discard commands.executeCommand(name & " " & args, record = false)
+          commands.executeCommand(name & " " & args)
           return
 
-      discard commands.executeCommand(command, record = false)
+      commands.executeCommand(command)
     except CatchableError as e:
       log lvlError, &"Failed to execute hover command: {e.msg}"
 
