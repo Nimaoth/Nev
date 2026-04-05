@@ -186,9 +186,14 @@ proc readInput(chan: Arc[OwnedChannel[Option[ProcessObj]]], serverDiedNotificati
         # echo &"readInput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
 
-    # todo: figure out when to close the stream
-    stdout.close()
-    stream.close()
+    try:
+      stdout.close()
+    except OSError:
+      discard
+    try:
+      stream.close()
+    except OSError:
+      discard
 
 proc writeOutput(chan: Arc[OwnedChannel[Option[ProcessObj]]], stdin: Arc[BaseChannel]): NoExceptionDestroy =
   var buffer = newString(100 * 1024)
@@ -221,7 +226,10 @@ proc writeOutput(chan: Arc[OwnedChannel[Option[ProcessObj]]], stdin: Arc[BaseCha
         # echo &"writeOutput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
 
-    stream.close()
+    try:
+      stream.close()
+    except OSError:
+      discard
 
 proc start*(process: AsyncProcess): bool =
   log(lvlInfo, fmt"start process {process.name} {process.args}")
