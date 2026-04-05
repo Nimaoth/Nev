@@ -83,8 +83,11 @@ proc destroy*(process: AsyncProcess) =
   process.dontRestart = true
 
   if not process.process.isNil:
-    discard process.process.waitForExit(10)
-    process.process.close()
+    try:
+      discard process.process.waitForExit(10)
+      process.process.close()
+    except CatchableError:
+      discard
 
   process.inputStreamChannel.getMutUnsafe.channel.send ProcessObj.none
   process.outputStreamChannel.getMutUnsafe.channel.send ProcessObj.none
