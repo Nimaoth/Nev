@@ -475,6 +475,7 @@ void vterm_state_set_default_colors(VTermState *state, const VTermColor *default
 void vterm_state_set_palette_color(VTermState *state, int index, const VTermColor *col);
 void vterm_state_set_bold_highbright(VTermState *state, int bold_is_highbright);
 int  vterm_state_get_penattr(const VTermState *state, VTermAttr attr, VTermValue *val);
+int  vterm_state_get_termprop(const VTermState *state, VTermProp prop, VTermValue *val);
 int  vterm_state_set_termprop(VTermState *state, VTermProp prop, VTermValue *val);
 void vterm_state_focus_in(VTermState *state);
 void vterm_state_focus_out(VTermState *state);

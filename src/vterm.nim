@@ -351,7 +351,8 @@ proc setDefaultColors*(state: ptr VTermState; default_fg: ptr VTermColor; defaul
 proc setPaletteColorRaw*(state: ptr VTermState; index: cint; col: ptr VTermColor) {.importc: "vterm_state_set_palette_color".}
 proc setBoldHighbright*(state: ptr VTermState; bold_is_highbright: cint) {.importc: "vterm_state_set_bold_highbright".}
 proc getPenattr*(state: ptr VTermState; attr: VTermAttr; val: ptr VTermValue): cint {.importc: "vterm_state_get_penattr".}
-proc setTermprop*(state: ptr VTermState; prop: VTermProp; val: ptr VTermValue): cint {.importc: "vterm_state_set_termprop".}
+proc getTermProp*(state: ptr VTermState; prop: VTermProp; val: ptr VTermValue): cint {.importc: "vterm_state_get_termprop".}
+proc setTermProp*(state: ptr VTermState; prop: VTermProp; val: ptr VTermValue): cint {.importc: "vterm_state_set_termprop".}
 proc focusIn*(state: ptr VTermState) {.importc: "vterm_state_focus_in".}
 proc focusOut*(state: ptr VTermState) {.importc: "vterm_state_focus_out".}
 proc getLineinfo*(state: ptr VTermState; row: cint): ptr VTermLineInfo {.importc: "vterm_state_get_lineinfo".}

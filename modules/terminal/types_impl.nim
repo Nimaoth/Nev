@@ -209,6 +209,8 @@ type
       buffer*: TerminalBuffer
       sixels*: Table[(int, int), Sixel]
       placements*: seq[PlacedImage]
+      relativeScroll*: float
+      scrollHeight*: float
     of OutputEventKind.Size:
       width*: int
       height*: int
@@ -342,6 +344,8 @@ type
     createPty*: bool = false
     kittyPathPrefix*: string
     threadTerminated*: bool = false
+    relativeScroll*: float
+    scrollHeight*: float
 
     # Events
     lastUpdateTime*: timer.Timer
@@ -388,3 +392,8 @@ type
     terminals*: Table[int, TerminalView]
     activeView*: TerminalView
     sixelTextures*: Table[Hash, TextureId]
+
+proc scrollbackBufferLen*(self: ptr TerminalThreadState): int =
+  if self.alternateScreen:
+    return 0
+  return self.scrollbackBuffer.len

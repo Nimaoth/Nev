@@ -36,7 +36,6 @@ when defined(linux):
     XtermColor    = "xterm-color"
     Xterm256Color = "xterm-256color"
 
-
 type
   TerminalPlatform* = ref object of Platform
     buffer: TerminalBuffer
@@ -54,8 +53,8 @@ type
     doubleClickTime: float
 
     inputParser: TerminalInputParser
-    useKittyKeyboard: bool
-    kittyKeyboardFlags: int = 0b0
+    useKittyKeyboard: bool = false
+    kittyKeyboardFlags: set[KittyKeyboardState] = {DisambiguateEscapeCodes, ReportAllKeysAsEscapeCodes, ReportAssociatedText}
 
     gridSize: IVec2
     pixelSize: IVec2
@@ -81,7 +80,7 @@ proc enterFullScreen() =
 proc exitFullScreen() =
   ## Exits full-screen mode (restores the previous contents of the terminal).
   when defined(windows):
-    stdout.write "\e?47l\e[?1049l"
+    stdout.write "\e[?47l\e[?1049l"
   elif defined(posix):
     case getEnv("TERM"):
     of XtermColor:
@@ -101,6 +100,7 @@ proc exitProc() {.noconv.} =
   consoleDeinit()
   stdout.write(tui.ansiResetCode)
   showCursor()
+  stdout.flushFile()
   quit(0)
 
 proc toStdColor(color: tui.ForegroundColor): stdcolors.Color =
@@ -222,6 +222,8 @@ method init*(self: TerminalPlatform, options: AppOptions) =
 
     when defined(windows):
       self.readInputOnThread = true
+      self.kittyKeyboardFlags = {}
+
     if self.noPty:
       self.readInputOnThread = true
 
@@ -235,7 +237,7 @@ method init*(self: TerminalPlatform, options: AppOptions) =
       try:
         var flags: int = 0
         discard options.kittyKeyboardFlags.parseBin(flags)
-        self.kittyKeyboardFlags = flags
+        self.kittyKeyboardFlags = cast[set[KittyKeyboardState]](flags)
         useKitty = flags != 0
       except CatchableError as e:
         log lvlError, &"Failed to parse kitty keyboard flags: {e.msg}"
@@ -260,7 +262,8 @@ method init*(self: TerminalPlatform, options: AppOptions) =
     enterFullScreen()
 
     if useKitty:
-      log lvlInfo, &"Query kitty keyboard protol with flags {self.kittyKeyboardFlags.toBin(5)}"
+      log lvlInfo, &"Query kitty keyboard protol with flags {self.kittyKeyboardFlags}"
+      stdout.write(&"\e[>{cast[int](self.kittyKeyboardFlags)}u") # enable kitty keyboard protocol
       stdout.write("\e[?u") # query kitty keyboard protocol support
 
     stdout.write(tui.ansiResetCode)
@@ -365,6 +368,8 @@ method init*(self: TerminalPlatform, options: AppOptions) =
 
 method deinit*(self: TerminalPlatform) =
   try:
+    log lvlInfo, "TerminalPlatform.deinit"
+    stdout.write "\e[?47l\e[?1049l"
     # stdout.write("\e[?7h") # Enable line wrapping
     if self.useKittyKeyboard:
       stdout.write("\e[<u")
@@ -373,6 +378,7 @@ method deinit*(self: TerminalPlatform) =
     consoleDeinit()
     stdout.write(tui.ansiResetCode)
     showCursor()
+    stdout.flushFile()
   except:
     discard
 
@@ -456,7 +462,7 @@ method processEvents*(self: TerminalPlatform): int {.gcsafe.} =
         if not self.noUI:
           for r in event.text.runes:
             if not self.builder.handleKeyPressed(r.int64, {}):
-              self.onKeyPress.invoke (r.int64, {})
+              self.onKeyPress.invoke (r.int64, event.textMods)
       of Key:
         var input = event.input
         if Shift in event.mods and input > 0:
@@ -513,11 +519,12 @@ method processEvents*(self: TerminalPlatform): int {.gcsafe.} =
         self.requestRender(true)
       of KittyKeyboardFlags:
         if self.noUI:
-          stdout.write &"KittyKeyboardFlags: current: {event.flags.toBin(5)}, requested: {self.kittyKeyboardFlags.toBin(5)}\r\n"
-        log lvlInfo, &"Enable kitty keyboard protol with flags {self.kittyKeyboardFlags.toBin(5)}"
-        stdout.write(&"\e[>{self.kittyKeyboardFlags}u") # enable kitty keyboard protocol
-        self.inputParser.enableEscapeTimeout = false
+          stdout.write &"KittyKeyboardFlags: current: {event.flags}, requested: {self.kittyKeyboardFlags}\r\n"
+        log lvlInfo, &"Enable kitty keyboard protocol with flags {event.flags} (requested ({self.kittyKeyboardFlags})"
+        if DisambiguateEscapeCodes in event.flags:
+          self.inputParser.enableEscapeTimeout = false
         self.useKittyKeyboard = true
+        self.kittyKeyboardFlags = event.flags
 
       inc eventCounter
       inc self.eventCounter

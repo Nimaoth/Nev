@@ -81,10 +81,18 @@ type
     Scroll
     KittyKeyboardFlags
 
+  KittyKeyboardState* = enum
+    DisambiguateEscapeCodes
+    ReportEventTypes
+    ReportAlternateKeys
+    ReportAllKeysAsEscapeCodes
+    ReportAssociatedText
+
   InputEvent* = object
     case kind*: InputEventKind
     of Text:
       text*: string
+      textMods*: Modifiers
     of Key:
       input*: int
       mods*: Modifiers
@@ -102,9 +110,9 @@ type
     of Scroll:
       scroll*: tuple[delta: int, mods: Modifiers, col: int, row: int]
     of KittyKeyboardFlags:
-      flags*: int
+      flags*: set[KittyKeyboardState]
 
-proc textEvent*(text: sink string): InputEvent = InputEvent(kind: Text, text: text.ensureMove)
+proc textEvent*(text: sink string, mods: Modifiers = {}): InputEvent = InputEvent(kind: Text, text: text.ensureMove, textMods: mods)
 proc keyEvent*(input: int, mods: Modifiers, action: InputAction): InputEvent = InputEvent(kind: Key, input: input, mods: mods, action: action, inputName: inputToString(input, mods))
 proc gridSizeEvent*(width, height: int): InputEvent = InputEvent(kind: GridSize, width: width, height: height)
 proc pixelSizeEvent*(width, height: int): InputEvent = InputEvent(kind: PixelSize, width: width, height: height)
@@ -208,19 +216,109 @@ iterator handleCsi(vt: var TerminalInputParser; command: char): InputEvent =
   of 'u':
     if leader == '?':
       let flags = vt.csiArg(0)
-      yield InputEvent(kind: KittyKeyboardFlags, flags: flags)
+      yield InputEvent(kind: KittyKeyboardFlags, flags: cast[set[KittyKeyboardState]](flags))
     else:
       let input = vt.csiArg(0)
       if input != 0:
+        var str = ""
+        for i in 0..16:
+          let r = vt.csiArg(2, i, default = 0)
+          if r <= 0 or r >= Rune.high.int:
+            break
+          str.add $r.Rune
+
         let (mods, action) = vt.parseModsAndAction()
-        case input
-        of 13: yieldKey INPUT_ENTER
-        of 27: yieldKey INPUT_ESCAPE
-        of 127: yieldKey INPUT_BACKSPACE
-        of ' '.int: yieldKey INPUT_SPACE
-        of 9: yieldKey INPUT_TAB
+        if str.len > 0 and input > 32 and input != 127:
+          yield textEvent(str, mods)
         else:
-          yieldKey input
+          case input
+          of 9: yieldKey INPUT_TAB
+          of 13: yieldKey INPUT_ENTER
+          of 27: yieldKey INPUT_ESCAPE
+          of 32: yieldKey INPUT_SPACE
+          of 127: yieldKey INPUT_BACKSPACE
+
+          of 57376: discard #INPUT_F13
+          of 57377: discard #INPUT_F14
+          of 57378: discard #INPUT_F15
+          of 57379: discard #INPUT_F16
+          of 57380: discard #INPUT_F17
+          of 57381: discard #INPUT_F18
+          of 57382: discard #INPUT_F19
+          of 57383: discard #INPUT_F20
+          of 57384: discard #INPUT_F21
+          of 57385: discard #INPUT_F22
+          of 57386: discard #INPUT_F23
+          of 57387: discard #INPUT_F24
+          of 57388: discard #INPUT_F25
+          of 57389: discard #INPUT_F26
+          of 57390: discard #INPUT_F27
+          of 57391: discard #INPUT_F28
+          of 57392: discard #INPUT_F29
+          of 57393: discard #INPUT_F30
+          of 57394: discard #INPUT_F31
+          of 57395: discard #INPUT_F32
+          of 57396: discard #INPUT_F33
+          of 57397: discard #INPUT_F34
+          of 57398: discard #INPUT_F35
+          of 57399: yieldKey '0'.int
+          of 57400: yieldKey '1'.int
+          of 57401: yieldKey '2'.int
+          of 57402: yieldKey '3'.int
+          of 57403: yieldKey '4'.int
+          of 57404: yieldKey '5'.int
+          of 57405: yieldKey '6'.int
+          of 57406: yieldKey '7'.int
+          of 57407: yieldKey '8'.int
+          of 57408: yieldKey '9'.int
+          of 57409: yieldKey '.'.int #INPUT_DECIMAL
+          of 57410: yieldKey '/'.int #INPUT_DIVIDE
+          of 57411: yieldKey '*'.int #INPUT_MULTIPLY
+          of 57412: yieldKey '-'.int #INPUT_SUBTRACT
+          of 57413: yieldKey '+'.int #INPUT_ADD
+          of 57414: yieldKey INPUT_ENTER
+          of 57415: yieldKey '='.int #INPUT_EQUAL
+          of 57416: discard #INPUT_SEPARATOR
+          of 57417: yieldKey INPUT_LEFT
+          of 57418: yieldKey INPUT_RIGHT
+          of 57419: yieldKey INPUT_UP
+          of 57420: yieldKey INPUT_DOWN
+          of 57421: yieldKey INPUT_PAGE_UP
+          of 57422: yieldKey INPUT_PAGE_DOWN
+          of 57423: yieldKey INPUT_HOME
+          of 57424: yieldKey INPUT_END
+          of 57425: discard #INPUT_INSERT
+          of 57426: yieldKey INPUT_DELETE
+          of 57428: discard # MEDIA_PLAY
+          of 57429: discard # MEDIA_PAUSE
+          of 57430: discard # MEDIA_PLAY_PAUSE
+          of 57431: discard # MEDIA_REVERSE
+          of 57432: discard # MEDIA_STOP
+          of 57433: discard # MEDIA_FAST_FORWARD
+          of 57434: discard # MEDIA_REWIND
+          of 57435: discard # MEDIA_TRACK_NEXT
+          of 57436: discard # MEDIA_TRACK_PREVIOUS
+          of 57437: discard # MEDIA_RECORD
+          of 57438: discard # LOWER_VOLUME
+          of 57439: discard # RAISE_VOLUME
+          of 57440: discard # MUTE_VOLUME
+          of 57441: discard #INPUT_SHIFT
+          of 57442: discard #INPUT_CONTROL
+          of 57443: discard #INPUT_ALT
+          of 57444: discard #INPUT_SUPER
+          of 57445: discard #INPUT_HYPER
+          of 57446: discard #INPUT_META
+          of 57447: discard #INPUT_SHIFT
+          of 57448: discard #INPUT_CONTROL
+          of 57449: discard #INPUT_ALT
+          of 57450: discard #INPUT_SUPER
+          of 57451: discard #INPUT_HYPER
+          of 57452: discard #INPUT_META
+          of 57453: discard # ISO_LEVEL3_SHIFT
+          of 57454: discard # ISO_LEVEL5_SHIFT
+
+          else:
+            yieldKey input
 
   of 'A':
     let (mods, action) = vt.parseModsAndAction()
@@ -277,6 +375,7 @@ iterator handleCsi(vt: var TerminalInputParser; command: char): InputEvent =
       of 21: yieldKey INPUT_F10
       of 23: yieldKey INPUT_F11
       of 24: yieldKey INPUT_F12
+      of 57427: discard # INPUT_KP_BEGIN
       else:
         logKey &"UNKNOWN {args[0]}"
 

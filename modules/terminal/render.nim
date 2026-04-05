@@ -403,6 +403,17 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
           self.drawImages(builder, backgroundRenderCommands[], -1073741824..<0)
           self.drawImages(builder, foregroundRenderCommands[], 0..int.high)
 
+        # Scroll bar
+        buildCommands(foregroundRenderCommands[]):
+          if self.terminal.scrollHeight > 0:
+            let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
+            let thumbHeightRatio = cellHeight.float / self.terminal.scrollHeight
+            let thumbHeight = clamp(thumbHeightRatio * bounds.h.float, builder.textHeight, max(bounds.h - builder.textHeight, bounds.h * 0.9))
+            let scrollableHeight = bounds.h.float - thumbHeight
+            let thumbY = (1 - self.terminal.relativeScroll) * scrollableHeight
+            let w = ceil(builder.charWidth * 0.5)
+            fillRect(rect(bounds.w - w, floor(thumbY), w, ceil(thumbHeight)), scrollBarColor)
+
         currentNode.markDirty(builder)
 
   res

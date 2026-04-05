@@ -2216,6 +2216,41 @@ void *vterm_state_get_unrecognised_fbdata(VTermState *state)
   return state->fbdata;
 }
 
+int vterm_state_get_termprop(const VTermState *state, VTermProp prop, VTermValue *val)
+{
+  switch(prop) {
+  case VTERM_PROP_TITLE:
+  case VTERM_PROP_ICONNAME:
+    // we don't store these, just transparently pass through
+    return 0;
+  case VTERM_PROP_CURSORVISIBLE:
+    val->boolean = state->mode.cursor_visible;
+    return 1;
+  case VTERM_PROP_CURSORBLINK:
+    val->boolean = state->mode.cursor_blink;
+    return 1;
+  case VTERM_PROP_CURSORSHAPE:
+    val->number = state->mode.cursor_shape;
+    return 1;
+  case VTERM_PROP_REVERSE:
+    val->boolean = state->mode.screen;
+    return 1;
+  case VTERM_PROP_ALTSCREEN:
+    val->boolean = state->mode.alt_screen;
+    return 1;
+  case VTERM_PROP_MOUSE:
+    return 0;
+  case VTERM_PROP_FOCUSREPORT:
+    val->boolean = state->mode.report_focus;
+    return 1;
+
+  case VTERM_N_PROPS:
+    return 0;
+  }
+
+  return 0;
+}
+
 int vterm_state_set_termprop(VTermState *state, VTermProp prop, VTermValue *val)
 {
   /* Only store the new value of the property if usercode said it was happy.

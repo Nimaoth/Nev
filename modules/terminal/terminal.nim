@@ -228,7 +228,10 @@ when implModule:
       for col in 0..<state.width:
         dec prevOverlap
 
-        let actualRow = scrolledRow - state.scrollY
+        let actualRow = if state.alternateScreen:
+          scrolledRow
+        else:
+          scrolledRow - state.scrollY
         if actualRow >= 0 and actualRow < state.height:
           pos.row = actualRow.cint
           pos.col = col.cint
@@ -336,6 +339,8 @@ when implModule:
     # Swap to avoid expensive copies, and because ensureMove doesn't work for fields
     swap terminal.terminalBuffer, event.buffer
     terminal.sixels.setLen(0)
+    terminal.relativeScroll = event.relativeScroll
+    terminal.scrollHeight = event.scrollHeight
     for pos, s in event.sixels.mpairs:
       let h = s.contentHash
       terminal.sixels.add (h, pos[0], pos[1], s.px, s.py, s.width, s.height)
@@ -1608,6 +1613,8 @@ when implModule:
             buffer: state[].createTerminalBuffer(),
             sixels: state.sixels,
             placements: state.kitty.createPlacements(),
+            relativeScroll: state.scrollY.float / state.scrollbackBufferLen.float,
+            scrollHeight: state.scrollbackBufferLen.float,
           )
       ),
       movecursor: (proc(pos: VTermPos; oldpos: VTermPos; visible: cint; user: pointer): cint {.cdecl.} =
@@ -1621,7 +1628,8 @@ when implModule:
         let state = cast[ptr TerminalThreadState](user)
         case prop
         of VTERM_PROP_ALTSCREEN:
-          state.alternateScreen  = val.boolean != 0
+          # echo &"settermmprop VTERM_PROP_ALTSCREEN {val.boolean != 0}"
+          state.alternateScreen = val.boolean != 0
         of VTERM_PROP_CURSORVISIBLE:
           # log state, &"settermmprop VTERM_PROP_CURSORVISIBLE {val.boolean != 0}"
           state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorVisible, visible: val.boolean != 0)
@@ -1812,6 +1820,8 @@ when implModule:
                 buffer: state[].createTerminalBuffer(),
                 sixels: state.sixels,
                 placements: state.kitty.createPlacements(),
+                relativeScroll: state.scrollY.float / state.scrollbackBufferLen.float,
+                scrollHeight: state.scrollbackBufferLen.float,
               )
           except CatchableError as e:
             echo "async error handle input events 1 ", e.msg
@@ -1832,6 +1842,8 @@ when implModule:
                 buffer: state[].createTerminalBuffer(),
                 sixels: state.sixels,
                 placements: state.kitty.createPlacements(),
+                relativeScroll: state.scrollY.float / state.scrollbackBufferLen.float,
+                scrollHeight: state.scrollbackBufferLen.float,
               )
           except CatchableError as e:
             echo "async error handle process output 1 ", e.msg
@@ -1928,6 +1940,8 @@ when implModule:
             buffer: state.createTerminalBuffer(),
             sixels: state.sixels,
             placements: state.kitty.createPlacements(),
+            relativeScroll: state.scrollY.float / state.scrollbackBufferLen.float,
+            scrollHeight: state.scrollbackBufferLen.float,
           )
 
     except OSError as e:
@@ -2003,6 +2017,18 @@ when implModule:
       import chronos/transports/stream
 
     {.push hint[XCannotRaiseY]:off.}
+    proc authPassword*(session: Session; username, passphrase: string): int {.raises: [IOError].} =
+      while true:
+        let rc = session.userauth_password(username, passphrase, nil)
+        if rc == LIBSSH2_ERROR_EAGAIN:
+          discard
+        elif rc < 0:
+          return rc
+        else:
+          break
+
+      result = 0
+
     proc authPublicKey*(session: Session; username, privKey: string, pubKey = "", passphrase = ""): int {.raises: [IOError].} =
       let privKey = expandTilde(privKey)
       var pubKey = pubKey
@@ -2051,26 +2077,40 @@ when implModule:
         let vfs = self.services.getService(VFSService).get.vfs2
         let privateKeyPath = vfs.localize(options.privateKeyPath)
         let publicKeyPath = vfs.localize(options.publicKeyPath)
-        log lvlInfo, &"Authenticate ssh session '{options.username}@{address}' ({privateKeyPath}) with empty password"
-        var authResult = session.authPublicKey(options.username, privateKeyPath, publicKeyPath, "")
-        if authResult < 0:
-          # If we failed to verify the public key with the empty password, prompt user for password.
-          if authResult == LIBSSH2_ERROR_PUBLICKEY_UNVERIFIED:
-            let passphrase = if options.password.isSome:
-              options.password
-            else:
-              await self.layout.promptString("Passphrase for " & options.username)
-            if passphrase.isNone:
-              log lvlInfo, &"Cancel authentication for ssh session '{options.username}@{address}' ({privateKeyPath})"
-              return
-
-            log lvlInfo, &"Authenticate ssh session '{options.username}@{address}' ({privateKeyPath}) with password"
-            authResult = session.authPublicKey(options.username, privateKeyPath, publicKeyPath, passphrase.get(""))
-
+        if privateKeyPath != "" or publicKeyPath != "":
+          log lvlInfo, &"Authenticate ssh session '{options.username}@{address}' ({privateKeyPath}) with empty password"
+          var authResult = session.authPublicKey(options.username, privateKeyPath, publicKeyPath, "")
           if authResult < 0:
-            raise newException(IOError, &"Failed to authenticate ssh session '{options.username}@{address}': {authResult}")
+            # If we failed to verify the public key with the empty password, prompt user for password.
+            if authResult == LIBSSH2_ERROR_PUBLICKEY_UNVERIFIED:
+              let passphrase = if options.password.isSome:
+                options.password
+              else:
+                await self.layout.promptString("Passphrase for " & options.username)
+              if passphrase.isNone:
+                log lvlInfo, &"Cancel authentication for ssh session '{options.username}@{address}' ({privateKeyPath})"
+                return
 
-        log lvlInfo, &"Authentication successfull for ssh session '{options.username}@{address}' ({privateKeyPath})"
+              log lvlInfo, &"Authenticate ssh session '{options.username}@{address}' ({privateKeyPath}) with password"
+              authResult = session.authPublicKey(options.username, privateKeyPath, publicKeyPath, passphrase.get(""))
+
+            if authResult < 0:
+              raise newException(IOError, &"Failed to authenticate ssh session '{options.username}@{address}': {authResult}")
+        else:
+          let passphrase = if options.password.isSome:
+            options.password
+          else:
+            await self.layout.promptString("Passphrase for " & options.username)
+          if passphrase.isNone:
+            log lvlInfo, &"Cancel authentication for ssh session '{options.username}@{address}'"
+            return
+          log lvlInfo, &"Authenticate ssh session '{options.username}@{address}' with password"
+
+          let authResult = session.authPassword(options.username, passphrase.get)
+          if authResult < 0:
+            raise newException(IOError, &"Failed to authenticate ssh session '{options.username}@{address}' with password: {authResult}")
+
+        log lvlInfo, &"Authentication successfull for ssh session '{options.username}@{address}'"
 
         let sshClient = newSSHClient()
         sshClient.session = session
