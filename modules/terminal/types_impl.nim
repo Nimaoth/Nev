@@ -393,6 +393,11 @@ type
     activeView*: TerminalView
     sixelTextures*: Table[Hash, TextureId]
 
+proc scrollbackBufferLen*(self: TerminalThreadState): int =
+  if self.alternateScreen:
+    return 0
+  return self.scrollbackBuffer.len
+
 proc scrollbackBufferLen*(self: ptr TerminalThreadState): int =
   if self.alternateScreen:
     return 0
