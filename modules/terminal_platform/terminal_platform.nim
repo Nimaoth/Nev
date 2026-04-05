@@ -1,17 +1,17 @@
-import platform
+import platform/platform
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-proc newTerminalPlatform*(): Platform {.rtl, gcsafe, raises: [].}
+proc newTerminalPlatform*(): Platform {.rtl, raises: [].}
 
-when defined(implModule) or true:
+when implModule:
   import std/[strformat, terminal, typetraits, enumutils, strutils, sets, enumerate, typedthreads, parseutils]
   import std/colors as stdcolors
   import vmath
   import chroma as chroma
   import misc/[custom_logger, rect_utils, event, timer, custom_unicode, custom_async]
-  import tui, input, ui/node
+  import platform/tui, input, ui/node
   import app_options, terminal_input
   import vterm
 
@@ -20,8 +20,6 @@ when defined(implModule) or true:
   else:
     from posix import read
     import std/envvars
-
-  export platform
 
   logCategory "terminal-platform"
 
@@ -893,39 +891,42 @@ when defined(implModule) or true:
       if DrawBorderTerminal in node.flags:
         platform.drawBorder(bounds, node.borderColor, node.border, node.backgroundColor)
 
-  proc newTerminalPlatform*(): Platform =
+  proc newTerminalPlatform*(): Platform {.raises: [].} =
     var res = TerminalPlatform()
     res.initImpl = proc(self: Platform, options: AppOptions) =
-      cast[TerminalPlatform](self).initTerminalPlatform(options)
+      self.TerminalPlatform.initTerminalPlatform(options)
     res.deinitImpl = proc(self: Platform) =
-      cast[TerminalPlatform](self).deinitTerminalPlatform()
+      self.TerminalPlatform.deinitTerminalPlatform()
     res.requestRenderImpl = proc(self: Platform, redrawEverything: bool) =
-      cast[TerminalPlatform](self).requestRenderTerminalPlatform(redrawEverything)
+      self.TerminalPlatform.requestRenderTerminalPlatform(redrawEverything)
     res.renderImpl = proc(self: Platform, rerender: bool) =
-      cast[TerminalPlatform](self).renderTerminalPlatform(rerender)
+      self.TerminalPlatform.renderTerminalPlatform(rerender)
     res.sizeChangedImpl = proc(self: Platform): bool =
-      cast[TerminalPlatform](self).sizeChangedTerminalPlatform()
+      self.TerminalPlatform.sizeChangedTerminalPlatform()
     res.sizeImpl = proc(self: Platform): Vec2 =
-      cast[TerminalPlatform](self).sizeTerminalPlatform()
+      self.TerminalPlatform.sizeTerminalPlatform()
     res.processEventsImpl = proc(self: Platform): int =
-      cast[TerminalPlatform](self).processEventsTerminalPlatform()
+      self.TerminalPlatform.processEventsTerminalPlatform()
     res.fontSizeImpl = proc(self: Platform): float =
-      cast[TerminalPlatform](self).fontSizeTerminalPlatform()
+      self.TerminalPlatform.fontSizeTerminalPlatform()
     res.lineDistanceImpl = proc(self: Platform): float =
-      cast[TerminalPlatform](self).lineDistanceTerminalPlatform()
+      self.TerminalPlatform.lineDistanceTerminalPlatform()
     res.lineHeightImpl = proc(self: Platform): float =
-      cast[TerminalPlatform](self).lineHeightTerminalPlatform()
+      self.TerminalPlatform.lineHeightTerminalPlatform()
     res.charWidthImpl = proc(self: Platform): float =
-      cast[TerminalPlatform](self).charWidthTerminalPlatform()
+      self.TerminalPlatform.charWidthTerminalPlatform()
     res.charGapImpl = proc(self: Platform): float =
-      cast[TerminalPlatform](self).charGapTerminalPlatform()
+      self.TerminalPlatform.charGapTerminalPlatform()
     res.measureTextImpl = proc(self: Platform, text: string): Vec2 =
-      cast[TerminalPlatform](self).measureTextTerminalPlatform(text)
+      self.TerminalPlatform.measureTextTerminalPlatform(text)
     res.layoutTextImpl = proc(self: Platform, text: string): seq[Rect] =
-      cast[TerminalPlatform](self).layoutTextTerminalPlatform(text)
+      self.TerminalPlatform.layoutTextTerminalPlatform(text)
     res.setVsyncImpl = proc(self: Platform, enabled: bool) =
-      cast[TerminalPlatform](self).setVsyncTerminalPlatform(enabled)
+      self.TerminalPlatform.setVsyncTerminalPlatform(enabled)
     res.getFontInfoImpl = proc(self: Platform, fontSize: float, flags: UINodeFlags): ptr FontInfo =
-      cast[TerminalPlatform](self).getFontInfoTerminalPlatform(fontSize, flags)
+      self.TerminalPlatform.getFontInfoTerminalPlatform(fontSize, flags)
 
     return res
+
+  proc init_module_terminal_platform*() {.cdecl, exportc, dynlib.} =
+    discard

@@ -225,7 +225,7 @@ import ui/widget_builders
 import app, platform_service
 
 when enableTerminal:
-  import platform/terminal_platform
+  import "../modules/terminal_platform"/terminal_platform
 
 when enableGui:
   import platform/[gui_platform, tui]

@@ -1,5 +1,6 @@
 import "../modules/language_server_ue_cpp.nim"
 import "../modules/debugger/debugger.nim"
+import "../modules/terminal_platform/terminal_platform.nim"
 import "../modules/dashboard.nim"
 import "../modules/vcs_git.nim"
 import "../modules/command_server.nim"
@@ -27,6 +28,7 @@ import "../modules/stats.nim"
 proc initModules*() =
   when declared(init_module_language_server_ue_cpp): init_module_language_server_ue_cpp()
   when declared(init_module_debugger): init_module_debugger()
+  when declared(init_module_terminal_platform): init_module_terminal_platform()
   when declared(init_module_dashboard): init_module_dashboard()
   when declared(init_module_vcs_git): init_module_vcs_git()
   when declared(init_module_command_server): init_module_command_server()
@@ -54,6 +56,7 @@ proc initModules*() =
 proc shutdownModules*() =
   when declared(shutdown_module_language_server_ue_cpp): shutdown_module_language_server_ue_cpp()
   when declared(shutdown_module_debugger): shutdown_module_debugger()
+  when declared(shutdown_module_terminal_platform): shutdown_module_terminal_platform()
   when declared(shutdown_module_dashboard): shutdown_module_dashboard()
   when declared(shutdown_module_vcs_git): shutdown_module_vcs_git()
   when declared(shutdown_module_command_server): shutdown_module_command_server()
