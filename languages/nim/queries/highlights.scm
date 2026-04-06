@@ -16,8 +16,8 @@
   right: (identifier) @variable.member)
 
 ; Currently #match? and friends on nodes which exist a lot (like identifiers) are quite expensive, so disable them for now.
-((identifier) @type
-  (#match? @type "^([A-Z].*|openArray|typedesc)$"))
+; ((identifier) @type
+;   (#match? @type "^([A-Z].*|openArray|typedesc)$"))
 
 ; Declarations
 (exported_symbol "*" @type.qualifier)
