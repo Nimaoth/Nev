@@ -1645,7 +1645,15 @@ when implModule:
   #     vimSaveState()
   #   scriptSetCallback("before-save-app-state", beforeSaveAppStateHandle)
 
+  proc initAsync*() {.async.} =
+    try:
+      await sleepAsync(5.milliseconds)
+    except:
+      discard
+    {.gcsafe.}:
+      let commandService = getServiceChecked(CommandService)
+      for c in vimCommands:
+        discard commandService.registerCommand(c)
+
   proc init_module_vim*() {.cdecl, exportc, dynlib.} =
-    let commandService = getServiceChecked(CommandService)
-    for c in vimCommands:
-      discard commandService.registerCommand(c)
+    asyncSpawn initAsync()
