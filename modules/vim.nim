@@ -342,7 +342,6 @@ when implModule:
   proc defineCommand(name: string, active: bool, docs: string, params: seq[(string, string)], returnType: string, context: string,
       impl: proc(data: uint64, argsString: string): string {.cdecl, raises: [CatchableError].}) =
     let vimCommands = ({.gcsafe.}: vimCommands.addr)
-    let layout = getServiceChecked(LayoutService)
     vimCommands[].add Command(
       namespace: "",
       name: "vim." & name,
@@ -353,6 +352,7 @@ when implModule:
       execute: proc(args: string): string {.gcsafe, raises: [CatchableError].} =
         try:
           if active:
+            let layout = getServiceChecked(LayoutService)
             let activeEditor = layout.getActiveEditor()
             if activeEditor.isSome:
               {.gcsafe.}:
@@ -1645,15 +1645,7 @@ when implModule:
   #     vimSaveState()
   #   scriptSetCallback("before-save-app-state", beforeSaveAppStateHandle)
 
-  proc initAsync*() {.async.} =
-    try:
-      await sleepAsync(5.milliseconds)
-    except:
-      discard
-    {.gcsafe.}:
-      let commandService = getServiceChecked(CommandService)
-      for c in vimCommands:
-        discard commandService.registerCommand(c)
-
   proc init_module_vim*() {.cdecl, exportc, dynlib.} =
-    asyncSpawn initAsync()
+    let commandService = getServiceChecked(CommandService)
+    for c in vimCommands:
+      discard commandService.registerCommand(c)
