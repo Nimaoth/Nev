@@ -44,7 +44,7 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   self.commandLineResultMode = false
   self.commandHandler = nil
   self.prefix = prefix
-  editor.disableCompletions = false
+  editor.settings.disableCompletions.set(false)
   editor.disableScrolling = true
   editor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   editor.document.setReadOnly(false)
@@ -97,7 +97,7 @@ proc commandLineResult*(self: CommandService, value: string, showInCommandLine: 
     self.commandLineInputMode = false
     self.commandLineResultMode = true
     self.commandHandler = nil
-    editor.disableCompletions = false
+    editor.settings.disableCompletions.set(false)
     editor.disableScrolling = false
     editor.uiSettings.lineNumbers.set(api.LineNumbers.Absolute)
     editor.document.setReadOnly(true)
@@ -137,6 +137,11 @@ proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
 
   let input = editor.document.contentString
   if input == "":
+    if self.commandHandler != nil:
+      try:
+        return self.commandHandler("".some).isSome
+      except Exception:
+        discard
     return false
 
   let commands = input.split("\n")

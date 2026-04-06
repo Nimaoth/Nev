@@ -453,6 +453,8 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
     discard self.buffer.startTransaction()
     if oldSelections.len > 0:
       self.undoSelections[self.buffer.currentTransaction.id] = @oldSelections
+  elif self.buffer.currentTransaction.editIds.len == 0:
+    self.undoSelections[self.buffer.currentTransaction.id] = @oldSelections
 
   let oldText = self.rope
   let (transactionId, op) = self.buffer.edit(ranges)
@@ -1737,6 +1739,13 @@ proc startTransaction*(self: TextDocument) =
 
 proc endTransaction*(self: TextDocument) =
   discard self.buffer.endTransaction()
+
+template withTransaction*(self: TextDocument, body: untyped): untyped =
+  try:
+    self.startTransaction()
+    body
+  finally:
+    self.endTransaction()
 
 proc undoToPreviousSibling*(self: TextDocument, redoUntilBranch: bool = false): Option[seq[Selection]] =
   result = seq[Selection].none

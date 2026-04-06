@@ -7,6 +7,7 @@ import app_interface, text/text_editor, popup, events,
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
 import plugin_service
+import search_component
 
 export popup, selector_popup_builder, service
 
@@ -459,7 +460,7 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.textEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   popup.textEditor.settings.highlightMatches.enable.set(false)
   popup.textEditor.disableScrolling = true
-  popup.textEditor.disableCompletions = true
+  popup.textEditor.settings.disableCompletions.set(true)
   popup.textEditor.active = true
 
   finder.get.minScore = popup.settings.minScore.get()
@@ -482,7 +483,7 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
     popup.previewEditor.usage = "preview"
     popup.previewEditor.renderHeader = true
     popup.previewEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
-    popup.previewEditor.disableCompletions = true
+    popup.previewEditor.settings.disableCompletions.set(true)
     popup.previewEditor.settings.cursorMargin.set(0.0)
 
     discard popup.previewEditor.onMarkedDirty.subscribe () =>

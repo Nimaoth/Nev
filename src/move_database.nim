@@ -123,6 +123,24 @@ proc vimMotionWordBig*(text: Rope, cursor: Cursor, inclusive: bool): Selection =
     let (startColumn, endColumn) = line.getEnclosing(cursor.column, inclusive, (c) => c notin Whitespace)
     return ((cursor.line, startColumn), (cursor.line, endColumn))
 
+proc vimMotionParagraphInner*(text: Rope, cursor: Cursor): Selection =
+  # debugf"vimMotionParagraphInner {data}, {selections}"
+  let isEmpty = text.lineLen(cursor.line) == 0
+  var res: Selection = ((cursor.line.int, 0), cursor)
+  while res.first.line - 1 >= 0 and (text.lineLen(res.first.line - 1) == 0) == isEmpty:
+    dec res.first.line
+  while res.last.line + 1 < text.lines and (text.lineLen(res.last.line + 1) == 0) == isEmpty:
+    inc res.last.line
+
+  res.last.column = text.lineLen(res.last.line).int32
+  res
+
+proc vimMotionParagraphOuter*(text: Rope, cursor: Cursor): Selection =
+  result = vimMotionParagraphInner(text, cursor)
+  # todo
+  # if result.last.line + 1 < editor.lineCount:
+  #   result = result or vimMotionParagraphInner(data, text, (result.last.line.int + 1, 0).toCursor, 1, includeEol)
+
 proc findNext*(text: Rope, cursor: Cursor, target: Rune): Cursor =
   var c = text.cursorT(cursor.toPoint)
   c.seekNextRune()
@@ -496,6 +514,18 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
     for _ in 1..<count:
       for s in result.mitems:
         s = s or vimMotionWordBig(rope, s.last, false) or vimMotionWordBig(rope, s.first, false)
+
+  of "vim.paragraph-inner":
+    result = selections.mapIt(vimMotionParagraphInner(rope, it.last))
+    for _ in 1..<count:
+      for s in result.mitems:
+        s = s or vimMotionParagraphInner(rope, s.last) or vimMotionParagraphInner(rope, s.first)
+
+  of "vim.paragraph-outer":
+    result = selections.mapIt(vimMotionParagraphOuter(rope, it.last))
+    for _ in 1..<count:
+      for s in result.mitems:
+        s = s or vimMotionParagraphOuter(rope, s.last) or vimMotionParagraphOuter(rope, s.first)
 
   of "reverse":
     return selections.mapIt(it.reverse)

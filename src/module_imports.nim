@@ -6,6 +6,7 @@ import "../modules/vcs_git.nim"
 import "../modules/command_server.nim"
 import "../modules/vcs_perforce.nim"
 import "../modules/hover_component.nim"
+import "../modules/vim.nim"
 import "../modules/contextline_component.nim"
 import "../modules/language_server_ctags.nim"
 import "../modules/language_server_regex.nim"
@@ -16,12 +17,13 @@ import "../modules/gui_platform/gui_platform.nim"
 import "../modules/language_server_document_completion.nim"
 import "../modules/markdown_component.nim"
 import "../modules/command_component.nim"
+import "../modules/search_component.nim"
 import "../modules/snippet_component.nim"
-import "../modules/terminal/terminal.nim"
 import "../modules/language_server_lsp/language_server_lsp.nim"
 import "../modules/language_server_paths.nim"
-import "../modules/undo_tree.nim"
+import "../modules/terminal/terminal.nim"
 import "../modules/formatting_component.nim"
+import "../modules/undo_tree.nim"
 import "../modules/angelscript_formatter.nim"
 import "../modules/language_server_ue_as.nim"
 import "../modules/stats.nim"
@@ -35,6 +37,7 @@ proc initModules*() =
   when declared(init_module_command_server): init_module_command_server()
   when declared(init_module_vcs_perforce): init_module_vcs_perforce()
   when declared(init_module_hover_component): init_module_hover_component()
+  when declared(init_module_vim): init_module_vim()
   when declared(init_module_contextline_component): init_module_contextline_component()
   when declared(init_module_language_server_ctags): init_module_language_server_ctags()
   when declared(init_module_language_server_regex): init_module_language_server_regex()
@@ -45,12 +48,13 @@ proc initModules*() =
   when declared(init_module_language_server_document_completion): init_module_language_server_document_completion()
   when declared(init_module_markdown_component): init_module_markdown_component()
   when declared(init_module_command_component): init_module_command_component()
+  when declared(init_module_search_component): init_module_search_component()
   when declared(init_module_snippet_component): init_module_snippet_component()
-  when declared(init_module_terminal): init_module_terminal()
   when declared(init_module_language_server_lsp): init_module_language_server_lsp()
   when declared(init_module_language_server_paths): init_module_language_server_paths()
-  when declared(init_module_undo_tree): init_module_undo_tree()
+  when declared(init_module_terminal): init_module_terminal()
   when declared(init_module_formatting_component): init_module_formatting_component()
+  when declared(init_module_undo_tree): init_module_undo_tree()
   when declared(init_module_angelscript_formatter): init_module_angelscript_formatter()
   when declared(init_module_language_server_ue_as): init_module_language_server_ue_as()
   when declared(init_module_stats): init_module_stats()
@@ -64,6 +68,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_command_server): shutdown_module_command_server()
   when declared(shutdown_module_vcs_perforce): shutdown_module_vcs_perforce()
   when declared(shutdown_module_hover_component): shutdown_module_hover_component()
+  when declared(shutdown_module_vim): shutdown_module_vim()
   when declared(shutdown_module_contextline_component): shutdown_module_contextline_component()
   when declared(shutdown_module_language_server_ctags): shutdown_module_language_server_ctags()
   when declared(shutdown_module_language_server_regex): shutdown_module_language_server_regex()
@@ -74,12 +79,13 @@ proc shutdownModules*() =
   when declared(shutdown_module_language_server_document_completion): shutdown_module_language_server_document_completion()
   when declared(shutdown_module_markdown_component): shutdown_module_markdown_component()
   when declared(shutdown_module_command_component): shutdown_module_command_component()
+  when declared(shutdown_module_search_component): shutdown_module_search_component()
   when declared(shutdown_module_snippet_component): shutdown_module_snippet_component()
-  when declared(shutdown_module_terminal): shutdown_module_terminal()
   when declared(shutdown_module_language_server_lsp): shutdown_module_language_server_lsp()
   when declared(shutdown_module_language_server_paths): shutdown_module_language_server_paths()
-  when declared(shutdown_module_undo_tree): shutdown_module_undo_tree()
+  when declared(shutdown_module_terminal): shutdown_module_terminal()
   when declared(shutdown_module_formatting_component): shutdown_module_formatting_component()
+  when declared(shutdown_module_undo_tree): shutdown_module_undo_tree()
   when declared(shutdown_module_angelscript_formatter): shutdown_module_angelscript_formatter()
   when declared(shutdown_module_language_server_ue_as): shutdown_module_language_server_ue_as()
   when declared(shutdown_module_stats): shutdown_module_stats()

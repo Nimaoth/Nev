@@ -10,7 +10,7 @@ import platform/platform, platform_service
 import config_provider, command_service, command_service_api, compilation_config
 import plugin_service, document_editor, vfs, vfs_service, channel, register, move_database, popup, event_service, session
 import "../../modules/terminal"/terminal
-import decoration_component
+import decoration_component, command_component
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 import lisp
 import vmath
@@ -744,7 +744,7 @@ proc textEditorRecordCurrentCommand*(instance: ptr InstanceData; editor: TextEdi
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.recordCurrentCommand(registers)
+    editor.TextDocumentEditor.commandComponent.recordCurrentCommand(registers)
 
 proc textEditorGetUsage*(instance: ptr InstanceData; editor: TextEditor): string =
   if instance.host == nil:

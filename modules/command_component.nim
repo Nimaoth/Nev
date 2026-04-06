@@ -11,6 +11,10 @@ type
   CommandComponent* = ref object of Component
     commands*: Table[string, tuple[handler: RootRef, cb: CommandHandler]]
     executeCommandImpl*: proc (command: string) {.gcsafe, raises: [].}
+    recordCurrentCommandRegisters*: seq[string] # List of registers the current command should be recorded into.
+    bIsRecordingCurrentCommand*: bool = false # True while running a command which is being recorded
+    commandCount*: int = 0
+    commandCountRestore*: int
 
 # DLL API
 {.push rtl, gcsafe, raises: [].}
@@ -19,6 +23,10 @@ proc newCommandComponent*(): CommandComponent
 
 proc commandComponentRegisterCommand(self: CommandComponent, name: string, handler: RootRef, cb: CommandHandler)
 proc commandComponentExecuteCommand(self: CommandComponent, command: string)
+proc commandComponentGetCommandCount(self: CommandComponent): int
+proc commandComponentSetCommandCount(self: CommandComponent, count: int)
+proc commandComponentSetCommandCountRestore(self: CommandComponent, count: int)
+proc commandComponentUpdateCommandCount(self: CommandComponent, digit: int)
 
 {.pop.}
 
@@ -26,7 +34,14 @@ proc commandComponentExecuteCommand(self: CommandComponent, command: string)
 {.push inline.}
 proc registerCommand*(self: CommandComponent, name: string, handler: RootRef, cb: CommandHandler) = commandComponentRegisterCommand(self, name, handler, cb)
 proc executeCommand*(self: CommandComponent, command: string) = commandComponentExecuteCommand(self, command)
+proc getCommandCount*(self: CommandComponent): int = commandComponentGetCommandCount(self)
+proc setCommandCount*(self: CommandComponent, count: int) = commandComponentSetCommandCount(self, count)
+proc setCommandCountRestore*(self: CommandComponent, count: int) = commandComponentSetCommandCountRestore(self, count)
+proc updateCommandCount*(self: CommandComponent, digit: int) = commandComponentUpdateCommandCount(self, digit)
 {.pop.}
+
+proc recordCurrentCommand*(self: CommandComponent, registers: seq[string] = @[]) =
+  self.recordCurrentCommandRegisters = registers
 
 # Implementation
 when implModule:
@@ -54,6 +69,18 @@ when implModule:
   proc commandComponentExecuteCommand(self: CommandComponent, command: string) =
     if self.executeCommandImpl != nil:
       self.executeCommandImpl(command)
+
+  proc commandComponentGetCommandCount(self: CommandComponent): int =
+    return self.commandCount
+
+  proc commandComponentSetCommandCount(self: CommandComponent, count: int) =
+    self.commandCount = count
+
+  proc commandComponentSetCommandCountRestore(self: CommandComponent, count: int) =
+    self.commandCountRestore = count
+
+  proc commandComponentUpdateCommandCount(self: CommandComponent, digit: int) =
+    self.commandCount = self.commandCount * 10 + digit
 
   proc init_module_command_component*() {.cdecl, exportc, dynlib.} =
     discard

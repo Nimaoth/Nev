@@ -47,9 +47,18 @@ type
 func serviceName*(_: typedesc[Registers]): string = "Registers"
 
 # DLL API
-proc registersSetRegisterText*(self: Registers, text: string, register: string = "") {.apprtl, gcsafe, raises: [].}
-proc registersGetRegisterText*(self: Registers, register: string): string {.apprtl, gcsafe, raises: [].}
-proc registersGetRegisterAsync*(self: Registers, register: string, res: ptr Register): Future[bool] {.apprtl, gcsafe, raises: [].}
+{.push apprtl, gcsafe, raises: [].}
+proc registersSetRegisterText*(self: Registers, text: string, register: string = "")
+proc registersGetRegisterText*(self: Registers, register: string): string
+proc registersGetRegisterAsync*(self: Registers, register: string, res: ptr Register): Future[bool]
+proc startRecordingKeys*(self: Registers, register: string)
+proc stopRecordingKeys*(self: Registers, register: string)
+proc startRecordingCommands*(self: Registers, register: string)
+proc stopRecordingCommands*(self: Registers, register: string)
+proc isReplayingCommands*(self: Registers): bool
+proc isReplayingKeys*(self: Registers): bool
+proc isRecordingCommands*(self: Registers, registry: string): bool
+{.pop.}
 
 # Nice wrappers
 proc setRegisterText*(self: Registers, text: string, register: string = "") {.inline.} = registersSetRegisterText(self, text, register)

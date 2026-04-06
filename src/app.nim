@@ -13,6 +13,7 @@ import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
 import service, layout, session, command_service, toast, plugin_service
 import event_service
+import search_component
 import nimsumtree/[rope]
 
 import misc/async_process

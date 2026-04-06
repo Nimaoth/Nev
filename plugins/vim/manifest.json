@@ -5,7 +5,7 @@
 	"repository": "https://github.com/Nimaoth/Nev/plugins/vim",
 	"wasm": "vim.m.wasm",
 	// "wasm": "vim.wat",
-	"autoLoad": true,
+	"autoLoad": false,
 	"commands": {
 		"test-command-1": {},
 	},

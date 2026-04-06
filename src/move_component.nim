@@ -7,6 +7,7 @@ export component
 include dynlib_export
 
 type MoveComponent* = ref object of Component
+  targetColumn*: int = -1
 
 # DLL API
 var MoveComponentId* {.apprtl.}: ComponentTypeId
@@ -57,7 +58,12 @@ when implModule:
     let self = self.MoveComponentImpl
     var env = Env()
     env["screen-lines"] = newNumber(100)
-    env["target-column"] = newNumber(0)
+    if self.targetColumn != -1:
+      env["target-column"] = newNumber(self.targetColumn)
+    elif selections.len > 0:
+      env["target-column"] = newNumber(selections[^1].b.column.int)
+    else:
+      env["target-column"] = newNumber(0)
     env["count"] = newNumber(count)
     env["include-eol"] = newBool(includeEol)
     env["wrap"] = newBool(wrap)

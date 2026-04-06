@@ -321,7 +321,7 @@ proc createPlugin(self: PluginService, manifest: sink PluginManifest) =
     if key == "" or key == "permissions" or key.startsWith("permissions"):
       self.updatePermissions(plugin)
 
-  if self.autoLoadPlugins:
+  if self.autoLoadPlugins and plugin.manifest.autoLoad:
     asyncSpawn self.loadPlugin(plugin)
 
 proc addManifestFromFile(self: PluginService, pluginFolder: PluginDirectory, file: string) {.async.} =

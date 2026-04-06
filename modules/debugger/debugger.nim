@@ -26,7 +26,8 @@ when implModule:
   import workspaces/workspace, vfs, vfs_service, language_server_dynamic
   import ui/node
   import nimsumtree/[rope, buffer]
-  import text_component, text_editor_component, language_server_component, decoration_component, inlay_hint_component, treesitter_component, hover_component, move_component
+  import text_component, text_editor_component, language_server_component, decoration_component, inlay_hint_component, treesitter_component
+  import hover_component, move_component, config_component
   import event_service
   import types_impl
 
@@ -307,7 +308,7 @@ when implModule:
     self.outputEditor = self.editors.createEditorForDocument(document, %%*{"usage": "debugger-output"}).get(nil)
     if self.outputEditor != nil:
       # todo
-      # self.outputEditor.disableCompletions = true
+      self.outputEditor.getConfigComponent().get.set("text.disable-completions", true)
       discard self.outputEditor.onMarkedDirty.subscribe () =>
         self.platform.requestRender()
 

@@ -34,6 +34,7 @@ proc layoutServicePrompt(self: LayoutService, choices: seq[string], title: strin
 proc layoutServiceTryActivateEditor(self: LayoutService, editor: DocumentEditor) {.apprtl, gcsafe, raises: [].}
 proc layoutServiceTryActivateView(self: LayoutService, view: View) {.apprtl, gcsafe, raises: [].}
 proc layoutServiceNewEditorView(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView {.apprtl, gcsafe, raises: [].}
+proc layoutServiceGetActiveEditor(self: LayoutService, includeCommandLine: bool = true, includePopups: bool = true): Option[DocumentEditor] {.apprtl, gcsafe, raises: [].}
 
 # Nice wrappers
 proc popups*(self: LayoutService): lent seq[Popup] {.inline.} = self.layoutServicePopups()
@@ -51,6 +52,7 @@ proc prompt*(self: LayoutService, choices: seq[string], title: string = ""): Fut
 proc tryActivateEditor*(self: LayoutService, editor: DocumentEditor) {.inline.} = layoutServiceTryActivateEditor(self, editor)
 proc tryActivateView*(self: LayoutService, view: View) = layoutServiceTryActivateView(self, view)
 proc newEditorView*(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView {.inline.} = layoutServiceNewEditorView(editor, document, id)
+proc getActiveEditor*(self: LayoutService, includeCommandLine: bool = true, includePopups: bool = true): Option[DocumentEditor] = layoutServiceGetActiveEditor(self, includeCommandLine, includePopups)
 
 proc getViews*(self: LayoutService, T: typedesc): seq[T] =
   var res = newSeq[T]()
@@ -584,12 +586,12 @@ when implModule:
 
     return DocumentEditor.none
 
-  proc getActiveEditor*(self: LayoutService): Option[DocumentEditor] =
+  proc layoutServiceGetActiveEditor(self: LayoutService, includeCommandLine: bool = true, includePopups: bool = true): Option[DocumentEditor] =
     let self = self.LayoutServiceImpl
-    if self.commands.commandLineMode:
+    if includeCommandLine and self.commands.commandLineMode:
       return self.commands.commandLineEditor.some
 
-    if self.mPopups.len > 0 and self.mPopups[self.mPopups.high].getActiveEditor().getSome(editor):
+    if includePopups and self.mPopups.len > 0 and self.mPopups[self.mPopups.high].getActiveEditor().getSome(editor):
       return editor.some
 
     if self.tryGetCurrentView().getSome(view):

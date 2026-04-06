@@ -390,3 +390,19 @@ template defineCustomPoint*(name: untyped) =
   func cmp*(a: name, b: name): int {.borrow.}
   func clamp*(p: name, r: Range[name]): name = min(max(p, r.a), r.b)
   converter toDiffPoint*(diff: PointDiff): name = diff.toPoint.name
+
+proc clampOnLine*(text: Rope, point: Point, includeAfter: bool = true): Point =
+  var point = point
+  point.row = clamp(point.row.int, 0, text.lines - 1).uint32
+
+  var res = text.clipPoint(point, Bias.Left)
+  var c = text.cursorT(res)
+  if not includeAfter and c.currentRune == '\n'.Rune and res.column > 0:
+    c.seekPrevRune()
+    res = c.position
+  return res
+
+proc clampOnLine*(text: Rope, r: Range[Point], includeAfter: bool = true): Range[Point] = text.clampOnLine(r.a, includeAfter)...text.clampOnLine(r.b, includeAfter)
+
+proc isEmpty*[T](r: Range[T]): bool = r.a == r.b
+proc toRange*[T](a: T): Range[T] = a...a
