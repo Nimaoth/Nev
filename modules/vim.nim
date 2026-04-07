@@ -12,7 +12,7 @@ when implModule:
   import input_api
   import service, config_provider, layout
   import document_editor, document, text_editor_component, text_component, move_component, command_component, snippet_component
-  import config_component, command_service, search_component
+  import config_component, command_service, search_component, decoration_component
   import register
 
   logCategory "vim"
@@ -184,7 +184,29 @@ when implModule:
   proc redo(editor: TextEditor, checkpoint: string = "") =
     discard editor.command("redo", "")
 
-  proc copy(editor: TextEditor, register: string = "", inclusiveEnd: bool) =
+  let copyHighlightId = newId()
+
+  proc highlightTempAsync(editor: TextEditor, ranges: seq[Range[Point]]) {.async.} =
+    if editor.editor.getDecorationComponent().getSome(decos):
+      for range in ranges:
+        decos.addCustomHighlight(copyHighlightId, range, "editor.findMatchBackground")
+      try:
+        await sleepAsync(150.milliseconds)
+      except CatchableError:
+        discard
+      decos.clearCustomHighlights(copyHighlightId)
+
+  proc highlightTemp(editor: TextEditor, ranges: seq[Range[Point]]) =
+    if editor.editor.getConfigComponent().get.get("ui.highlight-yank", true):
+      asyncSpawn editor.highlightTempAsync(ranges)
+
+  proc copy(editor: TextEditor, register: string = "", inclusiveEnd: bool, highlight: bool = false) =
+    if highlight:
+      let selections = if inclusiveEnd:
+        editor.moves.applyMove(editor.edit.selections, "(column 1) (join)", wrap = false)
+      else:
+        editor.edit.selections
+      editor.highlightTemp(selections)
     discard editor.command("copy", &"{register.toJson} {inclusiveEnd}")
 
   proc paste(editor: TextEditor, selections: sink seq[Selection], register: string = "", inclusiveEnd: bool) =
@@ -592,11 +614,11 @@ when implModule:
       else:
         editor.setMode "vim.normal"
 
-  proc copySelection(editor: TextEditor, register: string = "", inclusive: bool = true): seq[Selection] =
+  proc copySelection(editor: TextEditor, register: string = "", inclusive: bool = true, highlight: bool = false): seq[Selection] =
     ## Copies the selected text
     ## If line selection mode is enabled then it also extends the selection so that deleting it will also delete the line itself
     yankedLines = editor.vimState.selectLines
-    editor.copy(register, inclusiveEnd=inclusive)
+    editor.copy(register, inclusiveEnd=inclusive, highlight)
     let selections = editor.selections
     if editor.vimState.selectLines:
       editor.setSelections editor.selections.mapIt (
@@ -645,12 +667,12 @@ when implModule:
     editor.vimState.deleteInclusiveEnd = true
 
   proc yankSelection*(editor: TextEditor, inclusive: bool = true) {.exposeActive(editorContext).} =
-    let selections = editor.copySelection(getVimDefaultRegister(), inclusive)
+    let selections = editor.copySelection(getVimDefaultRegister(), inclusive, highlight = true)
     editor.setSelections selections
     editor.setMode "vim.normal"
 
   proc yankSelectionClipboard*(editor: TextEditor, inclusive: bool = true) {.exposeActive(editorContext).} =
-    let selections = editor.copySelection(inclusive = inclusive)
+    let selections = editor.copySelection(inclusive = inclusive, highlight = true)
     editor.setSelections selections
     editor.setMode "vim.normal"
 

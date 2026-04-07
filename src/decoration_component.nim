@@ -162,7 +162,7 @@ when implModule:
     of SignColumnShowKind.Number:
       return 0
 
-  iterator splitSelectionIntoLines(self: DecorationComponentImpl, selection: Selection, includeAfter: bool = true): Selection =
+  iterator splitSelectionIntoLines(selection: Selection, includeAfter: bool = true): Selection =
     ## Yields a selection for each line covered by the input selection, covering the same range as the input
     ## If includeAfter is true then the selections will go until line.len, otherwise line.high
 
@@ -196,12 +196,12 @@ when implModule:
 
   proc addCustomHighlight*(self: DecorationComponent, id: Id, selection: Selection, color: string, tint: Color = color(1, 1, 1)) {.inline.} =
     let self = self.DecorationComponentImpl
-    for lineSelection in self.splitSelectionIntoLines(selection):
+    for lineSelection in splitSelectionIntoLines(selection):
       assert lineSelection.first.line == lineSelection.last.line
-      self.customHighlights.withValue(selection.first.line, val):
-        val[].add (id, selection, color, tint)
+      self.customHighlights.withValue(lineSelection.first.line, val):
+        val[].add (id, lineSelection, color, tint)
       do:
-        self.customHighlights[selection.first.line] = @[(id, selection, color, tint)]
+        self.customHighlights[lineSelection.first.line] = @[(id, lineSelection, color, tint)]
     self.owner.DocumentEditor.markDirty()
 
   proc decorationComponentAddCustomHighlight(self: DecorationComponent, id: Id, selection: Range[Point], color: string, tint: Color = color(1, 1, 1)) =

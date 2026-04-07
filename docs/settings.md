@@ -9,6 +9,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `snippets` | object |  | Snippets per language. |
 | `startup-commands` | array |  | List of commands to execute at startup. |
 | `keybindings.preset` | "vim" "vscode" | "vim" | Which kind of keybindings to load at startup. |
+| `ui.highlight-yank` | bool | true | Highlight yanked ranges. |
 | . | . | . | . |
 | `context-lines.enabled` | bool | true |  |
 | `context-lines.separator` | string | "»" |  |
