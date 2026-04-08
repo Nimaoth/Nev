@@ -100,6 +100,10 @@ if packageWindows:
   cpFile2 "nevt.exe", releaseWindows, optional=true
   cpFile2 "wasmtime.dll", releaseWindows, optional=true
 
+  if fileExists(&"{releaseWindows}.zip"):
+    echo &"Remove existing {releaseWindows}.zip"
+    rmFile(&"{releaseWindows}.zip")
+
   echo &"Create {releaseWindows}.zip"
   exec(&"powershell -Command Compress-Archive -Force -Path {releaseWindows} -DestinationPath {releaseWindows}.zip")
 
