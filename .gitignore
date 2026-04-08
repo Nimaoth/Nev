@@ -18,6 +18,7 @@
 src/input_tests
 nimcache
 nimcache*
+nimonycache*
 _temp
 /nev
 nev
