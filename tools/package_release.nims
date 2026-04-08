@@ -95,11 +95,10 @@ if packageWindows:
   echo &"Package windows..."
   mkDir releaseWindows
   copySharedFilesTo releaseWindows
-  if fileExists "nev.exe":
-    cpFile2 "nevg.exe", releaseWindows
-    cpFile2 "nev.exe", releaseWindows
-    cpFile2 "nevt.exe", releaseWindows, optional=true
-    cpFile2 "wasmtime.dll", releaseWindows, optional=true
+  cpFile2 "nev.exe", releaseWindows, optional=true
+  cpFile2 "nevg.exe", releaseWindows, optional=true
+  cpFile2 "nevt.exe", releaseWindows, optional=true
+  cpFile2 "wasmtime.dll", releaseWindows, optional=true
 
   echo &"Create {releaseWindows}.zip"
   exec(&"powershell -Command Compress-Archive -Path {releaseWindows} -DestinationPath {releaseWindows}.zip")
@@ -110,18 +109,20 @@ if packageLinux:
   copySharedFilesTo releaseLinux
   if fileExists "nev":
     cpFile2 "nev", releaseLinux
-    cpFile2 "nevg", releaseLinux
+    if fileExists "nevg":
+      cpFile2 "nevg", releaseLinux
 
-  mkDir releaseLinuxMusl
-  copySharedFilesTo releaseLinuxMusl
-  if fileExists "nev":
-    cpFile2 "nev-musl", releaseLinuxMusl
-    mvFile(releaseLinuxMusl / "nev-musl", releaseLinuxMusl / "nev")
+    echo &"Create {releaseLinux}.tar"
+    exec(&"tar -jcvf {releaseLinux}.tar {releaseLinux}")
 
-  echo &"Create {releaseLinux}.tar"
-  exec(&"tar -jcvf {releaseLinux}.tar {releaseLinux}")
+  if fileExists "nev-musl":
+    mkDir releaseLinuxMusl
+    copySharedFilesTo releaseLinuxMusl
+    if fileExists "nev":
+      cpFile2 "nev-musl", releaseLinuxMusl
+      mvFile(releaseLinuxMusl / "nev-musl", releaseLinuxMusl / "nev")
 
-  echo &"Create {releaseLinuxMusl}.tar"
-  exec(&"tar -jcvf {releaseLinuxMusl}.tar {releaseLinuxMusl}")
+    echo &"Create {releaseLinuxMusl}.tar"
+    exec(&"tar -jcvf {releaseLinuxMusl}.tar {releaseLinuxMusl}")
 
 quit exitCode
