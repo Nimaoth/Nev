@@ -101,7 +101,7 @@ if packageWindows:
   cpFile2 "wasmtime.dll", releaseWindows, optional=true
 
   echo &"Create {releaseWindows}.zip"
-  exec(&"powershell -Command Compress-Archive -Path {releaseWindows} -DestinationPath {releaseWindows}.zip")
+  exec(&"powershell -Command Compress-Archive -Force -Path {releaseWindows} -DestinationPath {releaseWindows}.zip")
 
 if packageLinux:
   echo &"Package linux..."
