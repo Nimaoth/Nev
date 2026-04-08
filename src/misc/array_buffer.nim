@@ -1,3 +1,6 @@
+when defined(nimony):
+  import nimonycompat
+
 # todo: this is not needed anymore
 type ArrayBuffer* = ref object
   buffer*: seq[uint8]

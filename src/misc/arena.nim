@@ -1,4 +1,8 @@
+import std/[assertions]
 import array_view
+
+when defined(nimony):
+  import nimonycompat
 
 const defaultBucketSize = 4 * 1024
 
@@ -20,7 +24,7 @@ proc `=copy`(x: var Arena, y: Arena) {.error.}
 
 proc `=destroy`(arena: Arena) =
   for i in 0..arena.buckets.high:
-    deallocShared(arena.buckets[i].data)
+    dealloc(arena.buckets[i].data)
 
 proc align(address, alignment: int): int =
   if alignment == 0: # Actually, this is illegal. This branch exists to actively
@@ -34,7 +38,7 @@ proc initArena*(bucketSize: int = defaultBucketSize): Arena =
 
 proc addBucket(arena: var Arena, bucketSize: int) =
   arena.buckets.add Bucket(
-    data: cast[ptr UncheckedArray[uint8]](allocShared0(bucketSize)),
+    data: cast[ptr UncheckedArray[uint8]](alloc(bucketSize)),
     capacity: bucketSize,
     len: 0,
   )
@@ -50,7 +54,9 @@ proc alloc*(arena: var Arena, size: int, alignment: int): pointer =
     arena.addBucket(bucketSize)
 
   let bucket = arena.buckets[arena.buckets.high].addr
-  let address = cast[uint64](bucket[].data[bucket[].len].addr)
+  let bucketData = bucket[].data
+  let bucketLen = bucket[].len
+  let address = cast[uint64](bucketData[bucketLen].addr)
   let alignedAddress = align(address.int, alignment.int).uint64
   # echo &"mem_stack_alloc {size}, {alignment} -> {address} -> {alignedAddress} ({bucket[].len})"
 
@@ -58,14 +64,14 @@ proc alloc*(arena: var Arena, size: int, alignment: int): pointer =
   assert bucket.len <= bucket.capacity
   return cast[pointer](alignedAddress)
 
-proc allocEmptyArray*(arena: var Arena, num: int, T: typedesc): ArrayView[T] =
+proc allocEmptyArray*[T](arena: var Arena, num: int, x: typedesc[T]): ArrayView[T] =
   assert num >= 0
   if num == 0:
     return ArrayView[T].default
   let data = cast[ptr UncheckedArray[T]](arena.alloc(num * sizeof(T), alignof(T)))
   return initArrayView(data, len = 0, capacity = num)
 
-proc allocArray*(arena: var Arena, num: int, T: typedesc): ArrayView[T] =
+proc allocArray*[T](arena: var Arena, num: int, x: typedesc[T]): ArrayView[T] =
   assert num >= 0
   if num == 0:
     return ArrayView[T].default
@@ -141,7 +147,7 @@ proc restoreCheckpoint*(arena: var Arena, p: uint64) =
   let bucketsLen = (p shr 32).int
   let len = (p and 0xFFFFFFFF.uint64).int
   while arena.buckets.len > bucketsLen and arena.buckets.len > 1:
-    deallocShared(arena.buckets[arena.buckets.high].data)
+    dealloc(arena.buckets[arena.buckets.high].data)
     discard arena.buckets.pop()
 
   if arena.buckets.len > 0:

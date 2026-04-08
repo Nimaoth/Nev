@@ -1,37 +1,41 @@
-import std/[options]
+when not defined(nimony):
+  import std/[options]
+else:
+  import nimonycompat
 
 type
-  ArrayTableKey* = concept x
-    x == x is bool
+  ArrayTableKey* = concept
+    proc `==`(a, b: Self): bool
 
+type
   ArrayTable*[K: ArrayTableKey, V] = object
     items*: seq[tuple[key: K, value: V]]
 
-proc initArrayTable*(K: typedesc[ArrayTableKey], V: typedesc): ArrayTable[K, V] =
-  discard
+proc initArrayTable*[K: ArrayTableKey, V](): ArrayTable[K, V] =
+  result = ArrayTable[K, V](items: @[])
 
-proc `[]`*[K, V](self: var ArrayTable[K, V], key: K): V =
-  for kv in self.items.mitems:
-    if kv.key == key:
-      return kv.value
-  raise newException(Defect, "Key not found")
+proc `[]`*[K: ArrayTableKey, V](self: var ArrayTable[K, V], key: K): V =
+  for i in 0..self.items.high:
+    if self.items[i].key == key:
+      return self.items[i].value
+  assert false
 
-proc `[]=`*[K, V](self: var ArrayTable[K, V], key: K, value: V) =
-  for kv in self.items.mitems:
-    if kv.key == key:
-      kv.value = value
+proc `[]=`*[K: ArrayTableKey, V](self: var ArrayTable[K, V], key: K, value: V) =
+  for i in 0..self.items.high:
+    if self.items[i].key == key:
+      self.items[i].value = value
       return
   self.items.add (key, value)
 
-proc tryGet*[K, V](self: var ArrayTable[K, V], key: K): Option[V] =
-  for kv in self.items.mitems:
-    if kv.key == key:
-      return kv.value.some
+proc tryGet*[K: ArrayTableKey, V](self: var ArrayTable[K, V], key: K): Option[V] =
+  for i in 0..self.items.high:
+    if self.items[i].key == key:
+      return self.items[i].value.some
   return V.none
 
-proc contains*[K, V](self: var ArrayTable[K, V], key: K): bool =
-  for kv in self.items.mitems:
-    if kv.key == key:
+proc contains*[K: ArrayTableKey, V](self: var ArrayTable[K, V], key: K): bool =
+  for i in 0..self.items.high:
+    if self.items[i].key == key:
       return true
   return false
 
