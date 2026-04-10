@@ -164,7 +164,7 @@ when implModule:
   proc updateTargetColumn(editor: TextEditor) =
     editor.edit.updateTargetColumn(editor.edit.selection.b)
 
-  proc scrollToCursor(editor: TextEditor, behaviour = ScrollBehaviour.none, offset: float = 0.5) =
+  proc scrollToCursor(editor: TextEditor, behaviour = ScrollBehaviour.CenterOffscreen.some, offset: float = 0.5) =
     if behaviour == ScrollBehaviour.CenterAlways.some:
       editor.edit.scrollToCursor(editor.selection.last.toPoint, center = true)
     elif behaviour == ScrollBehaviour.CenterOffscreen.some:
@@ -1218,6 +1218,8 @@ when implModule:
 
   proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorContext).} =
     # debugf"insertMode '{move}'"
+    editor.setMode "vim.insert"
+    editor.addNextCheckpoint "insert"
     case move
     of "right":
       editor.setSelections editor.multiMove(editor.selections, "column", 1, wrap = false, includeEol = true).mapIt(it.last.toSelection)
@@ -1231,8 +1233,6 @@ when implModule:
       editor.setSelections editor.selections.mapIt(editor.applyMove(it.last, "line", 1).first.toSelection)
     else:
       discard
-    editor.setMode "vim.insert"
-    editor.addNextCheckpoint "insert"
 
   proc insertLineBelow(editor: TextEditor) {.exposeActive(editorContext).} =
     editor.setSelections editor.multiMove(editor.getSelections, "line", 0, wrap=false, includeEol=true).mapIt(it.last.toSelection)
@@ -1317,6 +1317,8 @@ when implModule:
           return
 
     let next = editor.multiMove(@[selections.last], "(next-search-result) (inclusive)", 0, wrap = true, includeEol=false).last
+    if next == selections[0]:
+      return
     let newSelections = @selections & next
     editor.setSelections newSelections
     editor.scrollToCursor()
@@ -1497,7 +1499,7 @@ when implModule:
     let content = editor.content
     var insertTexts: seq[string]
     for it in editor.selections:
-      let text = $content.sliceSelection(it, inclusive=false)
+      let text = $content.sliceSelection(it.normalized, inclusive=false)
       let endsWithNl = text.endsWith("\n")
       let nl = if endsWithNl: "\n" else: ""
       var lines = text.splitLines()

@@ -194,6 +194,9 @@ declareSettings TextEditorSettings, "text":
   ## Disable auto completion
   declare disableCompletions, bool, false
 
+  ## Disable scrolling
+  declare disableScrolling, bool, false
+
 type
   CodeActionKind {.pure.} = enum Command, CodeAction
   CodeActionOrCommand = object
@@ -291,8 +294,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   completionEventHandler: EventHandler
   tabStopEventHandler: EventHandler
   hoverEventHandler: EventHandler
-
-  disableScrolling*: bool
 
   currentCenterCursor*: Cursor # Cursor representing the center of the screen
   currentCenterCursorRelativeYPos*: float # 0: top of screen, 1: bottom of screen
@@ -908,6 +909,12 @@ method handleDeactivate*(self: TextDocumentEditor) =
     self.blinkCursorTask.pause()
     self.cursorVisible = true
     self.markDirty()
+
+proc disableScrolling*(self: TextDocumentEditor): bool =
+  self.settings.disableScrolling.get()
+
+proc `disableScrolling=`*(self: TextDocumentEditor, val: bool) =
+  self.settings.disableScrolling.set(val)
 
 proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none,
     scrollBehaviour = ScrollBehaviour.none, relativePosition: float = 0.5) =
@@ -4397,15 +4404,18 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
     ].toHashSet
 
     let oldIsRecordingCurrentCommand = self.commandComponent.bIsRecordingCurrentCommand
-    self.commandComponent.bIsRecordingCurrentCommand = doRecord
+    if record:
+      self.commandComponent.bIsRecordingCurrentCommand = doRecord
 
     defer:
-      self.commandComponent.bIsRecordingCurrentCommand = oldIsRecordingCurrentCommand
+      if record:
+        self.commandComponent.bIsRecordingCurrentCommand = oldIsRecordingCurrentCommand
 
     defer:
-      if self.commandComponent.recordCurrentCommandRegisters.len > 0:
-        self.registers.recordCommand("." & action & " " & arg, self.commandComponent.recordCurrentCommandRegisters)
-      self.commandComponent.recordCurrentCommandRegisters.setLen(0)
+      if record:
+        if self.commandComponent.recordCurrentCommandRegisters.len > 0:
+          self.registers.recordCommand("." & action & " " & arg, self.commandComponent.recordCurrentCommandRegisters)
+        self.commandComponent.recordCurrentCommandRegisters.setLen(0)
 
     if doRecord and action notin noRecordActions:
       self.registers.recordCommand("." & action & " " & arg)

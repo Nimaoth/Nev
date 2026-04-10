@@ -22,6 +22,15 @@ proc textComponentBuffer*(self: TextComponent): var Buffer {.apprtl, gcsafe, rai
 proc getTextComponent*(self: ComponentOwner): Option[TextComponent] {.apprtl, gcsafe, raises: [].}
 proc textComponentEditString(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
 proc textComponentEditRope(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
+proc textComponentStartTransaction(self: TextComponent) {.apprtl, gcsafe, raises: [].}
+proc textComponentEndTransaction(self: TextComponent) {.apprtl, gcsafe, raises: [].}
+
+template withTransaction*(self: TextComponent, body: untyped): untyped =
+  try:
+    self.startTransaction()
+    body
+  finally:
+    self.endTransaction()
 
 # Nice wrappers
 proc normalized*(r: Range[Point]): Range[Point] =
@@ -48,6 +57,8 @@ proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelectio
   self.textComponentEditString(selections, oldSelections, texts, notify, record, inclusiveEnd, checkpoint)
 proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.inline.} =
   self.textComponentEditRope(selections, oldSelections, texts, notify, record, inclusiveEnd, checkpoint)
+proc startTransaction*(self: TextComponent) = textComponentStartTransaction(self)
+proc endTransaction*(self: TextComponent) = textComponentEndTransaction(self)
 
 # Implementation
 when implModule:
@@ -104,5 +115,11 @@ when implModule:
     self.TextComponentImpl.editString(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd, checkpoint).mapIt(it.toRange)
   proc textComponentEditRope(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] =
     self.TextComponentImpl.editRope(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd, checkpoint).mapIt(it.toRange)
+
+  proc textComponentStartTransaction(self: TextComponent) =
+    discard self.TextComponentImpl.buffer.startTransaction()
+
+  proc textComponentEndTransaction(self: TextComponent) =
+    discard self.TextComponentImpl.buffer.endTransaction()
 
 proc buffer*(self: TextComponent): var Buffer {.inline.} = self.textComponentBuffer()

@@ -36,7 +36,7 @@ proc textEditorComponentGetTargetColumn(self: TextEditorComponent): int
 {.pop.}
 
 # Nice wrappers
-proc selection*(self: TextEditorComponent): Range[Point] {.inline.} = textEditorComponentSelections(self)[0]
+proc selection*(self: TextEditorComponent): Range[Point] {.inline.} = textEditorComponentSelections(self)[^1]
 proc selections*(self: TextEditorComponent): lent seq[Range[Point]] {.inline.} = textEditorComponentSelections(self)
 proc `selections=`*(self: TextEditorComponent, selections: sink seq[Range[Point]]) {.inline.} = textEditorComponentSetSelections(self, selections.ensureMove)
 proc `selection=`*(self: TextEditorComponent, selection: Range[Point]) {.inline.} = textEditorComponentSetSelections(self, @[selection])
