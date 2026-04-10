@@ -2,8 +2,9 @@ import std/[options, json]
 import results
 import platform/platform
 import misc/[custom_async, custom_logger, myjsonutils, util, timer]
-import scripting/expose
-import service, platform_service, dispatch_tables, config_provider
+import service, platform_service, config_provider
+
+include dynlib_export
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -28,49 +29,65 @@ type
 
 func serviceName*(_: typedesc[ToastService]): string = "ToastService"
 
-addBuiltinService(ToastService, ConfigService, PlatformService)
+# DLL API
+{.push apprtl, gcsafe, raises: [].}
+proc showToast*(self: ToastService, title: string, message: string, color: string)
+{.pop.}
 
-method init*(self: ToastService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  log lvlInfo, &"ToastService.init"
-  self.platform = self.services.getService(PlatformService).get.platform
-  assert self.platform != nil
-  self.config = self.services.getService(ConfigService).get
-  self.uiSettings = UiSettings.new(self.config.runtime)
-  return ok()
+# Nice wrappers
+# proc showToast*(self: ToastService, title: string, message: string, color: string) = toastShowToast(self, title, message, color)
 
-proc updateToasts(self: ToastService) {.async.} =
-  boolLock(self.isUpdating)
-  let maxTime = self.uiSettings.toast.duration.get().float64
-  while self.toasts.len > 0:
-    var removed = false
-    var i = 0
-    while i < self.toasts.len:
-      let elapsed = self.toasts[i].timer.elapsed.ms
-      if elapsed > maxTime:
-        self.toasts.removeShift(i)
-        removed = true
-      else:
-        self.toasts[i].progress = elapsed / maxTime
-        inc i
+# Implementation
+when implModule:
+  import scripting/expose
+  import dispatch_tables
 
-    self.platform.requestRender(redrawEverything = removed)
+  addBuiltinService(ToastService, ConfigService, PlatformService)
 
-    await sleepAsync(15.milliseconds)
+  method init*(self: ToastService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+    log lvlInfo, &"ToastService.init"
+    self.platform = self.services.getService(PlatformService).get.platform
+    assert self.platform != nil
+    self.config = self.services.getService(ConfigService).get
+    self.uiSettings = UiSettings.new(self.config.runtime)
+    return ok()
 
-###########################################################################
+  proc updateToasts(self: ToastService) {.async.} =
+    boolLock(self.isUpdating)
+    let maxTime = self.uiSettings.toast.duration.get().float64
+    while self.toasts.len > 0:
+      var removed = false
+      var i = 0
+      while i < self.toasts.len:
+        let elapsed = self.toasts[i].timer.elapsed.ms
+        if elapsed > maxTime:
+          self.toasts.removeShift(i)
+          removed = true
+        else:
+          self.toasts[i].progress = elapsed / maxTime
+          inc i
 
-proc getToastService(): Option[ToastService] =
-  {.gcsafe.}:
-    if getServices().isNil: return ToastService.none
-    return getServices().getService(ToastService)
+      self.platform.requestRender(redrawEverything = removed)
 
-static:
-  addInjector(ToastService, getToastService)
+      await sleepAsync(15.milliseconds)
 
-proc showToast*(self: ToastService, title: string, message: string, color: string) {.expose("toast").} =
-  log lvlInfo, &"[{title}] {message}"
-  self.toasts.add(Toast(timer: startTimer(), title: title, message: message, color: color))
-  asyncSpawn self.updateToasts()
-  self.platform.requestRender()
+  ###########################################################################
 
-addGlobalDispatchTable "toast", genDispatchTable("toast")
+  proc getToastService(): Option[ToastService] =
+    {.gcsafe.}:
+      if getServices().isNil: return ToastService.none
+      return getServices().getService(ToastService)
+
+  static:
+    addInjector(ToastService, getToastService)
+
+  proc showToast*(self: ToastService, title: string, message: string, color: string) {.expose("toast").} =
+    log lvlInfo, &"[{title}] {message}"
+    self.toasts.add(Toast(timer: startTimer(), title: title, message: message, color: color))
+    asyncSpawn self.updateToasts()
+    self.platform.requestRender()
+
+  # proc toastShowToast*(self: ToastService, title: string, message: string, color: string)
+  #   self.showToast(title, message, color)
+
+  addGlobalDispatchTable "toast", genDispatchTable("toast")
