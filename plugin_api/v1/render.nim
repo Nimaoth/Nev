@@ -16,8 +16,11 @@ import
   layout
 
 type
+  ## Shared handle to a custom render view
   RenderView* = object
     handle*: int32
+  TextureFormat* = enum
+    Rgba8 = "rgba8", Rgba32 = "rgba32"
 proc renderRenderViewDrop(a: int32): void {.
     wasmimport("[resource-drop]render-view", "nev:plugins/render").}
 proc `=copy`*(a: var RenderView; b: RenderView) {.error.}
@@ -34,6 +37,7 @@ proc newRenderView*(): RenderView {.nodestroy.} =
 proc renderRenderViewFromUserIdImported(a0: int32; a1: int32; a2: int32): void {.
     wasmimport("[static]render-view.from-user-id", "nev:plugins/render").}
 proc renderViewFromUserId*(id: WitString): Option[RenderView] {.nodestroy.} =
+  ## Try to create a handle to an existing render view with the given user id.
   var
     retArea: array[8, uint8]
     arg0: int32
@@ -53,6 +57,7 @@ proc renderViewFromUserId*(id: WitString): Option[RenderView] {.nodestroy.} =
 proc renderRenderViewFromViewImported(a0: int32; a1: int32): void {.
     wasmimport("[static]render-view.from-view", "nev:plugins/render").}
 proc renderViewFromView*(v: View): Option[RenderView] {.nodestroy.} =
+  ## Try to create a handle to an existing render view from a 'view'.
   var
     retArea: array[8, uint8]
     arg0: int32
@@ -66,6 +71,7 @@ proc renderViewFromView*(v: View): Option[RenderView] {.nodestroy.} =
 proc renderViewImported(a0: int32): int32 {.
     wasmimport("[method]render-view.view", "nev:plugins/render").}
 proc view*(self: RenderView): View {.nodestroy.} =
+  ## Returns the raw view handle.
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
   let res = renderViewImported(arg0)
@@ -74,6 +80,7 @@ proc view*(self: RenderView): View {.nodestroy.} =
 proc renderIdImported(a0: int32): int32 {.
     wasmimport("[method]render-view.id", "nev:plugins/render").}
 proc id*(self: RenderView): int32 {.nodestroy.} =
+  ## Returns the unique id of the view. This id is not stable across sessions.
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
   let res = renderIdImported(arg0)
@@ -82,6 +89,7 @@ proc id*(self: RenderView): int32 {.nodestroy.} =
 proc renderSizeImported(a0: int32; a1: int32): void {.
     wasmimport("[method]render-view.size", "nev:plugins/render").}
 proc size*(self: RenderView): Vec2f {.nodestroy.} =
+  ## Returns the size in pixels the view currently has. In the terminal one pixel is one character.
   var
     retArea: array[8, uint8]
     arg0: int32
@@ -90,9 +98,59 @@ proc size*(self: RenderView): Vec2f {.nodestroy.} =
   result.x = convert(cast[ptr float32](retArea[0].addr)[], float32)
   result.y = convert(cast[ptr float32](retArea[4].addr)[], float32)
 
+proc renderKeyDownImported(a0: int32; a1: int64): bool {.
+    wasmimport("[method]render-view.key-down", "nev:plugins/render").}
+proc keyDown*(self: RenderView; key: int64): bool {.nodestroy.} =
+  ## Returns whether the given key is currently pressed.
+  var
+    arg0: int32
+    arg1: int64
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = key
+  let res = renderKeyDownImported(arg0, arg1)
+  result = res.bool
+
+proc renderMousePosImported(a0: int32; a1: int32): void {.
+    wasmimport("[method]render-view.mouse-pos", "nev:plugins/render").}
+proc mousePos*(self: RenderView): Vec2f {.nodestroy.} =
+  ## Returns the mouse position relative to the position of the view. (0, 0) is in the top left corner.
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  renderMousePosImported(arg0, cast[int32](retArea[0].addr))
+  result.x = convert(cast[ptr float32](retArea[0].addr)[], float32)
+  result.y = convert(cast[ptr float32](retArea[4].addr)[], float32)
+
+proc renderMouseDownImported(a0: int32; a1: int64): bool {.
+    wasmimport("[method]render-view.mouse-down", "nev:plugins/render").}
+proc mouseDown*(self: RenderView; button: int64): bool {.nodestroy.} =
+  ## Returns whether the given mouse button is pressed.
+  var
+    arg0: int32
+    arg1: int64
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = button
+  let res = renderMouseDownImported(arg0, arg1)
+  result = res.bool
+
+proc renderScrollDeltaImported(a0: int32; a1: int32): void {.
+    wasmimport("[method]render-view.scroll-delta", "nev:plugins/render").}
+proc scrollDelta*(self: RenderView): Vec2f {.nodestroy.} =
+  ## Returns how much the mouse was scrolled this frame.
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  renderScrollDeltaImported(arg0, cast[int32](retArea[0].addr))
+  result.x = convert(cast[ptr float32](retArea[0].addr)[], float32)
+  result.y = convert(cast[ptr float32](retArea[4].addr)[], float32)
+
 proc renderSetRenderIntervalImported(a0: int32; a1: int32): void {.
     wasmimport("[method]render-view.set-render-interval", "nev:plugins/render").}
 proc setRenderInterval*(self: RenderView; ms: int32): void {.nodestroy.} =
+  ## Specify how often the view should render. -1 means don't render in a timer, 0 means render every frame,
+  ## a number bigger than 0 specifies the interval in milliseconds.
   var
     arg0: int32
     arg1: int32
@@ -104,6 +162,8 @@ proc renderSetRenderCommandsRawImported(a0: int32; a1: uint32; a2: uint32): void
     "[method]render-view.set-render-commands-raw", "nev:plugins/render").}
 proc setRenderCommandsRaw*(self: RenderView; buffer: uint32; len: uint32): void {.
     nodestroy.} =
+  ## Set the render commands used for the next render. 'buffer' is a pointer to a buffer of encoded render commands,
+  ## 'len' is the length of the buffer in bytes.
   var
     arg0: int32
     arg1: uint32
@@ -117,6 +177,7 @@ proc renderSetRenderCommandsImported(a0: int32; a1: int32; a2: int32): void {.
     wasmimport("[method]render-view.set-render-commands", "nev:plugins/render").}
 proc setRenderCommands*(self: RenderView; data: WitList[uint8]): void {.
     nodestroy.} =
+  ## Set the render commands used for the next render. 'data' contains encoded render commands.
   var
     arg0: int32
     arg1: int32
@@ -132,6 +193,7 @@ proc setRenderCommands*(self: RenderView; data: WitList[uint8]): void {.
 proc renderSetRenderWhenInactiveImported(a0: int32; a1: bool): void {.wasmimport(
     "[method]render-view.set-render-when-inactive", "nev:plugins/render").}
 proc setRenderWhenInactive*(self: RenderView; enabled: bool): void {.nodestroy.} =
+  ## Enable rendering while the view is inactive (but still visible).
   var
     arg0: int32
     arg1: bool
@@ -142,6 +204,8 @@ proc setRenderWhenInactive*(self: RenderView; enabled: bool): void {.nodestroy.}
 proc renderSetPreventThrottlingImported(a0: int32; a1: bool): void {.wasmimport(
     "[method]render-view.set-prevent-throttling", "nev:plugins/render").}
 proc setPreventThrottling*(self: RenderView; enabled: bool): void {.nodestroy.} =
+  ## When enabled the view prevents the editor from throttling the frame rate after a few seconds. This requires
+  ## the view to also be rendered regularly, using e.g. 'set-render-interval' or but marking it dirty regularly.
   var
     arg0: int32
     arg1: bool
@@ -152,6 +216,7 @@ proc setPreventThrottling*(self: RenderView; enabled: bool): void {.nodestroy.} 
 proc renderSetUserIdImported(a0: int32; a1: int32; a2: int32): void {.
     wasmimport("[method]render-view.set-user-id", "nev:plugins/render").}
 proc setUserId*(self: RenderView; id: WitString): void {.nodestroy.} =
+  ## Sets the user id of this view.
   var
     arg0: int32
     arg1: int32
@@ -167,6 +232,7 @@ proc setUserId*(self: RenderView; id: WitString): void {.nodestroy.} =
 proc renderGetUserIdImported(a0: int32; a1: int32): void {.
     wasmimport("[method]render-view.get-user-id", "nev:plugins/render").}
 proc getUserId*(self: RenderView): WitString {.nodestroy.} =
+  ## Returns the user id of this view.
   var
     retArea: array[8, uint8]
     arg0: int32
@@ -178,6 +244,7 @@ proc getUserId*(self: RenderView): WitString {.nodestroy.} =
 proc renderMarkDirtyImported(a0: int32): void {.
     wasmimport("[method]render-view.mark-dirty", "nev:plugins/render").}
 proc markDirty*(self: RenderView): void {.nodestroy.} =
+  ## Trigger a render for this view.
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
   renderMarkDirtyImported(arg0)
@@ -186,6 +253,9 @@ proc renderSetRenderCallbackImported(a0: int32; a1: uint32; a2: uint32): void {.
     wasmimport("[method]render-view.set-render-callback", "nev:plugins/render").}
 proc setRenderCallback*(self: RenderView; fun: uint32; data: uint32): void {.
     nodestroy.} =
+  ## Sets the callback which wil be called before rendering. This can be used to set the render commands.
+  ## 'fun' is a pointer to a function with signature func(id: s32, data: u32). Data is an arbitrary number
+  ## which will be passed to the callback unchanged. It can be used as e.g. a pointer to some data.
   var
     arg0: int32
     arg1: uint32
@@ -198,6 +268,7 @@ proc setRenderCallback*(self: RenderView; fun: uint32; data: uint32): void {.
 proc renderSetModesImported(a0: int32; a1: int32; a2: int32): void {.
     wasmimport("[method]render-view.set-modes", "nev:plugins/render").}
 proc setModes*(self: RenderView; modes: WitList[WitString]): void {.nodestroy.} =
+  ## Set the list of input modes. This controls which keybindings are available while the view is active.
   var
     arg0: int32
     arg1: int32
@@ -213,6 +284,7 @@ proc setModes*(self: RenderView; modes: WitList[WitString]): void {.nodestroy.} 
 proc renderAddModeImported(a0: int32; a1: int32; a2: int32): void {.
     wasmimport("[method]render-view.add-mode", "nev:plugins/render").}
 proc addMode*(self: RenderView; mode: WitString): void {.nodestroy.} =
+  ## Add a mode to the input modes. This controls which keybindings are available while the view is active.
   var
     arg0: int32
     arg1: int32
@@ -228,6 +300,7 @@ proc addMode*(self: RenderView; mode: WitString): void {.nodestroy.} =
 proc renderRemoveModeImported(a0: int32; a1: int32; a2: int32): void {.
     wasmimport("[method]render-view.remove-mode", "nev:plugins/render").}
 proc removeMode*(self: RenderView; mode: WitString): void {.nodestroy.} =
+  ## Remove a mode from the input modes. This controls which keybindings are available while the view is active.
   var
     arg0: int32
     arg1: int32
@@ -239,3 +312,90 @@ proc removeMode*(self: RenderView; mode: WitString): void {.nodestroy.} =
     arg1 = 0.int32
   arg2 = cast[int32](mode.len)
   renderRemoveModeImported(arg0, arg1, arg2)
+
+proc renderCreateTextureImported(a0: int32; a1: int32; a2: uint32; a3: int8;
+                                 a4: bool): uint64 {.
+    wasmimport("create-texture", "nev:plugins/render").}
+proc createTexture*(width: int32; height: int32; data: uint32;
+                    format: TextureFormat; dynamic: bool): uint64 {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: uint32
+    arg3: int8
+    arg4: bool
+  arg0 = width
+  arg1 = height
+  arg2 = data
+  arg3 = cast[int8](format)
+  arg4 = dynamic
+  let res = renderCreateTextureImported(arg0, arg1, arg2, arg3, arg4)
+  result = convert(res, uint64)
+
+proc renderCreateTextureBufferImported(a0: int32; a1: int32; a2: int32;
+                                       a3: uint32; a4: int8; a5: bool): uint64 {.
+    wasmimport("create-texture-buffer", "nev:plugins/render").}
+proc createTextureBuffer*(width: int32; height: int32; data: SharedBuffer;
+                          offset: uint32; format: TextureFormat; dynamic: bool): uint64 {.
+    nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: uint32
+    arg4: int8
+    arg5: bool
+  arg0 = width
+  arg1 = height
+  arg2 = cast[int32](data.handle - 1)
+  arg3 = offset
+  arg4 = cast[int8](format)
+  arg5 = dynamic
+  let res = renderCreateTextureBufferImported(arg0, arg1, arg2, arg3, arg4, arg5)
+  result = convert(res, uint64)
+
+proc renderUpdateTextureImported(a0: uint64; a1: int32; a2: int32; a3: uint32;
+                                 a4: int8): void {.
+    wasmimport("update-texture", "nev:plugins/render").}
+proc updateTexture*(id: uint64; width: int32; height: int32; data: uint32;
+                    format: TextureFormat): void {.nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: uint32
+    arg4: int8
+  arg0 = id
+  arg1 = width
+  arg2 = height
+  arg3 = data
+  arg4 = cast[int8](format)
+  renderUpdateTextureImported(arg0, arg1, arg2, arg3, arg4)
+
+proc renderUpdateTextureBufferImported(a0: uint64; a1: int32; a2: int32;
+                                       a3: int32; a4: uint32; a5: int8): void {.
+    wasmimport("update-texture-buffer", "nev:plugins/render").}
+proc updateTextureBuffer*(id: uint64; width: int32; height: int32;
+                          data: SharedBuffer; offset: uint32;
+                          format: TextureFormat): void {.nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: int32
+    arg4: uint32
+    arg5: int8
+  arg0 = id
+  arg1 = width
+  arg2 = height
+  arg3 = cast[int32](data.handle - 1)
+  arg4 = offset
+  arg5 = cast[int8](format)
+  renderUpdateTextureBufferImported(arg0, arg1, arg2, arg3, arg4, arg5)
+
+proc renderDeleteTextureImported(a0: uint64): void {.
+    wasmimport("delete-texture", "nev:plugins/render").}
+proc deleteTexture*(id: uint64): void {.nodestroy.} =
+  var arg0: uint64
+  arg0 = id
+  renderDeleteTextureImported(arg0)
