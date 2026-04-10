@@ -46,7 +46,7 @@ switch("d", "npegGcsafe=true")
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
 switch("d", "enableAst=false")
-
+switch("d", "enableOldPluginVersions=true")
 
 # uncomment to see logs in the console
 switch("d", "allowConsoleLogger")
