@@ -164,6 +164,12 @@ declareSettings TextSettings, "text":
   ## If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes).
   declare autoReload, bool, false
 
+  ## If true then newly saved files will be added to the vcs (only for perforce right now, does nothing for git)
+  declare addNewFileVcs, bool, false
+
+  ## If true then you will be prompted when saving a new file on whether to add it to the vcs, otherwise the file is always added.
+  declare addNewFileVcsPrompt, bool, true
+
 type
 
   TextDocument* = ref object of Document
@@ -963,8 +969,8 @@ proc saveAsync*(self: TextDocument) {.async.} =
     self.onDocumentSaved.invoke(self)
     self.eventBus.emit(&"document/{self.id}/saved", $self.id)
 
-    if newFile:
-      asyncSpawn self.addFileVcsAsync();
+    if newFile and self.settings.addNewFileVcs.get():
+      asyncSpawn self.addFileVcsAsync(prompt=self.settings.addNewFileVcsPrompt.get());
 
   except IOError as e:
     log lvlError, &"Failed to save file '{self.filename}': {e.msg}"
