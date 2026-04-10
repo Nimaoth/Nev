@@ -57,6 +57,8 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `terminal.base-mode` | string | "terminal" | Input mode which is always active while a terminal view is active. |
 | `terminal.default-mode` | string | "" | Input mode to activate when creating a new terminal, if no mode is specified otherwise. |
 | `terminal.idle-threshold` | int | 500 | After how many milliseconds of no data received from a terminal it is considered idle, and can be reused for running more commands. |
+| `text.add-new-file-vcs` | bool | false | If true then newly saved files will be added to the vcs (only for perforce right now, does nothing for git) |
+| `text.add-new-file-vcs-prompt` | bool | true | If true then you will be prompted when saving a new file on whether to add it to the vcs, otherwise the file is always added. |
 | `text.auto-insert-close` | bool | true | Automatically insert closing parenthesis, braces, brackets and quotes. |
 | `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes). |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
@@ -78,6 +80,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `text.diff-reload.enable` | bool | true | When reloading a file the editor will compute the diff between the file on disk and the in memory document, and then apply the diff to the in memory version so it matches the content on disk. This can reduce memory usage when reloading files often (although it increases memory usage while reloading and increases load times). It's also better for collaboration as it doesn't affect the entire file. |
 | `text.diff-reload.timeout` | int | 250 | Max number of milliseconds to use for diffing. If the timeout is exceeded then the file will be reloaded normally. |
 | `text.disable-completions` | bool | false | Disable auto completion |
+| `text.disable-scrolling` | bool | false | Disable scrolling |
 | `text.double-click-command` | string | "extend-select-move" | Command to run after double clicking on some text. |
 | `text.double-click-command-args` | any | ["word",true] | Arguments to the command which is run when double clicking on some text. |
 | `text.highlight-matches.delay` | int | 250 | How long after moving the cursor matching text is highlighted. |
