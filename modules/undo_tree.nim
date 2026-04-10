@@ -35,7 +35,7 @@ when implModule:
     LineSeq* = seq[SeqLine]
 
     UndoTreeView* = ref object of DynamicView
-      lastEditorView: Option[View]
+      lastEditor: Option[DocumentEditor]
       eventHandlers*: Table[string, EventHandler]
       cachedLines: LineSeq
       cachedBufferId: BufferID
@@ -263,11 +263,8 @@ when implModule:
       return $ (delta div (60 * 60 * 24)) & "d ago"
 
   proc applySelected(view: UndoTreeView) =
-    let curView = view.lastEditorView
-    if curView.isSome and curView.get of EditorView:
-      let editorView = curView.get.EditorView
-      let editor {.inject.} = editorView.editor
-      if editor.getCommandComponent().getSome(cmd):
+    if view.lastEditor.isSome:
+      if view.lastEditor.get.getCommandComponent().getSome(cmd):
         if view.selected in 0..view.cachedLines.high:
           let nodeIndex = view.cachedLines[view.selected].nodeIdx
           if nodeIndex != -1:
@@ -371,17 +368,14 @@ when implModule:
       currentNode.renderCommands.clear()
       currentNode.markDirty(builder)
 
-      var curView = layout.tryGetCurrentView()
-      if curView.isNone or not (curView.get of EditorView):
-        curView = self.lastEditorView
-      if curView.isNone or not (curView.get of EditorView):
+      var editor = layout.getActiveEditor()
+      if editor.isNone:
+        editor = self.lastEditor
+      if editor.isNone:
         return
-      self.lastEditorView = curView
-      let editor = curView.get.EditorView.editor
-      if editor == nil or editor.currentDocument == nil:
-        return
+      self.lastEditor = editor
 
-      let document = editor.currentDocument
+      let document = editor.get.currentDocument
       let text = document.getTextComponent().get
       let buffer {.cursor.} = text.buffer
       let tree {.cursor.} = buffer.history.undoTree
@@ -581,11 +575,9 @@ when implModule:
         parameters: @[],
         returnType: "void",
         execute: proc(args {.inject.}: string): string {.gcsafe, raises: [CatchableError].} =
-          let curView = view.lastEditorView
-          if curView.isSome and curView.get of EditorView:
-            let editorView = curView.get.EditorView
-            if editorView.editor.currentDocument.getTextComponent.getSome(textComp):
-              let editor {.inject.} = editorView.editor
+          if view.lastEditor.isSome:
+            if view.lastEditor.get.currentDocument.getTextComponent.getSome(textComp):
+              let editor {.inject.} = view.lastEditor.get
               let document {.inject.} = editor.currentDocument
               let text {.inject.} = textComp
               body
