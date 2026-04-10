@@ -569,23 +569,29 @@ proc textEditorClearTabStops*(instance: ptr InstanceData; editor: TextEditor): v
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.clearTabStops()
 
-proc textEditorUndo*(instance: ptr InstanceData; editor: TextEditor, checkpoint: sink string): void =
+proc textEditorUndo*(instance: ptr InstanceData; editor: TextEditor): void =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.undo(checkpoint)
+    editor.TextDocumentEditor.undo()
 
-proc textEditorRedo*(instance: ptr InstanceData; editor: TextEditor, checkpoint: sink string): void =
+proc textEditorRedo*(instance: ptr InstanceData; editor: TextEditor): void =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.redo(checkpoint)
+    editor.TextDocumentEditor.redo()
 
-proc textEditorAddNextCheckpoint*(instance: ptr InstanceData; editor: TextEditor, checkpoint: sink string): void =
+proc textEditorStartTransaction*(instance: ptr InstanceData; editor: TextEditor): void =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.addNextCheckpoint(checkpoint)
+    editor.TextDocumentEditor.startTransaction()
+
+proc textEditorEndTransaction*(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.endTransaction()
 
 proc textEditorCopy*(instance: ptr InstanceData; editor: TextEditor, register: sink string, inclusiveEnd: bool): void =
   if instance.host == nil:
@@ -716,12 +722,6 @@ proc textEditorScrollToCursor*(instance: ptr InstanceData; editor: TextEditor; b
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.scrollToCursor(sca.SelectionCursor.Last, scrollBehaviour = behaviour.mapIt(it.toInternal), relativePosition=relativePosition)
-
-proc textEditorSetNextSnapBehaviour*(instance: ptr InstanceData; editor: TextEditor; behaviour: ScrollSnapBehaviour): void =
-  if instance.host == nil:
-    return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.setNextSnapBehaviour(behaviour.toInternal)
 
 proc textEditorUpdateTargetColumn*(instance: ptr InstanceData; editor: TextEditor): void =
   if instance.host == nil:

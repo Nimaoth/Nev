@@ -665,7 +665,6 @@ proc moveCursorPage(editor: TextEditor, direction: int, count: int = 1, center: 
   editor.setSelections editor.multiMove(editor.selections, ws"page", direction * max(count, 1), true, includeEol = editor.vimState.cursorIncludeEol)
   let nextScrollBehaviour = if center: CenterAlways.some else: ScrollBehaviour.none
   editor.scrollToCursor(behaviour = nextScrollBehaviour, 0.5)
-  editor.setNextSnapBehaviour(Never)
   if editor.vimState.selectLines:
     editor.selectLine()
 
@@ -681,7 +680,6 @@ proc moveCursorVisualPage(editor: TextEditor, direction: int, count: int = 1, ce
   # let nextScrollBehaviour = if center and defaultCenter: CenterAlways.some else: ScrollBehaviour.none
   let nextScrollBehaviour = ScrollBehaviour.none
   editor.scrollToCursor(behaviour = nextScrollBehaviour, 0.5)
-  editor.setNextSnapBehaviour(Never)
   if editor.vimState.selectLines:
     editor.selectLine()
 
@@ -901,7 +899,6 @@ proc moveFileStart(editor: TextEditor, count: int = 1) {.exposeActive(editorCont
   editor.setSelection (count - 1, 0).toSelection(editor.getSelection, which)
   editor.moveFirst "line-no-indent"
   editor.scrollToCursor()
-  editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc moveFileEnd(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
   let line = if count == 0: editor.content.lines.int - 1 else: count - 1
@@ -914,7 +911,6 @@ proc moveFileEnd(editor: TextEditor, count: int = 1) {.exposeActive(editorContex
     editor.setSelection newSelection
     editor.moveFirst "line-no-indent"
   editor.scrollToCursor()
-  editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc scrollLineToTopAndMoveLineStart(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
   if editor.getCommandCount != 0:
@@ -1016,7 +1012,6 @@ proc selectWordOrAddCursor(editor: TextEditor) {.exposeActive(editorContext).} =
     let newSelections = @selections & next
     editor.setSelections @@newSelections
     editor.scrollToCursor()
-    editor.setNextSnapBehaviour(MinDistanceOffscreen)
     editor.updateTargetColumn()
 
   editor.setMode("vim.visual")
@@ -1032,7 +1027,6 @@ proc moveLastSelectionToNextSearchResult(editor: TextEditor) {.exposeActive(edit
     let newSelections = selections.toOpenArray[0..^2] & next
     editor.setSelections @@newSelections
     editor.scrollToCursor()
-    editor.setNextSnapBehaviour(MinDistanceOffscreen)
     editor.updateTargetColumn()
 
   editor.setMode("vim.visual")
@@ -1117,7 +1111,6 @@ proc gotoMark(editor: TextEditor, name: string) {.exposeActive(editorContext).} 
 
     editor.updateTargetColumn()
     editor.centerCursor()
-    editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc deleteWordBack(editor: TextEditor) {.exposeActive(editorContext).} =
   let wordSelections = editor.multiMove(editor.selections, ws"vim.word-back", 1, wrap = false, includeEol = true)
@@ -1199,19 +1192,16 @@ proc invertSelections(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.setSelections editor.selections.mapIt((it.last, it.first).toSelection).stackWitList()
   editor.scrollToCursor()
   editor.updateTargetColumn()
-  editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc invertLineSelections(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.setSelections editor.selections.mapIt((it.last, it.first).toSelection).stackWitList()
   editor.scrollToCursor()
   editor.updateTargetColumn()
-  editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc reverseSelections(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.setSelections editor.selections.toOpenArray.reversed().stackWitList()
   editor.scrollToCursor()
   editor.updateTargetColumn()
-  editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc joinLines(editor: TextEditor, reduceSpace: bool) {.exposeActive(editorContext).} =
   editor.addNextCheckpoint ws"insert"
@@ -1258,34 +1248,29 @@ proc moveToColumn(editor: TextEditor, count: int = 1) {.exposeActive(editorConte
 #   if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
 #     editor.setSelections editor.selections & selection
 #     editor.scrollToCursor()
-#     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #     editor.updateTargetColumn()
 
 # proc vimMoveSelectionToNextSameNode(editor: TextEditor) {.exposeActive(editorContext, "vim-move-selection-to-next-same-node").} =
 #   if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
 #     editor.setSelections editor.selections[0..^2] & selection
 #     editor.scrollToCursor()
-#     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #     editor.updateTargetColumn()
 
 # proc vimAddNextSiblingToSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-add-next-sibling-to-selection").} =
 #   if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
 #     editor.setSelections editor.selections & selection
 #     editor.scrollToCursor()
-#     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #     editor.updateTargetColumn()
 
 # proc vimMoveSelectionToNextSibling(editor: TextEditor) {.exposeActive(editorContext, "vim-move-selection-to-next-sibling").} =
 #   if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
 #     editor.setSelections editor.selections[0..^2] & selection
 #     editor.scrollToCursor()
-#     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #     editor.updateTargetColumn()
 
 proc growSelection(editor: TextEditor, amount: int = 1) {.exposeActive(editorContext).} =
   editor.setSelections editor.multiMove(editor.selections, ws"grow", amount, wrap = true, includeEol = true)
   editor.scrollToCursor()
-  editor.setNextSnapBehaviour(MinDistanceOffscreen)
   editor.updateTargetColumn()
 
 proc evaluateSelection(editor: TextEditor) {.exposeActive(editorContext).} =

@@ -282,49 +282,50 @@ interface text-editor {
   /// Run the given command on the given text editor. This requires 'command' permissions.
   command: func(editor: text-editor, name: string, arguments: string) -> result<string, command-error>;
 
-  /// todo
+  /// Records the current command being executed to the given registers.
   record-current-command: func(editor: text-editor, registers: list<string>);
 
-  /// todo
+  /// Hides any open completion popups in the editor.
   hide-completions: func(editor: text-editor);
 
-  /// todo
+  /// Scroll the view to bring the cursor into view. The behaviour determines how the cursor is positioned.
+  /// `relativePosition` determines the vertical position of the cursor within the viewport (0 = top, 1 = bottom).
   scroll-to-cursor: func(editor: text-editor, behaviour: option<scroll-behaviour>, relative-position: f32);
-  /// todo
-  set-next-snap-behaviour: func(editor: text-editor, behaviour: scroll-snap-behaviour);
 
-  /// todo
+  /// Updates the target column (the column the cursor tries to keep when moving up/down).
   update-target-column: func(editor: text-editor);
 
-  /// todo
+  /// Returns the usage describing what the editor is used for (e.g command line, search bar, normal etc).
   get-usage: func(editor: text-editor) -> string;
-  /// todo
+  /// Returns the current revision number of the document.
   get-revision: func(editor: text-editor) -> s32;
-  /// todo
+  /// Sets the editor mode. If exclusive is true, all other modes are removed.
   set-mode: func(editor: text-editor, mode: string, exclusive: bool);
-  /// todo
+  /// Returns the current mode.
   mode: func(editor: text-editor) -> string;
-  /// todo
+  /// Returns all active modes.
   modes: func(editor: text-editor) -> list<string>;
-  /// todo
+  /// Clears all tab stops.
   clear-tab-stops: func(editor: text-editor);
-  /// todo
-  undo: func(editor: text-editor, checkpoint: string);
-  /// todo
-  redo: func(editor: text-editor, checkpoint: string);
-  /// todo
-  add-next-checkpoint: func(editor: text-editor, checkpoint: string);
-  /// todo
+  /// Undo the last change.
+  undo: func(editor: text-editor);
+  /// Redo the last undone change.
+  redo: func(editor: text-editor);
+  /// Start a transaction. Every edit until `end-transaction` will be grouped together and undone in one go.
+  start-transaction: func(editor: text-editor);
+  /// End the current transaction.
+  end-transaction: func(editor: text-editor);
+  /// Copy the current selection to the specified register. If inclusiveEnd is true, the selection includes the character at the end position.
   copy: func(editor: text-editor, register: string, inclusive-end: bool);
-  /// todo
+  /// Paste the contents of the register at the given selections.
   paste: func(editor: text-editor, selections: list<selection>, register: string, inclusive-end: bool);
-  /// todo
+  /// Show completions if available.
   auto-show-completions: func(editor: text-editor);
-  /// todo
+  /// Toggle line comments for the current selection using the language's comment style.
   toggle-line-comment: func(editor: text-editor);
-  /// todo
+  /// Insert text at the current cursor position(s). If auto-indent is true, the text will be auto-indented.
   insert-text: func(editor: text-editor, text: string, auto-indent: bool);
-  /// todo
+  /// Open the interactive search bar with the given initial query.
   open-search-bar: func(editor: text-editor, query: string, scroll-to-preview: bool, select-result: bool);
 
   /// Set the search query by applying the given move to the current selection.
@@ -336,8 +337,11 @@ interface text-editor {
   /// Returns the current search query.
   get-search-query: func(editor: text-editor) -> string;
 
-  /// todo
+  /// Apply a move operation to the selection and return the new selection(s).
+  /// The move is a string that specifies the movement (e.g., "word", "line-end").
+  /// count specifies how many times to repeat the move, wrap controls whether to wrap around the document.
   apply-move: func(editor: text-editor, selection: selection, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
+  /// Apply a move operation to multiple selections at once.
   multi-move: func(editor: text-editor, selections: list<selection>, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
 
   /// Sets the given selection as the only selection for the given editor.
@@ -359,25 +363,27 @@ interface text-editor {
   /// Set the value of the setting with the given path. The value must be encoded as JSON.
   set-setting-raw: func(editor: text-editor, name: string, value: string);
 
-  /// todo
+  /// Evaluates the selected text as expressions and replaces them with the result.
+  /// prefix and suffix are added around each selection before evaluating.
   evaluate-expressions: func(editor: text-editor, selections: list<selection>, inclusive: bool, prefix: string, suffix: string, add-selection-index: bool);
 
-  /// todo
+  /// Indent or unindent the selected lines by the given delta (positive = indent, negative = unindent).
   indent: func(editor: text-editor, delta: s32);
 
-  /// todo
+  /// Returns the current command count (used for repeat prefix like "3w").
   get-command-count: func(editor: text-editor) -> s32;
 
-  /// todo
+  /// Sets the vertical scroll offset for a specific cursor position.
   set-cursor-scroll-offset: func(editor: text-editor, cursor: cursor, scroll-offset: f32);
 
   /// Returns the number of lines that fit on the current screen size for this editor.
   get-visible-line-count: func(editor: text-editor) -> s32;
 
-  /// todo
+  /// Creates anchors at the start and end of each selection. Anchors track a position in the document
+  /// even as text is inserted or deleted before them, allowing for persistent selections.
   create-anchors: func(editor: text-editor, selections: list<selection>) -> list<tuple<anchor, anchor>>;
 
-  /// todo
+  /// Resolves anchors back to selections using the current document state.
   resolve-anchors: func(editor: text-editor, anchors: list<tuple<anchor, anchor>>) -> list<selection>;
 
   add-overlay: func(editor: text-editor, selections: selection, text: string, id: s64, scope: string, bias: bias, render-id: s64, location: overlay-render-location);
@@ -392,9 +398,12 @@ interface text-editor {
   add-custom-render-callback: func(editor: text-editor, fun: u32, data: u32) -> s64;
   remove-custom-render-callback: func(editor: text-editor, cb: s64);
 
-  /// todo
+  /// Edits the document by replacing the selections with the given contents.
+  /// Returns the new selections after the edit.
   edit: func(editor: text-editor, selections: list<selection>, contents: list<string>, inclusive: bool) -> list<selection>;
 
+  /// Defines a custom move operation. The callback receives the rope, current selections,
+  /// count, and includeEol flag, and returns the new selections.
   define-move: func(move: string, fun: u32, data: u32);
 
   /// Returns the rope containing the current content of the text editors document.
@@ -405,19 +414,19 @@ interface text-editor {
 }
 
 interface registers {
-  /// todo
+  /// Returns true if commands are currently being replayed from a register.
   is-replaying-commands: func() -> bool;
-  /// todo
+  /// Returns true if commands are currently being recorded to the given register.
   is-recording-commands: func(register: string) -> bool;
-  /// todo
+  /// Sets the text content of the specified register.
   set-register-text: func(text: string, register: string);
-  /// todo
+  /// Gets the text content of the specified register.
   get-register-text: func(register: string) -> string;
-  /// todo
+  /// Starts recording commands to the specified register.
   start-recording-commands: func(register: string);
-  /// todo
+  /// Stops recording commands to the specified register.
   stop-recording-commands: func(register: string);
-  /// todo
+  /// Replays the commands stored in the specified register.
   replay-commands: func(register: string);
 }
 
@@ -585,19 +594,20 @@ interface settings {
 }
 
 interface events {
-  /// todo
+  /// Register a callback function to be called when events matching the pattern occur.
+  /// The callback receives the event name and payload (JSON string).
   listen-event: func(fun: u32, data: u32, id: string, pattern: string);
-  /// todo
+  /// Stop listening to events that match the pattern.
   stop-listen-event: func(id: string, pattern: string);
-  /// todo
+  /// Emit an event with the given name and JSON payload.
   emit-event: func(event: string, payload: string);
 }
 
 interface session {
-  /// todo
+  /// Get session data stored under the given name. Returns an empty string if not found.
   get-session-data: func(name: string) -> string;
 
-  /// todo
+  /// Set session data stored under the given name.
   set-session-data: func(name: string, value: string);
 }
 

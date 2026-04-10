@@ -1,5 +1,28 @@
-import std/[os, strutils, strformat, sequtils, unicode]
+import std/[os, strutils, strformat, sequtils, unicode, parseopt]
 import wit_parser
+
+var apiName = "plugin_api"
+var apiVersion = 0
+
+var optParser = initOptParser("")
+for kind, key, val in optParser.getopt():
+  case kind
+  of cmdArgument:
+    apiName = key
+
+  of cmdLongOption, cmdShortOption:
+    discard
+
+  of cmdEnd: assert(false) # cannot happen
+
+if apiName != "plugin_api":
+  var i = -1
+  for k in 0..apiName.high:
+    if apiName[k] in {'0'..'9'}:
+      i = k
+      break
+  if i != -1:
+    apiVersion = apiName[i..^1].parseInt
 
 type IdentifierCase* = enum Camel, Pascal, Kebab, Snake, ScreamingSnake
 
@@ -106,12 +129,18 @@ proc generateType(o: var Output, wit: WitModule, t: Type) =
     o.buffer.add(")")
 
   of TKUser:
-    o.buffer.add "plugin_api."
+    o.buffer.add apiName & "."
     o.buffer.add(t.name.toPascalCase)
 
   of TKUnresolved:
-    o.buffer.add "unresolved.plugin_api."
+    o.buffer.add &"unresolved.{apiName}."
     o.buffer.add(t.name.toPascalCase)
+
+  of TKBorrow:
+    o.buffer.add &"borrow.{apiName}."
+    o.buffer.add("[")
+    o.generateType(wit, t.elem)
+    o.buffer.add("]")
 
 proc generateType(o: var Output, wit: WitModule, t: TypeIdx) =
   o.generateType(wit, wit.getType(t))
@@ -132,6 +161,8 @@ proc containsResource(wit: WitModule, t: TypeIdx): bool =
   of TKUser:
     let item = wit.getItem(typ)
     return item.kind == IKResource
+  of TKBorrow:
+    return true
   else:
     return false
   return false
@@ -184,14 +215,14 @@ proc generateInterface(o: var Output, wit: WitModule, decl: Decl) =
     #     o.generateFunction(wit, decl.name.toCamelCase, m.name, m.sig, item.typ)
 
 proc main() =
-  let path = "wit/v0/api.wit"
+  let path = &"wit/v{apiVersion}/api.wit"
   let contents = readFile(path)
   let module = parseWitModule(contents)
 
   var o = Output()
 
   o.buffer.add "import std/[options, json, jsonutils, tables]\n"
-  o.buffer.add "import plugin_api, lisp\n\n"
+  o.buffer.add &"import {apiName}, lisp\n\n"
   o.buffer.add """
 {.used.}
 
@@ -219,6 +250,7 @@ proc getArg(args: LispVal, namedArgs: LispVal, index: int, name: string, T: type
   o.buffer.add o.switchBuffer
   o.buffer.add "  else: echo(\"Unknown API '\", name, \"'\"); newNil()\n"
 
-  writeFile("src/plugin_api/plugin_api_dynamic.nim", o.buffer)
+  writeFile(&"src/plugin_api/{apiName}_dynamic.nim", o.buffer)
 
+echo &"Generate dynamic bindings for {apiName} v{apiVersion}"
 main()

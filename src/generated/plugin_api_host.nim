@@ -709,9 +709,6 @@ proc textEditorHideCompletions*(instance: ptr InstanceData; editor: TextEditor):
 proc textEditorScrollToCursor*(instance: ptr InstanceData; editor: TextEditor;
                                behaviour: Option[ScrollBehaviour];
                                relativePosition: float32): void
-proc textEditorSetNextSnapBehaviour*(instance: ptr InstanceData;
-                                     editor: TextEditor;
-                                     behaviour: ScrollSnapBehaviour): void
 proc textEditorUpdateTargetColumn*(instance: ptr InstanceData;
                                    editor: TextEditor): void
 proc textEditorGetUsage*(instance: ptr InstanceData; editor: TextEditor): string
@@ -722,12 +719,10 @@ proc textEditorMode*(instance: ptr InstanceData; editor: TextEditor): string
 proc textEditorModes*(instance: ptr InstanceData; editor: TextEditor): seq[
     string]
 proc textEditorClearTabStops*(instance: ptr InstanceData; editor: TextEditor): void
-proc textEditorUndo*(instance: ptr InstanceData; editor: TextEditor;
-                     checkpoint: sink string): void
-proc textEditorRedo*(instance: ptr InstanceData; editor: TextEditor;
-                     checkpoint: sink string): void
-proc textEditorAddNextCheckpoint*(instance: ptr InstanceData;
-                                  editor: TextEditor; checkpoint: sink string): void
+proc textEditorUndo*(instance: ptr InstanceData; editor: TextEditor): void
+proc textEditorRedo*(instance: ptr InstanceData; editor: TextEditor): void
+proc textEditorStartTransaction*(instance: ptr InstanceData; editor: TextEditor): void
+proc textEditorEndTransaction*(instance: ptr InstanceData; editor: TextEditor): void
 proc textEditorCopy*(instance: ptr InstanceData; editor: TextEditor;
                      register: sink string; inclusiveEnd: bool): void
 proc textEditorPaste*(instance: ptr InstanceData; editor: TextEditor;
@@ -2279,20 +2274,6 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I64, WasmValkind.I32], [])
-      linker.defineFuncUnchecked("nev:plugins/text-editor",
-                                 "set-next-snap-behaviour", ty):
-        var instance = cast[ptr InstanceData](store.getData())
-        var editor: TextEditor
-        var behaviour: ScrollSnapBehaviour
-        editor.id = convert(parameters[0].i64, uint64)
-        behaviour = cast[ScrollSnapBehaviour](parameters[1].i32)
-        textEditorSetNextSnapBehaviour(instance, editor, behaviour)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
       linker.defineFuncUnchecked("nev:plugins/text-editor",
                                  "update-target-column", ty):
@@ -2474,90 +2455,44 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32], [])
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
       linker.defineFuncUnchecked("nev:plugins/text-editor", "undo", ty):
         var instance = cast[ptr InstanceData](store.getData())
-        var mainMemory = caller.getExport("memory")
-        if mainMemory.isNone:
-          mainMemory = instance.getMemoryFor(caller)
-        var memory: ptr UncheckedArray[uint8] = nil
-        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](data(
-              mainMemory.get.of_field.sharedmemory))
-        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](store.data(
-              mainMemory.get.of_field.memory.addr))
-        else:
-          assert false
         var editor: TextEditor
-        var checkpoint: string
         editor.id = convert(parameters[0].i64, uint64)
-        block:
-          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
-          checkpoint = newString(parameters[2].i32)
-          for i0 in 0 ..< checkpoint.len:
-            checkpoint[i0] = p0[i0]
-        textEditorUndo(instance, editor, checkpoint)
+        textEditorUndo(instance, editor)
     if e.isErr:
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32], [])
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
       linker.defineFuncUnchecked("nev:plugins/text-editor", "redo", ty):
         var instance = cast[ptr InstanceData](store.getData())
-        var mainMemory = caller.getExport("memory")
-        if mainMemory.isNone:
-          mainMemory = instance.getMemoryFor(caller)
-        var memory: ptr UncheckedArray[uint8] = nil
-        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](data(
-              mainMemory.get.of_field.sharedmemory))
-        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](store.data(
-              mainMemory.get.of_field.memory.addr))
-        else:
-          assert false
         var editor: TextEditor
-        var checkpoint: string
         editor.id = convert(parameters[0].i64, uint64)
-        block:
-          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
-          checkpoint = newString(parameters[2].i32)
-          for i0 in 0 ..< checkpoint.len:
-            checkpoint[i0] = p0[i0]
-        textEditorRedo(instance, editor, checkpoint)
+        textEditorRedo(instance, editor)
     if e.isErr:
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32], [])
-      linker.defineFuncUnchecked("nev:plugins/text-editor",
-                                 "add-next-checkpoint", ty):
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "start-transaction",
+                                 ty):
         var instance = cast[ptr InstanceData](store.getData())
-        var mainMemory = caller.getExport("memory")
-        if mainMemory.isNone:
-          mainMemory = instance.getMemoryFor(caller)
-        var memory: ptr UncheckedArray[uint8] = nil
-        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](data(
-              mainMemory.get.of_field.sharedmemory))
-        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](store.data(
-              mainMemory.get.of_field.memory.addr))
-        else:
-          assert false
         var editor: TextEditor
-        var checkpoint: string
         editor.id = convert(parameters[0].i64, uint64)
-        block:
-          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
-          checkpoint = newString(parameters[2].i32)
-          for i0 in 0 ..< checkpoint.len:
-            checkpoint[i0] = p0[i0]
-        textEditorAddNextCheckpoint(instance, editor, checkpoint)
+        textEditorStartTransaction(instance, editor)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "end-transaction",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        textEditorEndTransaction(instance, editor)
     if e.isErr:
       return e
   block:

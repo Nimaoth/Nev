@@ -51,4 +51,3 @@ method previewItem*(self: OpenEditorPreviewer, item: FinderItem, editor: Documen
     editor.scrollToTop()
   else:
     editor.centerCursor(snap = true)
-  editor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)

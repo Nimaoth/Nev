@@ -26,7 +26,7 @@ type
     body*: seq[Item]
 
   TypeKind* = enum
-    TKVoid, TKInt, TKFloat, TKString, TKBool, TKChar, TKList, TKOption, TKResult, TKTuple, TKUser, TKUnresolved
+    TKVoid, TKInt, TKFloat, TKString, TKBool, TKChar, TKList, TKOption, TKResult, TKTuple, TKUser, TKUnresolved, TKBorrow
 
   TypeIdx* = distinct int
 
@@ -36,7 +36,7 @@ type
       name*: string
       declIndex*: int
       itemIndex*: int
-    of TKList, TKOption:
+    of TKList, TKOption, TKBorrow:
       elem*: TypeIdx
     of TKResult:
       ok*: TypeIdx
@@ -420,6 +420,9 @@ proc parseType(p: var Parser): TypeIdx =
         return p.module.types.high.TypeIdx
       elif nm == "tuple":
         p.module.types.add Type(kind: TKTuple, elems: args)
+        return p.module.types.high.TypeIdx
+      elif nm == "borrow":
+        p.module.types.add Type(kind: TKBorrow, elem: args[0])
         return p.module.types.high.TypeIdx
       else:
         assert false

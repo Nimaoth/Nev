@@ -1,11 +1,14 @@
 package nev:plugins;
 
 interface types {
+  /// Represents a cursor in a text editor. Line and column are both zero based.
+  /// The column is in bytes.
   record cursor {
     line: s32,
     column: s32,
   }
 
+  /// The column of 'last' is exclusive.
   record selection {
     first: cursor,
     last: cursor,
@@ -15,99 +18,647 @@ interface types {
     x: f32,
     y: f32,
   }
+
+  record rect {
+    pos: vec2f,
+    size: vec2f,
+  }
+
+  flags active-editor-flags {
+    include-command-line,
+    include-popups,
+  }
+
+  record lamport {
+    replica-id: u16,
+    value: u32,
+  }
+
+  enum bias {
+    left,
+    right,
+  }
+
+  enum overlay-render-location {
+    inline,
+    below,
+    above,
+  }
+
+  record anchor {
+    timestamp: lamport,
+    offset: u32,
+    bias: bias,
+  }
+
+  /// Shared reference to a byte buffer. The data is stored in the editor, not in the plugin, so shared buffers
+  /// can be used to efficiently share data with another plugin or another thread.
+  /// Buffers are reference counted internally, and this resource also affects that reference count.
+  resource shared-buffer {
+    constructor(size: s64);
+    clone-ref: func() -> shared-buffer;
+    len: func() -> s64;
+    write-string: func(index: s64, data: string);
+    write: func(index: s64, data: list<u8>);
+    read-into: func(index: s64, dst: u32, len: s32);
+    read: func(index: s64, len: s32) -> list<u8>;
+
+    open: static func(path: string) -> option<shared-buffer>;
+    mount: static func(buffer: shared-buffer, path: string, unique: bool) -> string;
+  }
+
+  /// Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
+  /// can be used to efficiently access any document content or share a string with another plugin.
+  /// Ropes are reference counted internally, and this resource also affects that reference count.
+  resource rope {
+    constructor(content: string);
+    /// Returns another reference to the same rope.
+    clone: func() -> rope;
+    /// Returns the number of bytes in the rope. This operation is cheap.
+    bytes: func() -> s64;
+    /// Returns the number of UTF-8 code points. This operation is cheap.
+    runes: func() -> s64;
+    /// Returns the number of lines. This operation is cheap.
+    lines: func() -> s64;
+    /// Returns the text of the rope as a string. This is expensive for large ropes.
+    text: func() -> string;
+    /// Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is inclusive if `inclusive` is true.
+    /// This operation is cheap because it doesn't create a copy of the text.
+    slice: func(a: s64, b: s64, inclusive: bool) -> rope;
+    /// Returns a slice of the rope from the given selection. 's.last' is inclusive if `inclusive` is true.
+    /// This operation is cheap because it doesn't create a copy of the text.
+    slice-selection: func(s: selection, inclusive: bool) -> rope;
+    /// Find the byte index of the sub string 'sub', starting the search at 'start'. The returned index is relative to the start of the rope, not 'start'.
+    find: func(sub: string, start: s64) -> option<s64>;
+    /// Returns a slice of the rope from 'a' to 'b'. The column of 'b' is exclusive. Columns are in bytes.
+    /// This operation is cheap because it doesn't create a copy of the text.
+    slice-points: func(a: cursor, b: cursor) -> rope;
+    /// Return the length in bytes of the given line (0 based).
+    line-length: func(line: s64) -> s64;
+    // /// Returns a slice of the rope from line 'a' to 'b'. 'b' is inclusive.
+    // /// This operation is cheap because it doesn't create a copy of the text.
+    // slice-lines: func(a: s64, b: s64) -> rope;
+    rune-at: func(a: cursor) -> char;
+    byte-at: func(a: cursor) -> u8;
+    /// Find all occurences of the given regex
+    find-all: func(regex: string) -> list<selection>;
+
+    open: static func(path: string) -> option<rope>;
+    mount: static func(rope: rope, path: string, unique: bool) -> string;
+  }
+
+  /// Non-owning handle to an editor.
+  record editor {
+    id: u64
+  }
+
+  /// Non-owning handle to a text editor.
+  record text-editor {
+    id: u64
+  }
+
+  /// Non-owning handle to a document.
+  record document {
+    id: u64
+  }
+
+  /// Non-owning handle to a text document.
+  record text-document {
+    id: u64
+  }
+
+  record task {
+    id: u64
+  }
+}
+
+/// Thread safe
+interface channel {
+  enum channel-listen-response {
+    continue,
+    stop,
+  }
+
+  /// Represents the read end of a channel. All APIs are non-blocking.
+  resource read-channel {
+    /// Returns whether the channel is still open and usable.
+    can-read: func() -> bool;
+    /// Returns whether the channel at the end, meaning no further data will be returned from any read function.
+    at-end: func() -> bool;
+    /// Returns the minimum number of bytes available for reading. More data might be available after calling a read function or 'flush-read'.
+    peek: func() -> s32;
+    /// Read data into the internal buffer of the channel. This is required for 'peek' to work. Other read functions as well
+    /// as 'listen' and 'wait-read' already do this internally so you usually don't need to call 'flush-read'.
+    flush-read: func() -> s32;
+    /// Read
+    read-string: func(num: s32) -> string;
+    /// Read
+    read-bytes: func(num: s32) -> list<u8>;
+    /// Read everything currently available in the channel.
+    read-all-string: func() -> string;
+    /// Read everything currently available in the channel.
+    read-all-bytes: func() -> list<u8>;
+    /// Listen for data being ready to read. When data is ready 'fun' is called with 'data'.
+    listen: func(fun: u32, data: u32);
+    /// If 'num' bytes are available in the channel return true, otherwise return false and call 'task' later once the
+    /// requested amount of data is available.
+    wait-read: func(task: u64, num: s32) -> bool;
+
+    open: static func(path: string) -> option<read-channel>;
+    mount: static func(channel: read-channel, path: string, unique: bool) -> string;
+  }
+
+  /// Represents the write end of a channel. All APIs are non-blocking.
+  resource write-channel {
+    /// Close the write end.
+    close: func();
+    /// Returns whether the channel is still open and usable.
+    can-write: func() -> bool;
+    /// Write a string to the channel
+    write-string: func(data: string);
+    /// Write a buffer to the channel
+    write-bytes: func(data: list<u8>);
+
+    open: static func(path: string) -> option<write-channel>;
+    mount: static func(channel: write-channel, path: string, unique: bool) -> string;
+  }
+
+  /// Creates a new channel which buffers data in memory and returns the read and write end.
+  new-in-memory-channel: func() -> tuple<read-channel, write-channel>;
+
+  /// Creates a new channel which buffers data in memory and returns the read and write end.
+  create-terminal: func(stdin: write-channel, stdout: read-channel, group: string);
+}
+
+/// Thread safe
+interface process {
+  use channel.{read-channel, write-channel};
+
+  /// Resource which represents a running process started by a plugin.
+  resource process {
+    /// Start a process with the given name and pass 'args' as command line arguments
+    start: static func(name: string, args: list<string>) -> process;
+    /// Return a channel for reading from stderr.
+    stderr: func() -> read-channel;
+    /// Return a channel for reading from stdout.
+    stdout: func() -> read-channel;
+    /// Return a channel for writing to stdin.
+    stdin: func() -> write-channel;
+  }
+}
+
+interface vfs {
+  use types.{rope};
+  use commands.{command-error};
+
+  enum vfs-error {
+    not-allowed,
+    not-found,
+  }
+
+  flags read-flags {
+    binary,
+  }
+
+  /// Read the given file synchronously. Requires 'filesystemRead' permissions.
+  /// By default files are checked to be valid UTF-8 when loading. To skip this check pass the 'binary' flag.
+  /// Paths are virtual paths for the virtual file system.
+  read-sync: func(path: string, read-flags: read-flags) -> result<string, vfs-error>;
+  /// Read the given file synchronously. Requires 'filesystemRead' permissions.
+  /// By default files are checked to be valid UTF-8 when loading. To skip this check pass the 'binary' flag.
+  /// Paths are virtual paths for the virtual file system.
+  read-rope-sync: func(path: string, read-flags: read-flags) -> result<rope, vfs-error>;
+  /// Write the given file synchronously. Requires 'filesystemWrite' permissions.
+  /// Paths are virtual paths for the virtual file system.
+  write-sync: func(path: string, content: string) -> result<bool, vfs-error>;
+  /// Write the given file synchronously. Requires 'filesystemWrite' permissions.
+  /// Paths are virtual paths for the virtual file system.
+  write-rope-sync: func(path: string, rope: rope) -> result<bool, vfs-error>;
+  /// Turns a virtual file system path to a path in the local file system, which can be passed to e.g. external processes.
+  /// E.g. 'local://C:/Users' becomes 'C:/Users'
+  /// E.g. 'home://.nev' becomes 'C:/Users/username/.nev'
+  localize: func(path: string) -> string;
+
+}
+
+interface editor {
+  use types.{editor, document, active-editor-flags};
+  /// Returns a handle for the currently active text editor.
+  active-editor: func(options: active-editor-flags) -> option<editor>;
+  /// Returns the document the given editor is currently editing.
+  get-document: func(editor: editor) -> option<document>;
 }
 
 interface text-editor {
-  use types.{cursor, selection};
-  // set-selection: func(s: selection);
-  get-selection: func() -> selection;
+  use types.{editor, document, text-editor, text-document, cursor, selection, rope, active-editor-flags, anchor, bias, overlay-render-location};
+  use commands.{command-error};
+
+  enum scroll-behaviour {
+    center-always,
+    center-offscreen,
+    center-margin,
+    scroll-to-margin,
+    top-of-screen,
+  }
+
+  enum scroll-snap-behaviour {
+    never,
+    always,
+    min-distance-offscreen,
+    min-distance-center,
+  }
+
+  /// Returns a handle for the currently active text editor.
+  active-text-editor: func(options: active-editor-flags) -> option<text-editor>;
+  /// Returns the text document the given editor is currently editing.
+  get-document: func(editor: text-editor) -> option<text-document>;
+  /// Try to cast the given editor handle to a text editor handle.
+  as-text-editor: func(editor: editor) -> option<text-editor>;
+  /// Try to cast the given document handle to a text document handle.
+  as-text-document: func(document: document) -> option<text-document>;
+
+  all-text-editors: func() -> list<text-editor>;
+
+  /// Run the given command on the given text editor. This requires 'command' permissions.
+  command: func(editor: text-editor, name: string, arguments: string) -> result<string, command-error>;
+
+  /// Records the current command being executed to the given registers.
+  record-current-command: func(editor: text-editor, registers: list<string>);
+
+  /// Hides any open completion popups in the editor.
+  hide-completions: func(editor: text-editor);
+
+  /// Scroll the view to bring the cursor into view. The behaviour determines how the cursor is positioned.
+  /// `relativePosition` determines the vertical position of the cursor within the viewport (0 = top, 1 = bottom).
+  scroll-to-cursor: func(editor: text-editor, behaviour: option<scroll-behaviour>, relative-position: f32);
+
+  /// Updates the target column (the column the cursor tries to keep when moving up/down).
+  update-target-column: func(editor: text-editor);
+
+  /// Returns the usage describing what the editor is used for (e.g command line, search bar, normal etc).
+  get-usage: func(editor: text-editor) -> string;
+  /// Returns the current revision number of the document.
+  get-revision: func(editor: text-editor) -> s32;
+  /// Sets the editor mode. If exclusive is true, all other modes are removed.
+  set-mode: func(editor: text-editor, mode: string, exclusive: bool);
+  /// Returns the current mode.
+  mode: func(editor: text-editor) -> string;
+  /// Returns all active modes.
+  modes: func(editor: text-editor) -> list<string>;
+  /// Clears all tab stops.
+  clear-tab-stops: func(editor: text-editor);
+  /// Undo the last change.
+  undo: func(editor: text-editor);
+  /// Redo the last undone change.
+  redo: func(editor: text-editor);
+  /// Start a transaction. Every edit until `end-transaction` will be grouped together and undone in one go.
+  start-transaction: func(editor: text-editor);
+  /// End the current transaction.
+  end-transaction: func(editor: text-editor);
+  /// Copy the current selection to the specified register. If inclusiveEnd is true, the selection includes the character at the end position.
+  copy: func(editor: text-editor, register: string, inclusive-end: bool);
+  /// Paste the contents of the register at the given selections.
+  paste: func(editor: text-editor, selections: list<selection>, register: string, inclusive-end: bool);
+  /// Show completions if available.
+  auto-show-completions: func(editor: text-editor);
+  /// Toggle line comments for the current selection using the language's comment style.
+  toggle-line-comment: func(editor: text-editor);
+  /// Insert text at the current cursor position(s). If auto-indent is true, the text will be auto-indented.
+  insert-text: func(editor: text-editor, text: string, auto-indent: bool);
+  /// Open the interactive search bar with the given initial query.
+  open-search-bar: func(editor: text-editor, query: string, scroll-to-preview: bool, select-result: bool);
+
+  /// Set the search query by applying the given move to the current selection.
+  /// 'prefix' and 'suffix' are appended to the string after escaping.
+  set-search-query-from-move: func(editor: text-editor, move: string, count: s32, prefix: string, suffix: string) -> selection;
+  /// Set the search query to 'query'. If 'escape-regex' is true the the 'query' string is escaped so special characters
+  /// are searched for literally. 'prefix' and 'suffix' are appended to the string after escaping.
+  set-search-query: func(editor: text-editor, query: string, escape-regex: bool, prefix: string, suffix: string) -> bool;
+  /// Returns the current search query.
+  get-search-query: func(editor: text-editor) -> string;
+
+  /// Apply a move operation to the selection and return the new selection(s).
+  /// The move is a string that specifies the movement (e.g., "word", "line-end").
+  /// count specifies how many times to repeat the move, wrap controls whether to wrap around the document.
+  apply-move: func(editor: text-editor, selection: selection, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
+  /// Apply a move operation to multiple selections at once.
+  multi-move: func(editor: text-editor, selections: list<selection>, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
+
+  /// Sets the given selection as the only selection for the given editor.
+  set-selection: func(editor: text-editor, s: selection);
+  /// Sets the selections for the given editor.
+  set-selections: func(editor: text-editor, s: list<selection>);
+  /// Returns the last selection of the given editor.
+  get-selection: func(editor: text-editor) -> selection;
+  /// Returns the selections of the given editor.
+  get-selections: func(editor: text-editor) -> list<selection>;
+  /// Return the length of the given line (0 based)
+  line-length: func(editor: text-editor, line: s32) -> s32;
+  /// Add a callback which will be called whenever any editor changes mode.
   add-mode-changed-handler: func(fun: u32) -> s32;
+
+  /// Returns the value of the setting with the given path, encoded as JSON.
+  get-setting-raw: func(editor: text-editor, name: string) -> string;
+
+  /// Set the value of the setting with the given path. The value must be encoded as JSON.
+  set-setting-raw: func(editor: text-editor, name: string, value: string);
+
+  /// Evaluates the selected text as expressions and replaces them with the result.
+  /// prefix and suffix are added around each selection before evaluating.
+  evaluate-expressions: func(editor: text-editor, selections: list<selection>, inclusive: bool, prefix: string, suffix: string, add-selection-index: bool);
+
+  /// Indent or unindent the selected lines by the given delta (positive = indent, negative = unindent).
+  indent: func(editor: text-editor, delta: s32);
+
+  /// Returns the current command count (used for repeat prefix like "3w").
+  get-command-count: func(editor: text-editor) -> s32;
+
+  /// Sets the vertical scroll offset for a specific cursor position.
+  set-cursor-scroll-offset: func(editor: text-editor, cursor: cursor, scroll-offset: f32);
+
+  /// Returns the number of lines that fit on the current screen size for this editor.
+  get-visible-line-count: func(editor: text-editor) -> s32;
+
+  /// Creates anchors at the start and end of each selection. Anchors track a position in the document
+  /// even as text is inserted or deleted before them, allowing for persistent selections.
+  create-anchors: func(editor: text-editor, selections: list<selection>) -> list<tuple<anchor, anchor>>;
+
+  /// Resolves anchors back to selections using the current document state.
+  resolve-anchors: func(editor: text-editor, anchors: list<tuple<anchor, anchor>>) -> list<selection>;
+
+  add-overlay: func(editor: text-editor, selections: selection, text: string, id: s64, scope: string, bias: bias, render-id: s64, location: overlay-render-location);
+  clear-overlays: func(editor: text-editor, id: s64);
+  allocate-overlay-id: func(editor: text-editor) -> s64;
+  release-overlay-id: func(editor: text-editor, id: s64);
+
+  /// Sets the callback which will be called when rendering text overlays with a renderId.
+  /// Returns the renderId which can be used in add-overlay.
+  /// 'fun' is a pointer to a function with signature func(id: s32, data: u32). Data is an arbitrary number
+  /// which will be passed to the callback unchanged. It can be used as e.g. a pointer to some data.
+  add-custom-render-callback: func(editor: text-editor, fun: u32, data: u32) -> s64;
+  remove-custom-render-callback: func(editor: text-editor, cb: s64);
+
+  /// Edits the document by replacing the selections with the given contents.
+  /// Returns the new selections after the edit.
+  edit: func(editor: text-editor, selections: list<selection>, contents: list<string>, inclusive: bool) -> list<selection>;
+
+  /// Defines a custom move operation. The callback receives the rope, current selections,
+  /// count, and includeEol flag, and returns the new selections.
+  define-move: func(move: string, fun: u32, data: u32);
+
+  /// Returns the rope containing the current content of the text editors document.
+  /// This rope is not automatically kept up to date when the document changes, but
+  /// represents the content at the point in time this is called instead. Keeping ropes
+  /// around should not have significant memory overhead because ropes share data under the hood.
+  content: func(editor: text-editor) -> rope;
+}
+
+interface registers {
+  /// Returns true if commands are currently being replayed from a register.
+  is-replaying-commands: func() -> bool;
+  /// Returns true if commands are currently being recorded to the given register.
+  is-recording-commands: func(register: string) -> bool;
+  /// Sets the text content of the specified register.
+  set-register-text: func(text: string, register: string);
+  /// Gets the text content of the specified register.
+  get-register-text: func(register: string) -> string;
+  /// Starts recording commands to the specified register.
+  start-recording-commands: func(register: string);
+  /// Stops recording commands to the specified register.
+  stop-recording-commands: func(register: string);
+  /// Replays the commands stored in the specified register.
+  replay-commands: func(register: string);
+}
+
+interface text-document {
+  use types.{text-document, cursor, selection, rope};
+
+  /// Returns the rope containing the current content of the document.
+  /// This rope is not automatically kept up to date when the document changes, but
+  /// represents the content at the point in time this is called instead. Keeping ropes
+  /// around should not have significant memory overhead because ropes share data under the hood.
+  content: func(document: text-document) -> rope;
+
+  /// VFS file path
+  path: func(document: text-document) -> string;
 }
 
 interface layout {
+  /// Shared handle for a view.
   record view {
     id: s32
   }
 
+  /// Show the given view in the given slot.  If focus is true it's also focused, otherwise focus remains as is if possible.
   show: func(v: view, slot: string, focus: bool, add-to-history: bool);
+  /// Close the given view. If 'keep-hidden' is true then the view will only be removed from the layout tree but remains open
+  /// in the background. If 'restore-hidden' is true the the current view will be replaced by the last hidden view,
+  /// otherwise the current slot is removed from the layout.
   close: func(v: view, keep-hidden: bool, restore-hidden: bool);
+  /// Set focus to the view in the given slot.
   focus: func(slot: string);
+  /// Close the active view. If 'close-open-popup' is set and a popup is open then the popup will be closed.
+  /// If 'restore-hidden' is true then the view will be replaced by a hidden view, otherwise the slot will be removed from the layout..
+  close-active-view: func(close-open-popup: bool, restore-hidden: bool);
 }
 
 interface render {
-  use types.{vec2f};
+  use types.{vec2f, shared-buffer};
   use layout.{view};
 
+  /// Shared handle to a custom render view
   resource render-view {
     constructor();
+
+    /// Try to create a handle to an existing render view with the given user id.
     from-user-id: static func(id: string) -> option<render-view>;
+    /// Try to create a handle to an existing render view from a 'view'.
     from-view: static func(v: view) -> option<render-view>;
+    /// Returns the raw view handle.
     view: func() -> view;
+    /// Returns the unique id of the view. This id is not stable across sessions.
     id: func() -> s32;
+    /// Returns the size in pixels the view currently has. In the terminal one pixel is one character.
     size: func() -> vec2f;
+    /// Returns whether the given key is currently pressed.
+    key-down: func(key: s64) -> bool;
+    /// Returns the mouse position relative to the position of the view. (0, 0) is in the top left corner.
+    mouse-pos: func() -> vec2f;
+    /// Returns whether the given mouse button is pressed.
+    mouse-down: func(button: s64) -> bool;
+    /// Returns how much the mouse was scrolled this frame.
+    scroll-delta: func() -> vec2f;
+    /// Specify how often the view should render. -1 means don't render in a timer, 0 means render every frame,
+    /// a number bigger than 0 specifies the interval in milliseconds.
     set-render-interval: func(ms: s32);
+    /// Set the render commands used for the next render. 'buffer' is a pointer to a buffer of encoded render commands,
+    /// 'len' is the length of the buffer in bytes.
     set-render-commands-raw: func(buffer: u32, len: u32);
+    /// Set the render commands used for the next render. 'data' contains encoded render commands.
     set-render-commands: func(data: list<u8>);
+    /// Enable rendering while the view is inactive (but still visible).
     set-render-when-inactive: func(enabled: bool);
+    /// When enabled the view prevents the editor from throttling the frame rate after a few seconds. This requires
+    /// the view to also be rendered regularly, using e.g. 'set-render-interval' or but marking it dirty regularly.
     set-prevent-throttling: func(enabled: bool);
+    /// Sets the user id of this view.
     set-user-id: func(id: string);
+    /// Returns the user id of this view.
     get-user-id: func() -> string;
+    /// Trigger a render for this view.
     mark-dirty: func();
+    /// Sets the callback which wil be called before rendering. This can be used to set the render commands.
+    /// 'fun' is a pointer to a function with signature func(id: s32, data: u32). Data is an arbitrary number
+    /// which will be passed to the callback unchanged. It can be used as e.g. a pointer to some data.
     set-render-callback: func(fun: u32, data: u32);
+    /// Set the list of input modes. This controls which keybindings are available while the view is active.
     set-modes: func(modes: list<string>);
+    /// Add a mode to the input modes. This controls which keybindings are available while the view is active.
     add-mode: func(mode: string);
+    /// Remove a mode from the input modes. This controls which keybindings are available while the view is active.
     remove-mode: func(mode: string);
   }
+
+  enum texture-format {
+    rgba8,
+    rgba32,
+  }
+
+  create-texture: func(width: s32, height: s32, data: u32, format: texture-format, dynamic: bool) -> u64;
+  create-texture-buffer: func(width: s32, height: s32, data: borrow<shared-buffer>, offset: u32, format: texture-format, dynamic: bool) -> u64;
+  update-texture: func(id: u64, width: s32, height: s32, data: u32, format: texture-format);
+  update-texture-buffer: func(id: u64, width: s32, height: s32, data: borrow<shared-buffer>, offset: u32, format: texture-format);
+  delete-texture: func(id: u64);
 }
 
+/// Thread safe
 interface core {
+  enum platform {
+    gui,
+    tui,
+  }
+
+  enum background-executor {
+    thread,
+    thread-pool,
+  }
+
+  /// Returns the plugin API version this plugin is using.
+  /// 0 means the latest version, 1 or bigger means a specific version.
+  api-version: func() -> s32;
+
+  /// Returns the time in milliseconds since the plugin was loaded. Returns 0 if the plugin has no 'time' permission.
+  get-time: func() -> f64;
+
+  /// Returns what kind platform the app is running on. E.g. 'terminal' or 'gui'
+  get-platform: func() -> platform;
+
+  /// Returns true if this plugin is running on the main thread. Some APIs are not available when not on the main thread.
+  is-main-thread: func() -> bool;
+
+  /// Returns the arguments this plugin instance was created with.
+  get-arguments: func() -> string;
+
+  /// Creates another instance of the plugin running in a background thread. 'args' is available in the new instance
+  /// using the 'get-arguments' function
+  spawn-background: func(args: string, executor: background-executor);
+
+  /// Destroy the current plugin instance.
+  finish-background: func();
+
+  sleep-async: func(task: u64, milliseconds: u32);
+}
+
+interface commands {
   enum command-error {
     not-allowed,
     not-found
   }
 
-  api-version: func() -> s32;
-  get-time: func() -> f64;
-  bind-keys: func(context: string, subcontext: string, keys: string, action: string, arg: string, description: string, source: tuple<string, s32, s32>);
+  /// Defines a command.
   define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, returntype: string, context: string, fun: u32, data: u32);
+
+  /// Run the given command. This requires 'command' permissions.
   run-command: func(name: string, arguments: string) -> result<string, command-error>;
+
+  /// Close the command line.
+  exit-command-line: func();
+}
+
+interface settings {
+  /// Returns the value of the setting with the given path, encoded as JSON.
   get-setting-raw: func(name: string) -> string;
+
+  /// Set the value of the setting with the given path. The value must be encoded as JSON.
   set-setting-raw: func(name: string, value: string);
 }
 
-interface text {
-  use types.{cursor};
+interface events {
+  /// Register a callback function to be called when events matching the pattern occur.
+  /// The callback receives the event name and payload (JSON string).
+  listen-event: func(fun: u32, data: u32, id: string, pattern: string);
+  /// Stop listening to events that match the pattern.
+  stop-listen-event: func(id: string, pattern: string);
+  /// Emit an event with the given name and JSON payload.
+  emit-event: func(event: string, payload: string);
+}
 
-  resource editor {
-    rope: func() -> rope;
-    current: static func() -> option<editor>;
-  }
+interface session {
+  /// Get session data stored under the given name. Returns an empty string if not found.
+  get-session-data: func(name: string) -> string;
 
-  resource rope {
-    constructor(content: string);
-    clone: func() -> rope;
-    text: func() -> string;
-    debug: func() -> string;
-    slice: func(a: s64, b: s64) -> rope;
-    slice-points: func(a: cursor, b: cursor) -> rope;
-  }
+  /// Set session data stored under the given name.
+  set-session-data: func(name: string, value: string);
 }
 
 interface guest {
   use render.{view};
+  use channel.{channel-listen-response};
+  use types.{rope, selection, vec2f};
   init-plugin: func();
   handle-command: func(fun: u32, data: u32, arguments: string) -> string;
   handle-mode-changed: func(fun: u32, old: string, new: string);
   handle-view-render-callback: func(id: s32, fun: u32, data: u32);
+  handle-channel-update: func(fun: u32, data: u32, closed: bool) -> channel-listen-response;
+  notify-task-complete: func(task: u64, canceled: bool);
+  handle-move: func(fun: u32, data: u32, text: u32, selections: list<selection>, count: s32, eol: bool) -> list<selection>;
+  save-plugin-state: func() -> list<u8>;
+  load-plugin-state: func(state: list<u8>);
+  handle-event: func(fun: u32, data: u32, event: string, payload: string);
+
+  /// Return a pointer to a buffer of encoded render commands and the length of the buffer.
+  /// The pointer is the lower 32 bits of the return value, the length the upper 32 bits.
+  /// The first two values of the buffer must be two 32 bit floats which represent the width/height of overlay.
+  handle-text-overlay-render: func(fun: u32, data: u32, id: s64, size: vec2f, offset: s32) -> u64;
+}
+
+/// APIs which can safely be used on a background thread
+world plugin-thread-safe {
+  use types.{cursor, selection};
+
+  import core;
+  import channel;
+  import process;
+
+  export guest;
 }
 
 world plugin {
   use types.{cursor, selection};
 
-  import text-editor;
-  import text;
   import core;
+  import commands;
+  import settings;
+  import editor;
+  import text-editor;
+  import text-document;
   import render;
+  import vfs;
+  import channel;
+  import process;
+  import registers;
+  import events;
+  import session;
 
   export guest;
 }

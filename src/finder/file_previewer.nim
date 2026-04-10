@@ -182,16 +182,13 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
   if location.getSome(location):
     editor.targetSelection = location.toSelection
     editor.centerCursor()
-    editor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   else:
     editor.targetSelection = (0, 0).toSelection
     editor.scrollToTop()
-    editor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
   if self.currentDiff:
     self.editor.document.staged = self.currentStaged
     self.editor.updateDiff(gotoFirstDiff=true)
-    self.editor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   else:
     self.editor.document.staged = false
     self.editor.closeDiff()
@@ -250,7 +247,6 @@ method previewItem*(self: FilePreviewer, item: FinderItem, editor: DocumentEdito
     else:
       self.editor.targetSelection = (0, 0).toSelection
       self.editor.scrollToTop()
-      self.editor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
     if self.currentDiff:
       self.editor.document.staged = self.currentStaged

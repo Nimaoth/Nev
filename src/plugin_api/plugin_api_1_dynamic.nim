@@ -1,5 +1,5 @@
 import std/[options, json, jsonutils, tables]
-import plugin_api, lisp
+import plugin_api_1, lisp
 
 {.used.}
 
@@ -26,7 +26,7 @@ proc coreGetArguments*(instance: ptr InstanceData, args: LispVal, namedArgs: Lis
   let res = instance.coreGetArguments()
   return res.toJson().jsonTo(LispVal)
 proc coreSpawnBackground*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.coreSpawnBackground(getArg(args, namedArgs, 0, "args", string), getArg(args, namedArgs, 1, "executor", plugin_api.BackgroundExecutor), )
+  instance.coreSpawnBackground(getArg(args, namedArgs, 0, "args", string), getArg(args, namedArgs, 1, "executor", plugin_api_1.BackgroundExecutor), )
   return newNil()
 proc coreFinishBackground*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
   instance.coreFinishBackground()
@@ -50,187 +50,187 @@ proc settingsSetSettingRaw*(instance: ptr InstanceData, args: LispVal, namedArgs
   instance.settingsSetSettingRaw(getArg(args, namedArgs, 0, "name", string), getArg(args, namedArgs, 1, "value", string), )
   return newNil()
 proc editorActiveEditor*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.editorActiveEditor(getArg(args, namedArgs, 0, "options", plugin_api.ActiveEditorFlags), )
+  let res = instance.editorActiveEditor(getArg(args, namedArgs, 0, "options", plugin_api_1.ActiveEditorFlags), )
   return res.toJson().jsonTo(LispVal)
 proc editorGetDocument*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.editorGetDocument(getArg(args, namedArgs, 0, "editor", plugin_api.Editor), )
+  let res = instance.editorGetDocument(getArg(args, namedArgs, 0, "editor", plugin_api_1.Editor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorActiveTextEditor*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorActiveTextEditor(getArg(args, namedArgs, 0, "options", plugin_api.ActiveEditorFlags), )
+  let res = instance.textEditorActiveTextEditor(getArg(args, namedArgs, 0, "options", plugin_api_1.ActiveEditorFlags), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorGetDocument*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorGetDocument(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  let res = instance.textEditorGetDocument(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorAsTextEditor*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorAsTextEditor(getArg(args, namedArgs, 0, "editor", plugin_api.Editor), )
+  let res = instance.textEditorAsTextEditor(getArg(args, namedArgs, 0, "editor", plugin_api_1.Editor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorAsTextDocument*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorAsTextDocument(getArg(args, namedArgs, 0, "document", plugin_api.Document), )
+  let res = instance.textEditorAsTextDocument(getArg(args, namedArgs, 0, "document", plugin_api_1.Document), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorAllTextEditors*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
   let res = instance.textEditorAllTextEditors()
   return res.toJson().jsonTo(LispVal)
 proc textEditorCommand*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorCommand(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "name", string), getArg(args, namedArgs, 2, "arguments", string), )
+  let res = instance.textEditorCommand(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "name", string), getArg(args, namedArgs, 2, "arguments", string), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorRecordCurrentCommand*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorRecordCurrentCommand(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "registers", seq[string]), )
+  instance.textEditorRecordCurrentCommand(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "registers", seq[string]), )
   return newNil()
 proc textEditorHideCompletions*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorHideCompletions(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  instance.textEditorHideCompletions(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return newNil()
 proc textEditorScrollToCursor*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorScrollToCursor(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "behaviour", Option[plugin_api.ScrollBehaviour]), getArg(args, namedArgs, 2, "relative-position", float32), )
+  instance.textEditorScrollToCursor(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "behaviour", Option[plugin_api_1.ScrollBehaviour]), getArg(args, namedArgs, 2, "relative-position", float32), )
   return newNil()
 proc textEditorUpdateTargetColumn*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorUpdateTargetColumn(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  instance.textEditorUpdateTargetColumn(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return newNil()
 proc textEditorGetUsage*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorGetUsage(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  let res = instance.textEditorGetUsage(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorGetRevision*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorGetRevision(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  let res = instance.textEditorGetRevision(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorSetMode*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorSetMode(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "mode", string), getArg(args, namedArgs, 2, "exclusive", bool), )
+  instance.textEditorSetMode(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "mode", string), getArg(args, namedArgs, 2, "exclusive", bool), )
   return newNil()
 proc textEditorMode*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorMode(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  let res = instance.textEditorMode(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorModes*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorModes(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  let res = instance.textEditorModes(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorClearTabStops*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorClearTabStops(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  instance.textEditorClearTabStops(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return newNil()
 proc textEditorUndo*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorUndo(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  instance.textEditorUndo(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return newNil()
 proc textEditorRedo*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorRedo(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  instance.textEditorRedo(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return newNil()
 proc textEditorStartTransaction*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorStartTransaction(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  instance.textEditorStartTransaction(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return newNil()
 proc textEditorEndTransaction*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorEndTransaction(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  instance.textEditorEndTransaction(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return newNil()
 proc textEditorCopy*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorCopy(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "register", string), getArg(args, namedArgs, 2, "inclusive-end", bool), )
+  instance.textEditorCopy(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "register", string), getArg(args, namedArgs, 2, "inclusive-end", bool), )
   return newNil()
 proc textEditorPaste*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorPaste(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "selections", seq[plugin_api.Selection]), getArg(args, namedArgs, 2, "register", string), getArg(args, namedArgs, 3, "inclusive-end", bool), )
+  instance.textEditorPaste(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "selections", seq[plugin_api_1.Selection]), getArg(args, namedArgs, 2, "register", string), getArg(args, namedArgs, 3, "inclusive-end", bool), )
   return newNil()
 proc textEditorAutoShowCompletions*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorAutoShowCompletions(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  instance.textEditorAutoShowCompletions(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return newNil()
 proc textEditorToggleLineComment*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorToggleLineComment(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  instance.textEditorToggleLineComment(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return newNil()
 proc textEditorInsertText*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorInsertText(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "text", string), getArg(args, namedArgs, 2, "auto-indent", bool), )
+  instance.textEditorInsertText(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "text", string), getArg(args, namedArgs, 2, "auto-indent", bool), )
   return newNil()
 proc textEditorOpenSearchBar*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorOpenSearchBar(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "query", string), getArg(args, namedArgs, 2, "scroll-to-preview", bool), getArg(args, namedArgs, 3, "select-result", bool), )
+  instance.textEditorOpenSearchBar(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "query", string), getArg(args, namedArgs, 2, "scroll-to-preview", bool), getArg(args, namedArgs, 3, "select-result", bool), )
   return newNil()
 proc textEditorSetSearchQueryFromMove*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorSetSearchQueryFromMove(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "move", string), getArg(args, namedArgs, 2, "count", int32), getArg(args, namedArgs, 3, "prefix", string), getArg(args, namedArgs, 4, "suffix", string), )
+  let res = instance.textEditorSetSearchQueryFromMove(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "move", string), getArg(args, namedArgs, 2, "count", int32), getArg(args, namedArgs, 3, "prefix", string), getArg(args, namedArgs, 4, "suffix", string), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorSetSearchQuery*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorSetSearchQuery(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "query", string), getArg(args, namedArgs, 2, "escape-regex", bool), getArg(args, namedArgs, 3, "prefix", string), getArg(args, namedArgs, 4, "suffix", string), )
+  let res = instance.textEditorSetSearchQuery(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "query", string), getArg(args, namedArgs, 2, "escape-regex", bool), getArg(args, namedArgs, 3, "prefix", string), getArg(args, namedArgs, 4, "suffix", string), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorGetSearchQuery*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorGetSearchQuery(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  let res = instance.textEditorGetSearchQuery(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorApplyMove*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorApplyMove(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "selection", plugin_api.Selection), getArg(args, namedArgs, 2, "move", string), getArg(args, namedArgs, 3, "count", int32), getArg(args, namedArgs, 4, "wrap", bool), getArg(args, namedArgs, 5, "include-eol", bool), )
+  let res = instance.textEditorApplyMove(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "selection", plugin_api_1.Selection), getArg(args, namedArgs, 2, "move", string), getArg(args, namedArgs, 3, "count", int32), getArg(args, namedArgs, 4, "wrap", bool), getArg(args, namedArgs, 5, "include-eol", bool), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorMultiMove*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorMultiMove(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "selections", seq[plugin_api.Selection]), getArg(args, namedArgs, 2, "move", string), getArg(args, namedArgs, 3, "count", int32), getArg(args, namedArgs, 4, "wrap", bool), getArg(args, namedArgs, 5, "include-eol", bool), )
+  let res = instance.textEditorMultiMove(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "selections", seq[plugin_api_1.Selection]), getArg(args, namedArgs, 2, "move", string), getArg(args, namedArgs, 3, "count", int32), getArg(args, namedArgs, 4, "wrap", bool), getArg(args, namedArgs, 5, "include-eol", bool), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorSetSelection*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorSetSelection(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "s", plugin_api.Selection), )
+  instance.textEditorSetSelection(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "s", plugin_api_1.Selection), )
   return newNil()
 proc textEditorSetSelections*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorSetSelections(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "s", seq[plugin_api.Selection]), )
+  instance.textEditorSetSelections(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "s", seq[plugin_api_1.Selection]), )
   return newNil()
 proc textEditorGetSelection*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorGetSelection(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  let res = instance.textEditorGetSelection(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorGetSelections*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorGetSelections(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  let res = instance.textEditorGetSelections(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorLineLength*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorLineLength(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "line", int32), )
+  let res = instance.textEditorLineLength(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "line", int32), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorAddModeChangedHandler*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
   let res = instance.textEditorAddModeChangedHandler(getArg(args, namedArgs, 0, "fun", uint32), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorGetSettingRaw*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorGetSettingRaw(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "name", string), )
+  let res = instance.textEditorGetSettingRaw(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "name", string), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorSetSettingRaw*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorSetSettingRaw(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "name", string), getArg(args, namedArgs, 2, "value", string), )
+  instance.textEditorSetSettingRaw(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "name", string), getArg(args, namedArgs, 2, "value", string), )
   return newNil()
 proc textEditorEvaluateExpressions*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorEvaluateExpressions(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "selections", seq[plugin_api.Selection]), getArg(args, namedArgs, 2, "inclusive", bool), getArg(args, namedArgs, 3, "prefix", string), getArg(args, namedArgs, 4, "suffix", string), getArg(args, namedArgs, 5, "add-selection-index", bool), )
+  instance.textEditorEvaluateExpressions(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "selections", seq[plugin_api_1.Selection]), getArg(args, namedArgs, 2, "inclusive", bool), getArg(args, namedArgs, 3, "prefix", string), getArg(args, namedArgs, 4, "suffix", string), getArg(args, namedArgs, 5, "add-selection-index", bool), )
   return newNil()
 proc textEditorIndent*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorIndent(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "delta", int32), )
+  instance.textEditorIndent(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "delta", int32), )
   return newNil()
 proc textEditorGetCommandCount*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorGetCommandCount(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  let res = instance.textEditorGetCommandCount(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorSetCursorScrollOffset*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorSetCursorScrollOffset(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "cursor", plugin_api.Cursor), getArg(args, namedArgs, 2, "scroll-offset", float32), )
+  instance.textEditorSetCursorScrollOffset(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "cursor", plugin_api_1.Cursor), getArg(args, namedArgs, 2, "scroll-offset", float32), )
   return newNil()
 proc textEditorGetVisibleLineCount*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorGetVisibleLineCount(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  let res = instance.textEditorGetVisibleLineCount(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorCreateAnchors*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorCreateAnchors(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "selections", seq[plugin_api.Selection]), )
+  let res = instance.textEditorCreateAnchors(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "selections", seq[plugin_api_1.Selection]), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorResolveAnchors*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorResolveAnchors(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "anchors", seq[(plugin_api.Anchor, plugin_api.Anchor, )]), )
+  let res = instance.textEditorResolveAnchors(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "anchors", seq[(plugin_api_1.Anchor, plugin_api_1.Anchor, )]), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorAddOverlay*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorAddOverlay(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "selections", plugin_api.Selection), getArg(args, namedArgs, 2, "text", string), getArg(args, namedArgs, 3, "id", int64), getArg(args, namedArgs, 4, "scope", string), getArg(args, namedArgs, 5, "bias", plugin_api.Bias), getArg(args, namedArgs, 6, "render-id", int64), getArg(args, namedArgs, 7, "location", plugin_api.OverlayRenderLocation), )
+  instance.textEditorAddOverlay(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "selections", plugin_api_1.Selection), getArg(args, namedArgs, 2, "text", string), getArg(args, namedArgs, 3, "id", int64), getArg(args, namedArgs, 4, "scope", string), getArg(args, namedArgs, 5, "bias", plugin_api_1.Bias), getArg(args, namedArgs, 6, "render-id", int64), getArg(args, namedArgs, 7, "location", plugin_api_1.OverlayRenderLocation), )
   return newNil()
 proc textEditorClearOverlays*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorClearOverlays(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "id", int64), )
+  instance.textEditorClearOverlays(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "id", int64), )
   return newNil()
 proc textEditorAllocateOverlayId*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorAllocateOverlayId(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
+  let res = instance.textEditorAllocateOverlayId(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorReleaseOverlayId*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorReleaseOverlayId(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "id", int64), )
+  instance.textEditorReleaseOverlayId(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "id", int64), )
   return newNil()
 proc textEditorAddCustomRenderCallback*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorAddCustomRenderCallback(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "fun", uint32), getArg(args, namedArgs, 2, "data", uint32), )
+  let res = instance.textEditorAddCustomRenderCallback(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "fun", uint32), getArg(args, namedArgs, 2, "data", uint32), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorRemoveCustomRenderCallback*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorRemoveCustomRenderCallback(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "cb", int64), )
+  instance.textEditorRemoveCustomRenderCallback(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "cb", int64), )
   return newNil()
 proc textEditorEdit*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorEdit(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "selections", seq[plugin_api.Selection]), getArg(args, namedArgs, 2, "contents", seq[string]), getArg(args, namedArgs, 3, "inclusive", bool), )
+  let res = instance.textEditorEdit(getArg(args, namedArgs, 0, "editor", plugin_api_1.TextEditor), getArg(args, namedArgs, 1, "selections", seq[plugin_api_1.Selection]), getArg(args, namedArgs, 2, "contents", seq[string]), getArg(args, namedArgs, 3, "inclusive", bool), )
   return res.toJson().jsonTo(LispVal)
 proc textEditorDefineMove*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
   instance.textEditorDefineMove(getArg(args, namedArgs, 0, "move", string), getArg(args, namedArgs, 1, "fun", uint32), getArg(args, namedArgs, 2, "data", uint32), )
   return newNil()
 proc textDocumentPath*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textDocumentPath(getArg(args, namedArgs, 0, "document", plugin_api.TextDocument), )
+  let res = instance.textDocumentPath(getArg(args, namedArgs, 0, "document", plugin_api_1.TextDocument), )
   return res.toJson().jsonTo(LispVal)
 proc renderCreateTexture*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.renderCreateTexture(getArg(args, namedArgs, 0, "width", int32), getArg(args, namedArgs, 1, "height", int32), getArg(args, namedArgs, 2, "data", uint32), getArg(args, namedArgs, 3, "format", plugin_api.TextureFormat), getArg(args, namedArgs, 4, "dynamic", bool), )
+  let res = instance.renderCreateTexture(getArg(args, namedArgs, 0, "width", int32), getArg(args, namedArgs, 1, "height", int32), getArg(args, namedArgs, 2, "data", uint32), getArg(args, namedArgs, 3, "format", plugin_api_1.TextureFormat), getArg(args, namedArgs, 4, "dynamic", bool), )
   return res.toJson().jsonTo(LispVal)
 proc renderUpdateTexture*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.renderUpdateTexture(getArg(args, namedArgs, 0, "id", uint64), getArg(args, namedArgs, 1, "width", int32), getArg(args, namedArgs, 2, "height", int32), getArg(args, namedArgs, 3, "data", uint32), getArg(args, namedArgs, 4, "format", plugin_api.TextureFormat), )
+  instance.renderUpdateTexture(getArg(args, namedArgs, 0, "id", uint64), getArg(args, namedArgs, 1, "width", int32), getArg(args, namedArgs, 2, "height", int32), getArg(args, namedArgs, 3, "data", uint32), getArg(args, namedArgs, 4, "format", plugin_api_1.TextureFormat), )
   return newNil()
 proc renderDeleteTexture*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
   instance.renderDeleteTexture(getArg(args, namedArgs, 0, "id", uint64), )
   return newNil()
 proc vfsReadSync*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.vfsReadSync(getArg(args, namedArgs, 0, "path", string), getArg(args, namedArgs, 1, "read-flags", plugin_api.ReadFlags), )
+  let res = instance.vfsReadSync(getArg(args, namedArgs, 0, "path", string), getArg(args, namedArgs, 1, "read-flags", plugin_api_1.ReadFlags), )
   return res.toJson().jsonTo(LispVal)
 proc vfsWriteSync*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
   let res = instance.vfsWriteSync(getArg(args, namedArgs, 0, "path", string), getArg(args, namedArgs, 1, "content", string), )

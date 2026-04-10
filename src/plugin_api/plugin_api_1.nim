@@ -1,30 +1,133 @@
-import std/[macros, strutils, os, strformat, sequtils]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer, render_command, binary_encoder]
-import nimsumtree/[rope, sumtree, arc]
+import std/[macros, strutils, os, strformat, sequtils, json, sets, tables, atomics, locks]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils, regex, rope_regex, generational_seq, shared_buffer]
+import nimsumtree/[rope, sumtree, arc, clock, buffer]
 import service
 import layout
-import text/[text_editor, text_document]
-import render_view, view
-import config_provider, command_service
-import plugin_service
-
-import wasmtime, wit_host_module, plugin_api_base, wasi
+import text/[text_editor, text_document, overlay_map]
+import view
+import render_view as rv
+import platform/platform, platform_service
+import config_provider, command_service, command_service_api, compilation_config
+import plugin_service, document_editor, vfs, vfs_service, channel, register, move_database, popup, event_service, session
+import "../../modules/terminal"/terminal
+import decoration_component, command_component
+import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
+import lisp
+import vmath
+from scripting_api as sca import nil
 
 {.push gcsafe, raises: [].}
 
-logCategory "plugin-api-v1"
+logCategory "plugin-api-v0"
 
-const apiVersion: int32 = 1
+const apiVersion: int32 = 0
+
+type Resource = object of RootObj
+
+type SharedBufferResource = object of Resource
+  buffer: SharedBuffer
+
+type RopeResource = object of Resource
+  rope: RopeSlice[Point]
+
+type RenderViewResource = object of Resource
+  setRender: bool = false
+  view: rv.RenderView
+
+type ReadChannelResource = object of Resource
+  channel: Arc[BaseChannel]
+  listenId: ListenId
+
+type WriteChannelResource = object of Resource
+  channel: Arc[BaseChannel]
+
+type ProcessResource = object of Resource
+  process: AsyncProcess
+  stdin: Arc[BaseChannel]
+  stdout: Arc[BaseChannel]
+  stderr: Arc[BaseChannel]
 
 type
   HostContext* = ref object
-    resources*: WasmModuleResources
     services: Services
-    commands*: CommandService
+    platform: Platform
+    commands*: CommandServiceImpl
+    registers*: Registers
+    mTerminals*: TerminalService
+    editors*: DocumentEditorService
     layout*: LayoutService
     plugins*: PluginService
     settings*: ConfigStore
+    vfsService*: VFSService
+    events*: EventService
+    sessions*: SessionService
+    vfs*: VFS
+    moves*: MoveDatabase
     timer*: Timer
+
+  InstanceData* = object of InstanceDataWasi
+    resources*: WasmModuleResources
+    isMainThread: bool
+    engine: ptr WasmEngineT
+    linker: ptr LinkerT
+    module: ptr ModuleT
+    instance: InstanceT
+    store: ptr StoreT
+    host: HostContext
+    vfs: VFS
+    permissions: PluginPermissions
+    commands: seq[CommandId]
+    customRenderers: seq[tuple[editor: TextDocumentEditor, id: CustomRendererId]]
+    namespace: string
+    args: string
+    destroyRequested: Atomic[bool]
+    timer*: Timer
+    eventsId*: Id
+
+  ResourceRegistry* = object
+    lock*: Lock
+    resources*: Table[string, ptr Resource]
+
+var gResourceRegistry = ResourceRegistry()
+gResourceRegistry.lock.initLock()
+
+proc openGlobalResource*(path: string, T: typedesc): Option[T] {.gcsafe.} =
+  var resource: ptr Resource = nil
+  var registry = ({.gcsafe.}: gResourceRegistry.addr)
+  withLock(registry.lock):
+    if registry.resources.take(path, resource):
+      if not (resource[] of T):
+        registry.resources[path] = resource
+        return T.none
+    else:
+      return T.none
+
+  assert resource != nil
+  let typedResource = cast[ptr T](resource)
+  var res: T
+  swap(res, typedResource[])
+  freeShared(typedResource)
+  return res.some
+
+proc mountGlobalResource*[T: Resource](path: string, resource: sink T, unique: bool): string {.gcsafe.} =
+  var path = path
+  if unique:
+    path.add "-" & $newId()
+  var resourcePtr = createShared(T)
+  resourcePtr[] = resource.ensureMove
+
+  let registry = ({.gcsafe.}: gResourceRegistry.addr)
+  withLock(registry.lock):
+    registry.resources[path] = resourcePtr
+
+  return path
+
+proc getMemoryFor(instance: ptr InstanceData, caller: ptr CallerT): Option[ExternT] =
+  ExternT.none
+  # var item: ExternT
+  # item.kind = WASMTIME_EXTERN_SHAREDMEMORY
+  # item.of_field.sharedmemory = host.sharedMemory
+  # item.some
 
 proc getMemoryFor(host: HostContext, caller: ptr CallerT): Option[ExternT] =
   ExternT.none
@@ -47,66 +150,86 @@ proc getMemory*(caller: ptr CallerT, store: ptr ContextT, host: HostContext): Wa
 func createRope(str: string): Rope =
   Rope.new(str)
 
-type TextEditorResource = object
-  editor: TextDocumentEditor
-
-type RopeResource = object
-  rope: RopeSlice[Point]
-
-type RenderViewResource = object
-  setRender: bool = false
-  view: RenderView
-
 proc `=destroy`*(self: RenderViewResource) =
-  if self.setRender:
+  if self.setRender and self.view != nil:
     self.view.onRender = nil
+
+proc `=destroy`*(self: ReadChannelResource) =
+  if self.channel.isNotNil:
+    when defined(debugChannelDestroy):
+      echo "=destroy ReadChannelResource ", self.channel.count
+    `=destroy`(self.channel)
+
+proc `=destroy`*(self: WriteChannelResource) =
+  if self.channel.isNotNil:
+    when defined(debugChannelDestroy):
+      echo "=destroy WriteChannelResource ", self.channel.count
+    `=destroy`(self.channel)
 
 when defined(witRebuild):
   static: hint("Rebuilding plugin_api.wit")
-  importWit "../../wit/v1/api.wit", HostContext:
+  importWit "../../wit/v0/api.wit", InstanceData:
     world = "plugin"
-    cacheFile = "../generated/plugin_api_host_1.nim"
+    cacheFile = "../generated/plugin_api_host.nim"
     mapName "rope", RopeResource
     mapName "render-view", RenderViewResource
-    mapName "editor", TextEditorResource
+    mapName "read-channel", ReadChannelResource
+    mapName "write-channel", WriteChannelResource
+    mapName "process", ProcessResource
+    mapName "shared-buffer", SharedBufferResource
 
 else:
-  static: hint("Using cached plugin_api.wit (plugin_api_host_1.nim)")
+  static: hint("Using cached plugin_api.wit (plugin_api_host.nim)")
 
-include generated/plugin_api_host_1
+{.push hint[XDeclaredButNotUsed]:off.}
+include generated/plugin_api_host
+{.pop.}
 
 type
-  InstanceData = object
-    instance: InstanceT
-    store: ptr StoreT
+  InstanceDataImpl = object of InstanceData
     funcs: ExportedFuncs
-    permissions: PluginPermissions
-    commands: seq[CommandId]
-    namespace: string
 
   WasmModuleInstanceImpl* = ref object of WasmModuleInstance
-    instance*: Arc[InstanceData]
+    instance*: Arc[InstanceDataImpl]
 
 ###################################### PluginApi #####################################
 
 type
   PluginApi* = ref object of PluginApiBase
     engine: ptr WasmEngineT
-    linker: ptr LinkerT
+    linkerWasiNone: ptr LinkerT
+    linkerWasiReduced: ptr LinkerT
+    linkerWasiFull: ptr LinkerT
     host: HostContext
     instances: seq[WasmModuleInstanceImpl]
+    dynamicInstanceData: Arc[InstanceDataImpl]
+
+proc terminals(host: HostContext): TerminalService =
+  if host.mTerminals == nil:
+    host.mTerminals = host.services.getService(TerminalService).get(nil)
+  return host.mTerminals
 
 method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
   self.host.services = services
-  self.host.commands = services.getService(CommandService).get
+  self.host.platform = services.getService(PlatformService).get.platform
+  self.host.commands = services.getService(CommandServiceImpl).get
+  self.host.registers = services.getService(Registers).get
+  self.host.editors = services.getService(DocumentEditorService).get
   self.host.layout = services.getService(LayoutService).get
   self.host.plugins = services.getService(PluginService).get
   self.host.settings = services.getService(ConfigService).get.runtime
+  self.host.vfsService = services.getService(VFSService).get
+  self.host.events = services.getService(EventService).get
+  self.host.sessions = services.getService(SessionService).get
+  self.host.vfs = self.host.vfsService.vfs
+  self.host.moves = services.getService(MoveDatabase).get
   self.host.timer = startTimer()
 
   self.engine = engine
-  self.linker = engine.newLinker()
+  self.linkerWasiNone = engine.newLinker()
+  self.linkerWasiReduced = engine.newLinker()
+  self.linkerWasiFull = engine.newLinker()
 
   proc getMemory(caller: ptr CallerT, store: ptr ContextT): WasmMemory =
     var mainMemory = caller.getExport("memory")
@@ -119,40 +242,91 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
     else:
       assert false
 
+  # Link wasi
+  self.linkerWasiReduced.definePluginWasi(getMemory).okOr(e):
+    log lvlError, "Failed to define wasi imports: " & e.msg
+    return
 
-  when false:
-    self.linker.defineWasi().okOr(e):
-      log lvlError, "Failed to define wasi imports: " & e.msg
-      return
-  else:
-    self.linker.definePluginWasi(getMemory).okOr(e):
-      log lvlError, "Failed to define wasi imports: " & e.msg
-      return
+  self.linkerWasiFull.defineWasi().okOr(e):
+    log lvlError, "Failed to define wasi imports: " & e.msg
+    return
 
-  defineComponent(self.linker, self.host).okOr(err):
+  # Link plugin API
+  defineComponent(self.linkerWasiNone).okOr(err):
     log lvlError, "Failed to define component: " & err.msg
     return
+
+  defineComponent(self.linkerWasiReduced).okOr(err):
+    log lvlError, "Failed to define component: " & err.msg
+    return
+
+  defineComponent(self.linkerWasiFull).okOr(err):
+    log lvlError, "Failed to define component: " & err.msg
+    return
+
+  var instanceData = Arc[InstanceDataImpl].new()
+  instanceData.getMut.isMainThread = true
+  instanceData.getMut.store = self.engine.newStore(instanceData.get.addr, nil)
+  instanceData.getMut.engine = self.engine
+  # instanceData.getMut.module = module
+  # instanceData.getMut.permissions = instance.permissions
+  instanceData.getMut.namespace = "#dynamic"
+  instanceData.getMut.host = self.host
+  instanceData.getMut.stdin = newInMemoryChannel()
+  instanceData.getMut.stdout = newInMemoryChannel()
+  instanceData.getMut.stderr = newInMemoryChannel()
+  instanceData.getMut.timer = startTimer()
+  self.dynamicInstanceData = instanceData
 
 method setPermissions*(instance: WasmModuleInstanceImpl, permissions: PluginPermissions) =
   instance.instance.getMut.permissions = permissions
 
 method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin, state: seq[uint8]): WasmModuleInstance =
-  var wasmModule = Arc[InstanceData].new()
-  wasmModule.getMut.store = self.engine.newStore(wasmModule.get.addr, nil)
-  wasmModule.getMut.permissions = plugin.permissions
-  wasmModule.getMut.namespace = plugin.manifest.id
-  let ctx = wasmModule.get.store.context
+  var instanceData = Arc[InstanceDataImpl].new()
+  instanceData.getMut.isMainThread = true
+  instanceData.getMut.store = self.engine.newStore(instanceData.get.addr, nil)
+  instanceData.getMut.engine = self.engine
+  instanceData.getMut.module = module
+  instanceData.getMut.permissions = plugin.permissions
+  instanceData.getMut.namespace = plugin.manifest.id
+  instanceData.getMut.host = self.host
+  instanceData.getMut.stdin = newInMemoryChannel()
+  instanceData.getMut.stdout = newInMemoryChannel()
+  instanceData.getMut.stderr = newInMemoryChannel()
+  instanceData.getMut.timer = startTimer()
+  instanceData.getMut.eventsId = newId()
+  let ctx = instanceData.get.store.context
 
   let wasiConfig = newWasiConfig()
   wasiConfig.inheritStdin()
   wasiConfig.inheritStderr()
   wasiConfig.inheritStdout()
+
+  if not plugin.permissions.filesystemRead.disallowAll.get(false):
+    for dir in plugin.permissions.wasiPreopenDirs:
+      var dirPermissions: csize_t = 0
+      var filePermissions: csize_t = 0
+      if dir.read:
+        dirPermissions = dirPermissions or WasiDirPermsRead.csize_t
+        filePermissions = filePermissions or WasiFilePermsRead.csize_t
+      if dir.write:
+        dirPermissions = dirPermissions or WasiDirPermsWrite.csize_t
+        filePermissions = filePermissions or WasiFilePermsWrite.csize_t
+      discard wasiConfig.preopenDir(dir.host.cstring, dir.guest.cstring, dirPermissions, filePermissions)
+
   ctx.setWasi(wasiConfig).toResult(void).okOr(err):
     log lvlError, "Failed to setup wasi: " & err.msg
     return
 
+  let linker = case plugin.permissions.wasi.get(Reduced)
+  of None: self.linkerWasiNone
+  of Reduced: self.linkerWasiReduced
+  of Full: self.linkerWasiFull
+
+  instanceData.getMut.linker = linker
+
   var trap: ptr WasmTrapT = nil
-  wasmModule.getMut.instance = self.linker.instantiate(ctx, module, trap.addr).okOr(err):
+  instanceData.getMut.instance = linker.instantiate(ctx, module, trap.addr).okOr(err):
     log lvlError, "Failed to create module instance: " & err.msg
     return
 
@@ -160,188 +334,1138 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin, state
     log lvlError, "Failed to create module instance: " & err.msg
     return
 
-  collectExports(wasmModule.getMut.funcs, wasmModule.get.instance, ctx)
+  let errors = collectExports(instanceData.getMut.funcs, instanceData.get.instance, ctx)
+  if errors.len > 0:
+    for e in errors:
+      log lvlWarn, e
 
-  let instance = WasmModuleInstanceImpl(instance: wasmModule)
+  let instance = WasmModuleInstanceImpl(instance: instanceData)
   self.instances.add(instance)
 
-  initPlugin(wasmModule.get.funcs).okOr(err):
+  instanceData.get.funcs.initPlugin().okOr(err):
     log lvlError, "Failed to call init-plugin: " & err.msg
     self.instances.removeShift(instance)
     return
 
+  if state.len > 0:
+    instanceData.get.funcs.loadPluginState(state).okOr(err):
+      log lvlError, "Failed to call load-plugin-state: " & err.msg
+      self.instances.removeShift(instance)
+      return
+
+  let options = sca.CreateTerminalOptions(
+    group: plugin.manifest.id,
+  )
+  if self.host.terminals != nil:
+    let view = self.host.terminals.createTerminalView(instanceData.get.stdin, instanceData.get.stdout, options)
+    self.host.layout.registerView(view, last = false)
+
   return instance
+
+method savePluginState*(self: PluginApi, instance: WasmModuleInstance): seq[uint8] =
+  return instance.WasmModuleInstanceImpl.instance.get.funcs.savePluginState().okOr(@[])
 
 method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
   let instance = instance.WasmModuleInstanceImpl
   let instanceData = instance.instance
 
+  self.host.events.stopListen(instanceData.get.eventsId)
+
   for commandId in instanceData.get.commands:
     self.host.commands.unregisterCommand(commandId)
 
-  self.host.resources.dropResources(instanceData.get.store.context, callDestroy = true)
+  for cmd in instanceData.get.customRenderers:
+    cmd.editor.decorations.removeCustomRenderer(cmd.id)
+
+  instanceData.getMutUnsafe.resources.dropResources(instanceData.get.store.context, callDestroy = true)
   instanceData.get.store.delete()
   self.instances.removeShift(instance)
 
+template funcs(instance: ptr InstanceData): var ExportedFuncs = cast[ptr InstanceDataImpl](instance).funcs
+
+proc cloneInstance*(instance: ptr InstanceData): Arc[InstanceDataImpl] =
+  var instanceData = Arc[InstanceDataImpl].new()
+  instanceData.getMut.isMainThread = false
+  instanceData.getMut.store = instance.engine.newStore(instanceData.get.addr, nil)
+  instanceData.getMut.engine = instance.engine
+  instanceData.getMut.linker = instance.linker
+  instanceData.getMut.module = instance.module
+  instanceData.getMut.permissions = instance.permissions
+  instanceData.getMut.namespace = instance.namespace
+  instanceData.getMut.host = instance.host
+  instanceData.getMut.timer = startTimer()
+  instanceData.getMut.eventsId = newId()
+  let ctx = instanceData.get.store.context
+
+  let wasiConfig = newWasiConfig()
+  wasiConfig.inheritStdin()
+  wasiConfig.inheritStderr()
+  wasiConfig.inheritStdout()
+
+  if not instance.permissions.filesystemRead.disallowAll.get(false):
+    for dir in instance.permissions.wasiPreopenDirs:
+      var dirPermissions: csize_t = 0
+      var filePermissions: csize_t = 0
+      if dir.read:
+        dirPermissions = dirPermissions or WasiDirPermsRead.csize_t
+        filePermissions = filePermissions or WasiFilePermsRead.csize_t
+      if dir.write:
+        dirPermissions = dirPermissions or WasiDirPermsWrite.csize_t
+        filePermissions = filePermissions or WasiFilePermsWrite.csize_t
+      discard wasiConfig.preopenDir(dir.host.cstring, dir.guest.cstring, dirPermissions, filePermissions)
+
+  ctx.setWasi(wasiConfig).toResult(void).okOr(err):
+    log lvlError, "Failed to setup wasi: " & err.msg
+    return
+
+  var trap: ptr WasmTrapT = nil
+  instanceData.getMut.instance = instance.linker.instantiate(ctx, instance.module, trap.addr).okOr(err):
+    log lvlError, "Failed to create module instance: " & err.msg
+    return
+
+  trap.okOr(err):
+    log lvlError, "Failed to create module instance: " & err.msg
+    return
+
+  discard collectExports(instanceData.getMut.funcs, instanceData.get.instance, ctx)
+
+  return instanceData
+
+proc runInstanceThread(instance: sink Arc[InstanceDataImpl]) =
+  instance.getMutUnsafe.isMainThread = false
+  instance.get.funcs.initPlugin().okOr(_):
+    return
+
+  while not instance.getMutUnsafe.destroyRequested.load():
+    poll(5)
+
+  instance.getMutUnsafe.resources.dropResources(instance.get.store.context, callDestroy = true)
+  instance.get.store.delete()
+
+# todo: make the size configurable
+var threadPool = newPluginThreadPool[InstanceDataImpl](10, runInstanceThread)
+
+###################################### Conversion functions #####################################
+
+converter toPoint(c: Cursor): Point = point(c.line.int, c.column.int)
+converter toInternal(c: Cursor): sca.Cursor = (c.line.int, c.column.int)
+converter toInternal(c: Selection): sca.Selection = (c.first.toInternal, c.last.toInternal)
+converter toInternal(c: Lamport): clock.Lamport = clock.Lamport(replicaId: clock.ReplicaId(c.replicaId), value: clock.SeqNumber(c.value))
+converter toInternal(c: Bias): sumtree.Bias =
+  case c
+  of Left: sumtree.Left
+  of Right: sumtree.Right
+converter toInternal(c: Anchor): buffer.Anchor = buffer.Anchor(timestamp: c.timestamp, offset: c.offset.int, bias: c.bias)
+converter toInternal(c: (Anchor, Anchor)): (buffer.Anchor, buffer.Anchor) = (c[0].toInternal, c[1].toInternal)
+converter toInternal(c: ScrollBehaviour): sca.ScrollBehaviour =
+  case c
+  of CenterAlways: sca.CenterAlways
+  of CenterOffscreen: sca.CenterOffscreen
+  of CenterMargin: sca.CenterMargin
+  of ScrollToMargin: sca.ScrollToMargin
+  of TopOfScreen: sca.TopOfScreen
+
+converter toInternal(c: ScrollSnapBehaviour): sca.ScrollSnapBehaviour =
+  case c
+  of Never: sca.Never
+  of Always: sca.Always
+  of MinDistanceOffscreen: sca.MinDistanceOffscreen
+  of MinDistanceCenter: sca.MinDistanceCenter
+
+converter toInternal(c: OverlayRenderLocation): overlay_map.OverlayRenderLocation =
+  case c
+  of Inline: overlay_map.OverlayRenderLocation.Inline
+  of Below: overlay_map.OverlayRenderLocation.Below
+  of Above: overlay_map.OverlayRenderLocation.Above
+
+converter toWasm(c: sca.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
+converter toWasm(c: sca.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
+converter toWasm(c: clock.Lamport): Lamport = Lamport(replicaId: c.replicaId.uint16, value: c.value.uint32)
+converter toWasm(c: sumtree.Bias): Bias =
+  case c
+  of sumtree.Left: Left
+  of sumtree.Right: Right
+converter toWasm(c: buffer.Anchor): Anchor = Anchor(timestamp: c.timestamp, offset: c.offset.uint32, bias: c.bias)
+converter toWasm(c: (buffer.Anchor, buffer.Anchor)): (Anchor, Anchor) = (c[0].toWasm, c[1].toWasm)
+converter toWasm(c: vmath.Vec2): Vec2f = Vec2f(x: c.x, y: c.y)
+
+converter toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
+  result = {}
+  if ReadFlag.Binary in flags:
+    result.incl vfs.ReadFlag.Binary
+
 ###################################### API implementations #####################################
 
-proc textEditorGetSelection(host: HostContext; store: ptr ContextT): Selection =
-  if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
-    let editor = view.editor.TextDocumentEditor
-    let s = editor.selection
+proc editorActiveEditor*(instance: ptr InstanceData, options: ActiveEditorFlags): Option[Editor] =
+  if instance.host == nil:
+    return
+  if ActiveEditorFlag.IncludeCommandLine in options and instance.host.commands.commandLineMode():
+    return Editor(id: instance.host.commands.commandLineEditor.id.uint64).some
+  if ActiveEditorFlag.IncludePopups in options and instance.host.layout.popups.len > 0 and instance.host.layout.popups.last.getActiveEditor().getSome(editor):
+    return Editor(id: editor.id.uint64).some
+  if instance.host.layout.tryGetCurrentEditorView().getSome(view):
+    return Editor(id: view.editor.id.uint64).some
+  return Editor.none
+
+proc editorGetDocument*(instance: ptr InstanceData; editor: Editor): Option[Document] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor):
+    let document = editor.getDocument()
+    if document != nil:
+      return Document(id: document.id.uint64).some
+  return Document.none
+
+proc textEditorActiveTextEditor*(instance: ptr InstanceData, options: ActiveEditorFlags): Option[TextEditor] =
+  if instance.host == nil:
+    return
+  if ActiveEditorFlag.IncludeCommandLine in options and instance.host.commands.commandLineMode() and instance.host.commands.commandLineEditor of TextDocumentEditor:
+    return TextEditor(id: instance.host.commands.commandLineEditor.id.uint64).some
+  if ActiveEditorFlag.IncludePopups in options and instance.host.layout.popups.len > 0 and instance.host.layout.popups.last.getActiveEditor().getSome(editor) and editor of TextDocumentEditor:
+    return TextEditor(id: editor.id.uint64).some
+  if instance.host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
+    return TextEditor(id: view.editor.TextDocumentEditor.id.uint64).some
+  return TextEditor.none
+
+proc textEditorGetDocument*(instance: ptr InstanceData; editor: TextEditor): Option[TextDocument] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor):
+    let document = editor.getDocument()
+    if document != nil and document of text_document.TextDocument:
+      return TextDocument(id: document.id.uint64).some
+  return TextDocument.none
+
+proc textEditorAllTextEditors*(instance: ptr InstanceData): seq[TextEditor] =
+  if instance.host == nil:
+    return
+  for editor in instance.host.editors.allEditors:
+    if editor of TextDocumentEditor:
+      result.add TextEditor(id: editor.TextDocumentEditor.id.uint64)
+
+proc textEditorAsTextEditor*(instance: ptr InstanceData; editor: Editor): Option[TextEditor] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return TextEditor(id: editor.TextDocumentEditor.id.uint64).some
+  return TextEditor.none
+
+proc textEditorAsTextDocument*(instance: ptr InstanceData; document: Document): Option[TextDocument] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getDocument(document.id.DocumentId).getSome(document) and document of text_document.TextDocument:
+    return TextDocument(id: text_document.TextDocument(document).id.uint64).some
+  return TextDocument.none
+
+proc textEditorLineLength*(instance: ptr InstanceData; editor: TextEditor; line: int32): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.lineLength(line.int).int32
+
+proc textEditorClearTabStops*(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.clearTabStops()
+
+proc textEditorUndo*(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.undo()
+
+proc textEditorRedo*(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.redo()
+
+proc textEditorStartTransaction*(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.startTransaction()
+
+proc textEditorEndTransaction*(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.endTransaction()
+
+proc textEditorCopy*(instance: ptr InstanceData; editor: TextEditor, register: sink string, inclusiveEnd: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.copy(register, inclusiveEnd)
+
+proc textEditorPaste*(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection], register: sink string, inclusiveEnd: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    asyncSpawn editor.TextDocumentEditor.pasteAsync(selections.mapIt(it.toInternal), register, inclusiveEnd)
+
+proc textEditorAutoShowCompletions*(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.autoShowCompletions()
+
+proc textEditorApplyMove*(instance: ptr InstanceData; editor: TextEditor; selection: Selection; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    return textEditor.getSelectionsForMove(@[selection.toInternal], move, count, includeEol, wrap).mapIt(it.toWasm)
+
+proc textEditorMultiMove*(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    return textEditor.getSelectionsForMove(selections.mapIt(it.toInternal), move, count, includeEol, wrap).mapIt(it.toWasm)
+
+proc textEditorSetSelection*(instance: ptr InstanceData; editor: TextEditor; s: Selection): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    textEditor.selection = ((s.first.line.int, s.first.column.int), (s.last.line.int, s.last.column.int))
+
+proc textEditorSetSelections*(instance: ptr InstanceData; editor: TextEditor; s: sink seq[Selection]): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    if s.len > 0:
+      textEditor.selections = s.mapIt(it.toInternal)
+
+proc textEditorGetSelection*(instance: ptr InstanceData; editor: TextEditor): Selection =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    let s = textEditor.selection
     Selection(first: Cursor(line: s.first.line.int32, column: s.first.column.int32), last: Cursor(line: s.last.line.int32, column: s.last.column.int32))
   else:
     Selection(first: Cursor(line: 1, column: 2), last: Cursor(line: 6, column: 9))
 
-proc textEditor_addModeChangedHandler(host: HostContext, store: ptr ContextT, fun: uint32): int32 =
-  if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
+proc textEditorGetSelections*(instance: ptr InstanceData; editor: TextEditor): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.selections.mapIt(it.toWasm)
+
+proc textEditorEdit*(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; contents: sink seq[string], inclusive: bool): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let selections = selections.mapIt(it.toInternal)
+    let res = editor.TextDocumentEditor.edit(selections, contents, inclusiveEnd = inclusive)
+    return res.mapIt(it.toWasm)
+  return selections
+
+proc textEditorDefineMove*(instance: ptr InstanceData; move: sink string; fun: uint32; data: uint32): void =
+  if instance.host == nil:
+    return
+
+  proc moveImpl(rope: Rope, move: string, selections: openArray[sca.Selection], count: int, includeEol: bool): seq[sca.Selection] {.gcsafe, raises: [].} =
+    var ropeRes = RopeResource(rope: rope.slice().suffix(Point()))
+    let index = instance.resources.resourceNew(instance.store.context, ropeRes)
+    if index.isOk:
+      let res = instance.funcs.handleMove(fun, data, index.val.uint32, selections.mapIt(it.toWasm), count.int32, includeEol)
+      if res.isErr:
+        log lvlError, "Failed to call handleMove: " & res.err.msg
+      else:
+        return res.val.mapIt(it.toInternal)
+    return @[]
+
+  instance.host.moves.registerMove(move, moveImpl)
+
+proc textEditor_addModeChangedHandler*(instance: ptr InstanceData, fun: uint32): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
     let editor = view.editor.TextDocumentEditor
     discard editor.onModeChanged.subscribe proc(args: tuple[removed: seq[string], added: seq[string]]) =
-      let module = cast[ptr InstanceData](store.getData())
-      let res = module[].funcs.handleModeChanged(fun, $args.removed, $args.added)
+      let res = instance.funcs.handleModeChanged(fun, $args.removed, $args.added)
       if res.isErr:
-        log lvlError, "Failed to call handleModeChanged: " & $res
-  return 123
+        log lvlError, "Failed to call handleModeChanged: " & res.err.msg
+  return 0
 
-proc textEditorCurrent(host: HostContext; store: ptr ContextT): Option[TextEditorResource] =
-  if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
-    let editor = view.editor.TextDocumentEditor
-    return TextEditorResource(editor: editor).some
-  return  TextEditorResource.none
+proc textEditorSetMode*(instance: ptr InstanceData; editor: TextEditor, mode: sink string, exclusive: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.setMode(mode, exclusive)
 
-proc textRope(host: HostContext; store: ptr ContextT; self: var TextEditorResource): RopeResource =
-  if self.editor == nil:
-    return RopeResource(rope: createRope("no editor").slice().suffix(Point()))
-  elif self.editor.document == nil:
-    return RopeResource(rope: createRope("no document").slice().suffix(Point()))
-  return RopeResource(rope: self.editor.document.rope.clone().slice().suffix(Point()))
+proc textEditorMode*(instance: ptr InstanceData; editor: TextEditor): string =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.mode()
 
-proc textNewRope(host: HostContext; store: ptr ContextT, content: sink string): RopeResource =
-  RopeResource(rope: createRope(content).slice().suffix(Point()))
+proc textEditorModes*(instance: ptr InstanceData; editor: TextEditor): seq[string] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.modes()
 
-proc textClone(host: HostContext, store: ptr ContextT, self: var RopeResource): RopeResource =
-  RopeResource(rope: self.rope.clone())
+proc textEditorHideCompletions*(instance: ptr InstanceData; editor: TextEditor) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.hideCompletions()
 
-proc textText(host: HostContext, store: ptr ContextT, self: var RopeResource): string =
-  $self.rope
+proc textEditorScrollToCursor*(instance: ptr InstanceData; editor: TextEditor; behaviour: Option[ScrollBehaviour]; relativePosition: float32): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.scrollToCursor(sca.SelectionCursor.Last, scrollBehaviour = behaviour.mapIt(it.toInternal), relativePosition=relativePosition)
 
-proc textDebug(host: HostContext, store: ptr ContextT, self: var RopeResource): string =
-  &"Rope({self.rope.range}, {self.rope.summary}, {self.rope})"
+proc textEditorUpdateTargetColumn*(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.updateTargetColumn()
 
-proc textSlice(host: HostContext, store: ptr ContextT, self: var RopeResource, a: int64, b: int64): RopeResource =
-  let a = min(a, b).clamp(0, self.rope.len)
-  let b = max(a, b).clamp(0, self.rope.len)
-  RopeResource(rope: self.rope[a.int...b.int].suffix(Point()))
+proc textEditorCommand*(instance: ptr InstanceData; editor: TextEditor, name: sink string, arguments: sink string): Result[string, CommandError] =
+  if instance.host == nil:
+    return
+  if not instance.host.commands.checkPermissions(name, instance.permissions.commands):
+    result.err(CommandError.NotAllowed)
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    if editor.handleAction(name, arguments, true).getSome(res):
+      return results.ok($res)
+  result.err(CommandError.NotFound)
 
-proc textSlicePoints(host: HostContext, store: ptr ContextT, self: var RopeResource, a: Cursor, b: Cursor): RopeResource =
+proc textEditorRecordCurrentCommand*(instance: ptr InstanceData; editor: TextEditor; registers: sink seq[string]): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.commandComponent.recordCurrentCommand(registers)
+
+proc textEditorGetUsage*(instance: ptr InstanceData; editor: TextEditor): string =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.getUsage()
+
+proc textEditorGetRevision*(instance: ptr InstanceData; editor: TextEditor): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.getRevision().int32
+
+proc textEditorContent*(instance: ptr InstanceData; editor: TextEditor): RopeResource =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    if textEditor.document != nil:
+      return RopeResource(rope: textEditor.document.rope.clone().slice().suffix(Point()))
+  return RopeResource(rope: createRope("").slice().suffix(Point()))
+
+proc textDocumentContent*(instance: ptr InstanceData; document: TextDocument): RopeResource =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getDocument(document.id.DocumentId).getSome(document) and document of text_document.TextDocument:
+    let textDocument = text_document.TextDocument(document)
+    return RopeResource(rope: textDocument.rope.clone().slice().suffix(Point()))
+  return RopeResource(rope: createRope("").slice().suffix(Point()))
+
+proc textDocumentPath*(instance: ptr InstanceData; document: TextDocument): string =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getDocument(document.id.DocumentId).getSome(document):
+    return document.filename
+  return ""
+
+proc textEditorGetSettingRaw*(instance: ptr InstanceData, editor: TextEditor, name: sink string): string =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return $editor.TextDocumentEditor.config.get(name, newJexNull())
+
+proc textEditorSetSettingRaw*(instance: ptr InstanceData, editor: TextEditor, name: sink string, value: sink string) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    try:
+      # todo: permissions
+      editor.TextDocumentEditor.config.set(name, parseJsonex(value))
+    except CatchableError as e:
+      log lvlError, &"set-setting-raw: Failed to set setting '{name}' to {value}: {e.msg}"
+
+proc textEditorSetSearchQueryFromMove*(instance: ptr InstanceData, editor: TextEditor, move: sink string, count: int32, prefix: sink string, suffix: sink string): Selection =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.setSearchQueryFromMove(move, count, prefix, suffix)
+
+proc textEditorSetSearchQuery*(instance: ptr InstanceData, editor: TextEditor, query: sink string, escapeRegex: bool, prefix: sink string, suffix: sink string): bool =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.setSearchQuery(query, escapeRegex, prefix, suffix)
+
+proc textEditorGetSearchQuery*(instance: ptr InstanceData, editor: TextEditor): string =
+  if instance.host == nil:
+    return ""
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.getSearchQuery()
+  return ""
+
+proc textEditorToggleLineComment*(instance: ptr InstanceData, editor: TextEditor) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.toggleLineComment()
+
+proc textEditorInsertText*(instance: ptr InstanceData, editor: TextEditor, text: sink string, autoIndent: bool) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.insertText(text, autoIndent)
+
+proc textEditorOpenSearchBar*(instance: ptr InstanceData; editor: TextEditor; query: sink string; scrollToPreview: bool; selectResult: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.openSearchBar(query, scrollToPreview, selectResult)
+
+proc textEditorEvaluateExpressions*(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; inclusive: bool; prefix: sink string; suffix: sink string; addSelectionIndex: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.evaluateExpressions(selections.mapIt(it.toInternal), inclusive, prefix, suffix, addSelectionIndex)
+
+proc textEditorIndent*(instance: ptr InstanceData; editor: TextEditor; delta: int32): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    if delta >= 0:
+      for i in 0..<delta:
+        editor.TextDocumentEditor.indent()
+    else:
+      for i in 0..<(-delta):
+        editor.TextDocumentEditor.unindent()
+
+proc textEditorGetCommandCount*(instance: ptr InstanceData; editor: TextEditor): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.getCommandCount().int32
+
+proc textEditorGetVisibleLineCount*(instance: ptr InstanceData; editor: TextEditor): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.screenLineCount().int32
+
+proc textEditorSetCursorScrollOffset*(instance: ptr InstanceData; editor: TextEditor; cursor: Cursor; scrollOffset: float32): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.setCursorScrollOffset(cursor.toInternal, scrollOffset)
+
+proc textEditorCreateAnchors*(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]): seq[(Anchor, Anchor)] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.createAnchors(selections.mapIt(it.toInternal)).mapIt(it.toWasm)
+
+proc textEditorResolveAnchors*(instance: ptr InstanceData; editor: TextEditor; anchors: sink seq[(Anchor, Anchor)]): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.resolveAnchors(anchors.mapIt(it.toInternal)).mapIt(it.toWasm)
+
+proc textEditorAddCustomRenderCallback*(instance: ptr InstanceData; editor: TextEditor; fun: uint32; data: uint32): int64 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let id = editor.TextDocumentEditor.decorations.addCustomRenderer proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 =
+      try:
+        let ret = instance.funcs.handleTextOverlayRender(fun, data, id, size.toWasm, localOffset.int32).okOr(err):
+          log lvlWarn, "Failed to call custom render callback: " & err.msg
+          return
+        let wasmBufferLen = (ret shr 32).uint32.int
+        let wasmBufferAddr = cast[uint32](ret)
+
+        discard instance.funcs.mem[(wasmBufferAddr.int + wasmBufferLen - 1).WasmPtr] # crash if out of bounds. todo: replace this with bounds check
+        let width = instance.funcs.mem.read[:float32](wasmBufferAddr.WasmPtr)
+        let height = instance.funcs.mem.read[:float32]((wasmBufferAddr.int + sizeof(float32)).WasmPtr)
+        let wasmBuffer = cast[ptr UncheckedArray[byte]](instance.funcs.mem.getRawPtr((wasmBufferAddr + sizeof(float32) * 2).WasmPtr))
+        if wasmBuffer != nil:
+          var decoder = BinaryDecoder.init(wasmBuffer.toOpenArray(0, wasmBufferLen - sizeof(float32) * 2 - 1))
+          for command in decoder.decodeRenderCommands():
+            commands.commands.add(command)
+        else:
+          log lvlWarn, &"failed to get wasm buffer address"
+        return vec2(width, height)
+      except CatchableError as e:
+        log lvlWarn, &"Failed to run custom render: {e.msg}"
+        echo e.getStackTrace()
+    instance.customRenderers.add((editor.TextDocumentEditor, id))
+    return id.int64
+
+proc textEditorRemoveCustomRenderCallback*(instance: ptr InstanceData; editor: TextEditor; cb: int64): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.decorations.removeCustomRenderer(cb.CustomRendererId)
+    for i in 0..instance.customRenderers.high:
+      if instance.customRenderers[i].editor == editor.TextDocumentEditor and instance.customRenderers[i].id.int64 == cb:
+        instance.customRenderers.removeSwap(i)
+        break
+
+proc textEditorAddOverlay*(instance: ptr InstanceData; editor: TextEditor; selections: Selection; text: sink string; id: int64; scope: sink string; bias: Bias; renderId: int64; location: OverlayRenderLocation): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.addOverlay(selections.toInternal, text, id.int, scope, bias.toInternal, renderId.int, location.toInternal)
+
+proc textEditorClearOverlays*(instance: ptr InstanceData; editor: TextEditor; id: int64): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.clearOverlays(id.int)
+
+proc textEditorAllocateOverlayId*(instance: ptr InstanceData; editor: TextEditor): int64 =
+  if instance.host == nil:
+    return -1
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let overlay = editor.TextDocumentEditor.displayMap.overlay
+    return overlay.allocateId().get(-1).int64
+  return -1
+
+proc textEditorReleaseOverlayId*(instance: ptr InstanceData; editor: TextEditor; id: int64): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.displayMap.overlay.releaseId(id.int)
+
+proc typesNewSharedBuffer*(instance: ptr InstanceData, size: int64): SharedBufferResource =
+  return SharedBufferResource(buffer: SharedBuffer.new(size))
+
+proc typesCloneRef*(instance: ptr InstanceData; self: var SharedBufferResource): SharedBufferResource =
+  return self
+
+proc typesLen*(instance: ptr InstanceData; self: var SharedBufferResource): int64 =
+  if self.buffer.isNil:
+    return 0
+  return self.buffer.len
+
+proc typesWriteString*(instance: ptr InstanceData; self: var SharedBufferResource; index: int64; data: sink string): void =
+  if self.buffer.isNil or index + data.len > self.buffer.len:
+    log lvlError, &"Buffer write out of bounds: {index}..<{index + data.len} notin 0..<{self.buffer.len}"
+    return
+  self.buffer.write(index, data)
+
+proc typesWrite*(instance: ptr InstanceData; self: var SharedBufferResource; index: int64; data: sink seq[uint8]): void =
+  if self.buffer.isNil or index + data.len > self.buffer.len:
+    log lvlError, &"Buffer write out of bounds: {index}..<{index + data.len} notin 0..<{self.buffer.len}"
+    return
+  self.buffer.write(index, data)
+
+proc typesReadInto*(instance: ptr InstanceData; self: var SharedBufferResource; index: int64; dst: uint32; len: int32): void =
+  if self.buffer.isNil or len <= 0 or index + len > self.buffer.len:
+    log lvlError, &"Buffer read out of bounds: {index}..<{index + len} notin 0..<{self.buffer.len}"
+    return
+  discard instance.funcs.mem[(dst.int + len.int - 1).WasmPtr] # crash if out of bounds. todo: replace this with bounds check
+  let wasmBuffer = instance.funcs.mem.getRawPtr(dst.WasmPtr)
+  if wasmBuffer != nil:
+    self.buffer.readInto(index, wasmBuffer.toOpenArray(0, len - 1))
+
+proc typesRead*(instance: ptr InstanceData; self: var SharedBufferResource; index: int64; len: int32): seq[uint8] =
+  if self.buffer.isNil or len <= 0 or index + len > self.buffer.len:
+    return @[]
+  result = newSeq[uint8](len)
+  self.buffer.readInto(0, result)
+
+proc typesSharedBufferOpen*(instance: ptr InstanceData; path: sink string): Option[SharedBufferResource] =
+  let buff = openGlobalBuffer(path)
+  if buff.isSome:
+    return SharedBufferResource(buffer: buff.get).some
+
+proc typesSharedBufferMount*(instance: ptr InstanceData; buffer: sink SharedBufferResource; path: sink string; unique: bool): string =
+  mountGlobalBuffer(path, buffer.buffer, unique)
+
+proc typesNewRope*(instance: ptr InstanceData, content: sink string): RopeResource =
+  return RopeResource(rope: createRope(content).slice().suffix(Point()))
+
+proc typesClone*(instance: ptr InstanceData, self: var RopeResource): RopeResource =
+  return RopeResource(rope: self.rope.clone())
+
+proc typesRopeMount*(instance: ptr InstanceData; rope: sink RopeResource; path: sink string; unique: bool): string =
+  return mountGlobalResource(path, rope.ensureMove, unique)
+
+proc typesRopeOpen*(instance: ptr InstanceData; path: sink string): Option[RopeResource] =
+  return openGlobalResource(path, RopeResource)
+
+proc typesText*(instance: ptr InstanceData, self: var RopeResource): string =
+  return $self.rope
+
+proc typesBytes*(instance: ptr InstanceData, self: var RopeResource): int64 =
+  return self.rope.bytes.int64
+
+proc typesRunes*(instance: ptr InstanceData, self: var RopeResource): int64 =
+  return self.rope.runeLen.int64
+
+proc typesLines*(instance: ptr InstanceData, self: var RopeResource): int64 =
+  return self.rope.lines.int64
+
+proc typesSlice*(instance: ptr InstanceData, self: var RopeResource, a: int64, b: int64, inclusive: bool): RopeResource =
+  let a = min(a.int, b.int).clamp(0, self.rope.len)
+  var b = max(a.int, b.int).clamp(0, self.rope.len)
+  if inclusive:
+    b = self.rope.clip(b + 1, Bias.Right)
+  return RopeResource(rope: self.rope[a.int...b.int].suffix(Point()))
+
+proc typesSliceSelection*(instance: ptr InstanceData, self: var RopeResource, s: Selection, inclusive: bool): RopeResource =
+  let a = min(s.first.toPoint, s.last.toPoint).clamp(point(0, 0), self.rope.summary.lines)
+  var b = max(s.first.toPoint, s.last.toPoint).clamp(point(0, 0), self.rope.summary.lines)
+  if inclusive:
+    b = self.rope.clip(b + point(0, 1), Bias.Right)
+  return RopeResource(rope: self.rope[a...b].suffix(Point()))
+
+proc typesSlicePoints*(instance: ptr InstanceData, self: var RopeResource, a: Cursor, b: Cursor): RopeResource =
   let range = Point(row: a.line.uint32, column: a.column.uint32)...Point(row: a.line.uint32, column: a.column.uint32)
-  RopeResource(rope: self.rope[range])
+  return RopeResource(rope: self.rope[range])
 
-proc coreGetTime(host: HostContext; store: ptr ContextT): float64 =
-  let instance = cast[ptr InstanceData](store.getData())
+proc typesLineLength*(instance: ptr InstanceData, self: var RopeResource, line: int64): int64 =
+  return self.rope.lineRange(line).len
+
+proc typesFind*(instance: ptr InstanceData, self: var RopeResource, sub: sink string, start: int64): Option[int64] =
+  let i = self.rope.find(sub, start).int64
+  if i >= 0:
+    return i.some
+  return int64.none
+
+proc typesRuneAt*(instance: ptr InstanceData; self: var RopeResource; a: Cursor): Rune =
+  return self.rope.runeAt(a.toInternal.toPoint)
+
+proc typesByteAt*(instance: ptr InstanceData; self: var RopeResource; a: Cursor): uint8 =
+  return self.rope.charAt(a.toInternal.toPoint).uint8
+
+proc typesFindAll*(instance: ptr InstanceData; self: var RopeResource; regex: sink string): seq[Selection] =
+  try:
+    let r = re(regex)
+    return self.rope.slice(int).findAll(r).mapIt(it.toSelection.toWasm)
+  except RegexError:
+    discard
+
+proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): bool =
+  if permissions.disallowAll.get(false):
+    return false
+  for prefix in permissions.disallow:
+    if path.startsWith(vfs.normalize(prefix)):
+      return false
+  if permissions.allowAll.get(false):
+    return true
+  for prefix in permissions.allow:
+    if path.startsWith(vfs.normalize(prefix)):
+      return true
+  return false
+
+proc isAllowed*(permissions: FilesystemPermissions, path: string): bool =
+  if permissions.disallowAll.get(false):
+    return false
+  for prefix in permissions.disallow:
+    if path.startsWith(prefix):
+      return false
+  if permissions.allowAll.get(false):
+    return true
+  for prefix in permissions.allow:
+    if path.startsWith(prefix):
+      return true
+  return false
+
+proc vfsReadSync*(instance: ptr InstanceData, path: sink string, readFlags: ReadFlags): Result[string, VfsError] =
+  if instance.host == nil:
+    # Background thread, can't access vfs for now because it's not thread save (yet)
+    try:
+      if not instance.permissions.filesystemRead.isAllowed(path):
+        result.err(VfsError.NotAllowed)
+        return
+      let f = readFile(path)
+      return results.ok(f)
+    except IOError:
+      result.err(VfsError.NotFound)
+      return
+
+  try:
+    let normalizedPath = instance.host.vfs.normalize(path)
+    if not instance.permissions.filesystemRead.isAllowed(normalizedPath, instance.host.vfs):
+      result.err(VfsError.NotAllowed)
+      return
+    return results.ok(instance.host.vfs.read(normalizedPath, readFlags.toInternal).waitFor())
+  except IOError as e:
+    log lvlWarn, &"Failed to read file for plugin: {e.msg}"
+    result.err(VfsError.NotFound)
+
+proc vfsReadRopeSync*(instance: ptr InstanceData, path: sink string, readFlags: ReadFlags): Result[RopeResource, VfsError] =
+  if instance.host == nil:
+    return
+  try:
+    let normalizedPath = instance.host.vfs.normalize(path)
+    if not instance.permissions.filesystemRead.isAllowed(normalizedPath, instance.host.vfs):
+      result.err(VfsError.NotAllowed)
+      return
+    var rope: Rope = Rope.new()
+    waitFor instance.host.vfs.readRope(normalizedPath, rope.addr)
+    return results.ok(RopeResource(rope: rope.slice().suffix(Point())))
+  except IOError as e:
+    log lvlWarn, &"Failed to read file for plugin: {e.msg}"
+    result.err(VfsError.NotFound)
+
+proc vfsWriteSync*(instance: ptr InstanceData, path: sink string, content: sink string): Result[bool, VfsError] =
+  if instance.host == nil:
+    return
+  try:
+    let normalizedPath = instance.host.vfs.normalize(path)
+    if not instance.permissions.filesystemWrite.isAllowed(normalizedPath, instance.host.vfs):
+      result.err(VfsError.NotAllowed)
+      return
+    instance.host.vfs.write(normalizedPath, content).waitFor()
+    return results.ok(true)
+  except IOError as e:
+    log lvlWarn, &"Failed to write file '{path}' for plugin: {e.msg}"
+    result.err(VfsError.NotFound)
+
+proc vfsWriteRopeSync*(instance: ptr InstanceData, path: sink string, rope: sink RopeResource): Result[bool, VfsError] =
+  if instance.host == nil:
+    return
+  try:
+    let normalizedPath = instance.host.vfs.normalize(path)
+    if not instance.permissions.filesystemWrite.isAllowed(normalizedPath, instance.host.vfs):
+      result.err(VfsError.NotAllowed)
+      return
+    instance.host.vfs.write(normalizedPath, rope.rope.slice(int)).waitFor()
+    return results.ok(true)
+  except IOError as e:
+    log lvlWarn, &"Failed to write file '{path}' for plugin: {e.msg}"
+    result.err(VfsError.NotFound)
+
+proc vfsLocalize*(instance: ptr InstanceData, path: sink string): string =
+  if instance.host == nil:
+    return
+  return instance.host.vfs.localize(path)
+
+proc coreGetTime*(instance: ptr InstanceData): float64 =
   if not instance.permissions.time:
     return 0
-  return host.timer.elapsed.ms
+  return instance.timer.elapsed.ms
 
-proc coreApiVersion(host: HostContext, store: ptr ContextT): int32 =
+proc coreGetPlatform*(instance: ptr InstanceData): Platform =
+  if instance.host == nil:
+    return
+  case instance.host.platform.backend
+  of sca.Backend.Gui: return Platform.Gui
+  of sca.Backend.Terminal: return Platform.Tui
+
+proc coreApiVersion*(instance: ptr InstanceData): int32 =
   return apiVersion
 
-proc coreBindKeys(host: HostContext, store: ptr ContextT, context: sink string, subContext: sink string, keys: sink string,
-    action: sink string, arg: sink string, description: sink string, source: sink (string, int32, int32)): void =
-  host.plugins.bindKeys(context, subContext, keys, action, arg, description, (source[0], source[1].int, source[2].int))
+proc coreIsMainThread*(instance: ptr InstanceData): bool =
+  return instance.isMainThread
 
-proc coreDefineCommand(host: HostContext, store: ptr ContextT, name: sink string, active: bool, docs: sink string,
+proc coreGetArguments*(instance: ptr InstanceData): string =
+  return instance.args
+
+proc sleepImpl(instance: ptr InstanceData, task: uint64, time: int) {.async.} =
+  await sleepAsync(time.milliseconds)
+  let res = instance.funcs.notifyTaskComplete(task, canceled = false)
+  if res.isErr:
+    log lvlError, "Failed to call notifyTaskComplete: " & res.err.msg
+
+proc coreSleepAsync*(instance: ptr InstanceData, task: uint64, milliseconds: uint32) =
+  asyncSpawn sleepImpl(instance, task, milliseconds.int)
+
+type ThreadState = object
+  instance: Arc[InstanceDataImpl]
+  thread: Arc[typedthreads.Thread[ThreadState]]
+
+proc threadFunc(s: ThreadState) {.thread, nimcall.} =
+  chronosDontSkipCallbacksAtStart = true
+  runInstanceThread(s.instance)
+
+proc coreSpawnBackground*(instance: ptr InstanceData, args: sink string, executor: BackgroundExecutor) =
+  let newInstance = cloneInstance(instance)
+  newInstance.getMutUnsafe.vfs = newInstance.getMutUnsafe.host.vfs.clone()
+  newInstance.getMutUnsafe.host = nil
+  newInstance.getMutUnsafe.args = args.ensureMove
+
+  case executor
+  of BackgroundExecutor.Thread:
+    var thread = Arc[typedthreads.Thread[ThreadState]].new()
+    try:
+      var state = ThreadState(
+        thread: thread,
+        instance: newInstance,
+      )
+      {.push warning[BareExcept]:off.}
+      thread.getMutUnsafe.createThread(threadFunc, state)
+      {.pop.}
+    except ResourceExhaustedError as e:
+      log lvlError, &"Failed to spawn plugin in background: {e.msg}"
+
+  of BackgroundExecutor.ThreadPool:
+    {.gcsafe.}: # threadPool is thread safe
+      threadPool.addTask(newInstance)
+
+proc coreFinishBackground*(instance: ptr InstanceData) =
+  instance.destroyRequested.store(true)
+
+proc registersIsReplayingCommands*(instance: ptr InstanceData): bool =
+  if instance.host == nil:
+    return false
+  return instance.host.registers.isReplayingCommands()
+
+proc registersIsRecordingCommands*(instance: ptr InstanceData; register: sink string): bool =
+  if instance.host == nil:
+    return false
+  return instance.host.registers.isRecordingCommands(register)
+
+proc registersSetRegisterText*(instance: ptr InstanceData; text: sink string; register: sink string): void =
+  if instance.host == nil:
+    return
+  instance.host.registers.setRegisterText(text, register)
+
+proc registersGetRegisterText*(instance: ptr InstanceData; register: sink string): string =
+  if instance.host == nil:
+    return
+  return instance.host.registers.getRegisterText(register)
+
+proc registersStartRecordingCommands*(instance: ptr InstanceData; register: sink string): void =
+  if instance.host == nil:
+    return
+  instance.host.registers.startRecordingCommands(register)
+
+proc registersStopRecordingCommands*(instance: ptr InstanceData; register: sink string): void =
+  if instance.host == nil:
+    return
+  instance.host.registers.stopRecordingCommands(register)
+
+proc registersReplayCommands*(instance: ptr InstanceData; register: sink string): void =
+  if instance.host == nil:
+    return
+  instance.host.commands.replayCommands(register)
+
+proc commandsDefineCommand*(instance: ptr InstanceData, name: sink string, active: bool, docs: sink string,
                        params: sink seq[(string, string)], returnType: sink string, context: sink string; fun: uint32; data: uint32): void =
-  let instance = cast[ptr InstanceData](store.getData())
+  if instance.host == nil:
+    return
   let command = Command(
     name: instance.namespace & "." & name.ensureMove,
     parameters: params.mapIt((it[0], it[1])),
     returnType: returnType.ensureMove,
     description: docs.ensureMove,
     execute: (proc(args: string): string {.gcsafe.} =
-      let instance = cast[ptr InstanceData](store.getData())
-      let res = instance[].funcs.handleCommand(fun, data, args).okOr(err):
-        log lvlError, "Failed to call handleCommand: " & $err
+      let res = instance.funcs.handleCommand(fun, data, args).okOr(err):
+        log lvlError, "Failed to call handleCommand: " & err.msg
         return ""
 
       return res
     ),
   )
-  instance.commands.add(host.commands.registerCommand(command, override = true))
+  if active:
+    instance.commands.add(instance.host.commands.registerActiveCommand(command, override = true))
+  else:
+    instance.commands.add(instance.host.commands.registerCommand(command, override = true))
 
-proc coreRunCommand(host: HostContext, store: ptr ContextT, name: sink string, arguments: sink string): Result[string, CommandError] =
-  let instance = cast[ptr InstanceData](store.getData())
-  if not host.commands.checkPermissions(name, instance.permissions.commands):
+proc commandsRunCommand*(instance: ptr InstanceData, name: sink string, arguments: sink string): Result[string, CommandError] =
+  if instance.host == nil:
+    return
+  if not instance.host.commands.checkPermissions(name, instance.permissions.commands):
     result.err(CommandError.NotAllowed)
     return
-  if host.commands.handleCommand(name & " " & arguments).getSome(res):
+  if instance.host.commands.handleCommand(name & " " & arguments).getSome(res):
     return results.ok(res)
   result.err(CommandError.NotFound)
 
-proc coreGetSettingRaw(host: HostContext, store: ptr ContextT, name: sink string): string =
-  return $host.settings.get(name, JsonNodeEx)
+proc commandsExitCommandLine*(instance: ptr InstanceData) =
+  if instance.host == nil:
+    return
+  instance.host.commands.exitCommandLine()
 
-proc coreSetSettingRaw(host: HostContext, store: ptr ContextT, name: sink string, value: sink string) =
+proc settingsGetSettingRaw*(instance: ptr InstanceData, name: sink string): string =
+  if instance.host == nil:
+    return
+  return $instance.host.settings.get(name, JsonNodeEx)
+
+proc settingsSetSettingRaw*(instance: ptr InstanceData, name: sink string, value: sink string) =
+  if instance.host == nil:
+    return
   try:
     # todo: permissions
-    host.settings.set(name, parseJsonex(value))
+    instance.host.settings.set(name, parseJsonex(value))
   except CatchableError as e:
-    log lvlError, "coreSetSettingRaw: Failed to set setting '{name}' to {value}: {e.msg}"
+    log lvlError, &"coreSetSettingRaw: Failed to set setting '{name}' to {value}: {e.msg}"
 
-proc renderNewRenderView(host: HostContext; store: ptr ContextT): RenderViewResource =
-  let view = newRenderView(host.services)
-  host.layout.registerView(view)
+proc sessionGetSessionData*(instance: ptr InstanceData; name: sink string): string =
+  if instance.host == nil:
+    return ""
+  return $instance.host.sessions.getSessionDataJson("plugins." & instance.namespace & "." & name, newJNull())
+
+proc sessionSetSessionData*(instance: ptr InstanceData; name: sink string; value: sink string): void =
+  if instance.host == nil:
+    return
+  try:
+    instance.host.sessions.setSessionDataJson("plugins." & instance.namespace & "." & name, value.parseJson())
+  except CatchableError as e:
+    log lvlError, &"Failed to set session data '{name}': {e.msg}"
+
+proc renderNewRenderView*(instance: ptr InstanceData): RenderViewResource =
+  let view = newRenderView(instance.host.services)
+  instance.host.layout.registerView(view)
   return RenderViewResource(view: view)
 
-proc layoutShow(host: HostContext; store: ptr ContextT; v: View, slot: sink string, focus: bool, addToHistory: bool) =
-  host.layout.showView(v.id, slot.ensureMove, focus, addToHistory)
+proc layoutShow*(instance: ptr InstanceData; v: View, slot: sink string, focus: bool, addToHistory: bool) =
+  instance.host.layout.showView(v.id, slot.ensureMove, focus, addToHistory)
 
-proc layoutClose(host: HostContext; store: ptr ContextT; v: View, keepHidden: bool, restoreHidden: bool) =
-  host.layout.closeView(v.id, keepHidden, restoreHidden)
+proc layoutClose*(instance: ptr InstanceData; v: View, keepHidden: bool, restoreHidden: bool) =
+  instance.host.layout.closeView(v.id, keepHidden, restoreHidden)
 
-proc layoutFocus(host: HostContext; store: ptr ContextT, slot: sink string) =
-  host.layout.focusView(slot.ensureMove)
+proc layoutFocus*(instance: ptr InstanceData, slot: sink string) =
+  instance.host.layout.focusView(slot.ensureMove)
 
-proc renderRenderViewFromUserId(host: HostContext; store: ptr ContextT; id: sink string): Option[RenderViewResource] =
-  if renderViewFromUserId(host.layout, id).getSome(view):
+proc layoutCloseActiveView*(instance: ptr InstanceData; closeOpenPopup: bool; restoreHidden: bool): void =
+  instance.host.layout.closeActiveView(closeOpenPopup, restoreHidden)
+
+proc renderRenderViewFromUserId*(instance: ptr InstanceData; id: sink string): Option[RenderViewResource] =
+  if renderViewFromUserId(instance.host.layout, id).getSome(view):
     return RenderViewResource(view: view).some
   return RenderViewResource.none
 
-proc renderRenderViewFromView(host: HostContext; store: ptr ContextT; v: View): Option[RenderViewResource] =
-  if host.layout.getView(v.id).getSome(view) and view of RenderView:
-    return RenderViewResource(view: view.RenderView).some
+proc renderRenderViewFromView*(instance: ptr InstanceData; v: View): Option[RenderViewResource] =
+  if instance.host.layout.getView(v.id).getSome(view) and view of rv.RenderView:
+    return RenderViewResource(view: rv.RenderView(view)).some
   return RenderViewResource.none
 
-proc renderView(host: HostContext; store: ptr ContextT; self: var RenderViewResource): View =
+proc renderView*(instance: ptr InstanceData; self: var RenderViewResource): View =
   return View(id: self.view.id2)
 
-proc renderSetUserId(host: HostContext; store: ptr ContextT; self: var RenderViewResource, id: sink string) =
+proc renderSetUserId*(instance: ptr InstanceData; self: var RenderViewResource, id: sink string) =
   self.view.userId = id.ensureMove
 
-proc renderGetUserId(host: HostContext; store: ptr ContextT; self: var RenderViewResource): string =
+proc renderGetUserId*(instance: ptr InstanceData; self: var RenderViewResource): string =
   return self.view.userId
 
-proc renderId(host: HostContext; store: ptr ContextT; self: var RenderViewResource): int32 =
+proc renderId*(instance: ptr InstanceData; self: var RenderViewResource): int32 =
   return self.view.id2
 
-proc renderSize(host: HostContext; store: ptr ContextT; self: var RenderViewResource): Vec2f =
-  return Vec2f(x: self.view.size.x, y: self.view.size.y)
+proc renderSize*(instance: ptr InstanceData; self: var RenderViewResource): Vec2f =
+  return Vec2f(x: self.view.bounds.w, y: self.view.bounds.h)
 
-proc renderSetRenderWhenInactive(host: HostContext; store: ptr ContextT; self: var RenderViewResource; enabled: bool): void =
+proc renderKeyDown*(instance: ptr InstanceData; self: var RenderViewResource, key: int64): bool =
+  return key in self.view.keyStates
+
+proc renderMousePos*(instance: ptr InstanceData; self: var RenderViewResource): Vec2f =
+  return Vec2f(x: self.view.mousePos.x, y: self.view.mousePos.y)
+
+proc renderMouseDown*(instance: ptr InstanceData; self: var RenderViewResource; button: int64): bool =
+  return button in self.view.mouseStates
+
+proc renderScrollDelta*(instance: ptr InstanceData; self: var RenderViewResource): Vec2f =
+  return Vec2f(x: self.view.scrollDelta.x, y: self.view.scrollDelta.y)
+
+proc renderSetRenderWhenInactive*(instance: ptr InstanceData; self: var RenderViewResource; enabled: bool): void =
   self.view.setRenderWhenInactive(enabled)
 
-proc renderSetPreventThrottling(host: HostContext; store: ptr ContextT; self: var RenderViewResource; enabled: bool): void =
+proc readTextureData*(instance: ptr InstanceData; width: int; height: int; data: uint32; format: TextureFormat): seq[chroma.ColorRGBX] =
+  if width * height == 0:
+    return
+  var colors: seq[chroma.ColorRGBX] = @[]
+  colors.setLen(width * height)
+
+  let bytesPerPixel = case format
+  of TextureFormat.Rgba32: 4 * sizeof(float32)
+  of TextureFormat.Rgba8: 4 * sizeof(uint8)
+
+  let wasmBufferLen = colors.len * bytesPerPixel
+  let wasmBufferAddr = data
+
+  if wasmBufferAddr.int + wasmBufferLen - 1 > int32.high.int:
+    echo &"Memory out of bounds: {wasmBufferAddr.int} + {wasmBufferLen} - 1 = {wasmBufferAddr.int + wasmBufferLen - 1} > {int32.high}"
+    return @[]
+  discard instance.funcs.mem[(wasmBufferAddr.int + wasmBufferLen - 1).WasmPtr] # crash if out of bounds. todo: replace this with bounds check
+  let wasmBuffer = cast[ptr UncheckedArray[float]](instance.funcs.mem.getRawPtr(wasmBufferAddr.WasmPtr))
+  if wasmBuffer != nil:
+    copyMem(colors[0].addr, wasmBuffer[0].addr, wasmBufferLen)
+  else:
+    log lvlWarn, &"failed to get wasm buffer address"
+    return @[]
+
+  return colors
+
+proc readTextureData*(instance: ptr InstanceData; width: int; height: int; data: SharedBufferResource; offset: int; format: TextureFormat): seq[chroma.ColorRGBX] =
+  var colors: seq[chroma.ColorRGBX] = @[]
+  colors.setLen(width * height)
+  if colors.len == 0:
+    return colors
+
+  let bytesPerPixel = case format
+  of TextureFormat.Rgba32: 4 * sizeof(float32)
+  of TextureFormat.Rgba8: 4 * sizeof(uint8)
+
+  let bufferLen = colors.len * bytesPerPixel
+  if offset + bufferLen > data.buffer.len:
+    # echo &"Memory out of bounds: {bufferLen} > {data.buffer.len}"
+    return @[]
+  data.buffer.readInto(offset, cast[ptr UncheckedArray[uint8]](colors[0].addr).toOpenArray(0, bufferLen - 1))
+  return colors
+
+proc renderCreateTexture*(instance: ptr InstanceData; width: int32; height: int32; data: uint32; format: TextureFormat, dynamic: bool): uint64 =
+  let width = width.int
+  let height = height.int
+  if width * height > int32.high.int:
+    echo &"Texture too big: {width}, {height}"
+    return 0
+  let colors = instance.readTextureData(width, height, data, format)
+  if colors.len == 0:
+    return 0
+  return createTexture(width, height, colors, dynamic).uint64
+
+proc renderCreateTextureBuffer*(instance: ptr InstanceData; width: int32; height: int32; data: var SharedBufferResource; offset: uint32; format: TextureFormat, dynamic: bool): uint64 =
+  let colors = instance.readTextureData(width.int, height.int, data, offset.int, format)
+  if colors.len == 0:
+    return 0
+  return createTexture(width, height, colors, dynamic).uint64
+
+proc renderUpdateTexture*(instance: ptr InstanceData; id: uint64; width: int32; height: int32; data: uint32; format: TextureFormat) =
+  let width = width.int
+  let height = height.int
+  if width * height > int32.high.int:
+    echo &"Texture too big: {width}, {height}"
+    return
+  let colors = instance.readTextureData(width, height, data, format)
+  if colors.len == 0:
+    return
+  updateTexture(id.TextureId, width, height, colors)
+
+proc renderUpdateTextureBuffer*(instance: ptr InstanceData; id: uint64; width: int32; height: int32; data: var SharedBufferResource; offset: uint32; format: TextureFormat) =
+  let colors = instance.readTextureData(width.int, height.int, data, offset.int, format)
+  if colors.len == 0:
+    return
+  updateTexture(id.TextureId, width, height, colors)
+
+proc renderDeleteTexture*(instance: ptr InstanceData; id: uint64): void =
+  deleteTexture(id.TextureId)
+
+proc renderSetPreventThrottling*(instance: ptr InstanceData; self: var RenderViewResource; enabled: bool): void =
   self.view.preventThrottling = enabled
 
-proc renderSetRenderInterval(host: HostContext; store: ptr ContextT; self: var RenderViewResource; ms: int32): void =
+proc renderSetRenderInterval*(instance: ptr InstanceData; self: var RenderViewResource; ms: int32): void =
   self.view.setRenderInterval(ms.int)
 
-proc renderSetRenderCommands(host: HostContext; store: ptr ContextT; self: var RenderViewResource; data: sink seq[uint8]): void =
+proc renderSetRenderCommands*(instance: ptr InstanceData; self: var RenderViewResource; data: sink seq[uint8]): void =
   self.view.commands.raw = data.ensureMove
 
-proc renderSetRenderCommandsRaw(host: HostContext; store: ptr ContextT; self: var RenderViewResource; buffer: uint32; len: uint32): void =
-  let instance = cast[ptr InstanceData](store.getData())
-  let mem = instance[].funcs.mem
+proc renderSetRenderCommandsRaw*(instance: ptr InstanceData; self: var RenderViewResource; buffer: uint32; len: uint32): void =
+  let mem = instance.funcs.mem
   let buffer = buffer.WasmPtr
   let len = len.int
 
@@ -350,25 +1474,217 @@ proc renderSetRenderCommandsRaw(host: HostContext; store: ptr ContextT; self: va
   try:
     for command in decoder.decodeRenderCommands():
       self.view.commands.commands.add(command)
-  except ValueError as e:
+  except ValueError:
     discard
 
-proc renderMarkDirty(host: HostContext; store: ptr ContextT; self: var RenderViewResource): void =
+proc renderMarkDirty*(instance: ptr InstanceData; self: var RenderViewResource): void =
   self.view.markDirty()
 
-proc renderSetRenderCallback(host: HostContext; store: ptr ContextT; self: var RenderViewResource; fun: uint32; data: uint32): void =
+proc renderSetRenderCallback*(instance: ptr InstanceData; self: var RenderViewResource; fun: uint32; data: uint32): void =
   self.setRender = true
-  self.view.onRender = proc(view: RenderView) =
-    let instance = cast[ptr InstanceData](store.getData())
-    instance[].funcs.handleViewRenderCallback(view.id2, fun, data).okOr(err):
-      log lvlError, "Failed to call handleViewRenderCallback: " & $err
+  self.view.onRender = proc(view: rv.RenderView) =
+    instance.funcs.handleViewRenderCallback(view.id2, fun, data).okOr(err):
+      log lvlError, "Failed to call handleViewRenderCallback: " & err.msg
 
-proc renderSetModes(host: HostContext; store: ptr ContextT; self: var RenderViewResource; modes: sink seq[string]): void =
+proc renderSetModes*(instance: ptr InstanceData; self: var RenderViewResource; modes: sink seq[string]): void =
   self.view.modes = modes
 
-proc renderAddMode(host: HostContext; store: ptr ContextT; self: var RenderViewResource; mode: sink string): void =
+proc renderAddMode*(instance: ptr InstanceData; self: var RenderViewResource; mode: sink string): void =
   self.view.modes.add(mode)
 
-proc renderRemoveMode(host: HostContext; store: ptr ContextT; self: var RenderViewResource; mode: sink string): void =
+proc renderRemoveMode*(instance: ptr InstanceData; self: var RenderViewResource; mode: sink string): void =
   self.view.modes.removeShift(mode)
 
+###################### Channel
+
+proc channelCreateTerminal*(instance: ptr InstanceData, stdin: sink WriteChannelResource, stdout: sink ReadChannelResource, group: sink string) =
+  if instance.host == nil:
+    return
+  let options = sca.CreateTerminalOptions(
+    group: group,
+  )
+  if instance.host.terminals != nil:
+    let view = instance.host.terminals.createTerminalView(stdin.channel, stdout.channel, options)
+    instance.host.layout.registerView(view)
+    instance.host.layout.showView(view.id, "#build-run-terminal", true, true)
+
+proc channelCanRead*(instance: ptr InstanceData; self: var ReadChannelResource): bool =
+  return self.channel.isOpen
+
+proc channelAtEnd*(instance: ptr InstanceData; self: var ReadChannelResource): bool =
+  return self.channel.atEnd
+
+proc channelPeek*(instance: ptr InstanceData; self: var ReadChannelResource): int32 =
+  return self.channel.peek.int32
+
+proc channelFlushRead*(instance: ptr InstanceData; self: var ReadChannelResource): int32 =
+  try:
+    return self.channel.flushRead().int32
+  except IOError:
+    return self.channel.peek.int32
+
+proc channelReadString*(instance: ptr InstanceData; self: var ReadChannelResource; num: int32): string =
+  try:
+    if num > 0:
+      result.setLen(num)
+      let read = self.channel.read(result.toOpenArrayByte(0, result.high))
+      result.setLen(read)
+  except IOError:
+    discard
+
+proc channelReadBytes*(instance: ptr InstanceData; self: var ReadChannelResource; num: int32): seq[uint8] =
+  try:
+    if num > 0:
+      result.setLen(num)
+      let read = self.channel.read(result.toOpenArray(0, result.high))
+      result.setLen(read)
+  except IOError:
+    discard
+
+proc channelReadAllString*(instance: ptr InstanceData; self: var ReadChannelResource): string =
+  try:
+    result.setLen(self.channel.peek)
+    if result.len > 0:
+      let read = self.channel.read(result.toOpenArrayByte(0, result.high))
+      result.setLen(read)
+  except IOError:
+    discard
+
+proc channelReadAllBytes*(instance: ptr InstanceData; self: var ReadChannelResource): seq[uint8] =
+  try:
+    result.setLen(self.channel.peek)
+    if result.len > 0:
+      let read = self.channel.read(result.toOpenArray(0, result.high))
+      result.setLen(read)
+  except IOError:
+    discard
+
+proc channelListen*(instance: ptr InstanceData; self: var ReadChannelResource, fun: uint32, data: uint32) =
+  self.channel.stopListening(self.listenId)
+  self.listenId = self.channel.listen proc(chan: var BaseChannel, closed: bool): channel.ChannelListenResponse {.gcsafe, raises: [].} =
+    let res = instance.funcs.handleChannelUpdate(fun, data, closed)
+    if res.isErr:
+      log lvlError, "Failed to call handleChannelUpdate: " & res.err.msg
+      return channel.Stop
+    case res.val
+    of Continue:
+      return channel.Continue
+    of Stop:
+      return channel.Stop
+
+proc channelWaitRead*(instance: ptr InstanceData; self: var ReadChannelResource; task: uint64; num: int32): bool =
+  if self.channel.peek >= num.int or not self.channel.isOpen():
+    return true
+
+  self.listenId = self.channel.listen proc(chan: var BaseChannel, closed: bool): channel.ChannelListenResponse {.gcsafe, raises: [].} =
+    let available = chan.peek
+    if available >= num.int or not chan.isOpen():
+      let res = instance.funcs.notifyTaskComplete(task, canceled = available < num.int)
+      if res.isErr:
+        log lvlError, "Failed to call notifyTaskComplete: " & res.err.msg
+        return channel.Stop
+      return channel.Stop
+    return channel.Continue
+  return false
+
+proc channelClose*(instance: ptr InstanceData; self: var WriteChannelResource): void =
+  self.channel.close()
+
+proc channelCanWrite*(instance: ptr InstanceData; self: var WriteChannelResource): bool =
+  return self.channel.isOpen
+
+proc channelWriteString*(instance: ptr InstanceData; self: var WriteChannelResource; data: sink string): void =
+  try:
+    if data.len > 0:
+      self.channel.write(data.toOpenArrayByte(0, data.high))
+  except CatchableError:
+    discard
+
+proc channelWriteBytes*(instance: ptr InstanceData; self: var WriteChannelResource; data: sink seq[uint8]): void =
+  try:
+    self.channel.write(data)
+  except CatchableError:
+    discard
+
+proc channelReadChannelOpen*(instance: ptr InstanceData; path: sink string): Option[ReadChannelResource] =
+  let chan = openGlobalReadChannel(path)
+  if chan.isSome:
+    return ReadChannelResource(channel: chan.get).some
+
+proc channelReadChannelMount*(instance: ptr InstanceData; channel: sink ReadChannelResource; path: sink string; unique: bool): string =
+  mountGlobalReadChannel(path, channel.channel, unique)
+
+proc channelWriteChannelOpen*(instance: ptr InstanceData; path: sink string): Option[WriteChannelResource] =
+  let chan = openGlobalWriteChannel(path)
+  if chan.isSome:
+    return WriteChannelResource(channel: chan.get).some
+
+proc channelWriteChannelMount*(instance: ptr InstanceData; channel: sink WriteChannelResource; path: sink string; unique: bool): string =
+  mountGlobalWriteChannel(path, channel.channel, unique)
+
+proc channelNewInMemoryChannel*(instance: ptr InstanceData): (ReadChannelResource, WriteChannelResource) =
+  var c = newInMemoryChannel()
+  return (ReadChannelResource(channel: c), WriteChannelResource(channel: c))
+
+######################### Process
+
+proc processProcessStart*(instance: ptr InstanceData; name: sink string; args: sink seq[string]): ProcessResource =
+  try:
+    var process = startAsyncProcess(name, args, killOnExit = true, autoStart = false)
+    discard process.start()
+    return ProcessResource(process: process)
+  except CatchableError:
+    discard
+
+proc processStdout*(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource =
+  if self.stdout.isNil:
+    self.stdout = self.process.stdout
+  return ReadChannelResource(channel: self.stdout)
+
+proc processStderr*(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource =
+  # todo
+  discard
+
+proc processStdin*(instance: ptr InstanceData; self: var ProcessResource): WriteChannelResource =
+  if self.stdin.isNil:
+    self.stdin = self.process.stdin
+  return WriteChannelResource(channel: self.stdin)
+
+proc eventsListenEvent*(instance: ptr InstanceData; fun: uint32; data: uint32; id: sink string; pattern: sink string) =
+  if instance.host == nil:
+    return
+  proc cb(event, payload: string) {.gcsafe, raises: [].} =
+    discard instance.funcs.handleEvent(fun, data, event, payload)
+  instance.host.events.listen(instance.eventsId, pattern, cb)
+
+proc eventsStopListenEvent*(instance: ptr InstanceData; id: sink string; pattern: sink string) =
+  if instance.host == nil:
+    return
+  instance.host.events.stopListen(instance.eventsId, pattern)
+
+proc eventsEmitEvent*(instance: ptr InstanceData; event: sink string; payload: sink string) =
+  if instance.host == nil:
+    return
+  instance.host.events.emit(event, payload)
+
+type RenderView* = RenderViewResource
+type ReadChannel* = ReadChannelResource
+type WriteChannel* = WriteChannelResource
+type Process* = ProcessResource
+
+when enableDynamicPluginApi:
+  import plugin_api_1_dynamic
+
+method dispatchDynamic*(self: PluginApi, name: string, args: LispVal, namedArgs: LispVal): LispVal =
+  when enableDynamicPluginApi:
+    try:
+      if args != nil and args.kind notin {LispValKind.List, Array}:
+        raise newException(ValueError, &"'args' must be nil or a list/array")
+      if namedArgs != nil and namedArgs.kind != LispValKind.Map:
+        raise newException(ValueError, &"'namedArgs' must be nil or a list/array")
+      return dispatchDynamic(self.dynamicInstanceData.get().addr, name, args, namedArgs)
+    except CatchableError as e:
+      log lvlError, &"Failed to dispatchDynamic '{name}' {args}: {e.msg}"
+      return newNil()
+  else:
+    log lvlWarn, &"Dynamic plugin API not enabled in this build (trying to run command {name})"

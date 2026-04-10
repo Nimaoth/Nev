@@ -441,7 +441,6 @@ proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, margin: Option[float] = float.none, scrollBehaviour: Option[ScrollBehaviour] = ScrollBehaviour.none, relativePosition: float = 0.5)
 proc getFileName*(self: TextDocumentEditor): string
 proc closeDiff*(self: TextDocumentEditor)
-proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour)
 proc numDisplayLines*(self: TextDocumentEditor): int
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = true, includeAfter: bool = true): Cursor
 proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string)
@@ -1981,31 +1980,26 @@ proc undo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("edit
   if self.document.undo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
-    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
 proc redo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("editor.text").} =
   if self.document.redo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
-    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
 proc undoToPreviousSibling*(self: TextDocumentEditor, redoUntilBranch: bool = false) {.expose("editor.text").} =
   if self.document.undoToPreviousSibling(redoUntilBranch).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
-    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
 proc undoToNextSibling*(self: TextDocumentEditor, redoUntilBranch: bool = false) {.expose("editor.text").} =
   if self.document.undoToNextSibling(redoUntilBranch).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
-    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
 proc switchUndoBranch*(self: TextDocumentEditor, targetNode: int32) {.expose("editor.text").} =
   if self.document.switchUndoBranch(targetNode).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
-    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
 proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string) {.expose("editor.text").} =
   self.document.addNextCheckpoint checkpoint
@@ -2070,7 +2064,6 @@ proc pasteAsync*(self: TextDocumentEditor, selections: seq[Selection], registerN
   self.`selections=`(newSelections.mapIt(it.last.toSelection), addToHistory = true.some)
   # self.selections = newSelections.mapIt(it.last.toSelection)
   self.scrollToCursor(Last)
-  self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   self.markDirty()
 
 proc paste*(self: TextDocumentEditor, registerName: string = "", inclusiveEnd: bool = false) {.expose("editor.text").} =
@@ -2320,7 +2313,6 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
     self.selection = (changes[0].target.first, 0).toSelection
     self.updateTargetColumn(Last)
     self.centerCursor(self.selection.last)
-    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
   self.cursorHistories.setLen(0)
   self.markDirty()
@@ -2661,9 +2653,6 @@ proc setNextScrollBehaviour*(self: TextDocumentEditor, scrollBehaviour: ScrollBe
 
 proc setDefaultSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour) {.expose("editor.text").} =
   self.defaultSnapBehaviour = snapBehaviour
-
-proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour) =
-  discard # todo remove
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   let displayPoint = self.displayMap.toDisplayPoint(self.getCursor(cursor).toPoint)
@@ -3020,7 +3009,6 @@ proc deleteMove*(self: TextDocumentEditor, move: string, updateTargetColumn: boo
   let selections = self.getSelectionsForMove(self.selections, move, 1, true, true, options)
   self.selections = self.document.edit(selections, self.selections, [""])
   self.scrollToCursor(Last)
-  self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   if updateTargetColumn:
     self.updateTargetColumn(Last)
 
@@ -3073,7 +3061,6 @@ proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Sel
       self.selection = location
       self.updateTargetColumn(Last)
       self.centerCursor()
-      self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
       self.layout.showEditor(self.id.EditorId)
 
   else:
@@ -3085,13 +3072,11 @@ proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Sel
           self.selection = location
           self.updateTargetColumn(Last)
           self.centerCursor()
-          self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
         elif editor of TextDocumentEditor:
           let textEditor = editor.TextDocumentEditor
           textEditor.targetSelection = location
           textEditor.centerCursor()
-          textEditor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
     else:
       log lvlError, fmt"Failed to open file '{filename}' at {location}"
@@ -4598,7 +4583,6 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
   if self.textEditorComponent.mTargetSelections.getSome(s):
     self.textEditorComponent.selections = s
     self.centerCursor(snap=true)
-    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
   elif self.settings.scrollToChangeOnReload.get().getSome(scrollToChangeOnReload):
     case scrollToChangeOnReload
@@ -4614,7 +4598,6 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
   elif self.selectionsBeforeReload.len > 0:
     self.selections = self.selectionsBeforeReload
     self.scrollToCursor()
-    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
   self.cursorHistories.setLen(0)
   self.textEditorComponent.mTargetSelections = seq[Range[Point]].none

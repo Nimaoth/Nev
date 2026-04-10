@@ -220,7 +220,6 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
     popup.previewEditor.selection = popup.previewEditor.getPrevChange(popup.previewEditor.selection.first).last.toSelection
     popup.previewEditor.scrollToCursor(SelectionCursor.Last)
     popup.previewEditor.centerCursor()
-    popup.previewEditor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
     return true
 
   popup.addCustomCommand "next-change", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -229,7 +228,6 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
     popup.previewEditor.selection = popup.previewEditor.getNextChange(popup.previewEditor.selection.first).last.toSelection
     popup.previewEditor.scrollToCursor(SelectionCursor.Last)
     popup.previewEditor.centerCursor()
-    popup.previewEditor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
     return true
 
   popup.addCustomCommand "stage-change", proc(popup: SelectorPopup, args: JsonNode): bool =
