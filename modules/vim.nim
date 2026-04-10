@@ -164,7 +164,7 @@ when implModule:
   proc updateTargetColumn(editor: TextEditor) =
     editor.edit.updateTargetColumn(editor.edit.selection.b)
 
-  proc scrollToCursor(editor: TextEditor, behaviour = ScrollBehaviour.CenterOffscreen.some, offset: float = 0.5) =
+  proc scrollToCursor(editor: TextEditor, behaviour = ScrollBehaviour.none, offset: float = 0.5) =
     if behaviour == ScrollBehaviour.CenterAlways.some:
       editor.edit.scrollToCursor(editor.selection.last.toPoint, center = true)
     elif behaviour == ScrollBehaviour.CenterOffscreen.some:
