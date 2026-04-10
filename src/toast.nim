@@ -34,9 +34,6 @@ func serviceName*(_: typedesc[ToastService]): string = "ToastService"
 proc showToast*(self: ToastService, title: string, message: string, color: string)
 {.pop.}
 
-# Nice wrappers
-# proc showToast*(self: ToastService, title: string, message: string, color: string) = toastShowToast(self, title, message, color)
-
 # Implementation
 when implModule:
   import scripting/expose
@@ -86,8 +83,5 @@ when implModule:
     self.toasts.add(Toast(timer: startTimer(), title: title, message: message, color: color))
     asyncSpawn self.updateToasts()
     self.platform.requestRender()
-
-  # proc toastShowToast*(self: ToastService, title: string, message: string, color: string)
-  #   self.showToast(title, message, color)
 
   addGlobalDispatchTable "toast", genDispatchTable("toast")
