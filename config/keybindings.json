@@ -1065,4 +1065,30 @@
         "<C-o>": "toggle-all-breakpoints-enabled",
     },
 
+    "gitui": {
+        "gg": "gitui.toggle",
+        "gp": "gitui.push",
+        "gl": "gitui.pull",
+        "gf": "gitui.fetch",
+        "ss": "gitui.stash",
+        "sp": "gitui.stash-pop",
+        "gr": "gitui.reset-soft",
+        "sa": "gitui.stage-all",
+        "me": "gitui.commit-edit-start",
+        "ck": "gitui.commit",
+        "ca": "gitui.commit-amend",
+        "bw": "gitui.switch-branch",
+        "r": "gitui.refresh",
+        "<UP>": "gitui.cursor-up",
+        "<DOWN>": "gitui.cursor-down",
+        "a": "gitui.stage-selected",
+        "u": "gitui.unstage-selected",
+        "x": "gitui.revert-selected",
+        "d": "gitui.diff-selected",
+    },
+    "gitui.message": {
+        "<C-x>": "gitui.commit-edit-cancel",
+        "<C-s>": "gitui.commit-edit-confirm",
+    },
+
 }

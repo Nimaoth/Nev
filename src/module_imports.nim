@@ -24,6 +24,7 @@ import "../modules/language_server_paths.nim"
 import "../modules/terminal/terminal.nim"
 import "../modules/formatting_component.nim"
 import "../modules/undo_tree.nim"
+import "../modules/git_ui.nim"
 import "../modules/angelscript_formatter.nim"
 import "../modules/language_server_ue_as.nim"
 import "../modules/stats.nim"
@@ -55,6 +56,7 @@ proc initModules*() =
   when declared(init_module_terminal): init_module_terminal()
   when declared(init_module_formatting_component): init_module_formatting_component()
   when declared(init_module_undo_tree): init_module_undo_tree()
+  when declared(init_module_git_ui): init_module_git_ui()
   when declared(init_module_angelscript_formatter): init_module_angelscript_formatter()
   when declared(init_module_language_server_ue_as): init_module_language_server_ue_as()
   when declared(init_module_stats): init_module_stats()
@@ -86,6 +88,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_terminal): shutdown_module_terminal()
   when declared(shutdown_module_formatting_component): shutdown_module_formatting_component()
   when declared(shutdown_module_undo_tree): shutdown_module_undo_tree()
+  when declared(shutdown_module_git_ui): shutdown_module_git_ui()
   when declared(shutdown_module_angelscript_formatter): shutdown_module_angelscript_formatter()
   when declared(shutdown_module_language_server_ue_as): shutdown_module_language_server_ue_as()
   when declared(shutdown_module_stats): shutdown_module_stats()
