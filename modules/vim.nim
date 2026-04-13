@@ -947,12 +947,7 @@ when implModule:
       editor.setSelections editor.multiMove(editor.selections, "page", direction * max(count, 1), true, includeEol = editor.vimState.cursorIncludeEol)
     else:
       editor.setSelections editor.multiMove(editor.selections, "visual-page", direction * max(count, 1), true, includeEol = editor.vimState.cursorIncludeEol)
-    # todo
-    # let defaultScrollBehaviour = editor.getDefaultScrollBehaviour
-    # let defaultCenter = defaultScrollBehaviour in {CenterAlways, CenterOffscreen}
-    # let nextScrollBehaviour = if center and defaultCenter: CenterAlways.some else: ScrollBehaviour.none
-    let nextScrollBehaviour = ScrollBehaviour.none
-    editor.scrollToCursor(behaviour = nextScrollBehaviour, 0.5)
+    editor.scrollToCursor(behaviour = ScrollBehaviour.none, 0.5)
     if editor.vimState.selectLines:
       editor.selectLine()
 
@@ -1646,28 +1641,6 @@ when implModule:
 
     else:
       editor.setSetting "text.inclusive-selection", false
-
-  # todo
-  # proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
-  #   let afterRestoreSessionHandle = addCallback proc(args: JsonNode): JsonNode =
-  #     let states = getSessionData[Table[string, JsonNode]]("vim.states")
-  #     for id in getAllEditors():
-  #       if id.isTextEditor(editor):
-  #         try:
-  #           let filename = editor.getFileName()
-  #           if states.hasKey(filename):
-  #             let editorState = states[filename]
-  #             if editorState.hasKey("marks"):
-  #               let marks = editorState["marks"].jsonTo(Table[string, seq[Selection]])
-  #               for name, selections in marks:
-  #                 editor.vimState.unresolvedMarks[name] = selections
-  #         except:
-  #           debugf"Failed to restore marks for {editor}"
-  #   scriptSetCallback("after-restore-session", afterRestoreSessionHandle)
-
-  #   let beforeSaveAppStateHandle = addCallback proc(args: JsonNode): JsonNode =
-  #     vimSaveState()
-  #   scriptSetCallback("before-save-app-state", beforeSaveAppStateHandle)
 
   proc init_module_vim*() {.cdecl, exportc, dynlib.} =
     let commandService = getServiceChecked(CommandService)
