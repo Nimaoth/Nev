@@ -81,10 +81,10 @@ proc parseCommand*(json: JsonNodeEx): tuple[command: string, args: string, ok: b
 
 # Implementation
 when implModule:
-  import std/[options, strformat, tables, sugar, sequtils, json, streams, strutils, hashes]
+  import std/[strformat, tables, sugar, json, streams, hashes]
   import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils, parsejsonex, timer]
   import text/language/[language_server_base]
-  import document_editor, events
+  import events
   import config_provider, dispatch_tables, input_api
   import nimsumtree/rope, register
 

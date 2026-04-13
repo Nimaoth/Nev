@@ -67,8 +67,7 @@ proc showHoverView*(self: HoverComponent, view: View, location: Point) = hoverCo
 when implModule:
   import std/[strformat]
   import misc/[util, custom_logger, rope_utils]
-  import nimsumtree/[rope]
-  import document, document_editor, text_component, language_server_component, command_component, text_editor_component
+  import document_editor, text_component, language_server_component, command_component, text_editor_component
   import command_service, service, platform_service, platform/platform
 
   logCategory "hover-component"

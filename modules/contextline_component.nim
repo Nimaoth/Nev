@@ -1,4 +1,4 @@
-import std/[options, tables, strutils, algorithm, sets]
+import std/[options, tables, algorithm]
 import misc/[delayed_task, id, myjsonutils, jsonex, timer]
 import nimsumtree/[rope]
 import component, config_provider, text/treesitter_types
@@ -48,10 +48,10 @@ proc getContextLines*(self: ContextLineComponent): seq[ContextLineEntry] = conte
 
 when implModule:
   import std/[strformat]
-  import misc/[custom_logger, custom_async, util, arena, array_view, id, event, regex]
-  import nimsumtree/[rope, sumtree]
+  import misc/[custom_logger, custom_async, util, arena, array_view, event, regex]
+  import nimsumtree/[sumtree]
   import document, document_editor, text_component, treesitter_component, text_editor_component
-  import text/[custom_treesitter, syntax_map, treesitter_types, treesitter_type_conv]
+  import text/[custom_treesitter, syntax_map, treesitter_type_conv]
 
   logCategory "contextline-component"
 

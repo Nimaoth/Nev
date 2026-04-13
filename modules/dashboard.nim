@@ -56,7 +56,7 @@ const logos = @[
 ]
 
 when implModule:
-  import std/[tables, options, strformat, strutils, sequtils, random, json, algorithm, math]
+  import std/[tables, options, strformat, sequtils, random, json, algorithm, math]
   import vmath, chroma
   import misc/[custom_logger, util, custom_async, custom_unicode, jsonex, myjsonutils, timer]
   import ui/node

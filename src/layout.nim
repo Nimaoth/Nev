@@ -66,11 +66,11 @@ when implModule:
   import std/[tables, sugar, deques, sets, os]
   import results
   import platform/platform
-  import misc/[custom_async, custom_logger, rect_utils, myjsonutils, util, jsonex, array_set]
+  import misc/[custom_logger, rect_utils, myjsonutils, util, jsonex, array_set]
   import scripting/expose
   import workspaces/workspace
   import finder/finder
-  import platform_service, dispatch_tables, document, events, config_provider, vfs, vfs_service, session, layouts, command_service, document_editor
+  import platform_service, dispatch_tables, events, config_provider, vfs, vfs_service, session, layouts, command_service
   from scripting_api import EditorId
   import nimsumtree/arc
 

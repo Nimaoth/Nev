@@ -5,15 +5,13 @@ import ui/node
 import platform/[tui]
 import nimsumtree/[rope, arc]
 import dynamic_view, events, config_provider, layout, theme, vterm, input, input_api, channel, register
-from scripting_api import SshOptions
+from scripting_api import SshOptions, RunInTerminalOptions, CreateTerminalOptions
 import types
 
 when defined(enableLibssh):
   static:
     hint("Build with libssh2")
   import libssh2, ssh
-
-from scripting_api import RunInTerminalOptions, CreateTerminalOptions
 
 const bufferSize = 10 * 1024 * 1024
 

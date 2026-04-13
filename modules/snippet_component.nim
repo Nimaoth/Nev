@@ -1,6 +1,5 @@
 #use
 import std/[options]
-import nimsumtree/[rope]
 import misc/[event, custom_async, jsonex]
 import component, text/snippet
 

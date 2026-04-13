@@ -1,7 +1,7 @@
 import std/[options, tables]
 import nimsumtree/[arc, buffer, clock, rope]
 import misc/[custom_async, delayed_task, event]
-import config_provider, service, document
+import config_provider, service
 import component
 
 export component
@@ -57,8 +57,7 @@ proc getNextFindResult*(self: SearchComponent, cursor: Point, offset: int = 0, i
 when implModule:
   import std/[sequtils]
   import misc/[util, custom_logger, async_process, id, rope_regex, regex, rope_utils]
-  import nimsumtree/[rope]
-  import document_editor, document, text_component, move_component, decoration_component, text_editor_component, command_service, config_component
+  import document_editor, text_component, move_component, decoration_component, text_editor_component, command_service, config_component
 
   logCategory "search-component"
 

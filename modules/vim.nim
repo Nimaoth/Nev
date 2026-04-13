@@ -5,7 +5,7 @@ const currentSourcePath2 = currentSourcePath()
 include module_base
 
 when implModule:
-  import std/[strformat, json, jsonutils, strutils, tables, macros, genasts, streams, sequtils, sets, os, colors, algorithm, unicode, sugar]
+  import std/[strformat, json, tables, macros, genasts, streams, sequtils, sets, colors, algorithm, unicode, sugar]
   import misc/[util, custom_unicode, myjsonutils, id, wrap, custom_regex, rope_utils, custom_async, custom_logger]
   import nimsumtree/[buffer, rope, clock, arc]
   import scripting_api

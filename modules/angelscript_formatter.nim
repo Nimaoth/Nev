@@ -3,7 +3,7 @@ import std/[options, tables]
 import nimsumtree/[arc]
 import regex
 import misc/[event, custom_async]
-import vfs, config_provider, service, document, formatting_component
+import vfs, config_provider, service, formatting_component
 import component
 
 export component

@@ -47,7 +47,7 @@ proc registerFormatter*(self: FormattingService, name: string, formatter: Format
 when implModule:
   import misc/[util, custom_logger, async_process]
   import nimsumtree/[rope]
-  import document, text_component
+  import text_component
 
   logCategory "formatting-component"
 

@@ -6,7 +6,7 @@ include module_base
 proc newTerminalPlatform*(): Platform {.rtl, raises: [].}
 
 when implModule:
-  import std/[strformat, terminal, typetraits, enumutils, strutils, sets, enumerate, typedthreads, parseutils]
+  import std/[strformat, terminal, typetraits, enumutils, sets, enumerate, typedthreads, parseutils]
   import std/colors as stdcolors
   import vmath
   import chroma as chroma

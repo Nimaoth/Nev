@@ -19,7 +19,7 @@ when not defined(appCommandServer):
 
 # Implementation
 when implModule and defined(appCommandServer):
-  import std/[json, strutils, strformat, sequtils, os]
+  import std/[json, strformat, sequtils]
   import misc/[custom_logger, util, myjsonutils]
   import asynctools/asyncipc
   import chronos/transports/stream

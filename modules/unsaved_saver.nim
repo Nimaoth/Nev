@@ -26,9 +26,9 @@ include module_base
 
 # Implementation
 when implModule:
-  import std/[options, tables, json, strutils, strformat, sequtils, os, uri, times]
+  import std/[options, tables, json, strformat, sequtils, uri, times]
   import misc/[custom_logger, util, myjsonutils, custom_async, generational_seq, id, array_set, delayed_task]
-  import document, document_editor, config_provider, service, event_service, config_component, layout, vfs_service, vfs, text_component
+  import document, document_editor, service, event_service, config_component, layout, vfs_service, vfs, text_component
 
   logCategory "unsaved-saver"
 

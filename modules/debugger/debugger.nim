@@ -1,7 +1,6 @@
 #use hover_component
 import platform/[tui]
 import nimsumtree/[arc]
-import misc/[id]
 import service, command_service, channel, view
 import types
 
@@ -10,15 +9,13 @@ export types
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-import std/macros
-
 func serviceName*(_: typedesc[DebuggerService]): string = "Debugger"
 
 when implModule:
-  import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils, enumerate, osproc, macros, genasts]
+  import std/[options, json, tables, sugar, strtabs, streams, sets, sequtils, enumerate, osproc, macros, genasts]
   import vmath, bumpy, chroma
   import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap, arena, array_view, rope_utils, array_set]
-  import dap_client, config_provider, service, selector_popup_builder, events, dynamic_view, view, document, document_editor, layout, platform_service, session
+  import dap_client, config_provider, selector_popup_builder, events, dynamic_view, document, document_editor, layout, platform_service, session
   import text/language/[language_server_base]
   import text/[treesitter_type_conv]
   import platform/platform

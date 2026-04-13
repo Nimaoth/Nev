@@ -6,7 +6,7 @@ include module_base
 proc newGuiPlatform*(): Platform {.rtl, raises: [].}
 
 when implModule:
-  import std/[tables, strutils, options, sets, os, strformat, locks]
+  import std/[tables, options, sets, strformat, locks]
   import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
   import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer, generational_seq]
   import ui/node

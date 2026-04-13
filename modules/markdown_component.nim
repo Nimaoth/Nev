@@ -13,7 +13,7 @@ include module_base
 
 # Implementation
 when implModule:
-  import std/[tables, sets, strutils, sequtils, algorithm]
+  import std/[tables, sets, sequtils, algorithm]
   import nimsumtree/[buffer, sumtree]
   import misc/[util, custom_logger, rope_utils, delayed_task, custom_async, arena, array_view, id, timer, render_command]
   import text/[display_map, syntax_map, treesitter_types, treesitter_type_conv, custom_treesitter, snippet]

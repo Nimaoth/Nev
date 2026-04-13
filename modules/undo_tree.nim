@@ -11,15 +11,14 @@ include module_base
 # Implementation
 when implModule:
   import std/sets
-  import misc/[custom_logger, util, id, event, myjsonutils]
-  import text_component, event_service, document_editor, document, dynamic_view, layout, command_component, events, platform_service
+  import misc/[custom_logger, util, id, myjsonutils]
+  import text_component, event_service, document_editor, document, layout, command_component, events, platform_service
   import nimsumtree/[buffer, clock]
   import ui/node
   import command_service
   import vmath, chroma
   import theme
-  import misc/[render_command, timer]
-  import events
+  import misc/[render_command, timer, event]
   import scroll_box
 
   logCategory "undo-tree"

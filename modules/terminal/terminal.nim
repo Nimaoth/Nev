@@ -3,7 +3,7 @@ import nimsumtree/[arc]
 import misc/[id]
 import service, command_service, channel, view
 import types
-from scripting_api import CreateTerminalOptions, RunInTerminalOptions
+from scripting_api import CreateTerminalOptions, RunInTerminalOptions, SshOptions, LineNumbers
 
 export types
 
@@ -26,15 +26,14 @@ when implModule:
   static:
     echo "DO Build terminal implementation"
 
-  import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm, sets, macros, deques, genasts]
+  import std/[streams, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm, sets, macros, deques, genasts]
   import chroma, pixie, pixie/fileformats/png
-  import nimsumtree/[rope, arc]
+  import nimsumtree/[rope]
   import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, async_process, wrap, case_swap, jsonex, array_set]
   import ui/node
   import platform/platform
-  from scripting_api import SshOptions, LineNumbers
   import finder/[finder, previewer]
-  import view, dynamic_view, events, config_provider, layout, theme, vterm, input, input_api, channel, selector_popup_builder, vfs, vfs_service
+  import dynamic_view, events, config_provider, layout, theme, vterm, input, input_api, selector_popup_builder, vfs, vfs_service
   import text_editor_component, config_component, register
   import types_impl
   import render
@@ -45,8 +44,6 @@ when implModule:
     static:
       hint("Build with libssh2")
     import libssh2, ssh
-
-  from scripting_api import RunInTerminalOptions, CreateTerminalOptions
 
   from std/terminal import Style
 
