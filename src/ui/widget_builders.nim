@@ -552,7 +552,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       let continuesTextColor = self.themes.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
       let keysTextColor = self.themes.theme.tokenColor("number", color(225/255, 200/255, 200/255))
       builder.panel(&{FillX, SizeToContentY}, y = mainBounds.h):
-        # let height = (inputLines + padding * 2).float * builder.textHeight
-        builder.renderCommandKeys(self.nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, inputLines, mainBounds, padding = 1)
+        let numLines = min(self.nextPossibleInputs.len, inputLines)
+        builder.renderCommandKeys(self.nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, numLines, mainBounds, padding = 1)
       builder.updateSizeToContent(builder.currentChild)
       builder.currentChild.rawY = mainBounds.h - builder.currentChild.bounds.h
