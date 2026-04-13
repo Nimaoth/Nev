@@ -1,6 +1,7 @@
 import std/[options, strutils, os, sugar, tables]
 import misc/[custom_async, custom_logger, util, event]
 import text/diff
+import nimsumtree/[arc]
 import workspaces/workspace
 import service, config_provider, vfs, vfs_service
 
@@ -38,7 +39,7 @@ type
     stageFileImpl*: proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).}
     unstageFileImpl*: proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).}
     revertFileImpl*: proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).}
-    getCommittedFileContentImpl*: proc(self: VersionControlSystem, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).}
+    getCommittedFileContentImpl*: proc(self: VersionControlSystem, path: string, commit: string = ""): Future[seq[string]] {.gcsafe, async: (raises: []).}
     getStagedFileContentImpl*: proc(self: VersionControlSystem, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).}
     getWorkingFileContentImpl*: proc(self: VersionControlSystem, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).}
     getFileChangesImpl*: proc(self: VersionControlSystem, path: string, staged: bool = false): Future[Option[seq[LineMapping]]] {.gcsafe, async: (raises: []).}
@@ -55,6 +56,7 @@ type
     workspace*: Workspace
     versionControlSystems*: seq[VersionControlSystem]
     vfs*: VFS
+    vfs2*: Arc[VFS2]
     detectors*: Table[string, VCSDetector]
 
 func serviceName*(_: typedesc[VCSService]): string = "VCSService"
@@ -75,9 +77,9 @@ proc revertFile*(self: VersionControlSystem, path: string): Future[string] {.gcs
   if self.revertFileImpl != nil:
     return await self.revertFileImpl(self, path)
 
-proc getCommittedFileContent*(self: VersionControlSystem, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).} =
+proc getCommittedFileContent*(self: VersionControlSystem, path: string, commit: string = ""): Future[seq[string]] {.gcsafe, async: (raises: []).} =
   if self.getCommittedFileContentImpl != nil:
-    return await self.getCommittedFileContentImpl(self, path)
+    return await self.getCommittedFileContentImpl(self, path, commit)
 
 proc getStagedFileContent*(self: VersionControlSystem, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).} =
   if self.getStagedFileContentImpl != nil:
@@ -125,6 +127,7 @@ when implModule:
     log lvlInfo, &"VCSService.init"
     self.config = self.services.getService(ConfigService).get
     self.vfs = self.services.getService(VFSService).get.vfs
+    self.vfs2 = self.services.getService(VFSService).get.vfs2
     self.workspace = self.services.getService(Workspace).get
     discard self.workspace.onWorkspaceFolderAdded.subscribe (path: string) => asyncSpawn(self.handleWorkspaceFolderAdded(path))
 
@@ -133,8 +136,10 @@ when implModule:
   proc getVcsForFile*(self: VCSService, file: string): Option[VersionControlSystem] =
     result = VersionControlSystem.none
     let absolutePath = self.workspace.getAbsolutePath(file)
-    var longestMatch = 0
+    var longestMatch = -1
     for vcs in self.versionControlSystems:
+      if file == "@":
+        return vcs.some
       if absolutePath.startsWith(vcs.root):
         if vcs.root.len > longestMatch:
           result = vcs.some

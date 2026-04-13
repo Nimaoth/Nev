@@ -1292,7 +1292,7 @@ proc openSession*(self: App, newWindow: bool = false, root: string = "home://", 
   finder.filterThreshold = float.low
 
   let previewer = if preview:
-    newFilePreviewer(self.vfs, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+    newFilePreviewer(self.vfsService.vfs2, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
@@ -1330,7 +1330,7 @@ proc openRecentSession*(self: App, preview: bool = true, scaleX: float = 0.9, sc
   finder.filterThreshold = float.low
 
   let previewer = if preview:
-    newFilePreviewer(self.vfs, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+    newFilePreviewer(self.vfsService.vfs2, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
@@ -1490,7 +1490,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
     return items
 
   let previewer = if preview:
-    newFilePreviewer(self.vfs, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+    newFilePreviewer(self.vfsService.vfs2, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
@@ -1781,7 +1781,7 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     self.platform.requestRender()
 
   let previewer = if preview:
-    newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some
+    newFilePreviewer(self.vfsService.vfs2, self.services).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
@@ -2190,7 +2190,7 @@ proc searchGlobalInteractive*(self: App, path: string = "") {.expose("editor").}
   var finder = newFinder(source, filterAndSort=true, skipFirstQuery=true)
 
   var popup = newSelectorPopup(self.services, "search".some, finder.some,
-    newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
+    newFilePreviewer(self.vfsService.vfs2, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2225,7 +2225,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
 
   var popup = newSelectorPopup(self.services, "search".some, finder.some,
-    newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
+    newFilePreviewer(self.vfsService.vfs2, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2351,7 +2351,7 @@ proc installTreesitterParser*(self: App, language: string, host: string = "githu
 
   asyncSpawn self.installTreesitterParserAsync(language, host)
 
-proc getItemsFromDirectory(vfs: VFS, workspace: Workspace, directory: string, showVFS: bool = false): Future[ItemList] {.async: (raises: []).} =
+proc getItemsFromDirectory(vfs: Arc[VFS2], workspace: Workspace, directory: string, showVFS: bool = false): Future[ItemList] {.async: (raises: []).} =
 
   let listing = await vfs.getDirectoryListing(directory)
 
@@ -2402,15 +2402,17 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
   let currentDirectory = new string
   currentDirectory[] = root
 
+  let vfs = self.vfsService.vfs2
+
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
-    return getItemsFromDirectory(self.vfs, self.workspace, currentDirectory[], showVFS).await
+    return getItemsFromDirectory(vfs, self.workspace, currentDirectory[], showVFS).await
 
   let source = newAsyncCallbackDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
   var popup = newSelectorPopup(self.services, "file-explorer".some, finder.some,
-    newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
+    newFilePreviewer(vfs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2421,7 +2423,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
     var path = fileInfo.path
     if normalize:
-      path = self.vfs.normalize(path)
+      path = vfs.normalize(path)
 
     if fileInfo.isFile:
       if self.layout.openFile(path).getSome(editor):
@@ -2445,7 +2447,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
-      let path = self.vfs.normalize(fileInfo.path)
+      let path = vfs.normalize(fileInfo.path)
 
       if fileInfo.isFile:
         if self.layout.openFile(path).getSome(editor):
@@ -2474,7 +2476,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
-      let path = self.vfs.localize(fileInfo.path)
+      let path = vfs.localize(fileInfo.path)
 
       log lvlInfo, fmt"Add workspace folder: {currentDirectory[]} -> {path}"
       self.workspace.addWorkspaceFolder(path)
@@ -2487,7 +2489,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
-      let path = self.vfs.localize(fileInfo.path)
+      let path = vfs.localize(fileInfo.path)
 
       log lvlInfo, fmt"Remove workspace folder: {currentDirectory[]} -> {path}"
       self.workspace.removeWorkspaceFolder(path)
@@ -2510,7 +2512,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
     self.commands.openCommandLine "", "new directory: ", proc(command: Option[string]): Option[string] =
       if command.getSome(path):
         let pathAbs = if path.isAbsolute: path else: dir // path
-        self.vfs.createDir(pathAbs).thenItOrElse:
+        vfs.createDir(pathAbs).thenItOrElse:
           source.retrigger()
         do:
           let e = err
@@ -2523,7 +2525,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
-      self.vfs.delete(fileInfo.path).thenItOrElse:
+      vfs.delete(fileInfo.path).thenItOrElse:
         source.retrigger()
       do:
         let e = err

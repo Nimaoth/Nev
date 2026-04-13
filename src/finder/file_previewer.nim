@@ -6,7 +6,7 @@ import finder, previewer
 import vcs/vcs
 import app_interface, vfs, service, document_editor
 
-import nimsumtree/[rope]
+import nimsumtree/[rope, arc]
 
 logCategory "file-previewer"
 
@@ -14,7 +14,7 @@ type
   FilePreviewer* = ref object of Previewer
     services*: Services
     editors*: DocumentEditorService
-    vfs: VFS
+    vfs: Arc[VFS2]
     editor*: TextDocumentEditor
     tempDocument: TextDocument
     reuseExistingDocuments: bool
@@ -28,7 +28,7 @@ type
     currentDiff: bool
     currentLoadTask: Future[void]
 
-proc newFilePreviewer*(vfs: VFS, services: Services,
+proc newFilePreviewer*(vfs: Arc[VFS2], services: Services,
     openNewDocuments: bool = false, reuseExistingDocuments: bool = true): FilePreviewer =
   new result
   result.services = services

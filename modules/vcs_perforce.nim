@@ -295,7 +295,7 @@ when implModule:
       log lvlError, &"Failed to get changed files: {e.msg}"
       return @[]
 
-  proc perforceGetCommittedFileContent(self: VersionControlSystemPerforce, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).} =
+  proc perforceGetCommittedFileContent(self: VersionControlSystemPerforce, path: string, commit: string = ""): Future[seq[string]] {.gcsafe, async: (raises: []).} =
     try:
       let args = @["print", "-q", path & "#have"]
       log lvlInfo, fmt"getCommittedFileContent: '{path}' -- {args}"
@@ -421,8 +421,8 @@ when implModule:
       return await self.VersionControlSystemPerforce.perforceGetChangedFiles()
     result.revertFileImpl = proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).} =
       return await self.VersionControlSystemPerforce.perforceRevertFile(path)
-    result.getCommittedFileContentImpl = proc(self: VersionControlSystem, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).} =
-      return await self.VersionControlSystemPerforce.perforceGetCommittedFileContent(path)
+    result.getCommittedFileContentImpl = proc(self: VersionControlSystem, path: string, commit: string = ""): Future[seq[string]] {.gcsafe, async: (raises: []).} =
+      return await self.VersionControlSystemPerforce.perforceGetCommittedFileContent(path, commit)
     result.getStagedFileContentImpl = proc(self: VersionControlSystem, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).} =
       return await self.VersionControlSystemPerforce.perforceGetStagedFileContent(path)
     result.getWorkingFileContentImpl = proc(self: VersionControlSystem, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).} =

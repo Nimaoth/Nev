@@ -810,7 +810,7 @@ proc newTextDocument*(
   self.eventBus = self.services.getService(EventService).get
   self.moveDatabase = self.services.getService(MoveDatabase).get
   self.createLanguageServer = createLanguageServer
-  self.filename = self.vfs.normalize(filename)
+  self.filename = self.vfs2.normalize(filename)
   self.isBackedByFile = load
   self.requiresLoad = load
 
@@ -947,7 +947,7 @@ proc saveAsync*(self: TextDocument) {.async.} =
       log lvlWarn, &"Don't trim whitespace"
 
     var newFile = false
-    if self.vfs.getFileKind(self.filename).await.isNone:
+    if self.vfs2.getFileKind(self.filename).await.isNone:
       newFile = true
     if not self.isInitialized:
       return
@@ -955,7 +955,7 @@ proc saveAsync*(self: TextDocument) {.async.} =
     discard self.buffer.endTransaction()
 
     self.lastSavedTimer = startTimer()
-    await self.vfs.write(self.filename, self.rope.slice())
+    await self.vfs2.write(self.filename, self.rope.slice())
     self.lastSavedTimer = startTimer()
 
     if not self.isInitialized:
@@ -976,7 +976,7 @@ proc saveAsync*(self: TextDocument) {.async.} =
     log lvlError, &"Failed to save file '{self.filename}': {e.msg}"
 
 method save*(self: TextDocument, filename: string = "", app: bool = false): Future[void] {.async: (raises: []).} =
-  self.filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
+  self.filename = if filename.len > 0: self.vfs2.normalize(filename) else: self.filename
 
   if self.filename.len == 0:
     log lvlError, &"save: Missing filename"
@@ -1063,9 +1063,9 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]
         when defined(appCheckDiffReload):
           if $self.rope != $rope:
             log lvlError, &"Failed diff: {self.rope.len} != {rope.len}: {selections}, {texts}"
-            await self.vfs.write("app://failed_diffs/old.txt", oldRope)
-            await self.vfs.write("app://failed_diffs/new-edit.txt", self.rope)
-            await self.vfs.write("app://failed_diffs/new.txt", rope)
+            await self.vfs2.write("app://failed_diffs/old.txt", oldRope)
+            await self.vfs2.write("app://failed_diffs/new-edit.txt", self.rope)
+            await self.vfs2.write("app://failed_diffs/new.txt", rope)
             if not self.isInitialized:
               return
             self.replaceAll(rope.move)
@@ -1092,7 +1092,7 @@ proc loadAsync*(self: TextDocument, isReload: bool, filename: string, temp: bool
 
   var rope: Rope = Rope.new()
   try:
-    await self.vfs.readRope(filename, rope.addr)
+    await self.vfs2.readRope(filename, rope.addr)
 
     if not self.isInitialized:
       return
@@ -1123,7 +1123,7 @@ proc loadAsync*(self: TextDocument, isReload: bool, filename: string, temp: bool
   else:
     self.fileWatchHandle.unwatch()
 
-  if self.vfs.getFileAttributes(filename).await.mapIt(it.writable).get(true):
+  if self.vfs2.getFileAttributes(filename).await.mapIt(it.writable).get(true):
     self.readOnly = false
 
   if not self.isInitialized:
@@ -1142,7 +1142,7 @@ proc enableAutoReload*(self: TextDocument, enabled: bool) =
   self.settings.autoReload.set(enabled)
   if enabled and (not self.fileWatchHandle.isBound or self.fileWatchHandle.path != self.filename):
     self.fileWatchHandle.unwatch()
-    self.fileWatchHandle = self.vfs.watch(self.filename, proc(events: seq[PathEvent]) =
+    self.fileWatchHandle = self.vfs2.watch(self.filename, proc(events: seq[PathEvent]) =
       if not self.isInitialized or not self.settings.autoReload.get():
         return
       if self.lastSavedTimer.elapsed.ms < 1000:
@@ -1169,7 +1169,7 @@ proc enableAutoReload*(self: TextDocument, enabled: bool) =
     self.fileWatchHandle.unwatch()
 
 proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, content: sink S) =
-  let filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
+  let filename = if filename.len > 0: self.vfs2.normalize(filename) else: self.filename
   if filename.len == 0:
     log lvlError, &"save: Missing filename"
     return
@@ -1195,7 +1195,7 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
   self.eventBus.emit(&"document/{self.id}/loaded", $self.id)
 
 method load*(self: TextDocument, filename: string = "", temp: bool = false) =
-  let filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
+  let filename = if filename.len > 0: self.vfs2.normalize(filename) else: self.filename
   if filename.len == 0:
     log lvlError, &"save: Missing filename"
     return

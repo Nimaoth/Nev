@@ -72,6 +72,7 @@ when implModule:
   import finder/finder
   import platform_service, dispatch_tables, document, events, config_provider, vfs, vfs_service, session, layouts, command_service, document_editor
   from scripting_api import EditorId
+  import nimsumtree/arc
 
   export layouts
 
@@ -95,6 +96,7 @@ when implModule:
       session: SessionService
       commands: CommandService
       vfs: VFS
+      vfs2: Arc[VFS2]
       mPopups: seq[Popup]
       layout*: Layout
       layoutName*: string = "default"
@@ -336,6 +338,7 @@ when implModule:
     self.config = self.services.getService(ConfigService).get
     self.editors = self.services.getService(DocumentEditorService).get
     self.vfs = self.services.getService(VFSService).get.vfs
+    self.vfs2 = self.services.getService(VFSService).get.vfs2
     self.layout = HorizontalLayout()
     self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
     self.pushSelectorPopupImpl = ({.gcsafe.}: gPushSelectorPopupImpl)
@@ -978,7 +981,7 @@ when implModule:
     defer:
       self.platform.requestRender()
 
-    let path = self.vfs.normalize(path)
+    let path = self.vfs2.normalize(path)
 
     log lvlInfo, fmt"[openFile] Open file '{path}'"
     if self.tryOpenExisting(path, false, slot = slot).getSome(ed):
@@ -1446,8 +1449,8 @@ when implModule:
     ## `slot` - Where in the layout to put the opened file. If not specified the default slot is used.
     let self = self.LayoutServiceImpl
     var path = path
-    let vfs = self.vfs.getVFS(path, maxDepth = 1).vfs
-    if vfs != nil and vfs.prefix == "" and not path.isAbsolute:
+    let vfs = self.vfs2.getVFS(path, maxDepth = 1).vfs
+    if vfs.isNotNil and vfs.get.prefix == "" and not path.isAbsolute:
       path = self.workspace.getAbsolutePath(path)
     discard self.openFile(path, slot)
 

@@ -244,6 +244,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   diffDisplayMap*: DisplayMap
 
   showDiff: bool = false
+  diffTarget: string = ""
   diffDocument*: TextDocument
   diffChanges*: Option[seq[LineMapping]]
   diffRevision: int = 0
@@ -2214,6 +2215,7 @@ proc closeDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.diffDocument.onRequestRerender.unsubscribe(self.onRequestRerenderDiffHandle)
   self.diffDocument.deinit()
   self.diffDocument = nil
+  self.diffTarget = ""
   self.markDirty()
 
 proc getPrevChange*(self: TextDocumentEditor, cursor: Cursor): Selection =
@@ -2236,86 +2238,119 @@ proc getNextChange*(self: TextDocumentEditor, cursor: Cursor): Selection =
 
   return cursor.toSelection
 
-proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool = false) {.async.} =
-  if self.document.isNil:
+proc updateDiffLinesAsync(self: TextDocumentEditor) {.async.} =
+  if self.diffDocument == nil:
     return
 
-  inc self.diffRevision
-  let revision = self.diffRevision
-
-  let localizedPath = self.document.localizedPath
-  let vcs = self.vcs.getVcsForFile(localizedPath).getOr:
-    log lvlWarn, fmt"[updateDiffAsync] File is not part of any vcs: '{localizedPath}'"
+  var changes = await diffRopeLinesAsync(self.diffDocument.rope, self.document.rope)
+  if self.diffDocument == nil or self.document == nil:
     return
 
-  log lvlInfo, fmt"Diff document '{localizedPath}', vcs: {vcs.name} '{vcs.root}'"
+  self.diffChanges = some(changes.ensureMove)
 
-  var relPath = localizedPath
-  relPath.removePrefix(vcs.root)
-  relPath.removePrefix("/")
-
-  if self.document.isNil or self.diffRevision > revision or not self.showDiff:
-    return
-
-  if self.document.staged:
-    let committedFileContent = vcs.getCommittedFileContent(relPath).await
-    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
-      return
-
-    let stagedFileContent = vcs.getStagedFileContent(relPath).await
-    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
-      return
-
-    let changes = vcs.getFileChanges(relPath, staged = true).await
-    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
-      return
-
-    # Note: this currently clears the diff document
-    self.document.content = stagedFileContent
-
-    if self.diffDocument.isNil:
-      self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
-      self.diffDocument.usage = "text-diff"
-      self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
-        self.markDirty()
-
-    self.diffChanges = changes
-    self.diffDocument.languageId = self.document.languageId
-    self.diffDocument.readOnly = true
-    self.diffDocument.content = committedFileContent
-
-  else:
-    let stagedFileContent = vcs.getStagedFileContent(relPath).await
-    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
-      return
-
-    let changes = vcs.getFileChanges(relPath, staged = false).await
-    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
-      return
-
-    if self.diffDocument.isNil:
-      self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
-      self.diffDocument.usage = "text-diff"
-      self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
-        self.markDirty()
-
-    self.diffChanges = changes
-    self.diffDocument.languageId = self.document.languageId
-    self.diffDocument.readOnly = true
-    self.diffDocument.content = stagedFileContent
-
-  assert self.diffDocument.isNotNil
-  self.diffDisplayMap.setBuffer(self.diffDocument.buffer.snapshot.clone())
   self.displayMap.diffMap.update(self.diffChanges, self.diffDisplayMap.wrapMap.snapshot, reverse = true)
   self.diffDisplayMap.diffMap.update(self.diffChanges, self.displayMap.wrapMap.snapshot, reverse = false)
-
-  if gotoFirstDiff and self.diffChanges.getSome(changes) and changes.len > 0:
-    self.selection = (changes[0].target.first, 0).toSelection
-    self.updateTargetColumn(Last)
-    self.centerCursor(self.selection.last)
-
-  self.cursorHistories.setLen(0)
   self.markDirty()
+
+proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool = false, force: bool = false) {.async.} =
+  try:
+    if self.document.isNil:
+      return
+
+    inc self.diffRevision
+    let revision = self.diffRevision
+
+    let localizedPath = self.document.localizedPath
+    let vcs = self.vcs.getVcsForFile(localizedPath).getOr:
+      log lvlWarn, fmt"[updateDiffAsync] File is not part of any vcs: '{localizedPath}'"
+      return
+
+    log lvlInfo, fmt"Diff document '{localizedPath}', vcs: {vcs.name} '{vcs.root}', diffTarget: '{self.diffTarget}'"
+
+    var relPath = localizedPath
+    relPath.removePrefix(vcs.root)
+    relPath.removePrefix("/")
+
+    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
+      return
+
+    if self.diffTarget != "":
+      var diffContent = Rope.new("")
+      await self.vfs2.readRope(self.diffTarget, diffContent.addr)
+
+      if self.diffDocument.isNil:
+        self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
+        self.diffDocument.usage = "text-diff"
+        self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
+          self.markDirty()
+
+      self.diffChanges = some(diffLines(diffContent, self.document.rope))
+      self.diffDocument.languageId = self.document.languageId
+      self.diffDocument.readOnly = true
+      self.diffDocument.filename = self.diffTarget
+      self.diffDocument.content = diffContent
+    elif self.document.staged:
+      let committedFileContent = vcs.getCommittedFileContent(relPath).await
+      if self.document.isNil or self.diffRevision > revision or not self.showDiff:
+        return
+
+      let stagedFileContent = vcs.getStagedFileContent(relPath).await
+      if self.document.isNil or self.diffRevision > revision or not self.showDiff:
+        return
+
+      let changes = vcs.getFileChanges(relPath, staged = true).await
+      if self.document.isNil or self.diffRevision > revision or not self.showDiff:
+        return
+
+      # Note: this currently clears the diff document
+      self.document.content = stagedFileContent
+
+      if self.diffDocument.isNil:
+        self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
+        self.diffDocument.usage = "text-diff"
+        self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
+          self.markDirty()
+
+      self.diffChanges = changes
+      self.diffDocument.languageId = self.document.languageId
+      self.diffDocument.readOnly = true
+      self.diffDocument.content = committedFileContent
+
+    else:
+      let stagedFileContent = vcs.getStagedFileContent(relPath).await
+      if self.document.isNil or self.diffRevision > revision or not self.showDiff:
+        return
+
+      let changes = vcs.getFileChanges(relPath, staged = false).await
+      if self.document.isNil or self.diffRevision > revision or not self.showDiff:
+        return
+
+      if self.diffDocument.isNil:
+        self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
+        self.diffDocument.usage = "text-diff"
+        self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
+          self.markDirty()
+
+      self.diffChanges = changes
+      self.diffDocument.languageId = self.document.languageId
+      self.diffDocument.readOnly = true
+      self.diffDocument.content = stagedFileContent
+
+    assert self.diffDocument.isNotNil
+    self.diffDisplayMap.setBuffer(self.diffDocument.buffer.snapshot.clone())
+    self.displayMap.diffMap.update(self.diffChanges, self.diffDisplayMap.wrapMap.snapshot, reverse = true)
+    self.diffDisplayMap.diffMap.update(self.diffChanges, self.displayMap.wrapMap.snapshot, reverse = false)
+
+    if gotoFirstDiff and self.diffChanges.getSome(changes) and changes.len > 0:
+      self.selection = (changes[0].target.first, 0).toSelection
+      self.updateTargetColumn(Last)
+      self.centerCursor(self.selection.last)
+
+    self.cursorHistories.setLen(0)
+    self.markDirty()
+
+  except CatchableError as e:
+    log lvlWarn, &"Failed to update diff: {e.msg}"
 
 proc rerender*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.markDirty()
@@ -2327,6 +2362,11 @@ proc clearOverlays*(self: TextDocumentEditor, id: int = -1) {.expose("editor.tex
 proc addOverlay*(self: TextDocumentEditor, selection: Selection, text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: overlay_map.OverlayRenderLocation = overlay_map.OverlayRenderLocation.Inline) {.expose("editor.text").} =
   self.displayMap.overlay.addOverlay(selection.toRange, text, id, scope, bias, renderId, location)
   self.markDirty()
+
+proc startDiff*(self: TextDocumentEditor, diffTarget: string = "", gotoFirstDiff: bool = false) {.expose("editor.text").} =
+  self.showDiff = true
+  self.diffTarget = diffTarget
+  asyncSpawn self.updateDiffAsync(gotoFirstDiff)
 
 proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
   self.showDiff = true
@@ -2373,7 +2413,7 @@ proc revertSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) 
     let texts = ropeDiff.edits.mapIt(it.text)
     discard self.document.edit(selections, self.selections, texts)
     await self.document.saveAsync()
-    self.updateDiff()
+    asyncSpawn self.updateDiffAsync()
   except CatchableError as e:
     log lvlError, &"Failed to revert the selected change: {e.msg}"
 
@@ -2433,7 +2473,7 @@ proc unstageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false)
       await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
       discard await self.vfs.delete(backupPath)
 
-      self.updateDiff()
+      asyncSpawn self.updateDiffAsync()
   except CatchableError as e:
     log lvlError, &"Failed to unstage the selected change: {e.msg}"
 
@@ -2504,7 +2544,7 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
       await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
       discard await self.vfs.delete(backupPath)
 
-      self.updateDiff()
+      asyncSpawn self.updateDiffAsync()
   except CatchableError as e:
     log lvlError, &"Failed to stage the selected change: {e.msg}"
 
@@ -2533,7 +2573,7 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
 
   # let gitApply = await runProcessAsyncOutput("git", @["apply", "--cached", "-v", self.vfs.localize(diffPath)])
   # echo &"git apply -> \n{gitApply.output}\n--------\n{gitApply.err}\n=============="
-  # self.updateDiff()
+  # asyncSpawn self.updateDiffAsync()
 
 proc revertSelected*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.expose("editor.text").} =
   asyncSpawn self.revertSelectedAsync(inclusiveEnd)
@@ -2549,7 +2589,7 @@ proc stageFileAsync(self: TextDocumentEditor): Future[void] {.async.} =
     discard await vcs.stageFile(self.document.localizedPath)
 
     if self.diffDocument.isNotNil:
-      self.updateDiff()
+      asyncSpawn self.updateDiffAsync()
 
 proc stageFile*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncSpawn self.stageFileAsync()
@@ -3122,7 +3162,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
         data: encodeFileLocationForFinderItem(definition.filename, definition.location.some),
       )
 
-    builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
+    builder.previewer = newFilePreviewer(self.vfs2, self.services).Previewer.some
 
     let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
     builder.finder = finder.some
@@ -3283,7 +3323,7 @@ proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool
         data: encodeFileLocationForFinderItem(self.document.filename, (i, 0).some),
       )
 
-  builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
+  builder.previewer = newFilePreviewer(self.vfs2, self.services).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true, minScore=minScore, sort=sort)
   builder.finder = finder.some
 
@@ -3310,7 +3350,7 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
       data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
     )
 
-  builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
+  builder.previewer = newFilePreviewer(self.vfs2, self.services).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
   builder.finder = finder.some
 
@@ -3414,7 +3454,7 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     builder.scaleX = 0.85
     builder.scaleY = 0.8
 
-    builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
+    builder.previewer = newFilePreviewer(self.vfs2, self.services).Previewer.some
     let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, self.workspace, self.getFileName()), filterAndSort=true)
     builder.finder = finder.some
 
@@ -4562,7 +4602,7 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.clampSelection()
   self.searchComponent.updateSearchResults()
   self.inlayHints.updateInlayHints()
-
+  asyncSpawn self.updateDiffLinesAsync()
   asyncSpawn self.updateColorOverlays()
 
   self.markDirty()

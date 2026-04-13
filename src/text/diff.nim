@@ -1,4 +1,4 @@
-import std/[options, atomics]
+import std/[options, atomics, hashes, strformat]
 import std/[random]
 import nimsumtree/[buffer, rope, sumtree]
 import misc/[custom_unicode, util]
@@ -412,6 +412,40 @@ proc diff*[T](a, b: sink RopeSlice[T], cancel: ptr Atomic[bool] = nil, enableCan
       let indexBPoint = b.convert(indexB, T)
       result.edits.add (start...index, startBPoint...indexBPoint, dataB.data.slice(startB, indexB).slice(T))
 
+proc diffLines*[T](a, b: RopeSlice[T]): seq[LineMapping] =
+  var aLines: seq[Hash] = @[] # line hashes
+  var bLines: seq[Hash] = @[] # line hashes
+  var h: Hash = 0
+  for r in a.runes:
+    if r == '\n'.Rune:
+      h = !$h
+      aLines.add h
+      h = 0
+    else:
+      h = h !& r.hash
+
+  if h != 0:
+    aLines.add h
+
+  h = 0
+  for r in b.runes:
+    if r == '\n'.Rune:
+      h = !$h
+      bLines.add h
+      h = 0
+    else:
+      h = h !& r.hash
+
+  if h != 0:
+    bLines.add h
+
+  let lineDiff = diff(aLines, bLines)
+  for op in lineDiff.ops:
+    result.add LineMapping(
+      source: (op.old.a, op.old.b),
+      target: (op.new.a, op.new.b),
+    )
+
 proc oldToNew*[T](diff: RopeDiff[T], pos: T): T =
   var oldStart = T.default
   var newStart = T.default
@@ -457,50 +491,6 @@ proc oldToNew*[T](diff: RopeDiff[T], range: Range[T]): Range[T] =
 
 proc newToOld*[T](diff: RopeDiff[T], range: Range[T]): Range[T] =
   return diff.newToOld(range.a)...diff.newToOld(range.b)
-
-# proc diff*(a: sink RopeSlice[int], b: string, cancel: ptr Atomic[bool], enableCancel: static[bool] = false): RopeDiff[int] =
-#   if a.len == 0:
-#     return RopeDiff[int](edits: @[(0...0, Rope.new(b).slice())])
-#   if b.len == 0:
-#     return RopeDiff[int](edits: @[(0...b.len, Rope.new().slice())])
-
-#   let a = a.slice(0.Count...a.summary.len)
-#   var dataA = initDiffData[int, RopeCursorWrapper](RopeCursorWrapper(cursor: a.cursor(Count)))
-#   var dataB = initDiffData[int, RuneCursor](RuneCursor(data: @b))
-#   let max = dataA.len + dataB.len + 1
-#   var downVector = newSeq[int](max * 2 + 2)
-#   var upVector = newSeq[int](max * 2 + 2)
-#   lcs(dataA, 0, dataA.len, dataB, 0, dataB.len, downVector, upVector, cancel, enableCancel)
-#   echo &"A: {dataA.data.resets} resets + {dataA.data.backSeeks} back seeks + {dataA.data.noops} forward seeks = {dataA.data.seeks} seeks"
-#   echo &"B: {dataB.data.resets} resets + {dataB.data.backSeeks} back seeks + {dataB.data.noops} forward seeks = {dataB.data.seeks} seeks"
-
-#   when enableCancel:
-#     if cancel != nil and cancel[].load:
-#       return
-
-#   var indexA = 0
-#   var indexB = 0
-#   var startA = 0
-#   var startB = 0
-
-#   while indexA < dataA.len or indexB < dataB.len:
-#     if indexA < dataA.len and indexB < dataB.len and not dataA.modified[indexA] and not dataB.modified[indexB]:
-#       inc indexA
-#       inc indexB
-
-#     startA = indexA
-#     startB = indexB
-
-#     while indexA < dataA.len and (indexB >= dataB.len or dataA.modified[indexA]):
-#       inc indexA
-
-#     while indexB < dataB.len and (indexA >= dataA.len or dataB.modified[indexB]):
-#       inc indexB
-
-#     if startA < indexA or startB < indexB:
-#       let start = a.convert(startA.Count, int)
-#       let index = a.convert(indexA.Count, int)
-#       result.edits.add (start...index, dataB.data.slice(startB, indexB).slice(int))
 
 proc apply*[T](a: openArray[T], diff: Diff[T]): seq[T] =
   var last = 0

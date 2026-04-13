@@ -1,6 +1,6 @@
 import std/[strutils, strformat, options]
 import misc/[async_process, custom_async, util, custom_logger]
-import vfs
+import vfs, vfs_service
 import vcs/vcs
 
 const currentSourcePath2 = currentSourcePath()
@@ -10,10 +10,11 @@ include module_base
 {.push raises: [].}
 
 when implModule:
-  import std/[tables]
+  import std/[tables, uri, algorithm]
   import text/diff
   import service, config_provider
   import misc/[delayed_task]
+  import nimsumtree/[arc, rope]
 
   logCategory "vsc-git"
 
@@ -21,6 +22,185 @@ when implModule:
     VersionControlSystemGit* = ref object of VersionControlSystem
       settings: ConfigStore
       updateStatusTask: DelayedTask
+
+    VFSGit* = object
+      vcsService: VCSService
+
+  proc vfsGitName*(self: Arc[VFS2]): string = &"VFSGit({self.get.prefix})"
+
+  proc vfsGitRead*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.gcsafe, async: (raises: [IOError]).}
+  proc vfsGitReadRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).}
+  proc vfsGitGetFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.gcsafe, async: (raises: []).}
+  proc vfsGitGetFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.gcsafe, async: (raises: []).}
+  proc vfsGitGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).}
+
+  proc newVFSGit*(vcsService: VCSService): Arc[VFS2] =
+    let local = create(VFSGit)
+    local.vcsService = vcsService
+    result = Arc[VFS2].new()
+    result.getMutUnsafe.impl = local
+    result.getMutUnsafe.nameImpl = vfsGitName
+    result.getMutUnsafe.readImpl = vfsGitRead
+    result.getMutUnsafe.readRopeImpl = vfsGitReadRope
+    result.getMutUnsafe.getFileKindImpl = vfsGitGetFileKind
+    result.getMutUnsafe.getFileAttributesImpl = vfsGitGetFileAttributes
+    result.getMutUnsafe.getDirectoryListingImpl = vfsGitGetDirectoryListing
+    # result.getMutUnsafe.normalizeImpl = vfsGitNormalize
+
+  proc parsePath*(self: Arc[VFS2], inPath: string): tuple[root, path: string, staged: bool, commit: string] =
+    ## Parses a path and returns the raw path plus some flags/extra info.
+    ## If staged is `true` then the path refers to the staged content of a file.
+    ## Otherwise if `commit` is not empty then the path refers to a directory/file in a specific commit. `commit` can be either a commit hash
+    ##   or `HEAD` to refer to the latest commit
+    ## Otherwise the path refers to a local file
+    var path = inPath
+    var si = path.find("/")
+    if si != -1:
+      result.root = path[0..<si].decodeUrl
+      path = path[(si + 1)..^1]
+    else:
+      result.root = path.decodeUrl
+      return
+
+    si = path.find("/")
+    if si != -1:
+      let commit = path[0..<si]
+      result.path = path[(si + 1)..^1]
+      result.staged = commit == "staged"
+      result.commit = commit
+    else:
+      result.path = ""
+      result.staged = path == "staged"
+      result.commit = path
+
+  proc getVcsForFile*(self: VCSService, file: string): Option[VersionControlSystem] =
+    result = VersionControlSystem.none
+    var longestMatch = -1
+    for vcs in self.versionControlSystems:
+      if file == "@":
+        return vcs.some
+      if file.startsWith(vcs.root):
+        if vcs.root.len > longestMatch:
+          result = vcs.some
+          longestMatch = vcs.root.len
+
+  proc vfsGitRead*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.gcsafe, async: (raises: [IOError]).} =
+    let git = cast[ptr VFSGit](self.getMutUnsafe.impl)
+    let vcsService = git.vcsService
+    let (root, relPath, staged, commit) = self.parsePath(path)
+
+    let vcs = vcsService.getVcsForFile(root)
+    if vcs.isNone:
+      raise newException(IOError, "No VCS found for path: " & path)
+
+    var lines: seq[string]
+    if staged:
+      lines = await vcs.get.getStagedFileContent(relPath)
+    elif commit.len > 0:
+      lines = await vcs.get.getCommittedFileContent(relPath, commit)
+    else:
+      lines = await vcs.get.getWorkingFileContent(relPath)
+
+    return lines.join("\n")
+
+  proc vfsGitReadRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+    let content = await self.vfsGitRead(path, {})
+    rope[] = Rope.new(content)
+
+  proc vfsGitGetFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.gcsafe, async: (raises: []).} =
+    try:
+      let git = cast[ptr VFSGit](self.getMutUnsafe.impl)
+      let (root, path, staged, commit) = self.parsePath(path)
+    except CatchableError:
+      discard
+
+  proc vfsGitGetFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.gcsafe, async: (raises: []).} =
+    try:
+      let git = cast[ptr VFSGit](self.getMutUnsafe.impl)
+      let (root, path, staged, commit) = self.parsePath(path)
+    except CatchableError:
+      discard
+
+  proc vfsGitGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).} =
+    let git = cast[ptr VFSGit](self.getMutUnsafe.impl)
+
+    var listing = DirectoryListing(files: @[], folders: @[])
+    if path == "":
+      listing.folders.add("@")
+      for vcs in git.vcsService.versionControlSystems:
+        listing.folders.add(vcs.root.encodeUrl)
+
+      return listing
+
+    let (root, path, staged, commit) = self.parsePath(path)
+
+    if path == "" and commit == "" and not staged:
+      let vcs = git.vcsService.getVcsForFile(root)
+      if vcs.isSome:
+        listing.folders.add("HEAD")
+        listing.folders.add("staged")
+
+        let commits = await vcs.get.getCommitHistory(2)
+        for commit in commits:
+          listing.folders.add(commit.id)
+
+      return listing
+
+    let vcs = git.vcsService.getVcsForFile(root)
+    if vcs.isNone:
+      return
+
+    var reff: string
+    if staged:
+      reff = "HEAD"
+    elif commit.len > 0:
+      reff = commit
+    else:
+      reff = "HEAD"
+
+    let relPath = if path == "": "." else: path & "/"
+    let localPath = (vcs.get.root // path).strip(chars={'/'})
+
+    if staged:
+      try:
+        let stagedArgs = @["diff", "--staged", "--name-only"]
+        let stagedLines = runProcessAsync("git", stagedArgs, workingDir=vcs.get.root, log = true).await
+        for line in stagedLines:
+          if line.len == 0:
+            continue
+          let fullPath = vcs.get.root // line
+          let name = line.splitPath.tail
+          if dirExists(fullPath):
+            if name notin listing.folders:
+              listing.folders.add name
+          else:
+            if name notin listing.files:
+              listing.files.add name
+      except CatchableError:
+        discard
+    else:
+      try:
+        let args = @["ls-tree", "--name-only", reff, relPath]
+        let lines = runProcessAsync("git", args, workingDir=vcs.get.root, log = false).await
+
+        for line in lines:
+          if line.len == 0:
+            continue
+          let fullPath = vcs.get.root // line
+          let name = line.splitPath.tail
+          if dirExists(fullPath):
+            let folder = line.split("/")[0]
+            if name notin listing.folders:
+              listing.folders.add name
+          else:
+            if name notin listing.files:
+              listing.files.add name
+      except CatchableError:
+        discard
+
+    listing.folders.sort()
+    listing.files.sort()
+    return listing
 
   proc gitUpdateStatus(self: VersionControlSystemGit): Future[void] {.gcsafe, async: (raises: []).} =
     try:
@@ -178,9 +358,14 @@ when implModule:
     except CatchableError:
       return ""
 
-  proc gitGetCommittedFileContent(self: VersionControlSystemGit, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).} =
+  proc gitGetCommittedFileContent(self: VersionControlSystemGit, path: string, commit: string = ""): Future[seq[string]] {.gcsafe, async: (raises: []).} =
     try:
-      let args = @["show", "HEAD:" & path]
+      let path = if path.startsWith(self.root):
+        path[self.root.len..^1].strip(chars = {'/'})
+      else:
+        path
+      let commit = if commit == "": "HEAD" else: commit
+      let args = @["show", commit & ":" & path]
       log lvlInfo, fmt"getCommittedFileContent: '{path}' -- {args}"
       return runProcessAsync("git", args, workingDir=self.root).await
     except CatchableError:
@@ -188,6 +373,10 @@ when implModule:
 
   proc gitGetStagedFileContent(self: VersionControlSystemGit, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).} =
     try:
+      let path = if path.startsWith(self.root):
+        path[self.root.len..^1].strip(chars = {'/'})
+      else:
+        path
       let args = @["show", ":" & path]
       log lvlInfo, fmt"getStagedFileContent: '{path}' -- {args}"
       return runProcessAsync("git", args, workingDir=self.root).await
@@ -196,6 +385,10 @@ when implModule:
 
   proc gitGetWorkingFileContent(self: VersionControlSystemGit, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).} =
     try:
+      let path = if path.startsWith(self.root):
+        path[self.root.len..^1].strip(chars = {'/'})
+      else:
+        path
       log lvlInfo, fmt"getWorkingFileContent '{path}'"
       var lines = newSeq[string]()
       for line in lines(path):
@@ -297,8 +490,8 @@ when implModule:
       return await self.VersionControlSystemGit.gitUnstageFile(path)
     result.revertFileImpl = proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).} =
       return await self.VersionControlSystemGit.gitRevertFile(path)
-    result.getCommittedFileContentImpl = proc(self: VersionControlSystem, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).} =
-      return await self.VersionControlSystemGit.gitGetCommittedFileContent(path)
+    result.getCommittedFileContentImpl = proc(self: VersionControlSystem, path: string, commit: string = ""): Future[seq[string]] {.gcsafe, async: (raises: []).} =
+      return await self.VersionControlSystemGit.gitGetCommittedFileContent(path, commit)
     result.getStagedFileContentImpl = proc(self: VersionControlSystem, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).} =
       return await self.VersionControlSystemGit.gitGetStagedFileContent(path)
     result.getWorkingFileContentImpl = proc(self: VersionControlSystem, path: string): Future[seq[string]] {.gcsafe, async: (raises: []).} =
@@ -332,13 +525,13 @@ when implModule:
       let vcs = newVersionControlSystemGit(path, config)
       return @[vcs.VersionControlSystem]
 
-    try:
-      for path in walkGitDirs(path):
-        log lvlInfo, fmt"Found git repository in {path}"
-        let vcs = newVersionControlSystemGit(path, config)
-        result.add vcs.VersionControlSystem
-    except OSError:
-      discard
+    # try:
+    #   for path in walkGitDirs(path):
+    #     log lvlInfo, fmt"Found git repository in {path}"
+    #     let vcs = newVersionControlSystemGit(path, config)
+    #     result.add vcs.VersionControlSystem
+    # except OSError:
+    #   discard
 
   proc init_module_vcs_git*() {.cdecl, exportc, dynlib.} =
     let services = getServices()
@@ -348,3 +541,6 @@ when implModule:
 
     let vcs = services.getService(VCSService).get
     vcs.detectors["git"] = detectGit
+
+    let vfsService = getServiceChecked(VFSService)
+    vfsService.vfs2.mount("git://", newVFSGit(vcs))

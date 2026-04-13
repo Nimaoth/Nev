@@ -92,6 +92,8 @@ type
     target*: Arc[VFS2]
     targetPrefix*: string
 
+method name*(self: VFS): string {.base.} = &"VFS({self.prefix})"
+
 proc isVfsPath*(path: string): bool =
   let index = path.find("://")
   if index == -1:
@@ -178,6 +180,8 @@ proc nameImpl*(self: Arc[VFS2]): string {.gcsafe, raises: [].} =
     &"VFS({self.get.prefix})"
 
 proc name*(self: Arc[VFS2]): string {.gcsafe, raises: [].} = self.nameImpl
+proc `$`*(self: Arc[VFS2]): string {.gcsafe, raises: [].} = self.nameImpl
+proc `$`*(self: VFS): string {.gcsafe, raises: [].} = self.name
 
 proc normalizeImpl*(self: Arc[VFS2], path: string): string {.gcsafe, raises: [].} =
   if self.get.normalizeImpl != nil:
@@ -528,8 +532,6 @@ method clone*(self: VFSLink): VFS =
     result.mounts.add (m.prefix, m.vfs.clone())
     result.mounts[^1].vfs.parent = result.some
 
-method name*(self: VFS): string {.base.} = &"VFS({self.prefix})"
-
 method normalizeImpl*(self: VFS, path: string): string {.base.} = path
 
 method readImpl*(self: VFS, path: string, flags: set[ReadFlag]): Future[string] {.base, async: (raises: [IOError]).} =
@@ -648,55 +650,6 @@ method getVFSImpl*(self: VFSLink, path: openArray[char], maxDepth: int = int.hig
 
 method copyFileImpl*(self: VFSLink, src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =
   await self.target.copyFile(src, dest)
-
-method name*(self: VFS2Wrapper): string = &"VFS2Wrapper({self.vfs.nameImpl})"
-
-method readImpl*(self: VFS2Wrapper, path: string, flags: set[ReadFlag]): Future[string] {.async: (raises: [IOError]).} =
-  return await self.vfs.readImpl(path, flags)
-
-method readRopeImpl*(self: VFS2Wrapper, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).} =
-  await self.vfs.readRopeImpl(path, rope)
-
-# proc handleFileChanged(self: VFS2Wrapper, path: string, existedBefore: bool) =
-#   if path in self.handlers:
-#     let action = if existedBefore:
-#       FileEventAction.Modify
-#     else:
-#       FileEventAction.Create
-#     let events = @[(path, action, "")]
-#     let handlers = self.handlers[path]
-#     for (_, handler) in handlers:
-#       handler(events)
-
-method writeImpl*(self: VFS2Wrapper, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
-  await self.vfs.writeImpl(path, content)
-
-method writeImpl*(self: VFS2Wrapper, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).} =
-  await self.vfs.writeImpl(path, content)
-
-method deleteImpl*(self: VFS2Wrapper, path: string): Future[bool] {.async: (raises: []).} =
-  return await self.vfs.deleteImpl(path)
-
-method createDirImpl*(self: VFS2Wrapper, path: string): Future[void] {.async: (raises: [IOError]).} =
-  await self.vfs.createDirImpl(path)
-
-method getFileKindImpl*(self: VFS2Wrapper, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
-  return await self.vfs.getFileKindImpl(path)
-
-method getFileAttributesImpl*(self: VFS2Wrapper, path: string): Future[Option[FileAttributes]] {.async: (raises: []).} =
-  return await self.vfs.getFileAttributesImpl(path)
-
-method getDirectoryListingImpl*(self: VFS2Wrapper, path: string): Future[DirectoryListing] {.async: (raises: []).} =
-  return await self.vfs.getDirectoryListingImpl(path)
-
-method watchImpl*(self: VFS2Wrapper, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id =
-  return self.vfs.watchImpl(path, cb)
-
-method unwatchImpl*(self: VFS2Wrapper, id: Id) =
-  self.vfs.unwatchImpl(id)
-
-method copyFileImpl*(self: VFS2Wrapper, src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =
-  await self.vfs.copyFileImpl(src, dest)
 
 proc getVFS*(self: Arc[VFS2], path: openArray[char], maxDepth: int = int.high): tuple[vfs: Arc[VFS2], relativePath: string] =
   if maxDepth == 0:

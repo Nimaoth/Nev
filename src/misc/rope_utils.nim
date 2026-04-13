@@ -92,7 +92,6 @@ proc diffRopeThread(data: ptr DiffRopesData) =
   data.threadDone.store(true)
 
 proc diffRopeAsync*(a, b: sink Rope, res: ptr RopeDiff[int]): Future[void] {.async.} =
-  ## Returns `some(index)` if the string contains invalid utf8 at `index`
   let data = createShared(DiffRopesData)
   data.rc.store(1)
   data.a = a.clone()
@@ -116,6 +115,19 @@ proc diffRopeAsync*(a, b: sink Rope, res: ptr RopeDiff[int]): Future[void] {.asy
     await spawnAsync(diffRopeThread, data)
   except CancelledError as e:
     data.cancel.store(true)
+    raise e
+
+proc diffRopeLinesThread(data: ptr DiffRopesData): seq[LineMapping] =
+  return diffLines(data.a, data.b)
+
+proc diffRopeLinesAsync*(a, b: sink Rope): Future[seq[LineMapping]] {.async.} =
+  var data = DiffRopesData()
+  data.a = a.clone()
+  data.b = b.clone()
+
+  try:
+    return await spawnAsync(diffRopeLinesThread, data.addr)
+  except CancelledError as e:
     raise e
 
 ######################################################################### Rope api only, maybe move to rope library later
