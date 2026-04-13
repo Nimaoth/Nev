@@ -420,10 +420,12 @@ when implModule:
     except CatchableError as e:
       log lvlWarn, &"Failed to read ctags file '{path}': {e.msg}"
 
-  proc loadCTags(self: LanguageServerCTags, path: string) {.async.} =
-    # asm "int3"
-    let f = await self.vfs.read(path)
-    await self.loadCTags(path, f)
+  proc loadCTags(self: LanguageServerCTags, path: string) {.async: (raises: []).} =
+    try:
+      let f = await self.vfs.read(path)
+      await self.loadCTags(path, f)
+    except CatchableError as e:
+      log lvlWarn, &"Failed to load ctags from file using command: '{path}': {e.msg}"
 
   proc loadCTagsCommand(self: LanguageServerCTags, languageId: string, path: string) {.async.} =
     try:
