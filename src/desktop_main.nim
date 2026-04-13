@@ -345,7 +345,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, fra
       var rerender = false
       if size != plat.builder.root.boundsActual.wh or plat.requestedRender:
         plat.requestedRender = false
-        plat.builder.beginFrame(size)
+        plat.builder.beginFrame(size, plat.redrawEverything)
         try:
           app.updateWidgetTree(frameIndex)
           plat.builder.endFrame()

@@ -119,6 +119,7 @@ type
     charWidth*: float32
     lineHeight*: float32
     lineGap*: float32
+    retainNodes*: bool = true
 
     defaultBorderWidth*: float = 0
     supportsFontScale*: bool = true
@@ -1488,7 +1489,7 @@ proc forEachOverlappingLeafNode*(node: UINode, rect: Rect, f: proc(node: UINode)
     for _, c in node.children:
       c.forEachOverlappingLeafNode(rect, f)
 
-proc beginFrame*(builder: UINodeBuilder, size: Vec2) =
+proc beginFrame*(builder: UINodeBuilder, size: Vec2, redrawEverything: bool = false) =
   builder.frameIndex.inc
 
   builder.currentParent = builder.root
@@ -1499,6 +1500,8 @@ proc beginFrame*(builder: UINodeBuilder, size: Vec2) =
   builder.root.boundsRaw.w = size.x
   builder.root.boundsRaw.h = size.y
   builder.root.flags = &{LayoutVertical}
+
+  builder.retainNodes = not redrawEverything
 
 proc endFrame*(builder: UINodeBuilder) =
   builder.clearUnusedChildren(builder.root, builder.currentChild)
@@ -1513,6 +1516,9 @@ proc continueFrom*(builder: UINodeBuilder, node: UINode, last: UINode = nil) =
   builder.currentChild = last
 
 proc retain*(builder: UINodeBuilder): bool =
+  if not builder.retainNodes:
+    return false
+
   let node = builder.currentParent
 
   if node.lastChange == 0:

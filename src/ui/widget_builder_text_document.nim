@@ -1745,7 +1745,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
     onClickAny btn:
       self.layout.tryActivateEditor(self)
 
-    if dirty or app.platform.redrawEverything or not builder.retain():
+    if dirty or not builder.retain():
       var header: UINode
 
       builder.panel(&{LayoutVertical} + sizeFlags):
