@@ -140,7 +140,10 @@ when implModule:
   proc handleSelectionsChanged(self: TextEditorComponentImpl, old: openArray[Selection], addToHistory: Option[bool] = bool.none) =
     let addToHistory2 = self.selectionHistory.len == 0 or addToHistory.get(shouldAddToHistory(old, self.mSelectionsOld))
     if addToHistory2:
-      self.selectionHistory.addLast @old
+      let old = @old
+      if self.selectionHistory.len > 0 and self.selectionHistory.peekLast == old:
+        return
+      self.selectionHistory.addLast old
       if self.selectionHistory.len > 100:
         discard self.selectionHistory.popFirst
 
