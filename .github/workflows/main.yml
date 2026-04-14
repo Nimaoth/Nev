@@ -226,7 +226,6 @@ jobs:
       - run: "echo 'import wasmtime' > src/temp.nim && nim c -d:nimWasmtimeBuild src/temp.nim"
 
       - name: Run tests
-        continue-on-error: true
         run: testament --print category unit
       - name: Build test report
         run: testament html
