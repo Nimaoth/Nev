@@ -623,6 +623,7 @@ when implModule:
     var inclusive = (not editor.vimState.selectLines) and (editor.vimState.deleteInclusiveEnd or forceInclusiveEnd)
     if forceExclusive:
       inclusive = false
+    discard editor.copySelection(getVimDefaultRegister(), inclusive)
     let selectionsToDelete = editor.selections
     let oldSelections = oldSelections.get(editor.selections)
     editor.edit.withTransaction:
@@ -635,6 +636,7 @@ when implModule:
     var inclusive = editor.vimState.deleteInclusiveEnd or forceInclusiveEnd
     if forceExclusive:
       inclusive = false
+    discard editor.copySelection(getVimDefaultRegister(), inclusive)
     let selectionsToDelete = editor.selections
     let oldSelections = oldSelections.get(editor.selections)
     editor.setMode "vim.insert"
