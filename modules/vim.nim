@@ -46,16 +46,6 @@ when implModule:
     assert list.len > 0
     return list[list.len - 1]
 
-  proc `==`*[T](a, b: seq[T]): bool =
-    if a.len != b.len:
-      return false
-    return equalMem(a.data, b.data, a.len)
-
-  proc `==`*(a, b: string): bool =
-    if a.len != b.len:
-      return false
-    return equalMem(a.data, b.data, a.len)
-
   var yankedLines: bool = false ## Whether the last thing we yanked was in a line mode
 
   type EditorVimState = object
