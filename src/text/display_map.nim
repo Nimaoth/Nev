@@ -261,15 +261,17 @@ proc edit*(self: var DisplayMapSnapshot, buffer: sink BufferSnapshot, patch: Pat
   let wrapPatch = self.wrapMap.edit(self.tabMap.clone(), tabPatch)
   self.diffMap.edit(self.wrapMap.clone(), wrapPatch)
 
-proc edit*(self: DisplayMap, buffer: sink BufferSnapshot, edits: openArray[tuple[old, new: Selection]]) =
-  var patch = Patch[Point]()
-  for e in edits:
-    patch.add initEdit(e.old.first.toPoint...e.old.last.toPoint, e.new.first.toPoint...e.new.last.toPoint)
-
+proc edit*(self: DisplayMap, buffer: sink BufferSnapshot, patch: sink Patch[Point]) =
   let overlayPatch = self.overlay.edit(buffer.clone(), patch)
   let tabPatch = self.tabMap.edit(self.overlay.snapshot.clone(), overlayPatch)
   let wrapPatch = self.wrapMap.edit(self.tabMap.snapshot.clone(), tabPatch)
   self.diffMap.edit(self.wrapMap.snapshot.clone(), wrapPatch)
+
+proc edit*(self: DisplayMap, buffer: sink BufferSnapshot, edits: openArray[tuple[old, new: Selection]]) =
+  var patch = Patch[Point]()
+  for e in edits:
+    patch.add initEdit(e.old.first.toPoint...e.old.last.toPoint, e.new.first.toPoint...e.new.last.toPoint)
+  self.edit(buffer.ensureMove, patch)
 
 proc update*(self: DisplayMap, wrapWidth: int, force: bool = false) =
   self.wrapMap.update(wrapWidth, force)

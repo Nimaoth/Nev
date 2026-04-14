@@ -1,6 +1,7 @@
 import std/[unittest, options, sequtils, strformat, strutils, tables]
 import misc/[util, jsonex, timer, custom_logger]
 import config_provider
+import nimsumtree/[sumtree, rope]
 
 logCategory "tconfig"
 
@@ -55,11 +56,6 @@ echo "================== layer 2 ===================="
 echo layer2
 
 proc test(store: ConfigStore, key: string, debug = false) =
-  if debug:
-    logGetValue = true
-  defer:
-    logGetValue = false
-
   echo "=================== ", store.name, ".", key
   let value = store.getValue(key)
   if value.isNil:
@@ -108,9 +104,6 @@ proc testSetting[T](setting: Setting[T]) =
   echo setting.get(nil)
 
 proc testSetting(key: string, changeLayer: ConfigStore, value: int, debug = false) =
-  logSetting = debug
-  defer:
-    logSetting = false
   echo "=================== setting ", layer2.name, ".", key
   var s = layer2.setting(key, JsonNodeEx)
   testSetting(s)

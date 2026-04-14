@@ -9,7 +9,7 @@ discard """
 import std/[unittest, options, json, sequtils, strformat]
 import misc/[util, rope_utils]
 import nimsumtree/[rope, sumtree, buffer, clock]
-import text/wrap_map
+import text/[display_map, wrap_map, tab_map]
 
 var debug = false
 template log(msg: untyped) =
@@ -23,37 +23,39 @@ const file = """
 aa
 """
 const fileMapRanges = @[
-  WrapMapChunk(src: Point.init(1, 122), dst: Point.init(1, 122)),
-  WrapMapChunk(src: Point.init(0, 0), dst: Point.init(1, 4)),
-  WrapMapChunk(src: Point.init(0, 122), dst: Point.init(0, 122)),
-  WrapMapChunk(src: Point.init(0, 0), dst: Point.init(1, 4)),
-  WrapMapChunk(src: Point.init(3, 0), dst: Point.init(3, 0)),
+  WrapMapChunk(src: tabPoint(1, 122), dst: wrapPoint(1, 122)),
+  WrapMapChunk(src: tabPoint(0, 0), dst: wrapPoint(1, 4)),
+  WrapMapChunk(src: tabPoint(0, 118), dst: wrapPoint(0, 118)),
+  WrapMapChunk(src: tabPoint(0, 0), dst: wrapPoint(1, 4)),
+  WrapMapChunk(src: tabPoint(3, 0), dst: wrapPoint(3, 0)),
 ]
 
 suite "Wrap map":
-  proc prepareData(content: string): (Buffer, WrapMap) =
+  proc prepareData(content: string): (Buffer, DisplayMap) =
     var b = initBuffer(content = content)
     check $b.visibleText == content
 
-    var wm = WrapMap.new()
-    wm.setBuffer(b.snapshot.clone())
+    var dm = DisplayMap.new()
+    dm.setBuffer(b.snapshot.clone())
+    let wm = dm.wrapMap
     wm.wrapWidth = 122
     wm.wrappedIndent = 4
-    wm.snapshot.update(b.snapshot.clone(), wm.wrapWidth, wm.wrappedIndent)
-    (b, wm)
+    wm.snapshot.update(wm.snapshot.input.clone(), wm.wrapWidth, wm.wrappedIndent)
+    (b, dm)
 
   proc testEdit(content: string, edits: openArray[(Range[Point], string)], expect: seq[WrapMapChunk]): bool =
     log &"===================== testEdit {edits}"
     log content
     log "====================="
-    var (b, wm) = prepareData(content)
+    var (b, dm) = prepareData(content)
+    let wm = dm.wrapMap
     discard b.edit edits
     log b.visibleText
     log "====================="
     for p in b.patches:
-      let patch = p.patch.convert(Point, wm.snapshot.buffer.visibleText, b.visibleText)
+      let patch = p.patch.convert(Point, dm.buffer.visibleText, b.visibleText)
       log patch
-      wm.snapshot.edit(b.snapshot.clone(), patch)
+      dm.edit(b.snapshot.clone(), patch)
       log wm.snapshot
       let actual = wm.snapshot.map.toSeq()
       check actual == expect
@@ -63,12 +65,12 @@ suite "Wrap map":
     return true
 
   proc testEdit(content: string, edits: openArray[(Range[Point], string)], expect: seq[(Point, Point)]): bool =
-    let expect = expect.mapIt(WrapMapChunk(src: it[0], dst: it[1]))
+    let expect = expect.mapIt(WrapMapChunk(src: it[0].TabPoint, dst: it[1].WrapPoint))
     testEdit(content, edits, expect)
 
   test "Initial update":
-    let (b, wm) = prepareData(file)
-    check wm.snapshot.map.toSeq() == fileMapRanges
+    let (b, dm) = prepareData(file)
+    check dm.wrapMap.snapshot.map.toSeq() == fileMapRanges
 
   test "Insert 0:0 'x'":
     check testEdit(file,
@@ -81,7 +83,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 123), point(1, 123)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -92,7 +94,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 124), point(1, 124)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -103,7 +105,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 123), point(0, 123)),
+        (point(0, 119), point(0, 119)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -114,7 +116,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -125,7 +127,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -136,7 +138,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -147,7 +149,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 1), point(3, 1)),
       ])
@@ -158,7 +160,7 @@ suite "Wrap map":
       expect = @[
         (point(2, 122), point(2, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -169,7 +171,7 @@ suite "Wrap map":
       expect = @[
         (point(2, 122), point(2, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -180,7 +182,7 @@ suite "Wrap map":
       expect = @[
         (point(2, 112), point(2, 112)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -191,7 +193,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(1, 122), point(1, 122)),
+        (point(1, 118), point(1, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -202,7 +204,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(4, 0), point(4, 0)),
       ])
@@ -213,7 +215,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(4, 0), point(4, 0)),
       ])
@@ -224,7 +226,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(4, 0), point(4, 0)),
       ])
@@ -235,7 +237,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(4, 0), point(4, 0)),
       ])
@@ -247,7 +249,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 124), point(1, 124)),
         (point(0, 0), point(1, 4)),
-        (point(0, 123), point(0, 123)),
+        (point(0, 119), point(0, 119)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -259,7 +261,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 124), point(1, 124)),
         (point(0, 0), point(1, 4)),
-        (point(0, 123), point(0, 123)),
+        (point(0, 119), point(0, 119)),
         (point(0, 0), point(1, 4)),
         (point(3, 1), point(3, 1)),
       ])
@@ -281,7 +283,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 121), point(1, 121)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -292,7 +294,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 121), point(1, 121)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -303,7 +305,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 121), point(0, 121)),
+        (point(0, 117), point(0, 117)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -314,7 +316,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -336,7 +338,7 @@ suite "Wrap map":
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -371,7 +373,7 @@ a
       expect = @[
         (point(1, 122), point(1, 122)),
         (point(0, 0), point(1, 4)),
-        (point(0, 122), point(0, 122)),
+        (point(0, 118), point(0, 118)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -389,6 +391,7 @@ aa
       edits = [(point(1, 0)...point(1, 259), "")],
       expect = @[
         (point(1, 0), point(1, 0)),
+        (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
 
@@ -397,7 +400,6 @@ aa
       edits = [(point(1, 0)...point(1, 243), "")],
       expect = @[
         (point(1, 0), point(1, 0)),
-        (point(0, 1), point(0, 1)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -407,6 +409,7 @@ aa
       edits = [(point(1, 0)...point(1, 244), "")],
       expect = @[
         (point(1, 0), point(1, 0)),
+        (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
 
@@ -415,6 +418,7 @@ aa
       edits = [(point(1, 0)...point(1, 245), "")],
       expect = @[
         (point(1, 0), point(1, 0)),
+        (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
 
@@ -423,7 +427,6 @@ aa
       edits = [(point(1, 1)...point(1, 243), "")],
       expect = @[
         (point(1, 1), point(1, 1)),
-        (point(0, 1), point(0, 1)),
         (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
@@ -433,6 +436,7 @@ aa
       edits = [(point(1, 1)...point(1, 244), "")],
       expect = @[
         (point(1, 1), point(1, 1)),
+        (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
 
@@ -441,5 +445,6 @@ aa
       edits = [(point(1, 1)...point(1, 245), "")],
       expect = @[
         (point(1, 1), point(1, 1)),
+        (point(0, 0), point(1, 4)),
         (point(3, 0), point(3, 0)),
       ])
