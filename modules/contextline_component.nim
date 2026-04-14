@@ -48,7 +48,7 @@ proc getContextLines*(self: ContextLineComponent): seq[ContextLineEntry] = conte
 
 when implModule:
   import std/[tables, algorithm]
-  import misc/[custom_logger, custom_async, util, arena, array_view, event, regex, timer]
+  import misc/[custom_logger, custom_async, util, arena, array_view, event, regex]
   import nimsumtree/[sumtree]
   import document, document_editor, text_component, treesitter_component, text_editor_component
   import text/[custom_treesitter, syntax_map, treesitter_type_conv, treesitter_types]

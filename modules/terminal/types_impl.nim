@@ -37,10 +37,6 @@ else:
   proc openpty*(amaster: ptr cint, aslave: ptr cint, name: cstring, termp: ptr Termios, winp: ptr IOctl_WinSize): int {.importc, header: "<pty.h>", sideEffect.}
   proc ptsname*(fd: cint): cstring {.importc, header: "<pty.h>", sideEffect.}
   proc login_tty*(fd: cint): cint {.importc, header: "<utmp.h>", sideEffect.}
-  proc eventfd(count: cuint, flags: cint): cint {.cdecl, importc: "eventfd", header: "<sys/eventfd.h>".}
-
-  var EFD_NONBLOCK {.importc: "EFD_NONBLOCK", header: "<sys/eventfd.h>".}: cint
-  var TIOCSWINSZ {.importc: "TIOCSWINSZ", header: "<termios.h>".}: culong
 
 when defined(windows):
   proc prepareStartupInformation*(hpc: HPCON): STARTUPINFOEX {.raises: [OSError].} =
