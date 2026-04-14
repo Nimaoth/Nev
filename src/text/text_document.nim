@@ -238,7 +238,9 @@ type
     lastDiagnosticVersion: Global # todo: reset at appropriate times
     lastDiagnosticAnchorResolve: Global # todo: reset at appropriate times
 
-var allTextDocuments*: seq[TextDocument] = @[]
+template returnIfInvalid(): untyped =
+  if not self.isInitialized:
+    return
 
 proc reloadTreesitterLanguage*(self: TextDocument)
 proc clearDiagnostics*(self: TextDocument, languageServerName: string = "")
@@ -790,9 +792,6 @@ proc newTextDocument*(
   # log lvlInfo, &"Creating new text document '{filename}', (lang: {language}, app: {app}, ls: {createLanguageServer})"
   new(result)
 
-  {.gcsafe.}:
-    allTextDocuments.add result
-
   var self = result
   if id.isSome:
     self.uniqueId = id.get
@@ -887,11 +886,6 @@ method deinit*(self: TextDocument) =
 
   for (ls, id) in self.onDiagnosticsHandles.values:
     ls.onDiagnostics.unsubscribe(id)
-
-  {.gcsafe.}:
-    let i = allTextDocuments.find(self)
-    if i >= 0:
-      allTextDocuments.removeSwap(i)
 
   self[] = default(typeof(self[]))
 
@@ -1063,10 +1057,11 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]
           if $self.rope != $rope:
             log lvlError, &"Failed diff: {self.rope.len} != {rope.len}: {selections}, {texts}"
             await self.vfs2.write("app://failed_diffs/old.txt", oldRope)
+            returnIfInvalid()
             await self.vfs2.write("app://failed_diffs/new-edit.txt", self.rope)
+            returnIfInvalid()
             await self.vfs2.write("app://failed_diffs/new.txt", rope)
-            if not self.isInitialized:
-              return
+            returnIfInvalid()
             self.replaceAll(rope.move)
             return @[((0, 0), (self.rope.endPoint.toCursor))]
 

@@ -34,6 +34,11 @@ type Document* = ref object of ComponentOwner
   onDocumentSaved*: Event[Document]
   onDocumentLoaded*: Event[Document]
 
+proc newDocument*(): Document =
+  new(result)
+  let self = result
+  self.uniqueId = newId()
+
 # DLL API
 proc documentLocalizedPath*(self: Document): string {.apprtl, gcsafe, raises: [].}
 proc localizedPath*(self: Document): string {.inline.} = documentLocalizedPath(self)

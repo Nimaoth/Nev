@@ -3023,11 +3023,6 @@ proc printStatistics*(self: App) {.expose("editor").} =
       # for command in self.commandHistory:
       #   result.add &"    {command}\n"
 
-      result.add &"Text documents: {allTextDocuments.len}\n"
-      for document in allTextDocuments:
-        result.add document.getStatisticsString().indent(4)
-        result.add "\n\n"
-
       result.add &"Text editors: {allTextEditors.len}\n"
       for editor in allTextEditors:
         result.add editor.getStatisticsString().indent(4)
