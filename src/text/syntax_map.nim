@@ -608,7 +608,7 @@ proc parseInjection(text: ptr Rope, inj: ptr InjectionJob, oldSnapshot: SyntaxMa
 proc parseInjections(args: ParseArgs, injections: seq[InjectionJob], outJobs: var seq[LayerJob], oldSnapshot: SyntaxMapSnapshot, depth: int) =
   try:
     var jobs = newSeq[LayerJob](injections.len)
-    when false:
+    when true:
       proc parseInjectionHelper(chunkIndex: int, chunkSize: int, text: ptr Rope,
           injections: ptr seq[InjectionJob], oldSnapshot: SyntaxMapSnapshot, depth: int,
           parser: TSParser, jobs: ptr seq[LayerJob]) =
