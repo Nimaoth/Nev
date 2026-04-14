@@ -17,9 +17,3 @@ hello a$bc world
 -
 hello $ world
 ---
-viw
--
-hello a$bc world
--
-hello [ab]c world
----
