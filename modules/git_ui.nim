@@ -19,9 +19,8 @@ when implModule:
   import command_service, workspaces/workspace, config_component, text_editor_component
   import vmath, chroma
   import theme
-  import misc/[render_command, timer]
+  import misc/[render_command]
   import events
-  import scroll_box
   import document_editor_render, toast
 
   logCategory "git-ui"
@@ -336,11 +335,6 @@ when implModule:
     let keyColor = builder.theme.tokenColor("keyword", accentColor)
     let selectionColor = builder.theme.color("editor.selectionBackground", color(60/255, 60/255, 80/255))
     let errorColor = builder.theme.tokenColor("error", color(200/255, 25/255, 25/255))
-    let headerColor = if self.active: builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
-
-    let charWidth = builder.charWidth
-    let lineHeight = builder.textHeight.float
-    let availableWidth = builder.currentParent.bounds.w
 
     if self.lastUpdate == 0:
       self.lastUpdate += 1
@@ -466,7 +460,6 @@ when implModule:
           let thumbY = (self.scrollOffset / scrollableAmount) * scrollableHeight
           fillRect(rect(currentNode.bounds.w - w, floor(thumbY), w, ceil(thumbHeight)), scrollBarColor)
 
-  proc dump(self: GitUiView): string = "GitUiView" & $(self[])
   proc kind(self: GitUiView): string = "gitui"
   proc desc(self: GitUiView): string = "GitUi"
   proc display(self: GitUiView): string = "GitUi"
@@ -568,24 +561,6 @@ when implModule:
         discard
       return view
 
-    proc parseTime(args: string): int =
-      try:
-        let args = args.parseJson.jsonTo(string)
-        var unitIndex = 0
-        while unitIndex < args.len and args[unitIndex] in {'0'..'9'}:
-          inc unitIndex
-        let num = args[0..<unitIndex].parseInt.catch:
-          return 0
-        let unit = case args[unitIndex..^1]
-        of "s": 1
-        of "m": 60
-        of "h": 60 * 60
-        of "d": 60 * 60 * 24
-        else: 60
-        return num * unit
-      except CatchableError:
-        discard
-
     template runGitAsync(args: seq[string], onComplete: untyped): untyped =
       let root = view.getGitRoot()
       if root.len == 0:
@@ -609,9 +584,12 @@ when implModule:
         description: desc,
         parameters: @[],
         returnType: "void",
-        execute: proc(args {.inject.}: string): string {.gcsafe, raises: [CatchableError].} =
-          body
-          return ""
+        execute: proc(args {.inject.}: string): string {.gcsafe, raises: [].} =
+          try:
+            body
+            return ""
+          except CatchableError:
+            return ""
       ))
 
     defineCommand("toggle", "Toggle git ui"):
@@ -916,7 +894,6 @@ when implModule:
         return
       let clIdx = view.cursor.changelistIndex
       let fIdx = view.cursor.fileIndex
-      let vcs = view.changelists[clIdx].vcs
       if clIdx >= view.changelists.len or fIdx >= view.changelists[clIdx].changelist.files.len:
         view.setError("Invalid selection")
         return

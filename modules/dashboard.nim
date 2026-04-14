@@ -141,7 +141,6 @@ when implModule:
 
   proc drawSection(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo, sectionRenderers: Table[string, SectionRenderFunc], x, y, w: float, textColor, sectionColor: Color) =
     let cx = builder.charWidth
-    let cy = builder.textHeight
     builder.panel(&{SizeToContentY, MaskContent}, x = x, y = y, w = w, backgroundColor = sectionColor):
       builder.panel(&{LayoutVertical, SizeToContentY, FillX}, border = border(ceil(cx / 2))):
         if section.title != "":
@@ -172,10 +171,6 @@ when implModule:
     backgroundColor.a = 1
 
     let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-    let headerColor = builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255))
-
-    let cx = builder.charWidth
-    let cy = builder.textHeight
 
     let parentBounds = builder.currentParent.bounds
     let pw = parentBounds.w
@@ -187,7 +182,7 @@ when implModule:
     let colGapX = colGapPercent * pw
 
     builder.panel(&{FillBackground, FillX, FillY}, backgroundColor = backgroundColor):
-      if pw < minTwoColChars.float * cx:
+      if pw < minTwoColChars.float * builder.charWidth:
         # Single column layout
         let colX = padX
         let colW = pw - padX * 2
@@ -495,8 +490,6 @@ when implModule:
     view.markDirty()
 
   proc renderGitStatus(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
-    let cx = builder.charWidth
-    let cy = builder.textHeight
     let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
     let accentColor = builder.theme.color("editorLineNumber.foreground", color(120/255, 120/255, 160/255))
 

@@ -1,25 +1,20 @@
 #use command_component snippet_component
-import std/[options]
-import chroma
-import nimsumtree/rope
-import misc/[event, myjsonutils]
-import config_provider
-import component
-
-export component
-
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
 # Implementation
 when implModule:
+  import std/[options]
   import std/[tables, sets, sequtils, algorithm]
-  import nimsumtree/[buffer, sumtree]
-  import misc/[util, custom_logger, rope_utils, delayed_task, custom_async, arena, array_view, id, timer, render_command]
-  import text/[display_map, syntax_map, treesitter_types, treesitter_type_conv, custom_treesitter, snippet]
+  import chroma
+  import nimsumtree/[buffer, sumtree, rope]
+  import misc/[util, custom_logger, rope_utils, delayed_task, custom_async, arena, array_view, id]
+  import misc/[event, render_command]
+  import text/[syntax_map, treesitter_types, treesitter_type_conv, custom_treesitter, snippet]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-  import service, event_service, document_editor, document, decoration_component, treesitter_component, text_component, language_component, text_editor_component, command_component, move_component, snippet_component, config_component
-  import platform_service
+  import service, event_service, document_editor, document, decoration_component, treesitter_component
+  import text_component, language_component, text_editor_component, command_component, move_component
+  import snippet_component, config_component, platform_service, component, config_provider
 
   {.push warning[Deprecated]:off.}
   import std/[threadpool]
@@ -190,7 +185,6 @@ when implModule:
 
       var arena = initArena(16 * 1024)
       for match in tableQuery.get.matches(layer.tree.root, fullRange, arena):
-        var langName = ""
         for capture in match.captures:
           capture.node.withTreeCursor(c):
             var node = c.currentNode
@@ -204,7 +198,6 @@ when implModule:
               isDelimiter: bool
 
             var rows: seq[seq[Cell]] = @[]
-            var row: seq[Cell] = @[]
             var maxWidths: seq[int] = @[]
 
             while true:
@@ -276,7 +269,7 @@ when implModule:
 
     let modes = config.get("text.modes", seq[string])
     let disableOnCursorLines = config.get("markdown.disable-on-cursor-lines-modes", seq[string])
-    if modes.toSet.disjoint(disableOnCursorLines.toSet):
+    if modes.toHashSet.disjoint(disableOnCursorLines.toHashSet):
       result = self.currentLines.len > 0
       self.currentLines.clear()
       return
@@ -319,9 +312,6 @@ when implModule:
       return
 
     let text = editor.currentDocument.getTextComponent().getOr:
-      return
-
-    let edit = editor.getTextEditorComponent().getOr:
       return
 
     let emphQuery = await self.query("markdown_inline", "markdown_emphasis", "[(emphasis) (strong_emphasis) (code_span) (strikethrough)] @emph")
@@ -406,9 +396,6 @@ when implModule:
       return
 
     let text = editor.currentDocument.getTextComponent().getOr:
-      return
-
-    let edit = editor.getTextEditorComponent().getOr:
       return
 
     let headerQuery = await self.query("markdown", "markdown_header", "[(atx_h1_marker) (atx_h2_marker) (atx_h3_marker) (atx_h4_marker) (atx_h5_marker) (atx_h6_marker)] @marker")

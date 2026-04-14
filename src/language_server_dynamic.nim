@@ -126,7 +126,7 @@ when implModule:
             location: r.location.some,
           )
         return resRaw
-      except CatchableError as e:
+      except CatchableError:
         return @[]
     else:
       return @[]

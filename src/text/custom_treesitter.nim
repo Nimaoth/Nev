@@ -11,12 +11,9 @@ from scripting_api import Cursor, Selection, byteIndexToCursor
 
 logCategory "treesitter"
 
-import std/dynlib
 from treesitter/api as ts import nil
 import treesitter_types
 export treesitter_types
-
-import compilation_config
 
 include ../dynlib_export
 
@@ -46,7 +43,6 @@ template withTreeCursor*(node: untyped, cursor: untyped, body: untyped): untyped
 
 # Available on all targets
 
-import std/[os, strutils]
 import std/macros
 
 proc getParsers*(): ptr seq[TSParser] {.apprtl, gcsafe, raises: [].}
@@ -63,6 +59,8 @@ var tsAllocated* {.apprtl.}: uint64 = 0
 var tsFreed* {.apprtl.}: uint64 = 0
 
 when implModule:
+  import std/[os, strutils, dynlib]
+  import compilation_config
   import wasm_engine
   import wasmtime
 

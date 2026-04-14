@@ -1,4 +1,4 @@
-import service, command_service
+import command_service
 import std/[os, typedthreads, tables, hashes, macros, deques, genasts]
 import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command]
 import ui/node
@@ -11,9 +11,7 @@ import types
 when defined(enableLibssh):
   static:
     hint("Build with libssh2")
-  import libssh2, ssh
-
-const bufferSize = 10 * 1024 * 1024
+  import ssh
 
 logCategory "terminal"
 
@@ -25,16 +23,6 @@ when defined(windows):
   type HPCON* = HANDLE
 
   const PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE: DWORD = 131094
-  const PIPE_ACCESS_INBOUND = 0x1
-  const PIPE_TYPE_BYTE = 0x0
-  const PIPE_WAIT = 0x0
-  const FILE_FLAG_OVERLAPPED = 0x40000000
-
-  # From a random commit on windows terminal:
-  # https://github.com/microsoft/terminal/pull/11264/files#diff-ce403215b7defc6a499585a9cc996313c135c647ceffec2bdecfbbb2f29ff537
-  const PSEUDOCONSOLE_RESIZE_QUIRK = 2
-  const PSEUDOCONSOLE_WIN32_INPUT_MODE = 4
-  const PSEUDOCONSOLE_PASSTHROUGH_MODE = 8
 
   proc CreatePseudoConsole*(size: wincon.COORD, hInput: HANDLE, hOutput: HANDLE, dwFlags: DWORD, phPC: ptr HPCON): HRESULT {.winapi, stdcall, dynlib: "kernel32", importc.}
   proc ClosePseudoConsole*(hPC: HPCON) {.winapi, stdcall, dynlib: "kernel32", importc.}
@@ -53,51 +41,6 @@ else:
 
   var EFD_NONBLOCK {.importc: "EFD_NONBLOCK", header: "<sys/eventfd.h>".}: cint
   var TIOCSWINSZ {.importc: "TIOCSWINSZ", header: "<termios.h>".}: culong
-
-proc inputToVtermKey(input: int64): VTermKey =
-  return case input
-  of INPUT_ENTER: VTERM_KEY_ENTER
-  of INPUT_ESCAPE: VTERM_KEY_ESCAPE
-  of INPUT_BACKSPACE: VTERM_KEY_BACKSPACE
-  of INPUT_DELETE: VTERM_KEY_DEL
-  of INPUT_TAB: VTERM_KEY_TAB
-  of INPUT_LEFT: VTERM_KEY_LEFT
-  of INPUT_RIGHT: VTERM_KEY_RIGHT
-  of INPUT_UP: VTERM_KEY_UP
-  of INPUT_DOWN: VTERM_KEY_DOWN
-  of INPUT_HOME: VTERM_KEY_HOME
-  of INPUT_END: VTERM_KEY_END
-  of INPUT_PAGE_UP: VTERM_KEY_PAGEUP
-  of INPUT_PAGE_DOWN: VTERM_KEY_PAGEDOWN
-  of INPUT_F1: VTERM_KEY_FUNCTION_1
-  of INPUT_F2: VTERM_KEY_FUNCTION_2
-  of INPUT_F3: VTERM_KEY_FUNCTION_3
-  of INPUT_F4: VTERM_KEY_FUNCTION_4
-  of INPUT_F5: VTERM_KEY_FUNCTION_5
-  of INPUT_F6: VTERM_KEY_FUNCTION_6
-  of INPUT_F7: VTERM_KEY_FUNCTION_7
-  of INPUT_F8: VTERM_KEY_FUNCTION_8
-  of INPUT_F9: VTERM_KEY_FUNCTION_9
-  of INPUT_F10: VTERM_KEY_FUNCTION_10
-  of INPUT_F11: VTERM_KEY_FUNCTION_11
-  of INPUT_F12: VTERM_KEY_FUNCTION_12
-  else: VTERM_KEY_NONE
-
-proc toVtermModifiers(modifiers: Modifiers): uint32 =
-  if Modifier.Shift in modifiers:
-    result = result or VTERM_MOD_SHIFT.ord.uint32
-  if Modifier.Control in modifiers:
-    result = result or VTERM_MOD_CTRL.ord.uint32
-  if Modifier.Alt in modifiers:
-    result = result or VTERM_MOD_ALT.ord.uint32
-
-proc toVtermButton(button: input.MouseButton): cint =
-  # todo: figure out what to do here and handle other mouse buttons
-  case button
-  of input.MouseButton.Left: return 1
-  of input.MouseButton.Middle: return 2
-  of input.MouseButton.Right: return 3
-  else: return 4
 
 when defined(windows):
   proc prepareStartupInformation*(hpc: HPCON): STARTUPINFOEX {.raises: [OSError].} =

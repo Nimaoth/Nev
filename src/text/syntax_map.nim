@@ -481,12 +481,6 @@ proc collectInjections(
     parentRanges: seq[TSRange],
     arena: var Arena,
 ): seq[InjectionJob] =
-  var t = startTimer()
-  # defer:
-  #   if t.elapsed.ms > 1:
-  #     echo &"collectInjections {parentRanges} took {t.elapsed.ms} ms"
-
-  # echo &"collectInjections rope.len={rope.len} parentRanges={parentRanges.len}"
   var combinedGroups: Table[string, seq[TSRange]]
 
   let rootNode = tree.root
@@ -503,10 +497,8 @@ proc collectInjections(
     for capture in match.captures:
       if capture.name == "injection.language":
         langName = readNodeText(rope, capture.node)
-        # echo &"  match: injection.language capture -> '{langName}'"
       elif capture.name == "injection.content":
         contentRanges.add capture.node.getRange()
-        # echo &"  match: injection.content capture bytes={capture.node.startByte}..{capture.node.endByte}"
 
     let preds = query.predicatesForPattern(match.pattern, arena)
     for pred in preds:
@@ -514,21 +506,16 @@ proc collectInjections(
         for op in pred.operands:
           if $op.name == "injection.language":
             langName = $op.`type`
-            # echo &"  predicate set! injection.language='{langName}'"
           if $op.name == "injection.combined":
             isCombined = true
-            # echo &"  predicate set! injection.combined"
 
     if langName.len == 0 or contentRanges.len == 0:
-      # echo &"  skipping match: langName='{langName}' contentRanges={contentRanges.len}"
       continue
 
     let clipped = clipRangesToParent(contentRanges, parentRanges)
     if clipped.len == 0:
-      # echo &"  clipped to empty for lang='{langName}'"
       continue
 
-    # echo &"  injection lang='{langName}' combined={isCombined} ranges={clipped.len}"
     if isCombined:
       combinedGroups.mgetOrPut(langName, @[]).add clipped
     else:
@@ -538,10 +525,7 @@ proc collectInjections(
   for lang, ranges in combinedGroups:
     var merged = ranges
     merged.sort(proc(a, b: TSRange): int = cmp(a.startByte, b.startByte))
-    # echo &"  combined injection lang='{lang}' ranges={merged.len}"
     result.add InjectionJob(languageName: lang, ranges: merged)
-
-  # echo &"collectInjections -> {result.len} jobs"
 
 type ParseArgs = object
   rootLanguage: TSLanguageSnapshot
@@ -621,20 +605,18 @@ proc parseInjection(text: ptr Rope, inj: ptr InjectionJob, oldSnapshot: SyntaxMa
     requestedLanguage: requestedLanguage,
   )
 
-proc parseInjectionHelper(chunkIndex: int, chunkSize: int, text: ptr Rope, injections: ptr seq[InjectionJob], oldSnapshot: SyntaxMapSnapshot, depth: int, parser: TSParser, jobs: ptr seq[LayerJob]) =
-  for i in (chunkIndex * chunkSize)..<min((chunkIndex + 1) * chunkSize, injections[].len):
-    jobs[][i] = parseInjection(text, injections[i].addr, oldSnapshot, depth, parser)
-
 proc parseInjections(args: ParseArgs, injections: seq[InjectionJob], outJobs: var seq[LayerJob], oldSnapshot: SyntaxMapSnapshot, depth: int) =
-  let numChunks = min(injections.len, 10)
-  # var t = startTimer()
-  # defer:
-  #   echo &"parseInjections in {numChunks} chunks took {t.elapsed.ms} ms"
-
   try:
-    var m = createMaster()
     var jobs = newSeq[LayerJob](injections.len)
     when false:
+      proc parseInjectionHelper(chunkIndex: int, chunkSize: int, text: ptr Rope,
+          injections: ptr seq[InjectionJob], oldSnapshot: SyntaxMapSnapshot, depth: int,
+          parser: TSParser, jobs: ptr seq[LayerJob]) =
+        for i in (chunkIndex * chunkSize)..<min((chunkIndex + 1) * chunkSize, injections[].len):
+          jobs[][i] = parseInjection(text, injections[i].addr, oldSnapshot, depth, parser)
+
+      let numChunks = min(injections.len, 10)
+      var m = createMaster()
       let chunkSize = (injections.len / numChunks).ceil.int
       assert numChunks * chunkSize >= injections.len
       var parsers = getTsParsers(numChunks)
@@ -1409,14 +1391,14 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
                     of "eq?":
                       # @todo: second arg can be capture aswell
                       let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                      if nodeText != operand.`type`:
+                      if nodeText.toOpenArray(0, nodeText.high) != operand.`type`.toOpenArray(0, operand.`type`.high):
                         matches = false
                         break
 
                     of "not-eq?":
                       # @todo: second arg can be capture aswell
                       let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                      if nodeText == operand.`type`:
+                      if nodeText.toOpenArray(0, nodeText.high) == operand.`type`.toOpenArray(0, operand.`type`.high):
                         matches = false
                         break
 

@@ -77,7 +77,6 @@ when implModule:
   import std/[sequtils, deques]
   import vmath
   import misc/[util, custom_logger, rope_utils]
-  import nimsumtree/[clock]
   import text/[text_document, display_map]
   import scroll_box
   import service, platform_service

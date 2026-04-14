@@ -1,6 +1,6 @@
 #use workspace_edit
 import std/[strformat, strutils, os, sets, tables, options, json, sequtils, uri]
-import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_process, event, response, rope_utils, arena, array_view, jsonex, myjsonutils]
+import misc/[id, custom_logger, util, custom_async, async_process, event, response, rope_utils, array_view, jsonex, myjsonutils]
 import text/language/[language_server_base, lsp_types]
 import language_server_dynamic
 
@@ -13,7 +13,7 @@ include module_base
 proc getOrCreateLanguageServerLSP*(name: string): Future[Option[LanguageServerDynamic]] {.rtl, gcsafe, async: (raises: []).}
 
 when implModule:
-  import language_server_component, config_component, move_component, text_component, treesitter_component, language_component
+  import language_server_component, text_component, treesitter_component, language_component
   import workspace_edit
   import workspaces/workspace as ws
   import lsp_client

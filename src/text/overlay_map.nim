@@ -759,7 +759,7 @@ proc addOverlay*(self: var OverlayMapSnapshot, range: Range[Point], text: string
   log &"  current: {newMap.summary}, current: {c.startPos}...{c.endPos}"
   # Split current chunk if we're overlapping
   if range.a > c.startPos.src or (currentEmpty and bias == Bias.Right):
-    if c.item.getSome(item):
+    if c.item.isSome:
       let newRange = (range.a - c.startPos.src).toPoint
       let newByteRange = byteRange.a - c.startPos.srcBytes
       log &"  add start of overlappin chunk {newRange}"
@@ -780,7 +780,7 @@ proc addOverlay*(self: var OverlayMapSnapshot, range: Range[Point], text: string
   log &"  3: {c.startPos}...{c.endPos}: {(if c.item.isSome: $c.item.get[] else: $0)}"
   # Split at range end
   if range.b < c.endPos.src or (currentEmpty and bias == Bias.Left):
-    if c.item.getSome(item):
+    if c.item.isSome:
       let newRange = (c.endPos.src - range.b).toPoint
       let newByteRange = c.endPos.srcBytes - byteRange.b
       log &"  add end of overlappin chunk {newRange}"
@@ -848,8 +848,6 @@ proc applyOps*(self: var OverlayMapSnapshot, operations: sink seq[OverlayMapOper
         if op.id in 0..<idCounts.len and idCounts[op.id] != 0:
           result = result.compose self.clear(op.id).edits
 
-    var t2 = startTimer()
-    var l = result.edits.len
     for overlay in op.newOverlays:
       result = result.compose(self.addOverlay(overlay.range, overlay.text, op.id, overlay.scope, overlay.bias, overlay.renderId, overlay.location).edits)
   assert result.isValid
@@ -893,10 +891,6 @@ proc applyOpsAsync(self: OverlayMap) {.async: (raises: []).} =
   self.isApplyingOps = true
   defer:
     self.isApplyingOps = false
-
-  template log(msg: untyped) =
-    when false:
-      debugEcho msg
 
   try:
     while true:

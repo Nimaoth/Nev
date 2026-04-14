@@ -1,7 +1,6 @@
-import platform/[tui]
 import nimsumtree/[arc]
 import misc/[id]
-import service, command_service, channel, view
+import channel, view
 import types
 from scripting_api import CreateTerminalOptions, RunInTerminalOptions, SshOptions, LineNumbers
 
@@ -27,6 +26,7 @@ when implModule:
     echo "DO Build terminal implementation"
 
   import std/[streams, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm, sets, macros, deques, genasts]
+  import platform/[tui]
   import chroma, pixie, pixie/fileformats/png
   import nimsumtree/[rope]
   import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, async_process, wrap, case_swap, jsonex, array_set]
@@ -34,7 +34,7 @@ when implModule:
   import platform/platform
   import finder/[finder, previewer]
   import dynamic_view, events, config_provider, layout, theme, vterm, input, input_api, selector_popup_builder, vfs, vfs_service
-  import text_editor_component, config_component, register
+  import text_editor_component, config_component, register, service, command_service
   import types_impl
   import render
 
@@ -53,6 +53,7 @@ when implModule:
 
   {.push gcsafe.}
   {.push raises: [].}
+  {.push hint[XCannotRaiseY]:off.}
 
   when defined(windows):
     import winim/lean
@@ -3093,7 +3094,7 @@ when implModule:
         description: inDesc,
         parameters: inParams,
         returnType: inRet,
-        execute: proc(argsString: string): string {.gcsafe, raises: [CatchableError].} =
+        execute: proc(argsString: string): string {.gcsafe, raises: [].} =
           var args = newJArray()
           try:
             for a in newStringStream(argsString).parseJsonFragments():

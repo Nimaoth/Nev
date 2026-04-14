@@ -32,7 +32,7 @@ proc query*(self: TreesitterComponent, name: string, language: string = ""): Fut
 # Implementation
 when implModule:
   import std/[strformat]
-  import misc/[util, custom_logger, array_set]
+  import misc/[util, custom_logger]
   import text/custom_treesitter
   import vfs
 
@@ -105,7 +105,6 @@ when implModule:
     if tsLanguage.isNil:
       return TSQuery.none
 
-    let prevLanguageId = tsLanguage.languageId
     # todo
     # let treesitterLanguageName = self.settings.treesitter.language.get().get(tsLanguage.languageId)
     let treesitterLanguageName = tsLanguage.languageId

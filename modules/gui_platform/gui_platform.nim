@@ -101,13 +101,6 @@ when implModule:
 
     const DWMWA_CAPTION_COLOR*: DWORD = 35
     const DWMWA_TEXT_COLOR*: DWORD = 36
-    const DWMWA_SYSTEMBACKDROP_TYPE*: DWORD = 38
-    const
-      DWMSBT_AUTO: DWORD = 0
-      DWMSBT_NONE: DWORD = 1
-      DWMSBT_MAINWINDOW: DWORD = 2   # Mica
-      DWMSBT_TRANSIENTWINDOW: DWORD = 3 # Acrylic-like
-      DWMSBT_TABBEDWINDOW: DWORD = 4
 
     proc RGB*(r, g, b: uint8): DWORD = (DWORD(r) or (DWORD(g) shl 8) or (DWORD(b) shl 16))
 

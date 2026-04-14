@@ -225,7 +225,12 @@ proc finished(fv: var FlowVarBaseObj) =
 
 proc `=destroy`[T](fv: var FlowVarObj[T]) =
   finished(fv)
-  `=destroy`(fv.blob)
+  {.push warning[BareExcept]:off.}
+  try:
+    `=destroy`(fv.blob)
+  except Exception:
+    discard
+  {.pop.}
 
 proc nimCreateFlowVar[T](): FlowVar[T] {.compilerproc.} =
   new(result)

@@ -1,4 +1,4 @@
-import std/[tables, options, sets, hashes, algorithm]
+import std/[tables, options, sets, hashes]
 import bumpy
 import misc/[event, custom_logger, id, custom_async, util, generational_seq, jsonex]
 import ui/node
@@ -104,7 +104,7 @@ proc getEditorsForDocument*(self: DocumentEditorService, document: Document): se
 proc createEditorForDocument*(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor]
 proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx, id = Id.none): Document
 proc documentEditorSetActive(self: DocumentEditor, newActive: bool)
-proc documentEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].}
+proc documentEditorGetEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].}
 proc documentEditorGetOrOpenDocument(self: DocumentEditorService, path: string, load: bool = true, id = Id.none): Option[Document] {.gcsafe, raises: [].}
 proc documentEditorAddDocumentFactory(self: DocumentEditorService, factory: DocumentFactory)
 proc documentEditorAddDocumentEditorFactory(self: DocumentEditorService, factory: DocumentEditorFactory)
@@ -122,7 +122,7 @@ proc `active=`*(self: DocumentEditor, newActive: bool) = documentEditorSetActive
 {.pop.}
 
 when implModule:
-  import std/[json]
+  import std/[json, algorithm]
   import misc/[array_set]
   import vmath
   import scripting/expose
@@ -207,7 +207,7 @@ when implModule:
 
   method getStatisticsString*(self: DocumentEditor): string {.base, gcsafe, raises: [].} = discard
 
-  proc documentEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].} =
+  proc documentEditorGetEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].} =
     self.getEventHandlers(inject)
 
   proc documentEditorSetActive(self: DocumentEditor, newActive: bool) =

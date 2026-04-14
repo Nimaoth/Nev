@@ -398,7 +398,6 @@ when implModule:
     return string.none
 
   proc commandServiceCheckPermissions(self: CommandService, command: string, permissions: CommandPermissions): bool =
-    let self = self.CommandServiceImpl
     if permissions.disallowAll.get(false) or command in permissions.disallow:
       return false
     if permissions.allowAll.get(false) or command in permissions.allow:

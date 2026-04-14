@@ -66,7 +66,7 @@ when implModule:
   import std/[tables, sugar, deques, sets, os]
   import results
   import platform/platform
-  import misc/[custom_logger, rect_utils, myjsonutils, util, jsonex, array_set]
+  import misc/[custom_logger, rect_utils, myjsonutils, util, jsonex]
   import scripting/expose
   import workspaces/workspace
   import finder/finder
@@ -533,6 +533,7 @@ when implModule:
     # self.closeImpl = proc(self: DynamicView) = editorViewClose(self.EditorView)
     self.activateImpl = proc(self: DynamicView) = editorViewActivate(self.EditorView)
     self.deactivateImpl = proc(self: DynamicView) = editorViewDeactivate(self.EditorView)
+    self.markDirtyImpl = proc (self: DynamicView, notify: bool) = editorViewMarkDirty(self.EditorView, notify)
     self.getEventHandlersImpl = proc (self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] = editorViewGetEventHandlers(self.EditorView, inject)
     self.descImpl = proc (self: DynamicView): string = editorViewDesc(self.EditorView)
     self.kindImpl = proc (self: DynamicView): string = editorViewKind(self.EditorView)

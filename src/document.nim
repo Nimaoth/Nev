@@ -38,8 +38,8 @@ type Document* = ref object of ComponentOwner
 proc documentLocalizedPath*(self: Document): string {.apprtl, gcsafe, raises: [].}
 proc localizedPath*(self: Document): string {.inline.} = documentLocalizedPath(self)
 
-proc documentSave(self: Document, filename: string = ""): Future[void] {.apprtl, gcsafe, async: (raises: []).}
-proc documentLoad(self: Document, filename: string = "", temp: bool = false) {.apprtl, gcsafe, raises: [].}
+proc documentSave*(self: Document, filename: string = ""): Future[void] {.apprtl, gcsafe, async: (raises: []).}
+proc documentLoad*(self: Document, filename: string = "", temp: bool = false) {.apprtl, gcsafe, raises: [].}
 
 proc setReadOnly*(self: Document, readOnly: bool) =
   ## Sets the interal readOnly flag, but doesn't not changed permission of the underlying file
@@ -51,7 +51,7 @@ proc setFileReadOnlyAsync*(self: Document, readOnly: bool): Future[bool] {.async
     await self.vfs.setFileAttributes(self.filename, FileAttributes(writable: not readOnly, readable: true))
     self.readOnly = readOnly
     return true
-  except IOError as e:
+  except IOError:
     return false
 
 proc isReady*(self: Document): bool =
@@ -69,8 +69,8 @@ when implModule:
 
   proc documentLocalizedPath*(self: Document): string {.gcsafe, raises: [].} = self.vfs.localize(self.filename)
 
-  proc documentSave(self: Document, filename: string = ""): Future[void] {.async: (raises: []).} = await self.save(filename)
-  proc documentLoad(self: Document, filename: string = "", temp: bool = false) = self.load(filename, temp)
+  proc documentSave*(self: Document, filename: string = ""): Future[void] {.async: (raises: []).} = await self.save(filename)
+  proc documentLoad*(self: Document, filename: string = "", temp: bool = false) = self.load(filename, temp)
 
 else:
   proc save*(self: Document, filename: string = ""): Future[void] {.async: (raises: []).} = await documentSave(self, filename)

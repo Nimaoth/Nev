@@ -1,4 +1,4 @@
-import std/[options, atomics, hashes, strformat]
+import std/[options, atomics, hashes]
 import std/[random]
 import nimsumtree/[buffer, rope, sumtree]
 import misc/[custom_unicode, util]

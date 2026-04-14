@@ -1,7 +1,7 @@
-import std/[options, tables]
-import nimsumtree/[arc, buffer, clock, rope]
+import std/[options]
+import nimsumtree/[buffer, clock, rope]
 import misc/[custom_async, delayed_task, event]
-import config_provider, service
+import config_provider
 import component
 
 export component
@@ -56,8 +56,8 @@ proc getNextFindResult*(self: SearchComponent, cursor: Point, offset: int = 0, i
 # Implementation
 when implModule:
   import std/[sequtils]
-  import misc/[util, custom_logger, async_process, id, rope_regex, regex, rope_utils]
-  import document_editor, text_component, move_component, decoration_component, text_editor_component, command_service, config_component
+  import misc/[util, custom_logger, id, rope_regex, regex, rope_utils]
+  import document_editor, text_component, move_component, decoration_component, text_editor_component, command_service, config_component, service
 
   logCategory "search-component"
 
@@ -76,9 +76,6 @@ when implModule:
       typeId: SearchComponentId,
       config: config,
       matchingWordHiglightSettings: MatchingWordHighlightSettings.new(config),
-      initializeImpl: (proc(self: Component, owner: ComponentOwner) =
-        let self = self.SearchComponent
-      ),
     )
 
   proc markDirty(self: SearchComponent) =
@@ -321,9 +318,6 @@ when implModule:
     let commands = getServiceChecked(CommandService)
 
     let edit = editor.getTextEditorComponent().get
-    let decorations = editor.getDecorationComponent().get
-    let moves = editor.getMoveComponent().get
-    let text = editor.currentDocument.getTextComponent().get
 
     let prevSearchQuery = self.searchQuery
     let prevUseMoveSearch = self.useMoveSearch

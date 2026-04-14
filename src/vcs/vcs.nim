@@ -1,5 +1,5 @@
-import std/[options, strutils, os, sugar, tables]
-import misc/[custom_async, custom_logger, util, event]
+import std/[options, tables]
+import misc/[custom_async, custom_logger, util]
 import text/diff
 import nimsumtree/[arc]
 import workspaces/workspace
@@ -110,6 +110,8 @@ proc getCommitHistory*(self: VersionControlSystem, maxCount: int = 50): Future[s
     return await self.getCommitHistoryImpl(self, maxCount)
 
 when implModule:
+  import std/[strutils, sugar]
+  import misc/[event]
   addBuiltinService(VCSService, Workspace, ConfigService, VFSService)
 
   func isUntracked*(fileInfo: VCSFileInfo): bool = fileInfo.unstagedStatus == Untracked

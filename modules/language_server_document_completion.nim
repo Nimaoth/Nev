@@ -1,7 +1,6 @@
-import std/[options, json, strutils, sets]
-import nimsumtree/arc
+import std/[options, strutils, sets]
 import nimsumtree/rope except Cursor
-import misc/[custom_logger, custom_unicode, util, event, custom_async, response, rope_utils, jsonex, fuzzy_matching]
+import misc/[custom_logger, custom_unicode, util, event, custom_async, response, fuzzy_matching]
 import text/language/[language_server_base, lsp_types]
 import service, event_service, language_server_dynamic, document_editor, config_provider
 
@@ -11,10 +10,9 @@ include module_base
 proc getLanguageServerDocumentCompletion*(): LanguageServerDynamic {.rtl, gcsafe, raises: [].}
 
 when implModule:
-  import workspaces/workspace
-  import vfs, vfs_service
-  import document, language_server_component, config_component, language_component, move_component, text_component
+  import language_server_component, config_component, language_component, text_component
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
+
   logCategory "language-server-document-completion"
 
   type

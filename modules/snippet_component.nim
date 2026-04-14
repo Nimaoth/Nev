@@ -1,6 +1,6 @@
 #use
 import std/[options]
-import misc/[event, custom_async, jsonex]
+import misc/[custom_async]
 import component, text/snippet
 
 export component
@@ -35,11 +35,8 @@ proc clearTabStops*(self: SnippetComponent) =
 
 # Implementation
 when implModule:
-  import std/[strformat]
-  import misc/[util, custom_logger, rope_utils]
-  import nimsumtree/[rope]
+  import misc/[util, custom_logger]
   import document, document_editor, text_component, text_editor_component
-  import service
 
   logCategory "snippet-component"
 
@@ -51,12 +48,6 @@ when implModule:
   proc newSnippetComponent*(): SnippetComponent =
     return SnippetComponent(
       typeId: SnippetComponentId,
-      initializeImpl: (proc(self: Component, owner: ComponentOwner) =
-        let self = self.SnippetComponent
-      ),
-      deinitializeImpl: (proc(self: Component) =
-        let self = self.SnippetComponent
-      ),
     )
 
   proc init_module_snippet_component*() {.cdecl, exportc, dynlib.} =

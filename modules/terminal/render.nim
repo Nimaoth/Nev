@@ -5,7 +5,7 @@ import misc/[util, custom_logger, custom_unicode]
 import platform/[tui]
 import ui/[widget_builders_base]
 import theme, view, dynamic_view, config_provider
-import types, types_impl
+import types_impl
 
 from std/colors as colors import nil
 
@@ -53,10 +53,9 @@ proc drawImages(self: TerminalView, builder: UINodeBuilder, renderCommands: var 
 proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHeight, outCellWidth, outCellHeight: var int): seq[OverlayRenderFunc] =
   self.resetDirty()
 
-  # debugf"renderTerminal"
   let config = self.terminals.config.runtime
   let uiSettings = UISettings.new(config)
-  let inactiveBrightnessChange = -0.025 # uiSettings.background.inactiveBrightnessChange.get()
+  let inactiveBrightnessChange = uiSettings.background.inactiveBrightnessChange.get()
   var backgroundColor = if self.active:
     builder.theme.color("editor.background", color(25/255, 25/255, 40/255))
   else:

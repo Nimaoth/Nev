@@ -4,7 +4,7 @@ import misc/[custom_logger, rect_utils, jsonex]
 import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup, widget_library]
-import document_editor, theme, compilation_config, view, layout, config_provider, command_service, toast, document_editor_render
+import document_editor, theme, view, layout, config_provider, command_service, toast, document_editor_render
 import text/text_editor
 import render_view, dynamic_view
 from scripting_api import nil
@@ -527,7 +527,6 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
           builder.panel(&{SizeToContentX, SizeToContentY, MaskContent, BlendAlpha}, backgroundColor = color(1, 1, 1, a), pivot = vec2(0, 1), tag = "toast"):
             builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal, FillBackground}, backgroundColor = headerColor):
-              let contentWidth = currentNode.w - currentNode.border.left - currentNode.border.right
               builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = toast.title, textColor = color)
               builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = " - ", textColor = textColor)
               let maxLen = ((toastWidth - builder.currentChild.bounds.xw) / builder.charWidth).int

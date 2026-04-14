@@ -465,13 +465,6 @@ converter toInternal(c: ScrollBehaviour): sca.ScrollBehaviour =
   of ScrollToMargin: sca.ScrollToMargin
   of TopOfScreen: sca.TopOfScreen
 
-converter toInternal(c: ScrollSnapBehaviour): sca.ScrollSnapBehaviour =
-  case c
-  of Never: sca.Never
-  of Always: sca.Always
-  of MinDistanceOffscreen: sca.MinDistanceOffscreen
-  of MinDistanceCenter: sca.MinDistanceCenter
-
 converter toInternal(c: OverlayRenderLocation): overlay_map.OverlayRenderLocation =
   case c
   of Inline: overlay_map.OverlayRenderLocation.Inline

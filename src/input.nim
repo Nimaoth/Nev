@@ -575,7 +575,7 @@ proc buildDFA*(commands: Table[string, Table[string, string]], leaders = initTab
 
   let leaders = collect(initTable):
     for name, l in leaders:
-      let inputs = collect(newSeq):
+      let inputs {.used.} = collect(newSeq):
         for leader in l:
           let (keys, _, _, _, _) = parseNextInput(leader.toRunes, 0)
           for key in keys:

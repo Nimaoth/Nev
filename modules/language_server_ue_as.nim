@@ -12,12 +12,12 @@
 #     with clangd results filtered for generated files; raw and resolved forms
 #   - Symbol resolution: routes to angel-lsp for .as files, clangd otherwise
 
-import language_server_dynamic
-
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
 when defined(appLspUeAs):
+  import language_server_dynamic
+
   proc getLanguageServerUEAs*(): LanguageServerDynamic {.rtl, gcsafe, raises: [].}
 
 else:

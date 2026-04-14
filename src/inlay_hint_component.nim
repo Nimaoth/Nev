@@ -25,13 +25,12 @@ proc updateInlayHints*(self: InlayHintComponent, now: bool = false) {.inline.} =
 
 # Implementation
 when implModule:
-  import std/[tables, sequtils]
+  import std/[sequtils]
   import nimsumtree/[rope, buffer, clock]
   import misc/[util, custom_logger, rope_utils, delayed_task, id, event, custom_async, response]
   import document_editor, document
   import text/language/language_server_base
   import text/[display_map, overlay_map]
-  import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import language_server_component, text_editor_component, text_component
 
   logCategory "inlay-hint-component"

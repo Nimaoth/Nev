@@ -137,8 +137,6 @@ when implModule:
   proc regexGetWorkspaceSymbols*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[Symbol]] {.async.} =
     let self = self.LanguageServerRegex
     if self.documents.getDocumentByPath(filename).getSome(doc):
-      let text = doc.getTextComponent().getOr:
-        return @[]
       let config = doc.getConfigComponent().getOr:
         return @[]
       let language = doc.getLanguageComponent().getOr:

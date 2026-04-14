@@ -1,7 +1,5 @@
-import std/[options, json]
-import results
 import platform/platform
-import misc/[custom_async, custom_logger, myjsonutils, util, timer]
+import misc/[custom_async, custom_logger, util, timer]
 import service, platform_service, config_provider
 
 include dynlib_export
@@ -36,7 +34,10 @@ proc showToast*(self: ToastService, title: string, message: string, color: strin
 
 # Implementation
 when implModule:
+  import std/[options, json]
+  import results
   import scripting/expose
+  import misc/[myjsonutils]
   import dispatch_tables
 
   addBuiltinService(ToastService, ConfigService, PlatformService)

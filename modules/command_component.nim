@@ -55,12 +55,6 @@ when implModule:
   proc newCommandComponent*(): CommandComponent =
     return CommandComponent(
       typeId: CommandComponentId,
-      initializeImpl: (proc(self: Component, owner: ComponentOwner) =
-        let self = self.CommandComponent
-      ),
-      deinitializeImpl: (proc(self: Component) =
-        let self = self.CommandComponent
-      ),
     )
 
   proc commandComponentRegisterCommand(self: CommandComponent, name: string, handler: RootRef, cb: CommandHandler) =

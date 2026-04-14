@@ -26,8 +26,8 @@ include module_base
 
 # Implementation
 when implModule:
-  import std/[options, tables, json, strformat, sequtils, uri, times]
-  import misc/[custom_logger, util, myjsonutils, custom_async, generational_seq, id, array_set, delayed_task]
+  import std/[options, json, strformat, uri, times]
+  import misc/[custom_logger, util, myjsonutils, custom_async, id, array_set, delayed_task]
   import document, document_editor, service, event_service, config_component, layout, vfs_service, vfs, text_component
 
   logCategory "unsaved-saver"
@@ -77,9 +77,6 @@ when implModule:
       log lvlWarn, &"Failed to initialize init_module_unsaved_saver: no services found"
       return
 
-    let config = services.getService(ConfigService).get
-    let events = services.getService(EventService).get
-    let documents = services.getService(DocumentEditorService).get
     let layout = services.getService(LayoutService).get
     let vfs = services.getService(VFSService).get.vfs2
 
@@ -149,7 +146,6 @@ when implModule:
     let config = services.getService(ConfigService).get
     let events = services.getService(EventService).get
     let documents = services.getService(DocumentEditorService).get
-    let layout = services.getService(LayoutService).get
     let vfs = services.getService(VFSService).get.vfs2
     let settings = UnsavedSettings.new(config.runtime)
 
@@ -175,8 +171,6 @@ when implModule:
         if documents.getEditor(id).getSome(editor):
           let doc = editor.currentDocument
           if doc.isNil:
-            return
-          let text = doc.getTextComponent().getOr:
             return
 
           var targetPath = ""

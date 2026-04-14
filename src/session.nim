@@ -29,7 +29,7 @@ proc getRecentSessions*(self: SessionService): Future[seq[string]] {.inline, asy
 
 # Implementation
 when implModule:
-  import std/[strutils, tables, os]
+  import std/[strutils, tables]
   import misc/[custom_logger, util, myjsonutils]
   import scripting/[expose]
   import dispatch_tables, event_service, vfs_service

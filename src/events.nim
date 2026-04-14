@@ -137,7 +137,7 @@ when implModule:
 
     let keyDefinitions = collect(initTable):
       for name, defs in config.keyDefinitions:
-        let inputs = collect(newSeq):
+        let inputs {.used.} = collect(newSeq):
           for def in defs:
             let (keys, _, _, _, _) = parseNextInput(def.toRunes, 0)
             for key in keys:

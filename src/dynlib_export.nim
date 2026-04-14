@@ -1,5 +1,5 @@
 const nevModuleName {.strdefine.}: string = ""
-const implModule = nevModuleName == "nev"
+const implModule {.used.} = nevModuleName == "nev"
 
 when defined(useDynlib):
   when implModule:

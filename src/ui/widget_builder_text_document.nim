@@ -1,4 +1,4 @@
-import std/[strformat, tables, strutils, math, options, json, algorithm, sequtils]
+import std/[strformat, tables, strutils, math, options, json, algorithm]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer, generational_seq, render_command, arena, array_view]
 import text/text_editor
@@ -892,7 +892,6 @@ proc drawLine*(state: var LineDrawerState, commands: var RenderCommands, lineNum
           for i in val[].mitems:
             let i = i
             let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[i]
-            let nlIndex = diagnostic.message.find("\n")
             var maxIndex = min(diagnostic.message.len, 500)
             var message = "     ■ " & diagnostic.message[0..<maxIndex]
             if maxIndex < diagnostic.message.len:

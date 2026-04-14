@@ -1,6 +1,5 @@
-import std/[options, tables]
 import misc/[custom_async]
-import service, app_options
+import app_options
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -19,11 +18,11 @@ when not defined(appCommandServer):
 
 # Implementation
 when implModule and defined(appCommandServer):
-  import std/[json, strformat, sequtils]
+  import std/[json, strformat, options]
   import misc/[custom_logger, util, myjsonutils]
   import asynctools/asyncipc
   import chronos/transports/stream
-  import command_service, layout, config_provider, input_api
+  import service, command_service, layout, config_provider
 
   logCategory "command-server"
 
@@ -132,10 +131,7 @@ when implModule and defined(appCommandServer):
       log lvlInfo, &"[server] Client connected to collaborative editing session {transp.remoteAddress}"
 
       let services: Services = ({.gcsafe.}: getServices())
-      let config = services.getService(ConfigService).get
-      let layout = services.getService(LayoutService).get
       let commands = services.getService(CommandService).get
-      let delay = config.runtime.get("sync.delay", 100)
 
       var reader = newAsyncStreamReader(transp)
 

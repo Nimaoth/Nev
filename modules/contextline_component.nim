@@ -1,7 +1,7 @@
-import std/[options, tables, algorithm]
-import misc/[delayed_task, id, myjsonutils, jsonex, timer]
+import std/[options]
+import misc/[delayed_task, id, myjsonutils, jsonex]
 import nimsumtree/[rope]
-import component, config_provider, text/treesitter_types
+import component, config_provider
 
 export component
 
@@ -47,11 +47,11 @@ proc contextlineComponentGetContextLines(self: ContextLineComponent): seq[Contex
 proc getContextLines*(self: ContextLineComponent): seq[ContextLineEntry] = contextlineComponentGetContextLines(self)
 
 when implModule:
-  import std/[strformat]
-  import misc/[custom_logger, custom_async, util, arena, array_view, event, regex]
+  import std/[tables, algorithm]
+  import misc/[custom_logger, custom_async, util, arena, array_view, event, regex, timer]
   import nimsumtree/[sumtree]
   import document, document_editor, text_component, treesitter_component, text_editor_component
-  import text/[custom_treesitter, syntax_map, treesitter_type_conv]
+  import text/[custom_treesitter, syntax_map, treesitter_type_conv, treesitter_types]
 
   logCategory "contextline-component"
 
@@ -149,7 +149,6 @@ when implModule:
     if syntaxMap.layerIndex.isNil:
       return @[]
 
-    var t = startTimer()
     let layers = syntaxMap.layersOverlapping(byteOffset...byteOffset)
 
     var entries: seq[ContextLineEntry]

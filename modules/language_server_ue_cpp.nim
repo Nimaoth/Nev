@@ -22,12 +22,12 @@
 #     `class X : ClassName` patterns
 #   - Workspace symbols: merged from clangd + angel-lsp
 
-import language_server_dynamic
-
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
 when defined(appLspUeCpp):
+  import language_server_dynamic
+
   proc getLanguageServerUECpp*(): LanguageServerDynamic {.rtl, gcsafe, raises: [].}
 
 else:

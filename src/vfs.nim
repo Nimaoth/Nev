@@ -417,7 +417,6 @@ proc newVFSLink*(target: Arc[VFS2], prefix: string): Arc[VFS2] =
   result.getMutUnsafe.copyFileImpl = vfsLinkCopyFile
 
 proc vfsInMemoryName*(self: Arc[VFS2]): string =
-  let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
   return &"VFSInMemory()"
 
 proc vfsInMemoryRead*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.gcsafe, async: (raises: [IOError]).} =
@@ -446,16 +445,12 @@ proc vfsInMemoryReadRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future
 proc vfsInMemoryWrite*(self: Arc[VFS2], path: string, content: string): Future[void] {.gcsafe, async: (raises: [IOError]).} =
   let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
   withLock vfs.lock:
-    let existedBefore = path in vfs.files
     vfs.files[path] = VFSInMemoryItem(kind: VFSInMemoryItemKind.String, text: content)
-    # vfs.handleFileChanged(path, existedBefore)
 
 proc vfsInMemoryWrite*(self: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.gcsafe, async: (raises: [IOError]).} =
   let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)
   withLock vfs.lock:
-    let existedBefore = path in vfs.files
     vfs.files[path] = VFSInMemoryItem(kind: VFSInMemoryItemKind.Rope, rope: content.toRope)
-    # vfs.handleFileChanged(path, existedBefore)
 
 proc vfsInMemoryDelete*(self: Arc[VFS2], path: string): Future[bool] {.gcsafe, async: (raises: []).} =
   let vfs = cast[ptr VFSInMemory2](self.getMutUnsafe.impl)

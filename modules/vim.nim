@@ -104,13 +104,7 @@ when implModule:
   proc setSelection(editor: TextEditor, selection: Selection) =
     editor.edit.selection = selection.toRange
 
-  proc `selection=`(editor: TextEditor, selection: Selection) =
-    editor.edit.selection = selection.toRange
-
   proc setSelections(editor: TextEditor, selections: sink seq[Selection]) =
-    editor.edit.selections = selections.mapIt(it.toRange)
-
-  proc `selections=`(editor: TextEditor, selections: sink seq[Selection]) =
     editor.edit.selections = selections.mapIt(it.toRange)
 
   proc getSelection(editor: TextEditor): Selection =
@@ -295,9 +289,6 @@ when implModule:
   proc moveCursorColumn(editor: TextEditor, amount: int, wrap: bool = false, includeEol: bool = true) =
     editor.setSelections editor.multiMove(editor.selections, "column", 1, wrap, includeEol).mapIt(it.last.toSelection)
 
-  proc moveCursorColumn(editor: TextEditor, selections: seq[Selection], amount: int, wrap = false, includeEol = true): seq[Selection] =
-    editor.multiMove(selections, "column", 1, wrap, includeEol).mapIt(it.last.toSelection)
-
   proc moveCursorLine(editor: TextEditor, amount: int, includeEol: bool = true) =
     editor.setSelections editor.multiMove(editor.selections, "line-down", amount, false, includeEol).mapIt(it.last.toSelection)
 
@@ -307,9 +298,6 @@ when implModule:
     else:
       selection
     rope[selection.toRange]
-
-  proc slice(rope: Rope, a, b: int): RopeSlice[Point] =
-    rope[rope.offsetToPoint(a)...rope.offsetToPoint(b)]
 
   proc slice(rope: RopeSlice[Point], a, b: int): RopeSlice[Point] =
     let sliceByteStart = rope.rope.pointToOffset(rope.range.a)
@@ -371,7 +359,7 @@ when implModule:
       parameters: params,
       returnType: returnType,
       signature: "",
-      execute: proc(args: string): string {.gcsafe, raises: [CatchableError].} =
+      execute: proc(args: string): string {.gcsafe, raises: [].} =
         try:
           if active:
             let layout = getServiceChecked(LayoutService)
@@ -514,15 +502,6 @@ when implModule:
 
   proc getCurrentMacroRegister*(): string = getSetting("editor.current-macro-register", "")
 
-  proc getEnclosing(line: string, column: int, predicate: proc(c: char): bool): (int, int) =
-    var startColumn = column
-    var endColumn = column
-    while endColumn < line.high and predicate(line[endColumn + 1]):
-      inc endColumn
-    while startColumn > 0 and predicate(line[startColumn - 1]):
-      dec startColumn
-    return (startColumn, endColumn)
-
   proc handleSelectWord(editor: TextEditor, cursor: Cursor) {.exposeActive(editorContext).} =
     editor.setSelection(cursor.toSelection)
 
@@ -644,7 +623,6 @@ when implModule:
     var inclusive = (not editor.vimState.selectLines) and (editor.vimState.deleteInclusiveEnd or forceInclusiveEnd)
     if forceExclusive:
       inclusive = false
-    let newSelections = editor.copySelection(getVimDefaultRegister(), inclusive)
     let selectionsToDelete = editor.selections
     let oldSelections = oldSelections.get(editor.selections)
     editor.edit.withTransaction:
@@ -657,7 +635,6 @@ when implModule:
     var inclusive = editor.vimState.deleteInclusiveEnd or forceInclusiveEnd
     if forceExclusive:
       inclusive = false
-    let newSelections = editor.copySelection(getVimDefaultRegister(), inclusive)
     let selectionsToDelete = editor.selections
     let oldSelections = oldSelections.get(editor.selections)
     editor.setMode "vim.insert"

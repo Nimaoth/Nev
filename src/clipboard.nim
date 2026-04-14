@@ -1,4 +1,4 @@
-import std/[options, macros, strutils]
+import std/[options, macros]
 import misc/[util, custom_async, custom_logger]
 
 logCategory "clipboard"

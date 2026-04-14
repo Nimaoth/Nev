@@ -1,9 +1,8 @@
 #use formatting_component
-import std/[options, tables]
+import std/[options]
 import nimsumtree/[arc]
 import regex
-import misc/[event, custom_async]
-import vfs, config_provider, service, formatting_component
+import service, formatting_component
 import component
 
 export component
@@ -26,8 +25,8 @@ type
 
 # Implementation
 when implModule:
-  import std/[sequtils, parsexml, streams, strformat]
-  import misc/[util, custom_logger, rope_utils, async_process, timer]
+  import std/[parsexml, streams, strformat]
+  import misc/[util, custom_logger, rope_utils, async_process, timer, custom_async]
   import nimsumtree/[rope, buffer, clock]
   import document, text_component, channel
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor

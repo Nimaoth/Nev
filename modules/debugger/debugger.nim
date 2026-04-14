@@ -38,12 +38,6 @@ when implModule:
 
   let debuggerCurrentLineId = newId()
 
-  proc dump(self: ThreadsView): string = "ThreadsView" & $(self[])
-  proc dump(self: StacktraceView): string = "StacktraceView" & $(self[])
-  proc dump(self: VariablesView): string = "VariablesView" & $(self[])
-  proc dump(self: OutputView): string = "OutputView" & $(self[])
-  proc dump(self: ToolbarView): string = "ToolbarView" & $(self[])
-
   proc kind(self: ThreadsView): string = "debugger.threads"
   proc kind(self: StacktraceView): string = "debugger.stacktrace"
   proc kind(self: VariablesView): string = "debugger.variables"
@@ -1123,7 +1117,7 @@ when implModule:
     if i >= 0:
       self.watchExpressions.delete(i)
       if self.debuggerState == DebuggerState.Paused:
-        if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
+        if self.currentThread().getSome(t):
           asyncSpawn self.updateScopes(t.id, self.currentFrameIndex, force = true)
       elif self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
         asyncSpawn self.updateWatches(t.id, frame[].id)
@@ -1389,15 +1383,9 @@ when implModule:
 
         # Validate and fix cursor paths after reference mapping
         for view in self.variableViews:
-          let oldCursor = view.variablesCursor
           view.variablesCursor = self.clampCursor(view.variablesCursor)
-          # if view.variablesCursor != oldCursor:
-          #   debugf"  [clamp] cursor path adjusted: {oldCursor.path.len} -> {view.variablesCursor.path.len} elements"
 
-          let oldBase = view.baseIndex
           view.baseIndex = self.clampCursor(view.baseIndex)
-          # if view.baseIndex != oldBase:
-          #   debugf"  [clamp] baseIndex path adjusted: {oldBase.path.len} -> {view.baseIndex.path.len} elements"
 
       self.variables[containerId] = variables.result
       # debugf"[updateVariables] Stored {variables.result.variables.len} variables for containerVarRef={containerVarRef}"
@@ -1513,7 +1501,6 @@ when implModule:
 
         let frame {.cursor.} = stack[].stackFrames[frameIndex]
 
-        var childrenToUpdate = newSeq[int]()
         let timestamp = self.timestamp
         if force or not self.scopes.contains((threadId, frame.id)):
           var scopes = await client.scopes(frame.id)
@@ -1578,15 +1565,9 @@ when implModule:
 
             # Validate and fix cursor paths after scope reference mapping
             for view in self.variableViews:
-              let oldCursor = view.variablesCursor
               view.variablesCursor = self.clampCursor(view.variablesCursor)
-              # if view.variablesCursor != oldCursor:
-              #   debugf"  [clamp] cursor path adjusted: {oldCursor.path.len} -> {view.variablesCursor.path.len} elements"
 
-              let oldBase = view.baseIndex
               view.baseIndex = self.clampCursor(view.baseIndex)
-              # if view.baseIndex != oldBase:
-              #   debugf"  [clamp] baseIndex path adjusted: {oldBase.path.len} -> {view.baseIndex.path.len} elements"
 
           scopes.result.timestamp = self.timestamp
 
@@ -2324,10 +2305,8 @@ when implModule:
     if query.isNone or tree2.isNil:
       return
 
-    let endPoint = text.content.endPoint
     var arena = initArena()
 
-    var res = newSeq[string]()
     for match in query.get.matches(tree2.root, visibleRange.tsRange, arena):
       var isDecl = false
       var declRange: Range[Point]

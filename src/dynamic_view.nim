@@ -1,8 +1,12 @@
 
 import std/[tables, json, sets]
 import misc/[custom_logger, util]
-import view, events, layouts
+import view, events
 import ui/node, document_editor
+
+{.push, warning[UnusedImport]: off.}
+import layouts
+{.pop.}
 
 export view
 

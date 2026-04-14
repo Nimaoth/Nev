@@ -30,8 +30,6 @@ when implModule:
 
   proc vfsGitRead*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.gcsafe, async: (raises: [IOError]).}
   proc vfsGitReadRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).}
-  proc vfsGitGetFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.gcsafe, async: (raises: []).}
-  proc vfsGitGetFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.gcsafe, async: (raises: []).}
   proc vfsGitGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).}
 
   proc newVFSGit*(vcsService: VCSService): Arc[VFS2] =
@@ -42,10 +40,7 @@ when implModule:
     result.getMutUnsafe.nameImpl = vfsGitName
     result.getMutUnsafe.readImpl = vfsGitRead
     result.getMutUnsafe.readRopeImpl = vfsGitReadRope
-    result.getMutUnsafe.getFileKindImpl = vfsGitGetFileKind
-    result.getMutUnsafe.getFileAttributesImpl = vfsGitGetFileAttributes
     result.getMutUnsafe.getDirectoryListingImpl = vfsGitGetDirectoryListing
-    # result.getMutUnsafe.normalizeImpl = vfsGitNormalize
 
   proc parsePath*(self: Arc[VFS2], inPath: string): tuple[root, path: string, staged: bool, commit: string] =
     ## Parses a path and returns the raw path plus some flags/extra info.
@@ -107,20 +102,6 @@ when implModule:
     let content = await self.vfsGitRead(path, {})
     rope[] = Rope.new(content)
 
-  proc vfsGitGetFileKind*(self: Arc[VFS2], path: string): Future[Option[FileKind]] {.gcsafe, async: (raises: []).} =
-    try:
-      let git = cast[ptr VFSGit](self.getMutUnsafe.impl)
-      let (root, path, staged, commit) = self.parsePath(path)
-    except CatchableError:
-      discard
-
-  proc vfsGitGetFileAttributes*(self: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.gcsafe, async: (raises: []).} =
-    try:
-      let git = cast[ptr VFSGit](self.getMutUnsafe.impl)
-      let (root, path, staged, commit) = self.parsePath(path)
-    except CatchableError:
-      discard
-
   proc vfsGitGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).} =
     let git = cast[ptr VFSGit](self.getMutUnsafe.impl)
 
@@ -159,7 +140,6 @@ when implModule:
       reff = "HEAD"
 
     let relPath = if path == "": "." else: path & "/"
-    let localPath = (vcs.get.root // path).strip(chars={'/'})
 
     if staged:
       try:
@@ -189,7 +169,6 @@ when implModule:
           let fullPath = vcs.get.root // line
           let name = line.splitPath.tail
           if dirExists(fullPath):
-            let folder = line.split("/")[0]
             if name notin listing.folders:
               listing.folders.add name
           else:
@@ -311,7 +290,7 @@ when implModule:
         )
 
       return changelists
-    except CatchableError as e:
+    except CatchableError:
       return @[]
 
   proc gitGetCommitHistory(self: VersionControlSystemGit, maxCount: int = 50): Future[seq[VCSCommitInfo]] {.gcsafe, async: (raises: []).} =
@@ -331,7 +310,7 @@ when implModule:
         i += 4
 
       return commits
-    except CatchableError as e:
+    except CatchableError:
       return @[]
 
   proc gitStageFile(self: VersionControlSystemGit, path: string): Future[string] {.gcsafe, async: (raises: []).} =
@@ -525,6 +504,7 @@ when implModule:
       let vcs = newVersionControlSystemGit(path, config)
       return @[vcs.VersionControlSystem]
 
+    # todo: add setting to enable this, do it in background thread aswell
     # try:
     #   for path in walkGitDirs(path):
     #     log lvlInfo, fmt"Found git repository in {path}"

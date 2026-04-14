@@ -54,14 +54,14 @@ proc markDirtyBase*(self: View, notify: bool = true) =
   else:
     self.mDirty = true
 
-proc viewClose(view: View) {.apprtl.}
-proc viewActivate(view: View) {.apprtl.}
-proc viewDeactivate(view: View) {.apprtl.}
-proc viewCheckDirty(view: View) {.apprtl.}
-proc viewMarkDirty(self: View, notify: bool = true) {.apprtl.}
-proc viewGetEventHandlers(self: View, inject: Table[string, EventHandler]): seq[EventHandler] {.apprtl.}
-proc viewGetActiveEditor(self: View): Option[DocumentEditor] {.apprtl.}
-proc viewSaveState(self: View): JsonNode {.apprtl.}
+proc viewClose*(view: View) {.apprtl.}
+proc viewActivate*(view: View) {.apprtl.}
+proc viewDeactivate*(view: View) {.apprtl.}
+proc viewCheckDirty*(view: View) {.apprtl.}
+proc viewMarkDirty*(self: View, notify: bool = true) {.apprtl.}
+proc viewGetEventHandlers*(self: View, inject: Table[string, EventHandler]): seq[EventHandler] {.apprtl.}
+proc viewGetActiveEditor*(self: View): Option[DocumentEditor] {.apprtl.}
+proc viewSaveState*(self: View): JsonNode {.apprtl.}
 
 when implModule:
   method close*(view: View) {.base.} =
@@ -87,14 +87,14 @@ when implModule:
 
   method saveState*(self: View): JsonNode {.base.} = nil
 
-  proc viewClose(view: View) = close(view)
-  proc viewActivate(view: View) = activate(view)
-  proc viewDeactivate(view: View) = deactivate(view)
-  proc viewCheckDirty(view: View) = checkDirty(view)
-  proc viewMarkDirty(self: View, notify: bool = true) = markDirty(self, notify)
-  proc viewGetEventHandlers(self: View, inject: Table[string, EventHandler]): seq[EventHandler] = getEventHandlers(self, inject)
-  proc viewGetActiveEditor(self: View): Option[DocumentEditor] = getActiveEditor(self)
-  proc viewSaveState(self: View): JsonNode = saveState(self)
+  proc viewClose*(view: View) = close(view)
+  proc viewActivate*(view: View) = activate(view)
+  proc viewDeactivate*(view: View) = deactivate(view)
+  proc viewCheckDirty*(view: View) = checkDirty(view)
+  proc viewMarkDirty*(self: View, notify: bool = true) = markDirty(self, notify)
+  proc viewGetEventHandlers*(self: View, inject: Table[string, EventHandler]): seq[EventHandler] = getEventHandlers(self, inject)
+  proc viewGetActiveEditor*(self: View): Option[DocumentEditor] = getActiveEditor(self)
+  proc viewSaveState*(self: View): JsonNode = saveState(self)
 
 else:
   proc close*(view: View) = viewClose(view)

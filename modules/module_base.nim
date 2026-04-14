@@ -1,13 +1,15 @@
 
 {.push, hint[DuplicateModuleImport]: off.}
+{.push, warning[UnusedImport]: off.}
 import std/[strutils, os]
+{.pop.}
 {.pop.}
 
 const nevModuleName {.strdefine.}: string = ""
 
 proc getCurrentModuleName(): string {.compiletime.} =
   let p = currentSourcePath2
-  return p.splitFile.name
+  return p.splitFile().name
 const currentModuleName = getCurrentModuleName()
 
 const implModule = not defined(useDynlib) or currentModuleName == nevModuleName

@@ -1,7 +1,7 @@
 import std/[options]
 import chroma, vmath
 import nimsumtree/rope
-import misc/[event, myjsonutils, generational_seq, render_command]
+import misc/[event, myjsonutils, render_command]
 import config_provider
 import component
 
@@ -72,7 +72,7 @@ proc releaseOverlayId*(self: DecorationComponent, id: int) {.inline.} = decorati
 # Implementation
 when implModule:
   import std/[tables, sequtils]
-  import misc/[util, custom_logger, rope_utils]
+  import misc/[util, custom_logger, rope_utils, generational_seq]
   import document_editor
   import text/[display_map, overlay_map]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor

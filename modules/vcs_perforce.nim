@@ -301,13 +301,13 @@ when implModule:
       log lvlInfo, fmt"getCommittedFileContent: '{path}' -- {args}"
       let lines = runProcessAsync("p4", args, workingDir=self.root).await
       # Strip trailing \r from lines to match local file format
-      var result = newSeq[string](lines.len)
+      var res = newSeq[string](lines.len)
       for i, line in lines:
         if line.len > 0 and line[^1] == '\r':
-          result[i] = line[0..^2]
+          res[i] = line[0..^2]
         else:
-          result[i] = line
-      return result
+          res[i] = line
+      return res
     except CatchableError:
       return @[]
 
@@ -317,13 +317,13 @@ when implModule:
       log lvlInfo, fmt"getStagedFileContent: '{path}' -- {args}"
       let lines = runProcessAsync("p4", args, workingDir=self.root).await
       # Strip trailing \r from lines to match local file format
-      var result = newSeq[string](lines.len)
+      var res = newSeq[string](lines.len)
       for i, line in lines:
         if line.len > 0 and line[^1] == '\r':
-          result[i] = line[0..^2]
+          res[i] = line[0..^2]
         else:
-          result[i] = line
-      return result
+          res[i] = line
+      return res
     except CatchableError:
       return @[]
 

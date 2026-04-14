@@ -401,7 +401,6 @@ proc createUI*(self: OutputView, builder: UINodeBuilder, debugger: Debugger): se
   self.renderView(builder,
     proc(): seq[OverlayFunction] =
       if debugger.outputEditor != nil:
-        let wasActive = debugger.outputEditor.active
         debugger.outputEditor.active = self.active
         return documentEditorRender(debugger.outputEditor, builder)
     ,
