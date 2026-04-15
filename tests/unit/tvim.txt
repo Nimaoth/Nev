@@ -17,3 +17,38 @@ hello a$bc world
 -
 hello $ world
 ---
+viw
+-
+hello a$bc world
+-
+hello [ab]c world
+---
+yyp
+-
+$abc
+-
+abc
+abc$
+---
+V<DOWN>y<DOWN>p
+-
+$abc
+abc
+-
+abc
+abc
+abc
+abc$
+---
+w
+-
+$hello world
+-
+hello $world
+---
+vw
+-
+$hello world
+-
+[hello ]world
+---

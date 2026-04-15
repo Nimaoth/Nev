@@ -1582,7 +1582,6 @@ when implModule:
         stopRecordingCommands(".-temp")
 
         if editor.getRevision > editor.vimState.revisionBeforeImplicitInsertMacro:
-          debugf"Record implicit macro because document was modified"
           let text = getRegisterText(".-temp")
           setRegisterText(text, ".")
     else:

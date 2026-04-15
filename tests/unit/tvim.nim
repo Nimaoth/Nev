@@ -1,7 +1,7 @@
 discard """
   action: "run"
-  cmd: "nim $target $options $file"
-  timeout: 60
+  cmd: "nim $target $options -d:exposeScriptingApi=true $file"
+  timeout: 500
   targets: "c"
   matrix: ""
 """
@@ -28,6 +28,7 @@ gServices.waitForServices()
 
 init_module_vim()
 
+getServiceChecked(CommandService).logCommands = false
 let eventService = getServiceChecked(EventHandlerService)
 
 proc addCommandScript*(context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) =
@@ -164,9 +165,9 @@ proc testInput(keys, oldText, newText: string) =
   let document = newTextDocument(gServices, "", oldText)
   let editor = getServiceChecked(LayoutService).createAndAddView(document).get
   editor.TextDocumentEditor.selections = oldSel
-  let handlers = editor.getEventHandlers(initTable[string, EventHandler]())
   var delayed: seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]] = @[]
   for (inputs, mods, text) in parseInputs(keys):
+    let handlers = editor.getEventHandlers(initTable[string, EventHandler]())
     discard handlers.handleEvent(inputs.a, mods, delayed)
   let newTextActual = document.contentString()
   let newSelActual = editor.TextDocumentEditor.selections

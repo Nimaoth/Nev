@@ -26,6 +26,7 @@ type
     disallow*: seq[string]
 
   CommandService* = ref object of Service
+    logCommands*: bool = true
 
 func serviceName*(_: typedesc[CommandService]): string = "CommandService"
 
@@ -344,10 +345,10 @@ when implModule:
         self.dontRecord = oldDontRecord
 
     let t = startTimer()
-    if not self.registers.bIsReplayingCommands:
+    if not self.registers.bIsReplayingCommands and self.logCommands:
       log lvlInfo, &"[executeCommand] '{command}'"
     defer:
-      if not self.registers.bIsReplayingCommands:
+      if not self.registers.bIsReplayingCommands and self.logCommands:
         let elapsed = t.elapsed
         log lvlInfo, &"[executeCommand] '{command}' took {elapsed.ms} ms -> {result}"
 
