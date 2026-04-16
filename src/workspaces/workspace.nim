@@ -74,7 +74,7 @@ when implModule:
   import std/[json, strutils]
   import malebolgia
   import misc/[timer, async_process]
-  import vfs_local, compilation_config
+  import vfs_local, compilation_config, event_service
 
   addBuiltinService(Workspace, VFSService)
 
@@ -342,6 +342,7 @@ when implModule:
       wsVfs2.mount($i, newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
 
     self.onWorkspaceFolderRemoved.invoke(path)
+    getServiceChecked(EventService).emit("workspace/removed", path)
 
     if recomputeFileCache:
       self.recomputeFileCache()
@@ -356,13 +357,16 @@ when implModule:
     self.vfs.mount(&"ws{self.additionalPaths.len}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
     self.vfs2.mount(&"ws{self.additionalPaths.len}://", newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
 
+    let index = $self.additionalPaths.len
+
     let (wsVfs, _) = self.vfs.getVFS("ws://")
-    wsVfs.mount($self.additionalPaths.len, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+    wsVfs.mount($index, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
 
     let (wsVfs2, _) = self.vfs2.getVFS("ws://")
-    wsVfs2.mount($self.additionalPaths.len, newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
+    wsVfs2.mount($index, newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
 
     self.onWorkspaceFolderAdded.invoke(path)
+    getServiceChecked(EventService).emit("workspace/added", path)
     if recomputeFileCache:
       self.recomputeFileCache()
 

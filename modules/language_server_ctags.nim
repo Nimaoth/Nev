@@ -440,16 +440,19 @@ when implModule:
 
   proc updateCTagFile(self: LanguageServerCTags, path: string) {.async.} =
     try:
+      let f = await self.vfs.read(path)
+
       if path notin self.ctags:
         discard self.vfs.watch(path, proc(events: seq[PathEvent]) =
-          if self.ctags[path].updateTask != nil:
+          if path in self.ctags and self.ctags[path].updateTask != nil:
             self.ctags[path].updateTask.reschedule()
         )
+
       self.ctags[path] = CTagsFile(path: path)
       self.ctags[path].updateTask = startDelayedPaused(500, repeat=false):
         asyncSpawn self.loadCTags(path)
 
-      await self.loadCTags(path)
+      await self.loadCTags(path, f)
     except CatchableError as e:
       log lvlWarn, &"Failed to update ctag file '{path}': {e.msg}"
 
@@ -510,4 +513,8 @@ when implModule:
       if key == "" or key == "lsp" or key == "lsp.ctags" or key == "lsp.ctags.paths":
         asyncSpawn ls.updateCTagFiles()
 
-    asyncSpawn ls.updateCTagFiles()
+    let eventService = getServiceChecked(EventService)
+    eventService.listen(newId(), "workspace/added"):
+      proc(event, payload: string) =
+        asyncSpawn ls.updateCTagFiles()
+
