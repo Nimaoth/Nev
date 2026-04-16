@@ -373,6 +373,8 @@ when implModule:
       self.lastEditor = editor
 
       let document = editor.get.currentDocument
+      if document.isNil:
+        return
       let text = document.getTextComponent().get
       let buffer {.cursor.} = text.buffer
       let tree {.cursor.} = buffer.history.undoTree
