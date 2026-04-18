@@ -115,6 +115,7 @@
         "<LEADER>fl": ["load-file"],
         "<LEADER>fs": ["write-file"],
         "<LEADER>gP": ["show-plugins"],
+        "<LEADER>gL": ["lsp.list"],
 
         "<LEADER>ax": ["stop-debug-session"],
         "<LEADER>ac": ["continue-execution"],

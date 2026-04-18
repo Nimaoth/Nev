@@ -1,88 +1,26 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts]
-import misc/[custom_logger, util, myjsonutils, custom_async, response]
+import misc/[util, myjsonutils, custom_async, response]
 import text/language/[language_server_base, lsp_types]
 import scripting/expose
 from workspaces/workspace as ws import nil
 import dispatch_tables, vfs
-from std/logging import nil
 import channel
 
 import misc/async_process
+import log
+
+logCategory2 "lsp-client"
 
 export lsp_types
 
 var file {.threadvar.}: syncio.File
 var logFileName {.threadvar.}: string
-var fileLogger {.threadvar.}: logging.FileLogger
 
 let mainThreadId = getThreadId()
 template isMainThread(): untyped = getThreadId() == mainThreadId
 
-proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.used, gcsafe, raises: [].} =
-  var args = args
-  if includeCategory:
-    args.insert(0, newLit("[" & "lsp-client" & "] "))
-
-  return genAst(level, args):
-    {.gcsafe.}:
-      if file == nil:
-        try:
-          logFileName = getAppDir() / "logs/lsp.log"
-          createDir(getAppDir() / "logs")
-          file = open(logFileName, fmWrite)
-          fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
-        except IOError, OSError:
-          discard
-
-      {.push warning[BareExcept]:off.}
-      try:
-        if fileLogger != nil:
-          logging.log(fileLogger, level, args)
-        # setLastModificationTime(logFileName, getTime())
-      except:
-        discard
-      {.pop.}
-
-macro log(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
-  return logImpl(level, args, true)
-
-macro logNoCategory(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
-  return logImpl(level, args, false)
-
-template measureBlock(description: string, body: untyped): untyped {.used.} =
-  # todo
-  # let timer = startTimer()
-  body
-  # block:
-  #   let descriptionString = description
-  #   logging.log(lvlInfo, "[" & "lsp" & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
-
-template logScope(level: logging.Level, text: string): untyped {.used.} =
-  # todo
-  let txt = text
-  # logging.log(level, "[" & "lsp" & "] " & txt)
-  # inc logger.indentLevel
-  # let timer = startTimer()
-  # defer:
-  #   block:
-  #     let elapsedMs = timer.elapsed.ms
-  #     let split = elapsedMs.splitDecimal
-  #     let elapsedMsInt = split.intpart.int
-  #     let elapsedUsInt = (split.floatpart * 1000).int
-  #     dec logger.indentLevel
-  #     logging.log(level, "[" & "lsp" & "] " & txt & " finished. (" & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
-
-macro debug(x: varargs[typed, `$`]): untyped {.used.} =
-  let level = genAst(): lvlDebug
-  let arg = genAst(x):
-    x.join ""
-  return logImpl(level, nnkArgList.newTree(arg), true)
-
-macro debugf(x: static string): untyped {.used.} =
-  let level = genAst(): lvlDebug
-  let arg = genAst(str = x):
-    fmt str
-  return logImpl(level, nnkArgList.newTree(arg), true)
+template log(level: LogLevel, arg: string): untyped {.used.} =
+  client.log.log level, arg
 
 var logVerbose = false
 var logServerDebug = false
@@ -186,6 +124,7 @@ type
     workspaceInfo*: Option[ws.WorkspaceInfo]
     serverCapabilities: ServerCapabilities
     fullDocumentSync*: bool = false
+    log: LogChannel
 
     killOnExit*: bool = true
     exit: bool = false
@@ -194,6 +133,7 @@ type
     serverExecutablePath: string
     args: seq[string]
 
+    errorChannel*: AsyncChannel[string]
     initializedChannel*: AsyncChannel[Option[ServerCapabilities]]
     workspaceConfigurationRequestChannel*: AsyncChannel[ConfigurationParams]
     workspaceConfigurationResponseChannel*: AsyncChannel[seq[JsonNode]]
@@ -223,6 +163,7 @@ proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, server
     serverExecutablePath: serverExecutablePath,
     workspaceFolders: workspaces,
     args: args,
+    errorChannel: newAsyncChannel[string](),
     initializedChannel: newAsyncChannel[Option[ServerCapabilities]](),
     workspaceConfigurationRequestChannel: newAsyncChannel[ConfigurationParams](),
     workspaceConfigurationResponseChannel: newAsyncChannel[seq[JsonNode]](),
@@ -237,6 +178,7 @@ proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, server
     responseChannel: newAsyncChannel[LSPClientResponse](),
     notifyConfigurationChangedChannel: newAsyncChannel[JsonNode](),
     killOnExit: killOnExit,
+    log: newLogChannel("lsp-client-" & serverExecutablePath, {LogColor, LogInMemory, LogFile}),
   )
 
   return client
@@ -271,7 +213,7 @@ proc createHeader*(contentLength: int): string =
 proc deinitThread(client: LSPClient) =
   assert client.connection.isNotNil, "LSP Client process should not be nil"
 
-  log lvlInfo, "Deinitializing LSP client " & client.name
+  client.log.log lvlInfo, "Deinitializing LSP client " & client.name
   client.connection.close()
   client.connection = nil
   client.nextId = 0
@@ -299,14 +241,14 @@ proc deinitThread(client: LSPClient) =
 
 proc parseResponse(client: LSPClient): Future[JsonNode] {.async.} =
   try:
-    # debugf"[parseResponse]"
+    # client.log.log lvlDebug, &"[parseResponse]"
     var headers = initTable[string, string]()
     var line = await client.connection.recvLine
     while client.connection.isNotNil and line == "":
       line = await client.connection.recvLine
 
     if client.connection.isNil:
-      log(lvlError, "[parseResponse] Connection is nil")
+      client.log.log(lvlError, "[parseResponse] Connection is nil")
       return newJNull()
 
     var success = true
@@ -316,7 +258,7 @@ proc parseResponse(client: LSPClient): Future[JsonNode] {.async.} =
       let parts = line.split(":")
       if parts.len != 2:
         success = false
-        log lvlError, fmt"[parseResponse] Failed to parse response, no valid header format: '{line}'"
+        client.log.log lvlError, fmt"[parseResponse] Failed to parse response, no valid header format: '{line}'"
         return newJString(line)
 
       let name = parts[0]
@@ -326,21 +268,21 @@ proc parseResponse(client: LSPClient): Future[JsonNode] {.async.} =
       lines.add line
 
     if not success or not headers.contains("Content-Length"):
-      log(lvlError, "[parseResponse] Failed to parse response:")
+      client.log.log(lvlError, "[parseResponse] Failed to parse response:")
       for line in lines:
-        log(lvlError, line)
+        client.log.log(lvlError, line)
       return newJNull()
 
     let contentLength = headers["Content-Length"].parseInt
     # let data = await client.socket.recv(contentLength)
     let data = await client.connection.recv(contentLength)
     if logVerbose:
-      debugf"[recv] {data[0..min(data.high, 500)]}"
+      client.log.log lvlDebug, &"[recv] {data[0..min(data.high, 500)]}"
     return parseJson(data)
 
   except CatchableError as e:
-    log(lvlError, &"[parseResponse] Exception: {e.msg}")
-    log(lvlError, &"[parseResponse] Exception: {e.getStackTrace()}")
+    client.log.log(lvlError, &"[parseResponse] Exception: {e.msg}")
+    client.log.log(lvlError, &"[parseResponse] Exception: {e.getStackTrace()}")
     return newJNull()
 
 proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int]) {.gcsafe, async.} =
@@ -354,10 +296,10 @@ proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int])
 
   if logVerbose:
     let str = $params
-    debugf"[sendRPC] {meth}: {str[0..min(str.high, 500)]}"
+    client.log.log lvlDebug, &"[sendRPC] {meth}: {str[0..min(str.high, 500)]}"
 
   if not client.isInitialized and meth != "initialize":
-    log(lvlInfo, fmt"[sendRPC] client not initialized, add to pending ({meth})")
+    client.log.log(lvlInfo, fmt"[sendRPC] client not initialized, add to pending ({meth})")
     client.pendingRequests.add $request
     return
 
@@ -366,7 +308,7 @@ proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int])
   let msg = header & data
 
   if logVerbose:
-    debugf"[send] {msg[0..min(msg.high, 500)]}"
+    client.log.log lvlDebug, &"[send] {msg[0..min(msg.high, 500)]}"
 
   try:
     await client.connection.send(msg)
@@ -374,7 +316,7 @@ proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int])
     discard
 
 proc sendNotification(client: LSPClient, meth: string, params: JsonNode) {.gcsafe, async.} =
-  # debugf"sendNotification {meth}, {params}"
+  # client.log.log lvlDebug, &"sendNotification {meth}, {params}"
   await client.sendRPC(meth, params, int.none)
 
 proc sendResult(client: LSPClient, id: int, res: JsonNode) {.async, gcsafe.} =
@@ -387,7 +329,7 @@ proc sendResult(client: LSPClient, id: int, res: JsonNode) {.async, gcsafe.} =
   let data = $request
 
   if logVerbose:
-    debugf"[sendResult] {data[0..min(data.high, 500)]}"
+    client.log.log lvlDebug, &"[sendResult] {data[0..min(data.high, 500)]}"
 
   let header = createHeader(data.len)
   let msg = header & data
@@ -419,10 +361,10 @@ proc handleRequests(client: LSPClient) {.async, gcsafe.} =
 
   while client != nil and not client.exit:
     let request = client.requestChannel.recv().await.getOr:
-      log lvlInfo, &"handleRequests: channel closed"
+      client.log.log lvlInfo, &"handleRequests: channel closed"
       return
 
-    debugf"handleRequest: {request}"
+    client.log.log lvlDebug, &"handleRequest: {request}"
 
     case request.kind
     of Exit:
@@ -440,7 +382,7 @@ proc handleRequests(client: LSPClient) {.async, gcsafe.} =
       else:
         await client.notifyTextDocumentChanged(request.path, request.version, request.content)
 
-  log lvlInfo, &"handleRequests: client gone"
+  client.log.log lvlInfo, &"handleRequests: client gone"
   client.exit = true
 
 proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
@@ -448,16 +390,16 @@ proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
 
   while client != nil and not client.exit:
     let response = client.responseChannel.recv().await.getOr:
-      log lvlInfo, &"handleResponses: channel closed"
+      client.log.log lvlInfo, &"handleResponses: channel closed"
       return
 
-    debugf"handleResponse: {response.id}"
+    client.log.log lvlDebug, &"handleResponse: {response.id}"
     let id = response.id
 
     template dispatch(requests: untyped, parsedResponse: untyped): untyped =
       try:
         if requests.contains(id):
-          # debugf"[LSP.run] Complete request {id}"
+          # client.log.log lvlDebug, &"[LSP.run] Complete request {id}"
           let (meth, future) = requests[id]
           defer: requests.del(id)
           future.complete parsedResponse
@@ -466,15 +408,15 @@ proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
             client.requestsPerMethod[meth].delete index
           else:
             let temp {.inject.} = meth
-            log lvlError, &"Request not found: {id}, {temp}, {client.requestsPerMethod[temp]}"
+            client.log.log lvlError, &"Request not found: {id}, {temp}, {client.requestsPerMethod[temp]}"
         elif client.canceledRequests.contains(id):
           # Request was canceled
-          # debugf"[LSP.run] Received response for canceled request {id}"
+          # client.log.log lvlDebug, &"[LSP.run] Received response for canceled request {id}"
           client.canceledRequests.excl id
         else:
-          log lvlError, &"[handleResponses] received response with id {id} but got no active request for that id: {response}"
+          client.log.log lvlError, &"[handleResponses] received response with id {id} but got no active request for that id: {response}"
       except CatchableError:
-        log lvlError, &"[handleResponses] Failed to dispatch response: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+        client.log.log lvlError, &"[handleResponses] Failed to dispatch response: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
     case response.kind
     of GetDefinition: dispatch(client.activeDefinitionRequests, response.getDefinition)
@@ -495,7 +437,7 @@ proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
     of ExecuteCommand: dispatch(client.activeExecuteCommandRequests, response.executeCommand)
     of ResolveWorkspaceSymbol: dispatch(client.activeResolveWorkspaceSymbolRequests, response.resolveWorkspaceSymbol)
 
-  log lvlInfo, &"handleResponses: client gone"
+  client.log.log lvlInfo, &"handleResponses: client gone"
 
 proc sendRequest[T](client: LSPClient, requests: ptr Table[int, tuple[meth: string, future: Future[T]]], meth: string, params: JsonNode): Future[T] {.async.} =
   assert isMainThread()
@@ -526,7 +468,7 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
       try:
         requests[id].future.complete(canceled[typ]())
       except CatchableError:
-        log lvlError, &"[cancelAllOf] Failed to cancel '{meth}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+        client.log.log lvlError, &"[cancelAllOf] Failed to cancel '{meth}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
     case meth
     of "textDocument/definition": cancel(client.activeDefinitionRequests, DefinitionResponse)
@@ -563,7 +505,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
 
   if client.workspaceInfo.getSome workspaceInfo:
     if workspaceInfo.folders.len > 0:
-      log lvlInfo, &"Using workspace info ({workspaceInfo}) as lsp workspace"
+      client.log.log lvlInfo, &"Using workspace info ({workspaceInfo}) as lsp workspace"
       workspacePath = workspaceInfo.folders[0].path.some
       workspaces = workspaceInfo.folders.mapIt(WorkspaceFolder(uri: $it.path.toUri, name: it.name.get("???")))
 
@@ -642,12 +584,13 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
     },
   }
 
-  log(lvlInfo, fmt"[initialize] {params.pretty}")
+  client.log.log(lvlInfo, fmt"[initialize] {params.pretty}")
 
   let res = await client.sendRequestInternal("initialize", params)
   if res.isError:
-    log lvlError, &"Failed to initialize lsp: {res.error}"
+    client.log.log lvlError, &"Failed to initialize lsp: {res.error}"
     # client.initializedFuture.complete(false)
+    await client.errorChannel.send($res.error)
     await client.initializedChannel.send(ServerCapabilities.none)
     return res
 
@@ -655,30 +598,31 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
 
   try:
     client.serverCapabilities = res.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
-  except CatchableError:
+  except CatchableError as e:
+    await client.errorChannel.send(&"Failed to parse server capabilities: {e.msg}\n{res.result.pretty}")
     await client.initializedChannel.send(ServerCapabilities.none)
-    return errorResponse[JsonNode](0, &"Failed to parse server capabilities: {getCurrentExceptionMsg()}\n{res.result.pretty}")
+    return errorResponse[JsonNode](0, &"Failed to parse server capabilities: {e.msg}\n{res.result.pretty}")
 
   client.isInitialized = true
-  log lvlInfo, "Server capabilities: ", client.serverCapabilities
+  client.log.log lvlInfo, &"Server capabilities: {client.serverCapabilities}"
 
   await client.sendNotification("initialized", newJObject())
   await client.initializedChannel.send(client.serverCapabilities.some)
 
   for req in client.pendingRequests:
     if logVerbose:
-      debugf"[initialize] sending pending request {req[0..min(req.high, 500)]}"
+      client.log.log lvlDebug, &"[initialize] sending pending request {req[0..min(req.high, 500)]}"
     let header = createHeader(req.len)
     try:
       await client.connection.send(header & req)
     except CatchableError:
-      log lvlError, &"Failed to send pending request"
+      client.log.log lvlError, &"Failed to send pending request"
 
   return res
 
 # todo
 # proc tryGetPortFromLanguagesServer(url: string, port: int, exePath: string, args: seq[string]): Future[Option[tuple[port, processId: int]]] {.async.} =
-#   debugf"tryGetPortFromLanguagesServer {url}, {port}, {exePath}, {args}"
+#   client.log.log lvlDebug, &"tryGetPortFromLanguagesServer {url}, {port}, {exePath}, {args}"
 #   discard
 #   return
   # try:
@@ -702,21 +646,21 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
   #   # log lvlError, &"Failed to connect to languages server {url}:{port}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
   #   return (int, int).none
 
-proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
+proc logProcessDebugOutput(client: LSPCLient, process: AsyncProcess) {.async.} =
   try:
     while process.isAlive:
       let line = await process.recvErrorLine
       if logServerDebug:
         let l = line.strip(chars = {'\n'})
-        log(lvlDebug, fmt"[server] {l}")
+        client.log.log(lvlDebug, fmt"[server] {l}")
   except CatchableError:
     discard
 
 proc sendInitializationRequest(client: LSPClient) {.async, gcsafe.} =
-  log(lvlInfo, "Initializing client...")
+  client.log.log(lvlInfo, "Initializing client...")
   let response = await client.initialize()
   if response.isError:
-    log(lvlError, fmt"[sendInitializationRequest] Got error response: {response}")
+    client.log.log(lvlError, &"[sendInitializationRequest] Got error response: {response}")
     return
 
   assert not response.isCanceled
@@ -724,18 +668,18 @@ proc sendInitializationRequest(client: LSPClient) {.async, gcsafe.} =
 proc connect*(client: LSPClient) {.async, gcsafe.} =
   # client.initializedFuture = newFuture[bool]("client.initializedFuture")
 
-  log lvlInfo, fmt"Using process '{client.serverExecutablePath} {client.args}' as LSP connection"
-  let process = startAsyncProcess(client.serverExecutablePath, client.args, killOnExit = client.killOnExit)
-  let connection = LSPConnectionAsyncProcess(process: process)
-
-  connection.process.onRestarted = proc(): Future[void] {.gcsafe.} =
-    asyncSpawn logProcessDebugOutput(process)
-    return client.sendInitializationRequest()
-
-  connection.process.onRestartFailed = proc(): Future[void] {.gcsafe.} =
-    return client.initializedChannel.send(ServerCapabilities.none)
-
-  client.connection = connection
+  try:
+    client.log.log lvlInfo, fmt"Using process '{client.serverExecutablePath} {client.args}' as LSP connection"
+    let process = startAsyncProcess(client.serverExecutablePath, client.args, killOnExit = client.killOnExit, autoStart = false)
+    let connection = LSPConnectionAsyncProcess(process: process)
+    client.connection = connection
+    process.start2()
+    asyncSpawn client.logProcessDebugOutput(process)
+    asyncSpawn client.sendInitializationRequest()
+  except CatchableError as e:
+    client.log.log(lvlError, &"Failed to start {client.serverExecutablePath}: {e.msg}")
+    await client.errorChannel.send(&"Failed to start {client.serverExecutablePath}: {e.msg}")
+    discard client.initializedChannel.send(ServerCapabilities.none)
 
 proc stop*(client: LSPClient) {.async.} =
   await client.requestChannel.send(LSPClientRequest(kind: Exit))
@@ -763,7 +707,7 @@ proc notifyOpenedTextDocument(client: LSPClient, languageId: string, path: strin
     },
   }
 
-  debugf"notifyOpenedTextDocument {languageId}, {path}"
+  client.log.log lvlDebug, &"notifyOpenedTextDocument {languageId}, {path}"
   await client.sendNotification("textDocument/didOpen", params)
 
 proc notifyClosedTextDocument(client: LSPClient, path: string) {.async.} =
@@ -773,7 +717,7 @@ proc notifyClosedTextDocument(client: LSPClient, path: string) {.async.} =
     },
   }
 
-  debugf"notifyClosedTextDocument {path}"
+  client.log.log lvlDebug, &"notifyClosedTextDocument {path}"
   await client.sendNotification("textDocument/didClose", params)
 
 proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int,
@@ -786,7 +730,7 @@ proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int,
     "contentChanges": changes.toJson
   }
 
-  debugf"notifyTextDocumentChangedPartial {path}, {version}"
+  client.log.log lvlDebug, &"notifyTextDocumentChangedPartial {path}, {version}"
   await client.sendNotification("textDocument/didChange", params)
 
 proc notifyConfigurationChanged(client: LSPClient, settings: JsonNode) {.gcsafe, async.} =
@@ -806,11 +750,11 @@ proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, co
     ],
   }
 
-  debugf"notifyTextDocumentChangedFull {path}, {version}"
+  client.log.log lvlDebug, &"notifyTextDocumentChangedFull {path}, {version}"
   await client.sendNotification("textDocument/didChange", params)
 
 proc getDefinition*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DefinitionResponse]] {.async.} =
-  debugf"[getDefinition] {filename.absolutePath}:{line}:{column}"
+  client.log.log lvlDebug, &"[getDefinition] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/definition")
 
@@ -825,7 +769,7 @@ proc getDefinition*(client: LSPClient, filename: string, line: int, column: int)
   return await client.sendRequest(client.activeDefinitionRequests.addr, "textDocument/definition", params)
 
 proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DeclarationResponse]] {.async.} =
-  debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  client.log.log lvlDebug, &"[getDeclaration] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/declaration")
 
@@ -840,7 +784,7 @@ proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int
   return await client.sendRequest(client.activeDeclarationRequests.addr, "textDocument/declaration", params)
 
 proc getTypeDefinitions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[TypeDefinitionResponse]] {.async.} =
-  debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  client.log.log lvlDebug, &"[getDeclaration] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/typeDefinition")
 
@@ -855,7 +799,7 @@ proc getTypeDefinitions*(client: LSPClient, filename: string, line: int, column:
   return await client.sendRequest(client.activeTypeDefinitionRequests.addr, "textDocument/typeDefinition", params)
 
 proc getImplementation*(client: LSPClient, filename: string, line: int, column: int): Future[Response[ImplementationResponse]] {.async.} =
-  debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  client.log.log lvlDebug, &"[getDeclaration] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/implementation")
 
@@ -870,7 +814,7 @@ proc getImplementation*(client: LSPClient, filename: string, line: int, column: 
   return await client.sendRequest(client.activeImplementationRequests.addr, "textDocument/implementation", params)
 
 proc getReferences*(client: LSPClient, filename: string, line: int, column: int): Future[Response[ReferenceResponse]] {.async.} =
-  debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  client.log.log lvlDebug, &"[getDeclaration] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/references")
 
@@ -940,7 +884,7 @@ proc getInlayHints*(client: LSPClient, filename: string, selection: ((int, int),
 proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentSymbolResponse]] {.async.} =
   assert isMainThread()
 
-  debugf"[getSymbols] {filename.absolutePath}"
+  client.log.log lvlDebug, &"[getSymbols] {filename.absolutePath}"
   client.cancelAllOf("textDocument/documentSymbol")
 
   let params = DocumentSymbolParams(
@@ -950,7 +894,7 @@ proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentS
   return await client.sendRequest(client.activeSymbolsRequests.addr, "textDocument/documentSymbol", params)
 
 proc getWorkspaceSymbols*(client: LSPClient, query: string): Future[Response[WorkspaceSymbolResponse]] {.async.} =
-  debugf"[getWorkspaceSymbols]"
+  client.log.log lvlDebug, &"[getWorkspaceSymbols]"
   client.cancelAllOf("workspace/symbol")
 
   let params = WorkspaceSymbolParams(
@@ -964,7 +908,7 @@ proc resolveWorkspaceSymbol*(client: LSPClient, symbol: WorkspaceSymbol): Future
   return await client.sendRequest(client.activeResolveWorkspaceSymbolRequests.addr, "workspaceSymbol/resolve", params)
 
 proc getDiagnostics*(client: LSPClient, filename: string): Future[Response[DocumentDiagnosticResponse]] {.async.} =
-  # debugf"[getDiagnostics] {filename.absolutePath}"
+  # client.log.log lvlDebug, &"[getDiagnostics] {filename.absolutePath}"
   client.cancelAllOf("textDocument/diagnostic")
 
   let params = DocumentSymbolParams(
@@ -974,7 +918,7 @@ proc getDiagnostics*(client: LSPClient, filename: string): Future[Response[Docum
   return await client.sendRequest(client.activeDiagnosticsRequests.addr, "textDocument/diagnostic", params)
 
 proc getCompletions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[CompletionList]] {.async.} =
-  # debugf"[getCompletions] {filename.absolutePath}:{line}:{column}"
+  # client.log.log lvlDebug, &"[getCompletions] {filename.absolutePath}:{line}:{column}"
   client.cancelAllOf("textDocument/completion")
 
   # todo
@@ -1000,11 +944,11 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
   if parsedResponse.asCompletionList().getSome(list):
     return list.success
 
-  # debugf"[getCompletions] {filename}:{line}:{column}: no completions found"
+  # client.log.log lvlDebug, &"[getCompletions] {filename}:{line}:{column}: no completions found"
   return errorResponse[CompletionList](-1, fmt"[getCompletions] {filename}:{line}:{column}: no completions found")
 
 proc getCodeActions*(client: LSPClient, filename: string, selection: ((int, int), (int, int)), diagnostics: seq[lsp_types.Diagnostic]): Future[Response[CodeActionResponse]] {.async.} =
-  # debugf"[getCodeActions] {filename.absolutePath}:{selection}"
+  # client.log.log lvlDebug, &"[getCodeActions] {filename.absolutePath}:{selection}"
 
   let params = %*{
     "textDocument": TextDocumentIdentifier(uri: $filename.toUri),
@@ -1049,14 +993,14 @@ proc executeCommand*(client: LSPClient, command: string, arguments: seq[JsonNode
   return await client.sendRequest(client.activeExecuteCommandRequests.addr, "workspace/executeCommand", params)
 
 proc handleWorkspaceConfigurationRequest(client: LSPClient, id: int, params: ConfigurationParams) {.async, gcsafe.} =
-  # debugf"handleWorkspaceConfigurationRequest {id}, {params}"
+  # client.log.log lvlDebug, &"handleWorkspaceConfigurationRequest {id}, {params}"
   await client.workspaceConfigurationRequestChannel.send(params)
   let res = await client.workspaceConfigurationResponseChannel.recv()
 
   await client.sendResult(id, %res)
 
 proc handleApplyWorkspaceEdit(client: LSPClient, id: int, params: ApplyWorkspaceEditParams) {.async, gcsafe.} =
-  # debugf"handleApplyWorkspaceEdit {id}, {params}"
+  # client.log.log lvlDebug, &"handleApplyWorkspaceEdit {id}, {params}"
   await client.workspaceApplyEditRequestChannel.send(params)
   let res = await client.workspaceApplyEditResponseChannel.recv()
 
@@ -1064,15 +1008,15 @@ proc handleApplyWorkspaceEdit(client: LSPClient, id: int, params: ApplyWorkspace
 
 proc runAsync*(client: LSPClient) {.async, gcsafe.} =
   while client.connection.isNotNil:
-    # debugf"[run] Waiting for response {(client.activeRequests.len)}"
+    # client.log.log lvlDebug, &"[run] Waiting for response {(client.activeRequests.len)}"
 
     let response = await client.parseResponse()
     if response.isNil or response.kind != JObject:
-      log(lvlError, fmt"[run] Bad response: {response}")
+      client.log.log(lvlError, fmt"[run] Bad response: {response}")
       break
 
     if logVerbose:
-      debugf"[run] Got response: {response}"
+      client.log.log lvlDebug, &"[run] Got response: {response}"
 
     try:
       if not response.hasKey("id"):
@@ -1089,7 +1033,7 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
           asyncSpawn client.diagnosticChannel.send params
 
         else:
-          log(lvlInfo, fmt"[run] {response}")
+          client.log.log(lvlInfo, fmt"[run] {response}")
           discard
 
       elif response.hasKey("method"):
@@ -1105,16 +1049,16 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
           let params = response["params"].jsonTo(ApplyWorkspaceEditParams, JOptions(allowMissingKeys: true, allowExtraKeys: true))
           asyncSpawn client.handleApplyWorkspaceEdit(id, params)
         else:
-          log lvlWarn, &"[run] Received request with id {id} and method {meth} but don't know how to handle it:\n{response}"
+          client.log.log lvlWarn, &"[run] Received request with id {id} and method {meth} but don't know how to handle it:\n{response}"
           # echo &"[run] Received request with id {id} and method {meth} but don't know how to handle it:\n{response}"
           discard
 
       else:
-        # debugf"[LSP.run] {response}"
+        # client.log.log lvlDebug, &"[LSP.run] {response}"
         let id = response["id"].getInt
 
         if client.activeRequests.contains(id):
-          # debugf"[LSP.run] Complete request {id}"
+          # client.log.log lvlDebug, &"[LSP.run] Complete request {id}"
           let parsedResponse = response.toResponse JsonNode
           let (meth, future) = client.activeRequests[id]
           future.complete parsedResponse
@@ -1124,12 +1068,12 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
           client.requestsPerMethod[meth].delete index
         elif client.canceledRequests.contains(id):
           # Request was canceled
-          # debugf"[LSP.run] Received response for canceled request {id}"
+          # client.log.log lvlDebug, &"[LSP.run] Received response for canceled request {id}"
           client.canceledRequests.excl id
         elif client.idToMethod.contains(id):
           let meth = client.idToMethod[id]
           client.idToMethod.del(id)
-          debugf"[run] received response with id {id} and method {meth}"
+          client.log.log lvlDebug, &"[run] received response with id {id} and method {meth}"
           let parsedResponse = response.toResponse JsonNode
           case meth
 
@@ -1169,10 +1113,10 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
               id: id, kind: ResolveWorkspaceSymbol, resolveWorkspaceSymbol: parsedResponse.to(WorkspaceSymbol)))
 
         else:
-          log(lvlError, fmt"[run] error: received response with id {id} but got no active request for that id: {response}")
+          client.log.log(lvlError, fmt"[run] error: received response with id {id} but got no active request for that id: {response}")
 
     except CatchableError:
-      log lvlError, &"[run] error: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+      client.log.log lvlError, &"[run] error: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
       discard
 
 proc run*(client: LSPClient) =
@@ -1181,15 +1125,15 @@ proc run*(client: LSPClient) =
 # exposed api
 
 proc lspLogVerbose*(val: bool) {.expose("lsp").} =
-  debugf"lspLogVerbose {val}"
+  # log lvlDebug, &"lspLogVerbose {val}"
   logVerbose = val
 
 proc lspToggleLogServerDebug*() {.expose("lsp").} =
   logServerDebug = not logServerDebug
-  debugf"lspToggleLogServerDebug {logServerDebug}"
+  # log lvlDebug, &"lspToggleLogServerDebug {logServerDebug}"
 
 proc lspLogServerDebug*(val: bool) {.expose("lsp").} =
-  debugf"lspLogServerDebug {val}"
+  # log lvlDebug, &"lspLogServerDebug {val}"
   logServerDebug = val
 
 addGlobalDispatchTable "lsp", genDispatchTable("lsp")
@@ -1197,24 +1141,24 @@ addGlobalDispatchTable "lsp", genDispatchTable("lsp")
 proc handleNotifiesConfigurationChanged(client: LSPClient) {.async, gcsafe.} =
   while client != nil and not client.exit:
     let value = client.notifyConfigurationChangedChannel.recv().await.getOr:
-      log lvlInfo, &"handleNotifiesConfigurationChanged: channel closed"
+      client.log.log lvlInfo, &"handleNotifiesConfigurationChanged: channel closed"
       return
 
     await client.notifyConfigurationChanged(value)
 
-  log lvlInfo, &"handleNotifiesConfigurationChanged: client gone"
+  client.log.log lvlInfo, &"handleNotifiesConfigurationChanged: client gone"
 
 proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
   logFileName = getAppDir() / &"/logs/lsp.{client.name}.log"
-  try:
-    createDir(getAppDir() / "logs")
-    file = open(logFileName, fmWrite)
-    fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
-  except OSError:
-    echo "Failed to create log file ", logFileName
+  # try:
+  #   # createDir(getAppDir() / "logs")
+  #   # file = open(logFileName, fmWrite)
+  #   # fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
+  # except OSError:
+  #   echo "Failed to create log file ", logFileName
 
-  defer:
-    file.close()
+  # defer:
+  #   file.close()
 
   asyncSpawn client.connect()
   asyncSpawn client.runAsync()

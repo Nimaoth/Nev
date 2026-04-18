@@ -171,9 +171,11 @@ proc flushRead(self: ptr InMemoryChannel): int =
       var (ok, data) = self.channel[].tryRecv()
       if not ok:
         break
+      assert data.len >= 0
       let oldLen = self.data.len
       self.data.setLen(oldLen + data.len)
-      copyMem(self.data[oldLen].addr, data.data, data.len)
+      if data.len > 0:
+        copyMem(self.data[oldLen].addr, data.data, data.len)
       dealloc(data.data)
   except ValueError as e:
     echo "Failed to read memory channel: ", e.msg

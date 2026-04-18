@@ -259,6 +259,28 @@ proc start*(process: AsyncProcess): bool =
 
   return true
 
+proc start2*(process: AsyncProcess) {.raises: [OSError, IOError, ValueError].} =
+  log(lvlInfo, fmt"start process {process.name} {process.args}")
+  var options: set[ProcessOption] = {poUsePath, poDaemon}
+  if process.eval:
+    options.incl poEvalCommand
+  if process.errToOut:
+    options.incl poStdErrToStdOut
+  process.process = startProcess(process.name, args=process.args, options=options)
+
+  when defined(windows):
+    if process.killOnExit:
+      discard AssignProcessToJobObject(jobObject, process.process.osProcessHandle())
+
+  process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.stdout, true, process.name & ".output"))
+  process.inputStreamChannel.getMutUnsafe.channel.send process.process[].some
+
+  process.errorReaderFlowVar = spawn(readInput(process.errorStreamChannel, process.serverDiedNotifications, process.stderr, false, process.name & ".error"))
+  process.errorStreamChannel.getMutUnsafe.channel.send process.process[].some
+
+  process.writerFlowVar = spawn(writeOutput(process.outputStreamChannel, process.stdin))
+  process.outputStreamChannel.getMutUnsafe.channel.send process.process[].some
+
 proc restartServer(process: AsyncProcess) {.async, gcsafe.} =
   var startCounter = 0
 

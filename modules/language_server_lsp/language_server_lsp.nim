@@ -1,4 +1,4 @@
-#use workspace_edit
+#use workspace_edit log
 import std/[strformat, strutils, os, sets, tables, options, json, sequtils, uri]
 import misc/[id, custom_logger, util, custom_async, async_process, event, response, rope_utils, array_view, jsonex, myjsonutils]
 import text/language/[language_server_base, lsp_types]
@@ -19,8 +19,10 @@ when implModule:
   import lsp_client
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import text/[treesitter_type_conv]
-  import service, event_service, document_editor, document, config_provider, vfs, vfs_service
+  import service, event_service, document_editor, document, config_provider, vfs, vfs_service, selector_popup_builder
   import nimsumtree/[arc, rope, buffer]
+  import layout, command_service, toast
+  import finder/[finder, data_previewer]
 
   logCategory "language-server-lsp"
 
@@ -34,6 +36,8 @@ when implModule:
       thread: Thread[LSPClient]
       serverCapabilities*: ServerCapabilities
       fullDocumentSync: bool = false
+
+      errors: seq[string]
 
       vfs: Arc[VFS2]
       localVfs: Arc[VFS2]
@@ -176,6 +180,7 @@ when implModule:
     log lvlInfo, &"[{self.name}] handleApplyWorkspaceEditRequests: client gone"
 
   proc handleMessages(self: LanguageServerLSP) {.async.} =
+    let toast = getServiceChecked(ToastService)
     while self.client != nil:
       let (messageType, message) = self.client.messageChannel.recv().await.getOr:
         log lvlInfo, &"[{self.name}] handleMessages: channel closed"
@@ -186,6 +191,15 @@ when implModule:
 
       log lvlInfo, &"[{self.name}] {messageType}: {message}"
       self.onMessage.invoke (messageType, message)
+
+      let color = case messageType
+      of MessageType.Error: "error"
+      of MessageType.Warning: "warning"
+      of MessageType.Info: "info"
+      of MessageType.Log: "hint"
+      of MessageType.Debug: "debug"
+
+      toast.showToast(self.name, message, color)
 
     log lvlInfo, &"[{self.name}] handleMessages: client gone"
 
@@ -200,6 +214,20 @@ when implModule:
 
       # debugf"textDocument/publishDiagnostics: {diagnostics}"
       self.onDiagnostics.invoke diagnostics
+
+    log lvlInfo, &"[{self.name}] handleDiagnostics: client gone"
+
+  proc handleErrors(self: LanguageServerLSP) {.async.} =
+    while self.client != nil:
+      let error = self.client.errorChannel.recv().await.getOr:
+        log lvlInfo, &"[{self.name}] handleDiagnostics: channel closed"
+        return
+
+      if self.client.isNil:
+        break
+
+      log lvlError, error
+      self.errors.add error
 
     log lvlInfo, &"[{self.name}] handleDiagnostics: client gone"
 
@@ -903,6 +931,7 @@ when implModule:
       asyncSpawn lsp.handleApplyWorkspaceEditRequests()
       asyncSpawn lsp.handleMessages()
       asyncSpawn lsp.handleDiagnostics()
+      asyncSpawn lsp.handleErrors()
       asyncSpawn client.handleResponses()
 
       lsp.thread.createThread(lspClientRunner, client)
@@ -931,7 +960,6 @@ when implModule:
       else:
         lsp.initializedFuture.complete(false)
         lsp.stop()
-        self.languageServers.del(name)
         return LanguageServerLSP.none
     except:
       log lvlError, &"Failed to create language server '{name}': {getCurrentExceptionMsg()}"
@@ -947,6 +975,41 @@ when implModule:
       return res.get.LanguageServerDynamic.some
     except CatchableError:
       return LanguageServerDynamic.none
+
+  proc listLanguageServers(self: LanguageServerLspService) =
+    var builder = SelectorPopupBuilder()
+    builder.scope = "lsps".some
+    builder.previewScale = 0.7
+    builder.scaleX = 0.5
+    builder.scaleY = 0.5
+
+    var res = newSeq[FinderItem]()
+    for (name, lsp) in self.languageServers.pairs:
+      let status = if lsp.initializedFuture.finished:
+        if lsp.initializedFuture.read:
+          "Ok"
+        else:
+          "Failed"
+      else:
+        "Initializing..."
+      res.add FinderItem(
+        displayName: name,
+        details: @[status] & lsp.errors,
+        data: &"""Status: {status}
+Errors:
+  {lsp.errors.mapIt("\n" & it.indent(2)).join("")}
+Server Capabilities: {lsp.serverCapabilities.toJson.pretty}"""
+      )
+
+    builder.previewer = newDataPreviewer(getServices(), language="json".some).Previewer.some
+
+    let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
+    builder.finder = finder.some
+
+    builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
+      true
+
+    discard getServiceChecked(LayoutService).pushSelectorPopup(builder)
 
   proc init_module_language_server_lsp*() {.cdecl, exportc, dynlib.} =
     log lvlWarn, &"init_module_language_server_lsp"
@@ -984,6 +1047,25 @@ when implModule:
       except CatchableError as e:
         log lvlError, &"Error: {e.msg}"
     events.get.listen(newId(), "editor/*/registered", handleEditorRegistered)
+
+    let commands = getServiceChecked(CommandService)
+    template defineCommand(inName: string, desc: string, body: untyped): untyped =
+      discard commands.registerCommand(command_service.Command(
+        namespace: "",
+        name: "lsp." & inName,
+        description: desc,
+        parameters: @[],
+        returnType: "void",
+        execute: proc(args {.inject.}: string): string {.gcsafe, raises: [].} =
+          try:
+            body
+            return ""
+          except CatchableError:
+            return ""
+      ))
+
+    defineCommand("list", "List all language servers (excluding builtins)"):
+      lspService.listLanguageServers()
 
   proc shutdown_module_language_server_lsp*() {.cdecl, exportc, dynlib.} =
     log lvlInfo, &"shutdown_module_language_server_lsp"
