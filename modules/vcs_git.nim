@@ -121,7 +121,11 @@ when implModule:
         listing.folders.add("HEAD")
         listing.folders.add("staged")
 
-        let commits = await vcs.get.getCommitHistory(2)
+        let stashes = await vcs.get.getStashes()
+        for stash in stashes:
+          listing.folders.add(stash.id)
+
+        let commits = await vcs.get.getCommitHistory(50)
         for commit in commits:
           listing.folders.add(commit.id)
 
@@ -158,10 +162,28 @@ when implModule:
               listing.files.add name
       except CatchableError:
         discard
+    elif reff.startsWith("stash@{"):
+      try:
+        let args = @["stash", "show", reff]
+        let lines = runProcessAsync("git", args, workingDir=vcs.get.root, log = false).await
+
+        for line in lines:
+          if line.len == 0:
+            continue
+          let i = line.rfind("|")
+          if i == -1:
+            continue
+          let fullPath = line[0..<i].strip()
+          let name = fullPath
+          if name notin listing.files:
+            listing.files.add name
+      except CatchableError:
+        discard
+
     else:
       try:
         let args = @["ls-tree", "--name-only", reff, relPath]
-        let lines = runProcessAsync("git", args, workingDir=vcs.get.root, log = false).await
+        let lines = runProcessAsync("git", args, workingDir=vcs.get.root, log = true).await
 
         for line in lines:
           if line.len == 0:
@@ -452,6 +474,24 @@ when implModule:
     except CatchableError:
       return seq[LineMapping].none
 
+  proc gitGetStashes*(self: VersionControlSystemGit, maxCount: int = 50, filter: string = ""): Future[seq[VCSStashInfo]] {.gcsafe, async: (raises: []).} =
+    try:
+      log lvlInfo, &"getStashes"
+      let lines = runProcessAsync("git", @["stash", "list"], workingDir=self.root).await
+      result = newSeqOfCap[VCSStashInfo](lines.len)
+
+      for line in lines:
+        let ci = line.find(':')
+        if ci == -1:
+          log lvlWarn, &"Failed to parse line git stash line '{line}'"
+          continue
+        let id = line[0..<ci]
+        let desc = line[(ci + 1)..^1].strip()
+        result.add VCSStashInfo(id: id, description: desc)
+
+    except CatchableError:
+      return @[]
+
   proc newVersionControlSystemGit*(root: string, settings: ConfigStore): VersionControlSystemGit =
     new result
     result.name = "Git"
@@ -477,6 +517,8 @@ when implModule:
       return await self.VersionControlSystemGit.gitGetWorkingFileContent(path)
     result.getFileChangesImpl = proc(self: VersionControlSystem, path: string, staged: bool = false): Future[Option[seq[LineMapping]]] {.gcsafe, async: (raises: []).} =
       return await self.VersionControlSystemGit.gitGetFileChanges(path, staged)
+    result.getStashesImpl = proc(self: VersionControlSystem, maxCount: int = 50, filter: string = ""): Future[seq[VCSStashInfo]] {.gcsafe, async: (raises: []).} =
+      return await self.VersionControlSystemGit.gitGetStashes(maxCount, filter)
 
     let self = result
     asyncSpawn self.gitUpdateStatus()

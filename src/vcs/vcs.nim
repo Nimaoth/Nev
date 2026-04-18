@@ -31,6 +31,12 @@ type
     date*: string
     author*: string
 
+  VCSStashInfo* = object
+    id*: string
+    description*: string
+    date*: string
+    author*: string
+
   VersionControlSystem* = ref object of RootObj
     name*: string
     root*: string
@@ -47,6 +53,7 @@ type
     addFileImpl*: proc(self: VersionControlSystem, path: string): Future[string] {.gcsafe, async: (raises: []).}
     getChangedFilesImpl*: proc(self: VersionControlSystem): Future[seq[VCSChangelist]] {.gcsafe, async: (raises: []).}
     getCommitHistoryImpl*: proc(self: VersionControlSystem, maxCount: int = 50): Future[seq[VCSCommitInfo]] {.gcsafe, async: (raises: []).}
+    getStashesImpl*: proc(self: VersionControlSystem, maxCount: int = 50, filter: string = ""): Future[seq[VCSStashInfo]] {.gcsafe, async: (raises: []).}
 
 type
   VCSDetector* = proc(rootDir: string): seq[VersionControlSystem] {.gcsafe, raises: [].}
@@ -108,6 +115,10 @@ proc getChangedFiles*(self: VersionControlSystem): Future[seq[VCSChangelist]] {.
 proc getCommitHistory*(self: VersionControlSystem, maxCount: int = 50): Future[seq[VCSCommitInfo]] {.gcsafe, async: (raises: []).} =
   if self.getCommitHistoryImpl != nil:
     return await self.getCommitHistoryImpl(self, maxCount)
+
+proc getStashes*(self: VersionControlSystem, maxCount: int = 50, filter: string = ""): Future[seq[VCSStashInfo]] {.gcsafe, async: (raises: []).} =
+  if self.getStashesImpl != nil:
+    return await self.getStashesImpl(self, maxCount, filter)
 
 when implModule:
   import std/[strutils, sugar]
