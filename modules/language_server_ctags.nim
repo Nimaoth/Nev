@@ -46,9 +46,16 @@ type
     fileToCTags: Table[string, string] # Code file path to ctags file path
     workspaceSymbols: seq[Symbol]
 
+    parsing: bool = false
+    fileLoadQueue: seq[tuple[path: string, content: string]]
+
 when implModule:
   import std/sugar
   import language_server_component, config_component, move_component, text_component, treesitter_component, language_component
+
+  {.push warning[Deprecated]:off.}
+  import std/[threadpool]
+  {.pop.}
 
   proc c_malloc*(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>".}
   proc c_calloc*(nmemb, size: csize_t): pointer {.importc: "calloc", header: "<stdlib.h>".}
@@ -180,6 +187,16 @@ when implModule:
       signatures: res,
     )].success
 
+  proc getImportedFilesThread(args: tuple[syntaxMap: SyntaxMapSnapshot, query: TSQuery]): seq[string] =
+    let text = args.syntaxMap.rope
+    let endPoint = text.endPoint
+    var arena = initArena()
+    for match in args.query.matches(args.syntaxMap.layers[0].tree.root, tsRange(tsPoint(0, 0), tsPoint(endPoint.row.int, endPoint.column.int)), arena):
+      for capture in match.captures:
+        var sel = capture.node.getRange().toRange
+        if capture.name == "import":
+          result.add $text[sel]
+
   proc getImportedFiles*(treesitter: TreesitterComponent, text: TextComponent): Future[Option[seq[string]]] {.async.} =
     result = seq[string].none
     let tree = treesitter.syntaxMap.tsTree
@@ -187,21 +204,16 @@ when implModule:
       return
 
     let query = await treesitter.query("imports")
-    let tree2 = treesitter.syntaxMap.tsTree
-    if query.isNone or tree2.isNil:
+    if query.isNone or treesitter.syntaxMap.tsTree.isNil or treesitter.syntaxMap.snapshot.layers.len == 0:
       return
 
     let endPoint = text.content.endPoint
-    var arena = initArena()
 
-    var res = newSeq[string]()
-    for match in query.get.matches(tree2.root, tsRange(tsPoint(0, 0), tsPoint(endPoint.row.int, endPoint.column.int)), arena):
-      for capture in match.captures:
-        var sel = capture.node.getRange().toRange
-        if capture.name == "import":
-          res.add text.content(sel, false)
+    let flowVar = threadpool.spawn getImportedFilesThread (syntaxMap: treesitter.syntaxMap.snapshot, query: query.get)
+    while not flowVar.isReady:
+      await sleepAsync(2.milliseconds)
 
-    return res.some
+    return some(^flowVar)
 
   proc ctagsGetCompletions*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
     let self = self.LanguageServerCTags
@@ -218,6 +230,8 @@ when implModule:
           t = startTimer()
         except:
           discard
+
+    maybeSleep()
 
     var completionText = ""
     var importedFiles = seq[string].none
@@ -251,6 +265,7 @@ when implModule:
           for path in paths[]:
             importedFilePaths.incl path
 
+    maybeSleep()
     var res: seq[CompletionItem] = newSeqOfCap[lsp_types.CompletionItem](total)
     let paths = collect:
       for k in self.files.keys:
@@ -259,18 +274,29 @@ when implModule:
       maybeSleep()
       if path notin self.files:
         continue
-      let file {.cursor.} = self.files[path]
+      var file = self.files[path].addr
 
       res.add file.moduleCompletions
       if importedFilePaths.len > 0 and not importedFilePaths.contains(path):
         continue
 
-      res.add file.completions
+      var k = 100
+      var i = 0
+      while i < file.completions.len:
+        dec k
+        if k == 0:
+          maybeSleep()
+          if path notin self.files:
+            break
+          file = self.files[path].addr
+          if i >= file.completions.len:
+            break
+          k = 100
+        res.add file.completions[i]
+        inc i
 
-    # debugf"{t2.elapsed.ms} ms, {res.len} completions"
-    return lsp_types.CompletionList(
-      items: res,
-    ).success
+    result = lsp_types.CompletionList().success
+    swap(res, result.result.items) # Avoid copying, can be large
 
   proc newLanguageServerCTags*(services: Services): LanguageServerCTags =
     result = new LanguageServerCTags
@@ -304,126 +330,146 @@ when implModule:
       log lvlWarn, &"Unknown symbol type '{str}'"
       return SymbolType.Unknown
 
-  proc loadCTags(self: LanguageServerCTags, path: string, content: string) {.async.} =
-    try:
-      var lastLine = ""
-      var t = startTimer()
-      var seenFiles = initHashSet[string]()
+  proc parseCTags(self: LanguageServerCTags) {.async.} =
+    if self.parsing:
+      return
+    self.parsing = true
+    defer:
+      self.parsing = false
 
-      # Clear previous values
-      for f in self.ctags[path].files:
-        self.files[f] = CTagsSymbols(sourceFile: path)
+    while true:
+      if self.fileLoadQueue.len == 0:
+        return
 
-      var total = 0
-      for line in content.splitLines:
-        if line.startsWith("!_"):
-          continue
+      let path = self.fileLoadQueue[0].path
+      var content = ""
+      swap(content, self.fileLoadQueue[0].content) # Swap to avoid copying large string
+      self.fileLoadQueue.removeShift(0)
 
-        if line == lastLine:
-          continue
-        lastLine = line
+      try:
+        var lastLine = ""
+        var t = startTimer()
+        var seenFiles = initHashSet[string]()
 
-        var i = 0
-        proc nextPart(line: string, i: var int): string =
-          let k = line.find('\t', i)
-          let oldI = i
-          if k == -1:
-            i = line.len
-            line[oldI..^1]
-          else:
-            i = k + 1
-            line[oldI..<k]
+        # Clear previous values
+        for f in self.ctags[path].files:
+          self.files[f] = CTagsSymbols(sourceFile: path)
 
-        var def = CTagsDefinition()
-        def.name = nextPart(line, i)
-        let nativePath = nextPart(line, i)
-        def.path = "local://" // nativePath.normalizeNativePath()
-        let address = nextPart(line, i)
-        if address.endsWith(";\""):
-          while i < line.len:
-            let part = nextPart(line, i)
-            let k = part.find(':')
-            if k != -1:
-              let key = part[0..<k]
-              let value = part[(k + 1)..^1]
-              case key
-              of "kind":
-                def.kindRaw = value
-                def.kind = value.toSymbolType()
-              of "line":
-                def.line = value.parseInt.catch(0)
-              of "signature":
-                def.signature = value
-              of "language":
-                def.language = value.toLowerAscii
+        var total = 0
+        for line in content.splitLines:
+          if line.startsWith("!_"):
+            continue
+
+          if line == lastLine:
+            continue
+          lastLine = line
+
+          var i = 0
+          proc nextPart(line: string, i: var int): string =
+            let k = line.find('\t', i)
+            let oldI = i
+            if k == -1:
+              i = line.len
+              line[oldI..^1]
+            else:
+              i = k + 1
+              line[oldI..<k]
+
+          var def = CTagsDefinition()
+          def.name = nextPart(line, i)
+          let nativePath = nextPart(line, i)
+          def.path = "local://" // nativePath.normalizeNativePath()
+          let address = nextPart(line, i)
+          if address.endsWith(";\""):
+            while i < line.len:
+              let part = nextPart(line, i)
+              let k = part.find(':')
+              if k != -1:
+                let key = part[0..<k]
+                let value = part[(k + 1)..^1]
+                case key
+                of "kind":
+                  def.kindRaw = value
+                  def.kind = value.toSymbolType()
+                of "line":
+                  def.line = value.parseInt.catch(0)
+                of "signature":
+                  def.signature = value
+                of "language":
+                  def.language = value.toLowerAscii
+                else:
+                  log lvlWarn, &"Unknown key '{part}'"
+                  continue
               else:
-                log lvlWarn, &"Unknown key '{part}'"
+                log lvlWarn, &"Invalid part '{part}'"
                 continue
-            else:
-              log lvlWarn, &"Invalid part '{part}'"
-              continue
 
-        let cursor = (def.line - 1, 0)
-        if def.name != "":
-          # Clear all symbols for the file of this symbol the first time we see a symbol for this file
-          if def.path notin seenFiles:
-            self.files[def.path] = CTagsSymbols(sourceFile: path)
-            seenFiles.incl def.path
-            let name = def.path.splitFile.name
-            if name in self.importMap:
-              self.importMap[name].incl def.path
-            else:
-              self.importMap[name] = [def.path].toHashSet
+          let cursor = (def.line - 1, 0)
+          if def.name != "":
+            # Clear all symbols for the file of this symbol the first time we see a symbol for this file
+            if def.path notin seenFiles:
+              self.files[def.path] = CTagsSymbols(sourceFile: path)
+              seenFiles.incl def.path
+              let name = def.path.splitFile.name
+              if name in self.importMap:
+                self.importMap[name].incl def.path
+              else:
+                self.importMap[name] = [def.path].toHashSet
 
-          self.files.withValue(def.path, s):
-            total.inc()
-            s[].symbols.add Symbol(
-              location: cursor,
-              name: def.name,
-              symbolType: def.kind,
-              filename: def.path,
-            )
-            s[].definitions.add def
+            self.files.withValue(def.path, s):
+              total.inc()
+              s[].symbols.add Symbol(
+                location: cursor,
+                name: def.name,
+                symbolType: def.kind,
+                filename: def.path,
+              )
+              s[].definitions.add def
 
-            let edit = lsp_types.TextEdit(
-              `range`: lsp_types.Range(
-                start: lsp_types.Position(line: -1, character: -1),
-                `end`: lsp_types.Position(line: -1, character: -1),
-              ),
-              newText: def.name,
-            )
-            let detail = if def.signature.len > 0: def.signature else: def.kindRaw
-            let completion = CompletionItem(
-              kind: lsp_types.CompletionKind.Text,
-              label: def.name,
-              detail: detail.some,
-              documentation: lsp_types.init(lsp_types.CompletionItemDocumentationVariant, def.path).some,
-              insertTextFormat: InsertTextFormat.PlainText.some,
-              textEdit: lsp_types.init(lsp_types.CompletionItemTextEditVariant, edit).some,
-            )
-            case def.kind
-            of SymbolType.File, SymbolType.Module, SymbolType.Namespace, SymbolType.Package:
-              s[].moduleCompletions.add completion
-            else:
-              s[].completions.add completion
+              let edit = lsp_types.TextEdit(
+                `range`: lsp_types.Range(
+                  start: lsp_types.Position(line: -1, character: -1),
+                  `end`: lsp_types.Position(line: -1, character: -1),
+                ),
+                newText: def.name,
+              )
+              let detail = if def.signature.len > 0: def.signature else: def.kindRaw
+              let completion = CompletionItem(
+                kind: lsp_types.CompletionKind.Text,
+                label: def.name,
+                detail: detail.some,
+                documentation: lsp_types.init(lsp_types.CompletionItemDocumentationVariant, def.path).some,
+                insertTextFormat: InsertTextFormat.PlainText.some,
+                textEdit: lsp_types.init(lsp_types.CompletionItemTextEditVariant, edit).some,
+              )
+              case def.kind
+              of SymbolType.File, SymbolType.Module, SymbolType.Namespace, SymbolType.Package:
+                s[].moduleCompletions.add completion
+              else:
+                s[].completions.add completion
 
-        if t.elapsed.ms > 10:
-          try:
-            await sleepAsync(1.milliseconds)
-            t = startTimer()
-          except:
-            discard
+          if t.elapsed.ms > 10:
+            try:
+              await sleepAsync(1.milliseconds)
+              t = startTimer()
+            except:
+              discard
 
-      log lvlInfo, &"Loaded {total} symbols for {seenFiles.len} files from '{path}'"
-      self.ctags[path].files = seenFiles
+        log lvlInfo, &"Loaded {total} symbols for {seenFiles.len} files from '{path}'"
+        self.ctags[path].files = seenFiles
 
-    except CatchableError as e:
-      log lvlWarn, &"Failed to read ctags file '{path}': {e.msg}"
+      except CatchableError as e:
+        log lvlWarn, &"Failed to read ctags file '{path}': {e.msg}"
 
-  proc loadCTags(self: LanguageServerCTags, path: string) {.async: (raises: []).} =
+  proc loadCTags(self: LanguageServerCTags, path: sink string, content: sink string) =
+    self.fileLoadQueue.add (path.ensureMove, content.ensureMove)
+    if not self.parsing:
+      asyncSpawn self.parseCTags()
+
+  proc loadCTagsFile(self: LanguageServerCTags, path: string) {.async: (raises: []).} =
     try:
-      let f = await self.vfs.read(path)
-      await self.loadCTags(path, f)
+      var f = await self.vfs.read(path)
+      self.loadCTags(path, f.ensureMove)
     except CatchableError as e:
       log lvlWarn, &"Failed to load ctags from file using command: '{path}': {e.msg}"
 
@@ -432,15 +478,15 @@ when implModule:
       let args = @["-f", "-", "-p", self.vfs.localize(path)]
       let ctagsGeneratorPath = self.config.get(&"lang.{languageId}.lsp.ctags.generator", "ctags")
       let ctagsGeneratorPathLocal = self.vfs.localize(ctagsGeneratorPath)
-      let output = runProcessAsyncOutput(ctagsGeneratorPathLocal, args, maxLines=100000).await.output
+      var output = runProcessAsyncOutput(ctagsGeneratorPathLocal, args, maxLines=100000).await.output
       self.ctags[path] = CTagsFile(path: path)
-      await self.loadCTags(path, output)
+      self.loadCTags(path, output.ensureMove)
     except CatchableError as e:
       log lvlWarn, &"Failed to load ctags from file using command: '{path}': {e.msg}"
 
   proc updateCTagFile(self: LanguageServerCTags, path: string) {.async.} =
     try:
-      let f = await self.vfs.read(path)
+      var f = await self.vfs.read(path)
 
       if path notin self.ctags:
         discard self.vfs.watch(path, proc(events: seq[PathEvent]) =
@@ -450,9 +496,9 @@ when implModule:
 
       self.ctags[path] = CTagsFile(path: path)
       self.ctags[path].updateTask = startDelayedPaused(500, repeat=false):
-        asyncSpawn self.loadCTags(path)
+        asyncSpawn self.loadCTagsFile(path)
 
-      await self.loadCTags(path, f)
+      self.loadCTags(path, f.ensureMove)
     except CatchableError as e:
       log lvlWarn, &"Failed to update ctag file '{path}': {e.msg}"
 
