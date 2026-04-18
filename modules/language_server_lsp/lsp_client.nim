@@ -364,7 +364,8 @@ proc handleRequests(client: LSPClient) {.async, gcsafe.} =
       client.log.log lvlInfo, &"handleRequests: channel closed"
       return
 
-    client.log.log lvlDebug, &"handleRequest: {request}"
+    if logVerbose:
+      client.log.log lvlDebug, &"handleRequest: {request}"
 
     case request.kind
     of Exit:
@@ -393,7 +394,8 @@ proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
       client.log.log lvlInfo, &"handleResponses: channel closed"
       return
 
-    client.log.log lvlDebug, &"handleResponse: {response.id}"
+    if logVerbose:
+      client.log.log lvlDebug, &"handleResponse: {response.id}"
     let id = response.id
 
     template dispatch(requests: untyped, parsedResponse: untyped): untyped =
@@ -707,7 +709,8 @@ proc notifyOpenedTextDocument(client: LSPClient, languageId: string, path: strin
     },
   }
 
-  client.log.log lvlDebug, &"notifyOpenedTextDocument {languageId}, {path}"
+  if logVerbose:
+    client.log.log lvlDebug, &"notifyOpenedTextDocument {languageId}, {path}"
   await client.sendNotification("textDocument/didOpen", params)
 
 proc notifyClosedTextDocument(client: LSPClient, path: string) {.async.} =
@@ -717,7 +720,8 @@ proc notifyClosedTextDocument(client: LSPClient, path: string) {.async.} =
     },
   }
 
-  client.log.log lvlDebug, &"notifyClosedTextDocument {path}"
+  if logVerbose:
+    client.log.log lvlDebug, &"notifyClosedTextDocument {path}"
   await client.sendNotification("textDocument/didClose", params)
 
 proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int,
@@ -730,7 +734,8 @@ proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int,
     "contentChanges": changes.toJson
   }
 
-  client.log.log lvlDebug, &"notifyTextDocumentChangedPartial {path}, {version}"
+  if logVerbose:
+    client.log.log lvlDebug, &"notifyTextDocumentChangedPartial {path}, {version}"
   await client.sendNotification("textDocument/didChange", params)
 
 proc notifyConfigurationChanged(client: LSPClient, settings: JsonNode) {.gcsafe, async.} =
@@ -750,11 +755,13 @@ proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, co
     ],
   }
 
-  client.log.log lvlDebug, &"notifyTextDocumentChangedFull {path}, {version}"
+  if logVerbose:
+    client.log.log lvlDebug, &"notifyTextDocumentChangedFull {path}, {version}"
   await client.sendNotification("textDocument/didChange", params)
 
 proc getDefinition*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DefinitionResponse]] {.async.} =
-  client.log.log lvlDebug, &"[getDefinition] {filename.absolutePath}:{line}:{column}"
+  if logVerbose:
+    client.log.log lvlDebug, &"[getDefinition] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/definition")
 
@@ -769,7 +776,8 @@ proc getDefinition*(client: LSPClient, filename: string, line: int, column: int)
   return await client.sendRequest(client.activeDefinitionRequests.addr, "textDocument/definition", params)
 
 proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DeclarationResponse]] {.async.} =
-  client.log.log lvlDebug, &"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  if logVerbose:
+    client.log.log lvlDebug, &"[getDeclaration] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/declaration")
 
@@ -784,7 +792,8 @@ proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int
   return await client.sendRequest(client.activeDeclarationRequests.addr, "textDocument/declaration", params)
 
 proc getTypeDefinitions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[TypeDefinitionResponse]] {.async.} =
-  client.log.log lvlDebug, &"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  if logVerbose:
+    client.log.log lvlDebug, &"[getDeclaration] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/typeDefinition")
 
@@ -799,7 +808,8 @@ proc getTypeDefinitions*(client: LSPClient, filename: string, line: int, column:
   return await client.sendRequest(client.activeTypeDefinitionRequests.addr, "textDocument/typeDefinition", params)
 
 proc getImplementation*(client: LSPClient, filename: string, line: int, column: int): Future[Response[ImplementationResponse]] {.async.} =
-  client.log.log lvlDebug, &"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  if logVerbose:
+    client.log.log lvlDebug, &"[getDeclaration] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/implementation")
 
@@ -814,7 +824,8 @@ proc getImplementation*(client: LSPClient, filename: string, line: int, column: 
   return await client.sendRequest(client.activeImplementationRequests.addr, "textDocument/implementation", params)
 
 proc getReferences*(client: LSPClient, filename: string, line: int, column: int): Future[Response[ReferenceResponse]] {.async.} =
-  client.log.log lvlDebug, &"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  if logVerbose:
+    client.log.log lvlDebug, &"[getDeclaration] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/references")
 
@@ -884,7 +895,8 @@ proc getInlayHints*(client: LSPClient, filename: string, selection: ((int, int),
 proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentSymbolResponse]] {.async.} =
   assert isMainThread()
 
-  client.log.log lvlDebug, &"[getSymbols] {filename.absolutePath}"
+  if logVerbose:
+    client.log.log lvlDebug, &"[getSymbols] {filename.absolutePath}"
   client.cancelAllOf("textDocument/documentSymbol")
 
   let params = DocumentSymbolParams(
@@ -894,7 +906,8 @@ proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentS
   return await client.sendRequest(client.activeSymbolsRequests.addr, "textDocument/documentSymbol", params)
 
 proc getWorkspaceSymbols*(client: LSPClient, query: string): Future[Response[WorkspaceSymbolResponse]] {.async.} =
-  client.log.log lvlDebug, &"[getWorkspaceSymbols]"
+  if logVerbose:
+    client.log.log lvlDebug, &"[getWorkspaceSymbols]"
   client.cancelAllOf("workspace/symbol")
 
   let params = WorkspaceSymbolParams(
@@ -1073,7 +1086,8 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
         elif client.idToMethod.contains(id):
           let meth = client.idToMethod[id]
           client.idToMethod.del(id)
-          client.log.log lvlDebug, &"[run] received response with id {id} and method {meth}"
+          if logVerbose:
+            client.log.log lvlDebug, &"[run] received response with id {id} and method {meth}"
           let parsedResponse = response.toResponse JsonNode
           case meth
 

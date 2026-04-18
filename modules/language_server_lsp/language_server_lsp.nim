@@ -994,7 +994,7 @@ when implModule:
         "Initializing..."
       res.add FinderItem(
         displayName: name,
-        details: @[status] & lsp.errors,
+        details: @[status],
         data: &"""Status: {status}
 Errors:
   {lsp.errors.mapIt("\n" & it.indent(2)).join("")}
