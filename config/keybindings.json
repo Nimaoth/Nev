@@ -107,6 +107,7 @@
         "<LEADER>ga": ["explore-app-config"],
         "<LEADER>gh": ["explore-help"],
         "<LEADER>gp": ["explore-current-file-directory"],
+        "<LEADER>gS": ["explore-files", "git://@"],
         "<LEADER>gs": ["search-global-interactive"],
         "<LEADER>gk": ["browse-keybinds"],
         "<LEADER>gi": ["browse-settings"],
@@ -237,7 +238,6 @@
         "<C-a>": ["add-workspace-folder"],
         "<C-x>": ["remove-workspace-folder"],
         "<CS-f>": ["search-interactive"],
-        "<C-f>": ["create-file"],
         "<C-g>f": ["create-file"],
         "<C-g>d": ["create-directory"],
         "<C-g>x": ["delete-file-or-dir"],
@@ -246,6 +246,13 @@
         "<C-g>o": "open-session",
         "<C-g><S-n>": ["create-new-session", {"newWindow": true}],
         "<C-g><S-o>": ["open-session", {"newWindow": true}],
+
+        "<C-h>": ["prev-change"],
+        "<C-f>": ["next-change"],
+        "<CA-r>": ["diff-file"],
+        "<CA-n>": ["diff-file-against-active"],
+        "<CA-t>": ["diff-active-against-file"],
+        "<CA-d>": ["toggle-auto-diff"],
     },
 
     "popup.selector.settings": {

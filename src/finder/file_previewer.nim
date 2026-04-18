@@ -212,9 +212,10 @@ method previewItem*(self: FilePreviewer, item: FinderItem, editor: DocumentEdito
   var location: Option[Cursor]
   var isFile = bool.none
 
-  let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).some.catch: VCSFileInfo.none
+  let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo, Joptions(allowExtraKeys: true)).some.catch: VCSFileInfo.none
   if fileInfo.isSome:
     path = fileInfo.get.path
+    isFile = true.some
   else:
     let infos = item.parsePathAndLocationFromItemData.getOr:
       log lvlError, fmt"Failed to preview item because of invalid data format. " &

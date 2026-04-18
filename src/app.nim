@@ -12,7 +12,7 @@ import text/[custom_treesitter, overlay_map]
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
 import service, layout, session, command_service, toast, plugin_service
-import event_service
+import event_service, vcs/vcs
 import search_component
 import nimsumtree/[rope]
 
@@ -2351,7 +2351,7 @@ proc installTreesitterParser*(self: App, language: string, host: string = "githu
 
   asyncSpawn self.installTreesitterParserAsync(language, host)
 
-proc getItemsFromDirectory(vfs: Arc[VFS2], workspace: Workspace, directory: string, showVFS: bool = false): Future[ItemList] {.async: (raises: []).} =
+proc getItemsFromDirectory(vfs: Arc[VFS2], workspace: Workspace, directory: string, showVFS: bool = false, diff: bool = false): Future[ItemList] {.async: (raises: []).} =
 
   let listing = await vfs.getDirectoryListing(directory)
 
@@ -2374,13 +2374,18 @@ proc getItemsFromDirectory(vfs: Arc[VFS2], workspace: Workspace, directory: stri
       details.add vfs.name
 
     let icon = if isFile: fileIcon else: folderIcon
+    let data = %*{
+      "path": directory // name,
+      "isFile": isFile,
+    }
+    if diff:
+      data["unstagedStatus"] = VCSFileStatus.Modified.toJson
+      data["stagedStatus"] = VCSFileStatus.None.toJson
+
     list[i] = FinderItem(
       displayName: icon & " " & name,
       filterText: name,
-      data: $ %*{
-        "path": directory // name,
-        "isFile": isFile,
-      },
+      data: $data,
       details: details,
     )
     inc i
@@ -2403,21 +2408,23 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
   currentDirectory[] = root
 
   let vfs = self.vfsService.vfs2
+  var autoDiff = false
 
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
-    return getItemsFromDirectory(vfs, self.workspace, currentDirectory[], showVFS).await
+    return getItemsFromDirectory(vfs, self.workspace, currentDirectory[], showVFS, autoDiff).await
 
   let source = newAsyncCallbackDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
+  let filePreviewer = newFilePreviewer(vfs, self.services)
   var popup = newSelectorPopup(self.services, "file-explorer".some, finder.some,
-    newFilePreviewer(vfs, self.services).Previewer.toDisposableRef.some)
+    filePreviewer.Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+    let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool], Joptions(allowExtraKeys: true)).catch:
       log lvlError, fmt"Failed to parse file info from item: {item}"
       return true
 
@@ -2443,7 +2450,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
   popup.addCustomCommand "enter-normalized", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.getSelectedItem().getSome(item):
-      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool], Joptions(allowExtraKeys: true)).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
@@ -2472,7 +2479,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
   popup.addCustomCommand "add-workspace-folder", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.getSelectedItem().getSome(item):
-      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool], Joptions(allowExtraKeys: true)).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
@@ -2485,7 +2492,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
   popup.addCustomCommand "remove-workspace-folder", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.getSelectedItem().getSome(item):
-      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool], Joptions(allowExtraKeys: true)).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
@@ -2521,7 +2528,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
   popup.addCustomCommand "delete-file-or-dir", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.getSelectedItem().getSome(item):
-      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool], Joptions(allowExtraKeys: true)).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
@@ -2535,7 +2542,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
   popup.addCustomCommand "create-new-session", proc(popup: SelectorPopup, args: JsonNode): bool =
     let openInNewWindow = args{0}{"newWindow"}.getBool()
     if popup.getSelectedItem().getSome(item):
-      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool], Joptions(allowExtraKeys: true)).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
@@ -2547,7 +2554,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
   popup.addCustomCommand "open-session", proc(popup: SelectorPopup, args: JsonNode): bool =
     let openInNewWindow = args{0}{"newWindow"}.getBool()
     if popup.getSelectedItem().getSome(item):
-      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool], Joptions(allowExtraKeys: true)).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
@@ -2560,6 +2567,49 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
     let dir = currentDirectory[]
     self.searchGlobalInteractive(dir)
     self.layout.popPopup(popup)
+    return true
+
+  popup.addCustomCommand "toggle-auto-diff", proc(popup: SelectorPopup, args: JsonNode): bool =
+    autoDiff = not autoDiff
+    source.retrigger()
+    return true
+
+  popup.addCustomCommand "diff-file", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if filePreviewer.editor != nil:
+      filePreviewer.editor.updateDiff(true)
+    return true
+
+  popup.addCustomCommand "diff-file-against-active", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if filePreviewer.editor != nil:
+      if self.layout.getActiveEditor(includeCommandLine = false, includePopups = false).getSome(editor) and editor of TextDocumentEditor:
+        filePreviewer.editor.startDiff(editor.currentDocument.filename, true)
+    return true
+
+  popup.addCustomCommand "diff-active-against-file", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool], Joptions(allowExtraKeys: true)).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+      if self.layout.getActiveEditor(includeCommandLine = false, includePopups = false).getSome(editor) and editor of TextDocumentEditor:
+        editor.TextDocumentEditor.startDiff(fileInfo.path, true)
+        return true
+
+    return false
+
+  popup.addCustomCommand "prev-change", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+    popup.previewEditor.selection = popup.previewEditor.getPrevChange(popup.previewEditor.selection.first).last.toSelection
+    popup.previewEditor.scrollToCursor(SelectionCursor.Last)
+    popup.previewEditor.centerCursor()
+    return true
+
+  popup.addCustomCommand "next-change", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+    popup.previewEditor.selection = popup.previewEditor.getNextChange(popup.previewEditor.selection.first).last.toSelection
+    popup.previewEditor.scrollToCursor(SelectionCursor.Last)
+    popup.previewEditor.centerCursor()
     return true
 
   self.layout.pushPopup popup

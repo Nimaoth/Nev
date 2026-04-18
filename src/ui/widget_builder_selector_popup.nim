@@ -206,12 +206,22 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
                 node.rawY = floor((maxHeights[row] - node.bounds.h) * 0.5)
 
           builder.updateSizeToContent(currentNode)
-          if app.nextPossibleInputs.len == 0:
+          if SizeToContentY in yFlag:
             let textColor = app.themes.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
             let continuesTextColor = app.themes.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
             let keysTextColor = app.themes.theme.tokenColor("number", color(0.882, 0.784, 0.784))
             var headerColor = app.themes.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
             builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeight, currentNode.bounds, padding = 0)
+
+        if SizeToContentY notin yFlag:
+          let textColor = app.themes.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
+          let continuesTextColor = app.themes.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
+          let keysTextColor = app.themes.theme.tokenColor("number", color(0.882, 0.784, 0.784))
+          var headerColor = app.themes.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
+          builder.panel(&{FillX, FillY, LayoutVerticalReverse}):
+            builder.panel(&{FillX, SizeToContentY}, pivot = vec2(0, 1)):
+              builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeight, currentNode.bounds, padding = 0)
+              builder.updateSizeToContent(currentNode)
 
         if showPreview:
           builder.panel(0.UINodeFlags, x = bounds.w * (1 - previewScale),
