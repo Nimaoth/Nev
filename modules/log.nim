@@ -115,8 +115,7 @@ when implModule:
       let options = CreateTerminalOptions()
       let view = terminals.get.createTerminalView(chan.stdin, chan.stdout, options)
       layout.get.registerView(view, last = false)
-      # layout.get.addView("", last = false)
-      layout.get.addView(view, slot = "#small-left", focus = false)
+      # layout.get.addView(view, slot = "#small-left", focus = false)
       chan.createdTerminal = true
 
   proc logAddChannel(name: string, flags: set[LogChannelFlag]): LogChannel =
