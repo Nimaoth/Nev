@@ -108,6 +108,7 @@ proc documentEditorGetEventHandlers*(self: DocumentEditor, inject: Table[string,
 proc documentEditorGetOrOpenDocument(self: DocumentEditorService, path: string, load: bool = true, id = Id.none): Option[Document] {.gcsafe, raises: [].}
 proc documentEditorAddDocumentFactory(self: DocumentEditorService, factory: DocumentFactory)
 proc documentEditorAddDocumentEditorFactory(self: DocumentEditorService, factory: DocumentEditorFactory)
+proc documentEditorSetDocument(self: DocumentEditor, document: Document)
 {.pop.}
 
 
@@ -117,6 +118,7 @@ proc createDocument*(self: DocumentEditorService, kind: string, path: string, lo
 proc getOrOpenDocument*(self: DocumentEditorService, path: string, load = true, id = Id.none): Option[Document] = documentEditorGetOrOpenDocument(self, path, load, id)
 proc addDocumentFactory*(self: DocumentEditorService, factory: DocumentFactory) = documentEditorAddDocumentFactory(self, factory)
 proc addDocumentEditorFactory*(self: DocumentEditorService, factory: DocumentEditorFactory) = documentEditorAddDocumentEditorFactory(self, factory)
+proc setDocument*(self: DocumentEditor, document: Document) = documentEditorSetDocument(self, document)
 
 proc `active=`*(self: DocumentEditor, newActive: bool) = documentEditorSetActive(self, newActive)
 {.pop.}
@@ -175,6 +177,11 @@ when implModule:
     return false
 
   proc getDocument*(self: DocumentEditor): Document {.gcsafe, raises: [].} = self.currentDocument
+
+  method setDocumentImpl*(self: DocumentEditor, document: Document) {.base, gcsafe, raises: [].} =
+    discard
+
+  proc documentEditorSetDocument(self: DocumentEditor, document: Document) = setDocumentImpl(self, document)
 
   method handleAction*(self: DocumentEditor, action: string, arg: string, record: bool = true): Option[JsonNode] {.base, gcsafe, raises: [].} = discard
 

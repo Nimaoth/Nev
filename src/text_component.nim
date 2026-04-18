@@ -60,6 +60,12 @@ proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelectio
 proc startTransaction*(self: TextComponent) = textComponentStartTransaction(self)
 proc endTransaction*(self: TextComponent) = textComponentEndTransaction(self)
 
+proc `content=`*(self: TextComponent, text: string) =
+  self.startTransaction()
+  let fullRange = point(0, 0)...self.content.endPoint
+  discard self.edit([fullRange], [fullRange], [text])
+  self.endTransaction()
+
 # Implementation
 when implModule:
   import std/[sequtils]

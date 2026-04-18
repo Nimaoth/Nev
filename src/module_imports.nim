@@ -12,6 +12,7 @@ import "../modules/language_server_ctags.nim"
 import "../modules/language_server_regex.nim"
 import "../modules/lsp_server.nim"
 import "../modules/unsaved_saver.nim"
+import "../modules/log.nim"
 import "../modules/workspace_edit.nim"
 import "../modules/gui_platform/gui_platform.nim"
 import "../modules/language_server_document_completion.nim"
@@ -44,6 +45,7 @@ proc initModules*() =
   when declared(init_module_language_server_regex): init_module_language_server_regex()
   when declared(init_module_lsp_server): init_module_lsp_server()
   when declared(init_module_unsaved_saver): init_module_unsaved_saver()
+  when declared(init_module_log): init_module_log()
   when declared(init_module_workspace_edit): init_module_workspace_edit()
   when declared(init_module_gui_platform): init_module_gui_platform()
   when declared(init_module_language_server_document_completion): init_module_language_server_document_completion()
@@ -76,6 +78,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_language_server_regex): shutdown_module_language_server_regex()
   when declared(shutdown_module_lsp_server): shutdown_module_lsp_server()
   when declared(shutdown_module_unsaved_saver): shutdown_module_unsaved_saver()
+  when declared(shutdown_module_log): shutdown_module_log()
   when declared(shutdown_module_workspace_edit): shutdown_module_workspace_edit()
   when declared(shutdown_module_gui_platform): shutdown_module_gui_platform()
   when declared(shutdown_module_language_server_document_completion): shutdown_module_language_server_document_completion()

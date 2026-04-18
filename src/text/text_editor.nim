@@ -601,8 +601,12 @@ proc clearDocument*(self: TextDocumentEditor) =
 
     self.editors.tryCloseDocument(document)
 
-proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
+method setDocumentImpl*(self: TextDocumentEditor, document: Document) {.gcsafe, raises: [].} =
   assert document.isNotNil
+  if not (document of TextDocument):
+    return
+
+  let document = document.TextDocument
 
   if document == self.document:
     return
@@ -2006,7 +2010,7 @@ proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string) {.expose("
   self.document.addNextCheckpoint checkpoint
 
 proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool): Future[void] {.async.} =
-  log lvlInfo, fmt"copy register into '{register}', inclusiveEnd: {inclusiveEnd}"
+  # log lvlInfo, fmt"copy register into '{register}', inclusiveEnd: {inclusiveEnd}"
   var text = Rope.new()
   var c = self.document.rope.cursorT(Point)
 
@@ -2033,7 +2037,7 @@ proc copy*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool =
 
 proc pasteAsync*(self: TextDocumentEditor, selections: seq[Selection], registerName: string, inclusiveEnd: bool = false):
     Future[void] {.async.} =
-  log lvlInfo, fmt"paste register from '{registerName}', inclusiveEnd: {inclusiveEnd}"
+  # log lvlInfo, fmt"paste register from '{registerName}', inclusiveEnd: {inclusiveEnd}"
 
   var register: Register
   if not self.registers.getRegisterAsync(registerName, register.addr).await:
