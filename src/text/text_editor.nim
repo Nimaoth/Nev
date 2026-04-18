@@ -2373,7 +2373,36 @@ proc startDiff*(self: TextDocumentEditor, diffTarget: string = "", gotoFirstDiff
   asyncSpawn self.updateDiffAsync(gotoFirstDiff)
 
 proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
+  if self.document.isNil:
+    return
   self.showDiff = true
+  if self.diffTarget == "":
+    if self.document.filename.startsWith("git://"):
+      var subPath = self.document.filename
+      subPath.removePrefix("git://")
+      var repo = "@"
+      var commit = ""
+      if (let i = subPath.find("/"); i != -1):
+        repo = subPath[0..<i]
+        subPath = subPath[(i + 1)..^1]
+      if (let i = subPath.find("/"); i != -1):
+        commit = subPath[0..<i]
+        subPath = subPath[(i + 1)..^1]
+
+      var targetCommit = ""
+      if commit == "staged":
+        targetCommit = "HEAD"
+      elif commit.startsWith("stash@{"):
+        targetCommit = "HEAD"
+      elif commit == "HEAD":
+        targetCommit = "HEAD~"
+      elif commit != "":
+        targetCommit = commit & "~"
+      else:
+        targetCommit = "staged"
+
+      self.diffTarget = &"git://{repo}/{targetCommit}/{subPath}"
+
   asyncSpawn self.updateDiffAsync(gotoFirstDiff)
 
 proc revertSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async: (raises: []).} =
