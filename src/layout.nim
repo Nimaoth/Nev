@@ -22,6 +22,7 @@ func serviceName*(_: typedesc[LayoutService]): string = "LayoutService"
 proc layoutServicePopups(self: LayoutService): lent seq[Popup] {.apprtl, gcsafe, raises: [].}
 proc layoutServiceAllViews(self: LayoutService): lent seq[View] {.apprtl, gcsafe, raises: [].}
 proc layoutServiceAddView(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) {.apprtl, gcsafe, raises: [].}
+proc layoutServiceAddViewRegisterView(self: LayoutService, view: View, last: bool = true) {.apprtl, gcsafe, raises: [].}
 proc layoutServiceShowView(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) {.apprtl, gcsafe, raises: [].}
 proc layoutServiceCloseView(self: LayoutService, view: View, keepHidden: bool = false, restoreHidden: bool = true) {.apprtl, gcsafe, raises: [].}
 proc layoutServiceTryGetCurrentView(self: LayoutService): Option[View] {.apprtl, gcsafe, raises: [].}
@@ -40,6 +41,7 @@ proc layoutServiceGetActiveEditor(self: LayoutService, includeCommandLine: bool 
 proc popups*(self: LayoutService): lent seq[Popup] {.inline.} = self.layoutServicePopups()
 proc allViews*(self: LayoutService): lent seq[View] {.inline.} = self.layoutServiceAllViews()
 proc addView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) {.inline.} = layoutServiceAddView(self, view, slot, focus, addToHistory)
+proc registerView*(self: LayoutService, view: View, last = true) = layoutServiceAddViewRegisterView(self, view, last)
 proc showView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) {.inline.} = self.layoutServiceShowView(view, slot, focus, addToHistory)
 proc closeView*(self: LayoutService, view: View, keepHidden: bool = false, restoreHidden: bool = true) {.inline.} = self.layoutServiceCloseView(view, keepHidden, restoreHidden)
 proc tryGetCurrentView*(self: LayoutService): Option[View] {.inline.} = self.layoutServiceTryGetCurrentView()
@@ -148,7 +150,7 @@ when implModule:
     log lvlError, &"Missing or invalid id for {config}"
     return nil
 
-  proc registerView*(self: LayoutService, view: View, last = true) =
+  proc layoutServiceAddViewRegisterView(self: LayoutService, view: View, last = true) =
     assert view != nil
     let self = self.LayoutServiceImpl
     if view notin self.mAllViews:
