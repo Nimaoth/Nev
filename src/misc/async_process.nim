@@ -176,7 +176,15 @@ proc readInput(chan: Arc[OwnedChannel[Option[ProcessObj]]], serverDiedNotificati
     var buffer = newString(100 * 1024)
     while true:
       try:
-        let read = stream.readData(buffer[0].addr, buffer.len)
+        when defined(windows):
+          let toRead = buffer.len
+        else:
+          # on linux it seems to block forever until reading the desired amount, but on windows it
+          # returns early even if less was read
+          # todo: avoid reading one byte at a time
+          let toRead = 1
+
+        let read = stream.readData(buffer[0].addr, toRead)
         if read > 0:
           stdout.write buffer.toOpenArray(0, read - 1)
         else:
