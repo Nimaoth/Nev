@@ -22,6 +22,15 @@ proc logAddCategory(name: string): LogCategory
 proc logAddChannel(name: string, flags: set[LogChannelFlag]): LogChannel
 {.pop.}
 
+when defined(featMemChannels):
+  static:
+    echo "with feature featMemChannels"
+  import nimsumtree/[arc]
+  import channel
+
+  {.push rtl, gcsafe, raises: [].}
+  proc getMemChannels*(): seq[tuple[name: string, stdin: Arc[BaseChannel], stdout: Arc[BaseChannel]]]
+  {.pop.}
 
 # Nice wrappers
 proc newLogChannel*(name: string, flags: set[LogChannelFlag] = {LogColor, LogStderr, LogInMemory}): LogChannel =
@@ -53,8 +62,6 @@ when implModule:
   import std/[atomics, strformat, typedthreads, terminal, colors, locks]
   import nimsumtree/[arc]
   import misc/[util, custom_async]
-  import terminal/terminal, service, layout
-  from scripting_api import CreateTerminalOptions
   import channel
 
   type
@@ -107,16 +114,6 @@ when implModule:
     let category = categoryCounter.fetchAdd(1)
     logDrainThreadChannel.send(LogDrainThreadMessage(kind: AddCategory, id: category, name: name))
     return category.LogCategory
-
-  proc createTerminal(chan: LogChannelImpl) =
-    let terminals = getService(TerminalService)
-    let layout = getService(LayoutService)
-    if terminals.isSome and layout.isSome:
-      let options = CreateTerminalOptions()
-      let view = terminals.get.createTerminalView(chan.stdin, chan.stdout, options)
-      layout.get.registerView(view, last = false)
-      # layout.get.addView(view, slot = "#small-left", focus = false)
-      chan.createdTerminal = true
 
   proc logAddChannel(name: string, flags: set[LogChannelFlag]): LogChannel =
     let channel = create(LogChannelObjImpl)
@@ -244,25 +241,14 @@ when implModule:
 
   let defaultChannel = newLogChannel("main-channel")
 
-  proc handleNewChannelsMain() {.async.} =
-    while true:
-      try:
-        await sleepAsync(500)
-      except CatchableError:
-        discard
-
-      try:
-        {.gcsafe.}:
-          withLock(channelsLock):
-            for c in channels:
-              if not c.createdTerminal:
-                c.createTerminal()
-      except CatchableError:
-        discard
+  proc getMemChannels*(): seq[tuple[name: string, stdin: Arc[BaseChannel], stdout: Arc[BaseChannel]]] =
+    {.gcsafe.}:
+      withLock(channelsLock):
+        for c in channels:
+          result.add (c.name, c.stdin, c.stdout)
 
   proc init_module_log*() {.cdecl, exportc, dynlib.} =
     logDrainThread.createThread(threadMain, 0)
-    asyncSpawn handleNewChannelsMain()
 
   proc shutdown_module_log*() {.cdecl, exportc, dynlib.} =
     {.gcsafe.}:

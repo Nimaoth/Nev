@@ -1,4 +1,4 @@
-import std/[parseopt, options, strutils, os, strformat, dirs, sequtils, unicode, osproc, times, tables, json, jsonutils, threadpool, sets]
+import std/[parseopt, options, strutils, os, strformat, dirs, sequtils, unicode, osproc, times, tables, json, jsonutils, threadpool, sets, sugar]
 import src/misc/timer
 
 var optParser = initOptParser("")
@@ -13,13 +13,14 @@ type
     path: string
     dirty: bool
     files: Table[string, FileInfo]
-    dependencies: seq[string]
+    dependencies: seq[tuple[module: string, features: seq[string]]]
 
 var dry = false
 var force = false
 var parallel = true
 var modulesToBuild = initHashSet[string]()
 var debug = true
+var logVerbose = false
 
 type IdentifierCase* = enum Camel, Pascal, Kebab, Snake, ScreamingSnake
 
@@ -81,16 +82,19 @@ proc toCamelCase(str: string): string =
 proc toPascalCase(str: string): string =
   return str.splitCase.parts.joinCase(Pascal)
 
-proc readDependencies(str: string): seq[string] =
+proc readDependencies(str: string): seq[tuple[module: string, features: seq[string]]] =
   try:
     let f = readFile(str)
     for l in f.splitLines:
       if l.startsWith("#use "):
-        return l[5..^1].split(" ")
+        for dep in l[5..^1].split(" "):
+          let parts = dep.split(":")
+          let name = parts[0]
+          let features = parts[1..^1]
+          result.add (name, features)
   except CatchableError as e:
     echo &"Failed to read file dependencies from '{str}': {e.msg}"
-
-  return @[]
+    return @[]
 
 proc gatherModules(): Table[string, ModuleInfo] =
   try:
@@ -166,40 +170,51 @@ proc getAllModules(): Table[string, ModuleInfo] =
   return modules
 
 proc runCmdAsync(cmd: string): FlowVar[tuple[output: string, exitCode: int]] =
-  echo &"{cmd}"
+  if logVerbose:
+    echo &"{cmd}"
   if not dry:
     return spawn execCmdEx(cmd)
 
 proc runCmdSync(cmd: string): int =
-  echo &"{cmd}"
+  if logVerbose:
+    echo &"{cmd}"
   if not dry:
     result = execCmd(cmd)
     echo &"{cmd}    -> {result}"
 
 proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
-  echo &"buildDirtyModules"
   var numBuilt = 0
   var numFailed = 0
   var numSkipped = 0
   var failedModules: seq[string] = @[]
   var cmds: seq[tuple[fv: FlowVar[tuple[output: string, exitCode: int]], module: string]] = @[]
   for (name, m) in modules.pairs:
-    echo name, ": ", m
-
     if modulesToBuild.len > 0 and name notin modulesToBuild:
-      echo &"Skip {name} (deps: {m.dependencies})"
       inc numSkipped
       continue
 
     if not m.dirty and not force:
-      echo &"Skip {name} (deps: {m.dependencies})"
+      if logVerbose:
+        echo &"Skip {name}"
       inc numSkipped
       continue
 
     try:
-      let dependencies = m.dependencies.join(",")
+      echo &"Build {name} ({m.path}) {m.dependencies.mapIt(it.module & \" \" & it.features.join(\":\")).join(\", \")}"
+
+      if logVerbose:
+        for (file, info) in m.files.pairs:
+          echo &"  {file} {info}"
+
+      let builtinDeps = @["log"]
+      let dependencies = (m.dependencies.mapIt(it.module) & builtinDeps).join(",")
+      let features = collect:
+        for dep in m.dependencies:
+          for f in dep.features:
+            &"-d:feat{f}"
+      let allFeatures = features.join(" ")
       let opt = if debug: "none" else: "speed"
-      let cmd = &"nim c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependencies} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:{opt} --lineDir:off -d:mallocImport {m.path}"
+      let cmd = &"nim c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependencies} {allFeatures} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:{opt} --lineDir:off -d:mallocImport {m.path}"
       if parallel:
         let v = runCmdAsync(cmd)
         if v != nil:
@@ -279,11 +294,12 @@ proc main() =
         debug = false
       of "dry":
         dry = true
+      of "v", "verbose":
+        logVerbose = true
     of cmdEnd: assert(false) # cannot happen
 
   case cmd
   of "build":
-    echo "Build Nev"
     var s = startTimer()
     buildDirtyModules(getAllModules())
     let t = s.elapsed
