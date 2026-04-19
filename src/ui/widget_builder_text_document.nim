@@ -409,9 +409,10 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
           docText.add markup.value
 
       if docText.len > 0:
-        builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap, DrawBorder, DrawBorderTerminal},
-          x = listNode.xw, w = docsWidth * charWidth, h = listNode.h, border = border(1),
-          backgroundColor = backgroundColor, textColor = docsColor, text = docText, borderColor = borderColor)
+        builder.panel(&{UINodeFlag.FillBackground, MaskContent, DrawBorder, DrawBorderTerminal},
+            x = listNode.xw, w = docsWidth * charWidth, h = listNode.h, border = border(1),
+            backgroundColor = backgroundColor, borderColor = borderColor):
+          builder.panel(&{DrawText, TextWrap, FillX, FillY}, text = docText, textColor = docsColor)
 
   if completionsPanel.bounds.yh > completionsPanel.parent.bounds.h:
     completionsPanel.rawY = cursorBounds.y
