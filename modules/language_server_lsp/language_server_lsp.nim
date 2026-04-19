@@ -894,7 +894,7 @@ when implModule:
         args = command[1..^1]
 
       let workspaces = @[self.workspace.getWorkspacePath()]
-      var client = newLSPClient(workspaceInfo, userOptions, exePath, workspaces, args, killOnExit)
+      var client = newLSPClient(workspaceInfo, userOptions, exePath, workspaces, args, killOnExit, name)
       client.name = name
 
       var lsp = LanguageServerLSP(client: client, name: name)

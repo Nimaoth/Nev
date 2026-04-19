@@ -155,7 +155,7 @@ proc notifyClosedTextDocument(client: LSPClient, path: string) {.async.}
 proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, changes: seq[TextDocumentContentChangeEvent]) {.async.}
 proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, content: string) {.async.}
 
-proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, serverExecutablePath: string, workspaces: seq[string], args: seq[string], killOnExit = true): LSPClient =
+proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, serverExecutablePath: string, workspaces: seq[string], args: seq[string], killOnExit = true, name: string = ""): LSPClient =
   var client = cast[LSPClient](allocShared0(sizeof(LSPClientObject)))
   client[] = LSPClientObject(
     workspaceInfo: info,
@@ -178,7 +178,7 @@ proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, server
     responseChannel: newAsyncChannel[LSPClientResponse](),
     notifyConfigurationChangedChannel: newAsyncChannel[JsonNode](),
     killOnExit: killOnExit,
-    log: newLogChannel("lsp-client-" & serverExecutablePath, {LogColor, LogInMemory, LogFile}),
+    log: newLogChannel("lsp-client-" & name, {LogColor, LogInMemory, LogFile}),
   )
 
   return client
