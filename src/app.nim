@@ -1150,11 +1150,12 @@ proc help*(self: App, about: string = "") {.expose("editor").} =
 proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
   self.platform.fontSize = self.platform.fontSize + amount.float
   log lvlInfo, fmt"current font size: {self.platform.fontSize}"
+  self.toast.showToast("Info", &"Font Size: {self.platform.fontSize}", "info")
   self.platform.requestRender(true)
 
 proc changeLineDistance*(self: App, amount: float32) {.expose("editor").} =
   self.platform.lineDistance = self.platform.lineDistance + amount.float
-  log lvlInfo, fmt"current line distance: {self.platform.lineDistance}"
+  self.toast.showToast("Info", &"Line Distance: {self.platform.lineDistance}", "info")
   self.platform.requestRender(true)
 
 proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
