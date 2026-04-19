@@ -44,4 +44,4 @@ when implModule:
 
   proc init_module_log_terminal*() {.cdecl, exportc, dynlib.} =
     let channels = LogChannels()
-    asyncSpawn handleNewChannelsMain(channels)
+    # asyncSpawn handleNewChannelsMain(channels)

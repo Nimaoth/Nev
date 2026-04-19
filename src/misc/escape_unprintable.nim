@@ -1,6 +1,6 @@
 import std/[terminal, strutils]
 
-proc escapeUnprintableColored*(s: string): string =
+proc escapeUnprintableColored*(s: openArray[char]): string =
   var len = 0
 
   let escapeColor = ansiForegroundColorCode(fgRed)
