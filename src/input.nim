@@ -28,17 +28,12 @@ type
     persistent: bool # Whether we want to set the default state for when an action succeded to this state
     transitions: Table[Slice[InputKey], DFAInput]
     epsilonTransitions: seq[Transition]
-    terminalStates: seq[int]
     capture: string
-    suffix: string
 
   CommandDFA* = ref object
-    persistentState: int
     states: seq[DFAState]
     functions*: seq[(string, string)]
     functionIndices: Table[string, int]
-    terminalStates: Table[int, string]
-    postfixStates: Table[(string, string), int]
     subGraphStates: Table[(string, string, int), tuple[startState: int, endState: int]]
 
   CommandState* = object
@@ -413,31 +408,23 @@ proc handleNextInput(
     captureFlags = CaptureFlags.None,
     depth = 0,
     subGraphCounts = newTable[string, int](),
+    sub: bool = false,
   ): seq[int] =
   ##
   ## function: the action to be executed when reaching the final state
   ## index: index into input
   ## currentState: the state we are currently in
-  let suffix = input[index..^1].join("")
-  # echo "| ".repeat(depth) & &"handleNextInput '{suffix}', '{function}', {index}, {currentState}"
-  # defer:
-  #   echo "| ".repeat(depth) & &"-> {result}"
 
   if index >= input.len:
     # Mark last state as terminal state.
-    if dfa.states[currentState].epsilonTransitions.len == 0:
+    if not sub and dfa.states[currentState].epsilonTransitions.len == 0:
       dfa.states[currentState].isTerminal = true
     dfa.states[currentState].nextState = defaultState
     # echo "set terminal ", currentState, " to ", function
     return @[currentState] # todo: end state
 
   let (keys, persistent, flags, nextIndex, inputName) = parseNextInput(input, index, leaders)
-  # echo "| ".repeat(depth) & &"keys: {keys}, persistent: {persistent}, flags: {flags}, nextIndex: {nextIndex}, inputName: {inputName}"
 
-  assert suffix.len > 0
-
-  # echo "| ".repeat(depth) & &"handleNextInput('{input}', '{function}', {index}, {currentState}, {defaultState}, {leaders})"
-  # echo "| ".repeat(depth) & &"  inputCodes: {inputCodes}, mods: {mods}, nextIndex: {nextIndex}, persistent: {persistent}, flags: {flags}, inputName: {inputName}"
   if inputName.len > 0 and commands.contains(inputName):
     let subGraphCount = subGraphCounts.getOrDefault(inputName, 0)
     subGraphCounts[inputName] = subGraphCount + 1
@@ -452,7 +439,7 @@ proc handleNextInput(
       let (nextStartState, nextEndState) = dfa.subGraphStates[subGraphKey]
       dfa.linkStates(currentState, nextStartState, functionIndex, capture, captureFlags, "")
       fillTransitionFunctionIndicesRec(dfa, nextStartState, [functionIndex].toBitSet, nextEndState)
-      result = handleNextInput(dfa, commands, input, function, nextIndex, nextEndState, defaultState, leaders, functionIndex, capture, captureFlags, depth + 1, subGraphCounts)
+      result = handleNextInput(dfa, commands, input, function, nextIndex, nextEndState, defaultState, leaders, functionIndex, capture, captureFlags, depth + 1, subGraphCounts, sub)
       if Optional in flags:
         dfa.linkStates(currentState, nextEndState, functionIndex, capture, captureFlags, "")
       return
@@ -466,29 +453,18 @@ proc handleNextInput(
     for command in commands[inputName].pairs:
       let (subInput, function) = command
       # echo "| ".repeat(depth) & &"subInput: {subInput}, function: {function}"
-      let nextEndStates = handleNextInput(dfa, commands, subInput.toRunes, function, index = 0, currentState = subState, defaultState = defaultState, leaders = leaders, functionIndex, subCapture, subCaptureFlags, depth + 1, subGraphCounts[].neww)
+      let nextEndStates = handleNextInput(dfa, commands, subInput.toRunes, function, index = 0, currentState = subState, defaultState = defaultState, leaders = leaders, functionIndex, subCapture, subCaptureFlags, depth + 1, subGraphCounts[].neww, sub = true)
       # echo "| ".repeat(depth) & &"-> endStates: {nextEndStates}"
       for es in nextEndStates:
         dfa.linkStates(es, endState, functionIndex, subCapture, subCaptureFlags, function)
 
-    result = handleNextInput(dfa, commands, input, function, nextIndex, endState, defaultState, leaders, functionIndex, capture, captureFlags, depth + 1, subGraphCounts)
+    result = handleNextInput(dfa, commands, input, function, nextIndex, endState, defaultState, leaders, functionIndex, capture, captureFlags, depth + 1, subGraphCounts, sub)
 
     if Optional in flags:
       dfa.linkStates(currentState, endState, functionIndex, capture, captureFlags, "")
 
     dfa.subGraphStates[subGraphKey] = (subState, endState)
     return
-
-  # if capture == "" and dfa.postfixStates.contains((suffix, capture)):
-  #   # echo "| ".repeat(depth) & &"suffix found -> {dfa.postfixStates[(suffix, capture)]}, {suffix}, {capture}"
-
-  #   let nextState = dfa.postfixStates[(suffix, capture)]
-  #   for key in keys:
-  #     assert key.inputCodes.a != 0 and key.inputCodes.a != 0
-  #     if not linkStates(dfa, currentState, nextState, key.inputCodes, key.mods, functionIndex, dfa.states[nextState].capture):
-  #       log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
-  #     fillTransitionFunctionIndicesRec(dfa, nextState, [functionIndex].toBitSet, 0)
-  #   return @[nextState]
 
   if keys.len == 0:
     log lvlError, &"Failed to parse input '{input.join()}' at index {index}"
@@ -527,10 +503,6 @@ proc handleNextInput(
         log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
         continue
 
-      dfa.states[nextState].suffix.add " " & suffix
-
-      # echo "| ".repeat(depth) & &"create/update next state {nextState}, {key.inputCodes}, {key.mods}, current state {currentState}"
-
       if key.inputCodes.a > 0 and (key.mods == {} or key.mods == {Shift}):
         let rune = Rune(key.inputCodes.a)
         let rune2 = Rune(key.inputCodes.b)
@@ -551,21 +523,8 @@ proc handleNextInput(
 
       nextState
 
-    dfa.postfixStates[(suffix, capture)] = nextState
-
     let nextDefaultState = if persistent: nextState else: defaultState
-    result.add handleNextInput(dfa, commands, input, function, nextIndex, nextState, nextDefaultState, leaders, functionIndex, capture, captureFlags, depth + 1, subGraphCounts)
-
-# proc fillTransitionFunctionIndices*(dfa: var CommandDFA) =
-#   proc fillTransitionFunctionIndicesRec(dfa: var CommandDFA, state: int, functionIndices: BitSet) =
-#     dfa.states[state].functionIndices.bitSetIncl functionIndices
-#     for t in dfa.states[state].epsilonTransitions.mitems:
-#       fillTransitionFunctionIndicesRec(dfa, t.state, dfa.states[state].functionIndices + t.functionIndices)
-
-#     for (mods, next) in dfa.states[state].transitions.mpairs:
-#       fillTransitionFunctionIndicesRec(dfa, t.state, dfa.states[state].functionIndices + t.functionIndices)
-
-#   dfa.fillTransitionFunctionIndicesRec(0, {})
+    result.add handleNextInput(dfa, commands, input, function, nextIndex, nextState, nextDefaultState, leaders, functionIndex, capture, captureFlags, depth + 1, subGraphCounts, sub)
 
 proc buildDFA*(commands: Table[string, Table[string, string]], leaders = initTable[string, seq[string]]()): CommandDFA =
   new(result)
@@ -697,8 +656,8 @@ proc dumpGraphViz*(dfa: CommandDFA): string =
 
   func escape(a: string): string = multiReplace(a, ("\\", "\\\\"), ("\"", "\\\""), ("\n", "\\n"))
   proc addState(res: var string, state: int) =
-    let escaped = multiReplace(&"{state}\n{dfa.states[state].capture}", ("\\", "\\\\"), ("\"", "\\\""), ("\n", "\\n"))
-    # let escaped = replace(&"{state}\\n{dfa.states[state].suffix}\\n{dfa.states[state].capture}", "\"", "\\\"")
+    let isTerminal = if dfa.states[state].isTerminal: "*" else: ""
+    let escaped = multiReplace(&"{state}{isTerminal}\n{dfa.states[state].capture}", ("\\", "\\\\"), ("\"", "\\\""), ("\n", "\\n"))
     res.add &"\"{escaped}\""
 
   let colors = @["green", "blue", "orange", "purple", "yellow", "brown", "cyan", "magenta", "gray", "black", "white"]
