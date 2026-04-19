@@ -309,7 +309,7 @@ proc loadSession*(self: App) {.async: (raises: []).} =
 
     log(lvlInfo, fmt"Restoring session {self.sessionFile}")
 
-    let fontSize = max(state.fontSize.float, 10.0)
+    let fontSize = if state.fontSize == 0: 14 else: max(state.fontSize.float, 10.0)
     self.loadedFontSize = fontSize
     self.platform.fontSize = fontSize
     self.loadedLineDistance = state.lineDistance.float
