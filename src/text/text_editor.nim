@@ -2282,6 +2282,9 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool = false, for
       var diffContent = Rope.new("")
       await self.vfs2.readRope(self.diffTarget, diffContent.addr)
 
+      if self.document.isNil or self.diffRevision > revision or not self.showDiff:
+        return
+
       if self.diffDocument.isNil:
         self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
         self.diffDocument.usage = "text-diff"
@@ -2446,6 +2449,9 @@ proc revertSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) 
     let texts = ropeDiff.edits.mapIt(it.text)
     discard self.document.edit(selections, self.selections, texts)
     await self.document.saveAsync()
+    if self.document.isNil:
+      return
+
     asyncSpawn self.updateDiffAsync()
   except CatchableError as e:
     log lvlError, &"Failed to revert the selected change: {e.msg}"
@@ -2500,11 +2506,25 @@ proc unstageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false)
     if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
       log lvlInfo, &"backup {originalPath} to {backupPath}"
       await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
+      if self.vfs.isNil:
+        return
+
       await self.vfs.write(originalPath, new)
+      if self.vfs.isNil:
+        return
+
       discard await vcs.stageFile(originalPathLocalized)
+      if self.vfs.isNil:
+        return
+
       log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
       await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
+      if self.vfs.isNil:
+        return
+
       discard await self.vfs.delete(backupPath)
+      if self.vfs.isNil:
+        return
 
       asyncSpawn self.updateDiffAsync()
   except CatchableError as e:
@@ -2571,11 +2591,25 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
     if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
       log lvlInfo, &"backup {originalPath} to {backupPath}"
       await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
+      if self.vfs.isNil:
+        return
+
       await self.vfs.write(originalPath, new)
+      if self.vfs.isNil:
+        return
+
       discard await vcs.stageFile(originalPathLocalized)
+      if self.vfs.isNil:
+        return
+
       log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
       await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
+      if self.vfs.isNil:
+        return
+
       discard await self.vfs.delete(backupPath)
+      if self.vfs.isNil:
+        return
 
       asyncSpawn self.updateDiffAsync()
   except CatchableError as e:
