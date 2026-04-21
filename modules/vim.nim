@@ -402,12 +402,12 @@ when implModule:
             try:
               if inActive:
                 args.add(editor.toJson)
-              for a in newStringStream($argsString).parseJsonFragments():
+              for a in newStringStream(argsString).parseJsonFragments():
                 args.add a
               let res = jsonWrapperName(args)
               return $res
             except CatchableError as e:
-              log lvlError, "Failed to run command '" & name & "': " & e.msg
+              log lvlError, "Failed to run command '" & name & " " & argsString & "': " & e.msg
 
             return ""
 
@@ -420,17 +420,17 @@ when implModule:
           params = @[],
           returnType = inReturnType,
           context = inContext):
-          proc(editor: uint64, args: string): string {.cdecl.} =
+          proc(editor: uint64, argsString: string): string {.cdecl.} =
             var args = newJArray()
             try:
               if inActive:
                 args.add(editor.toJson)
-              for a in newStringStream($argsString).parseJsonFragments():
+              for a in newStringStream(argsString).parseJsonFragments():
                 args.add a
               let res = jsonWrapperName(args)
               return $res
             except CatchableError as e:
-              log lvlError, "Failed to run command '" & name & "': " & e.msg
+              log lvlError, "Failed to run command '" & name & " " & argsString & "': " & e.msg
 
             return ""
 
@@ -1548,7 +1548,10 @@ when implModule:
   #   editor.vimPaste register=input, inclusiveEnd=true
   #   editor.setMode "vim.insert"
 
-  proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq[string]) {.exposeActive(editorContext).} =
+  proc modeChangedHandler(editorId: EditorIdNew, oldModes: seq[string], newModes: seq[string]) {.command.} =
+    let documentEditor = getServiceChecked(DocumentEditorService).getEditor(editorId).getOr:
+      return
+    let editor = initTextEditor(documentEditor)
     let oldMode = if oldModes.len > 0:
       oldModes[0]
     else:

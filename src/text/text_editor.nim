@@ -1472,7 +1472,7 @@ proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true, fo
   self.onModeChanged.invoke (removedModes, @[mode])
   let handler = self.settings.modeChangedHandlerCommand.get()
   if handler != "":
-    discard self.handleAction(handler, &"{removedModes.toJson} {[mode].toJson}", record = false)
+    discard self.handleAction(handler, &"{self.id} {removedModes.toJson} {[mode].toJson}", record = false)
 
   self.markDirty()
 

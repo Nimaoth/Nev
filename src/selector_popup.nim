@@ -467,6 +467,7 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.textEditor.disableScrolling = true
   popup.textEditor.settings.disableCompletions.set(true)
   popup.textEditor.active = true
+  popup.textEditor.setDefaultMode(forceNotify = true)
 
   finder.get.minScore = popup.settings.minScore.get()
 
