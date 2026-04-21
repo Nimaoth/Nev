@@ -140,9 +140,10 @@ when implModule:
 
   proc freeDynamicLibraries*() =
     {.gcsafe.}:
-      for p in gParsers:
-        p.deinit()
-      gParsers.setLen 0
+      withLock gParsersLock:
+        for p in gParsers:
+          p.deinit()
+        gParsers.setLen 0
 
       for (path, lib) in gTreesitterDllCache.pairs:
         lib.unloadLib()
