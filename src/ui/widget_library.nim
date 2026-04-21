@@ -50,9 +50,12 @@ proc alignGrid*(root: UINode, gap: float, columnAlignments: openArray[GridAlignm
     rows.add l
   alignGrid(rows, gap, columnAlignments)
 
+proc renderCommandKeysHeight*(builder: UINodeBuilder, inputLines: int, padding: int = 1): float =
+  return (inputLines + padding * 2).float * builder.textHeight
+
 proc renderCommandKeys*(builder: UINodeBuilder, nextPossibleInputs: openArray[tuple[input: string, description: string, continues: bool]], textColor: Color, continuesTextColor: Color, keysTextColor: Color, backgroundColor: Color, inputLines: int, bounds: Rect, padding: int = 1) =
   let width = (builder.currentParent.bounds.w / builder.charWidth).int
-  let height = (inputLines + padding * 2).float * builder.textHeight
+  let height = builder.renderCommandKeysHeight(inputLines, padding)
   let padding = padding.float
   let numColumns = (nextPossibleInputs.len / inputLines).ceil.int
   let widthPerColumn = width div numColumns

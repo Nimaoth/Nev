@@ -32,6 +32,7 @@ type
     previewView*: View
     selected*: int
     scrollOffset*: int
+    scrollToSelected*: bool
     handleItemConfirmed*: proc(finderItem: FinderItem): bool {.gcsafe, raises: [].}
     handleItemSelected*: proc(finderItem: FinderItem) {.gcsafe, raises: [].}
     handleCanceled*: proc() {.gcsafe, raises: [].}
@@ -320,6 +321,7 @@ proc prev*(self: SelectorPopup, count: int = 1) {.expose("popup.selector").} =
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
+    self.scrollToSelected = true
     self.updatePreview()
 
   self.markDirty()
@@ -336,6 +338,7 @@ proc next*(self: SelectorPopup, count: int = 1) {.expose("popup.selector").} =
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
+    self.scrollToSelected = true
     self.updatePreview()
 
   self.markDirty()
@@ -431,6 +434,8 @@ proc handleItemsUpdated*(self: SelectorPopup) {.gcsafe, raises: [].} =
 
   else:
     self.selected = 0
+
+  self.scrollToSelected = true
 
   self.markDirty()
 
