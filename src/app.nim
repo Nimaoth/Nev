@@ -2356,6 +2356,57 @@ proc installTreesitterParser*(self: App, language: string, host: string = "githu
 
   asyncSpawn self.installTreesitterParserAsync(language, host)
 
+proc installTreesitterParserPrebuiltAsync*(self: App, language: string) {.async.} =
+  try:
+    let urlTemplate = self.generalSettings.treesitterWasmDownloadUrl.get("https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/download/v0.3/{language}.tar.gz")
+    let url = urlTemplate.replace("{language}", language)
+    let outputPath = self.vfs.localize(&"app://languages")
+    let tarPath = self.vfs.localize(&"app://languages/{language}.tar.gz")
+    var cmd: string
+    when defined(windows):
+      cmd = "powershell -Command \"Invoke-WebRequest -Uri '" & url.quoteShell & "' -OutFile '" & tarPath.quoteShell & "'\""
+    else:
+      cmd = "wget -O " & tarPath.quoteShell & " " & url.quoteShell
+
+    self.toast.showToast("Treesitter", &"Downloading {url} to {tarPath}", "info")
+    let (output, err) = await runProcessAsyncOutput(cmd, @[], eval=true)
+    if output.len > 0:
+      log lvlInfo, &"Download treesitter parser: {output}"
+    if err.len > 0:
+      self.toast.showToast "Treesitter", &"Download treesitter parser: {err}", "error"
+
+    self.toast.showToast("Treesitter", &"Extracting {tarPath}", "info")
+    let extractCmd = &"tar -xzf {tarPath.quoteShell} -C {outputPath.quoteShell}"
+    let (output2, err2) = await runProcessAsyncOutput(extractCmd, @[], eval=true)
+    if output2.len > 0:
+      log lvlInfo, &"Extract treesitter parser: {output2}"
+    if err2.len > 0:
+      self.toast.showToast "Treesitter", &"Extract treesitter parser: {err}", "error"
+
+    self.toast.showToast("Treesitter", &"Treesitter parser for {language} installed", "info")
+  except CatchableError as e:
+    self.toast.showToast "Treesitter", &"Failed to install prebuilt treesitter parser for {language}: {e.msg}", "error"
+
+proc installTreesitterParserPrebuilt*(self: App, language: string) {.expose("editor").} =
+  ## Install a treesitter parser by downloading a prebuilt wasm binary from `https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/tag/v0.3`
+
+  asyncSpawn self.installTreesitterParserPrebuiltAsync(language)
+
+proc installTreesitterParserPrebuiltFromListAsync(self: App) {.async.} =
+  let languages = @["commonlisp", "markdown", "markdown-inline",
+    "query", "toml", "xml", "yaml", "agda", "bash", "c", "c-sharp", "cpp", "css", "go", "haskell",
+    "html", "java", "javascript", "jsdoc", "json", "python", "ql", "regex", "ruby", "rust", "scala",
+    "log", "elisp", "powershell", "nim", "odin", "angelscript", "kotlin", "gleam", "wit", "zig", "nix",
+    "lua", "talon"
+  ]
+  let language = await self.layout.prompt(languages, "Choose a language to install")
+  if language.isSome:
+    await self.installTreesitterParserPrebuiltAsync(language.get)
+
+proc installTreesitterParserPrebuiltFromList*(self: App) {.expose("editor").} =
+  ## Install a treesitter parser by downloading a prebuilt wasm binary from `https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/tag/v0.3`
+  asyncSpawn self.installTreesitterParserPrebuiltFromListAsync()
+
 proc getItemsFromDirectory(vfs: Arc[VFS2], workspace: Workspace, directory: string, showVFS: bool = false, diff: bool = false): Future[ItemList] {.async: (raises: []).} =
 
   let listing = await vfs.getDirectoryListing(directory)

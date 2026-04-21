@@ -1243,6 +1243,9 @@ declareSettings GeneralSettings, "editor":
   ## Global mode to apply while the command line is open showing a command result.
   declare commandLineResultModeLow, string, "command-line-result-low"
 
+  ## Global mode to apply while the command line is open showing a command result.
+  declare treesitterWasmDownloadUrl, string, "https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/download/v0.3/{language}.tar.gz"
+
 declareSettings DebugSettings, "debug":
   ## Log how long it takes to generate the render commands for a text editor.
   declare logTextRenderTime, bool, false
