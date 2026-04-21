@@ -2403,7 +2403,8 @@ proc getItemsFromDirectory(vfs: Arc[VFS2], workspace: Workspace, directory: stri
 
   return list
 
-proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normalize: bool = true) {.expose("editor").} =
+proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normalize: bool = true, diff: bool = false, previewScale: float = 0.5) {.expose("editor").} =
+  ## Open a file explorer at `root`. If `diff` is true then files will be show as a diff if applicable
   defer:
     self.platform.requestRender()
 
@@ -2413,7 +2414,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
   currentDirectory[] = root
 
   let vfs = self.vfsService.vfs2
-  var autoDiff = false
+  var autoDiff = diff
 
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
     return getItemsFromDirectory(vfs, self.workspace, currentDirectory[], showVFS, autoDiff).await
@@ -2427,6 +2428,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
     filePreviewer.Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
+  popup.previewScale = previewScale
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
     let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool], Joptions(allowExtraKeys: true)).catch:

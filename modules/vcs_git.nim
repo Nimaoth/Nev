@@ -143,8 +143,6 @@ when implModule:
     else:
       reff = "HEAD"
 
-    let relPath = if path == "": "." else: path & "/"
-
     if staged:
       try:
         let stagedArgs = @["diff", "--staged", "--name-only"]
@@ -182,20 +180,13 @@ when implModule:
 
     else:
       try:
-        let args = @["ls-tree", "--name-only", reff, relPath]
+        let args = @["diff-tree", "--no-commit-id", "--name-only", "-r", reff]
         let lines = runProcessAsync("git", args, workingDir=vcs.get.root, log = true).await
 
         for line in lines:
           if line.len == 0:
             continue
-          let fullPath = vcs.get.root // line
-          let name = line.splitPath.tail
-          if dirExists(fullPath):
-            if name notin listing.folders:
-              listing.folders.add name
-          else:
-            if name notin listing.files:
-              listing.files.add name
+          listing.files.add line
       except CatchableError:
         discard
 

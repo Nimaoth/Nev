@@ -165,7 +165,7 @@ when implModule:
 
     for vcs in self.vcsService.versionControlSystems:
       let stashesFut = vcs.getStashes(5)
-      let commitsFut = vcs.getCommitHistory(5)
+      let commitsFut = vcs.getCommitHistory(10)
 
       try:
         await allFutures(stashesFut, commitsFut)
@@ -902,23 +902,35 @@ when implModule:
         asyncSpawn view.refreshChangelistsAsync()
       asyncSpawn revertTask()
 
-    defineCommand("diff-selected", "Diff selected file"):
-      if view.cursor.panel != Changelists:
+    defineCommand("diff-selected", "Diff selected file, commit or stash"):
+      case view.cursor.panel
+      of Changelists:
+        let clIdx = view.cursor.changelistIndex
+        let fIdx = view.cursor.fileIndex
+        if clIdx >= view.changelists.len or fIdx >= view.changelists[clIdx].changelist.files.len:
+          view.setError("Invalid selection")
+          return
+        let file = view.changelists[clIdx].changelist.files[fIdx]
+        let relPath = file.path
+        if file.stagedStatus == None:
+          if layout.openFile(file.path).getSome(editor):
+            editor.getCommandComponent().get.executeCommand(&"""start-diff "git://@/staged/{relPath}" true""")
+        else:
+          if layout.openFile("git://@/staged/" & relPath).getSome(editor):
+            editor.getCommandComponent().get.executeCommand(&"""start-diff "git://@/HEAD/{relPath}" true""")
+      of Commits:
+        if view.cursor.panel != Commits:
+          view.setError("Select a commit or stash first")
+          return
+        let commitIndex = view.cursor.commitIndex
+        if commitIndex >= view.commits.len:
+          view.setError("Invalid selection")
+          return
+        let commit = view.commits[commitIndex]
+        discard commands.executeCommand(&"""explore-files "git://@/{commit.id}" false true true 0.8""")
+      else:
         view.setError("Select a file first")
         return
-      let clIdx = view.cursor.changelistIndex
-      let fIdx = view.cursor.fileIndex
-      if clIdx >= view.changelists.len or fIdx >= view.changelists[clIdx].changelist.files.len:
-        view.setError("Invalid selection")
-        return
-      let file = view.changelists[clIdx].changelist.files[fIdx]
-      let relPath = file.path
-      if file.stagedStatus == None:
-        if layout.openFile(file.path).getSome(editor):
-          editor.getCommandComponent().get.executeCommand(&"""start-diff "git://@/staged/{relPath}" true""")
-      else:
-        if layout.openFile("git://@/staged/" & relPath).getSome(editor):
-          editor.getCommandComponent().get.executeCommand(&"""start-diff "git://@/HEAD/{relPath}" true""")
 
     defineCommand("refresh", "Refresh UI"):
       asyncSpawn view.refreshStatusAsync()
