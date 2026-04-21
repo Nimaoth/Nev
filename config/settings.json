@@ -1046,7 +1046,7 @@
         },
     },
 
-    "selector.min-score": -0.5,
+    "selector.min-score": 0.3,
 
     "+debugger": {
         "+type": {
