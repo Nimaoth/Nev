@@ -1,5 +1,6 @@
 import std/[strformat, strutils, os, sets, tables, options, json]
-import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_process, event, response, rope_utils, arena, array_view]
+import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_process, event, response,
+  rope_utils, arena, array_view, array_set]
 import text/language/[language_server_base, lsp_types]
 import nimsumtree/[arc, rope]
 import service, event_service, language_server_dynamic, document_editor, document, config_provider, vfs, vfs_service
@@ -462,7 +463,7 @@ when implModule:
         log lvlWarn, &"Failed to read ctags file '{path}': {e.msg}"
 
   proc loadCTags(self: LanguageServerCTags, path: sink string, content: sink string) =
-    self.fileLoadQueue.add (path.ensureMove, content.ensureMove)
+    self.fileLoadQueue.incl (path.ensureMove, content.ensureMove)
     if not self.parsing:
       asyncSpawn self.parseCTags()
 
@@ -563,4 +564,3 @@ when implModule:
     eventService.listen(newId(), "workspace/added"):
       proc(event, payload: string) =
         asyncSpawn ls.updateCTagFiles()
-
