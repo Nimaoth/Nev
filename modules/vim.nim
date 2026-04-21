@@ -1037,14 +1037,6 @@ when implModule:
       editor.moveCursorColumn(1, wrap=false, includeEol=editor.vimState.cursorIncludeEol)
       editor.updateTargetColumn()
 
-  # todo
-  # proc vimCloseCurrentViewOrQuit() {.exposeActive(editorContext, "vim-close-current-view-or-quit").} =
-  #   let openEditors = getNumVisibleViews() + getNumHiddenViews()
-  #   if openEditors == 1:
-  #     plugin_runtime.quit()
-  #   else:
-  #     closeActiveView()
-
   proc indent(editor: TextEditor) {.exposeActive(editorContext).} =
     editor.edit.withTransaction:
       discard editor.command("indent", "")

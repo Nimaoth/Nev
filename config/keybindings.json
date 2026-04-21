@@ -484,7 +484,7 @@
         "<C-w>w": ["focus-next-view", "**"],
         "<C-w>p": ["open-prev-view"],
         "<C-w><C-p>": ["open-prev-view"],
-        "<C-w>q": ["vim.close-current-view-or-quit"],
+        "<C-w>q": ["close-active-view"],
         "<C-w><C-q>": ["close-active-view"],
         "<C-w>c": ["hide-active-view"],
         "<C-w>C": ["close-active-view"],
