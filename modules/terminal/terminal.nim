@@ -2005,9 +2005,12 @@ when implModule:
   proc createTerminal*(self: TerminalServiceImpl, width: int, height: int, writeChannel: Arc[BaseChannel], readChannel: Arc[BaseChannel], autoRunCommand: string = "", kittyPathPrefix: string = ""): Terminal {.raises: [OSError, IOError, ResourceExhaustedError].}
 
   proc logErrors(process: AsyncProcess): Future[void] {.async.} =
-    while true:
-      let line = await process.recvErrorLine()
-      log lvlError, "[stderr] ", line
+    try:
+      while true:
+        let line = await process.recvErrorLine()
+        log lvlError, "[stderr] ", line
+    except CatchableError:
+      discard
 
   when defined(enableLibssh):
     when defined(windows):
