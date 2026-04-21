@@ -471,6 +471,16 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     if self.platform.backend == scripting_api.Terminal:
       padding = 0
 
+    if self.showNextPossibleInputs:
+      let inputLines = self.uiSettings.whichKeyHeight.get()
+      let continuesTextColor = self.themes.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
+      let keysTextColor = self.themes.theme.tokenColor("number", color(225/255, 200/255, 200/255))
+      builder.panel(&{FillX, SizeToContentY}, y = mainBounds.h):
+        let numLines = min(self.nextPossibleInputs.len, inputLines)
+        builder.renderCommandKeys(self.nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, numLines, mainBounds, padding = 1)
+      builder.updateSizeToContent(builder.currentChild)
+      builder.currentChild.rawY = mainBounds.h - builder.currentChild.bounds.h
+
     let toastStyle = self.uiSettings.toast.style.get()
     let toastMaxTime = self.uiSettings.toast.duration.get().float64 * 0.001
     let animateToasts = self.uiSettings.toast.animation.get()
@@ -545,13 +555,3 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
     builder.flushOverlays(overlays)
     builder.flushOverlays(commandLineOverlays)
-
-    if self.showNextPossibleInputs:
-      let inputLines = self.uiSettings.whichKeyHeight.get()
-      let continuesTextColor = self.themes.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
-      let keysTextColor = self.themes.theme.tokenColor("number", color(225/255, 200/255, 200/255))
-      builder.panel(&{FillX, SizeToContentY}, y = mainBounds.h):
-        let numLines = min(self.nextPossibleInputs.len, inputLines)
-        builder.renderCommandKeys(self.nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, numLines, mainBounds, padding = 1)
-      builder.updateSizeToContent(builder.currentChild)
-      builder.currentChild.rawY = mainBounds.h - builder.currentChild.bounds.h
