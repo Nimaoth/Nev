@@ -755,6 +755,7 @@ when implModule:
         if view.commitEditor != nil:
           view.editCommit = true
           view.commitEditor.getCommandComponent().get.executeCommand("""set-mode "vim.insert" true true""")
+          view.markDirty()
         else:
           view.setError("No commit message specified")
         return
