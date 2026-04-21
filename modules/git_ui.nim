@@ -160,18 +160,32 @@ when implModule:
     let root = self.getGitRoot()
     if root.len == 0:
       return
-    let output = await self.runGitCommand(@["log", "--max-count=5", "--format=%h%n%s%n%ai%n%an"], root)
-    var commitsSeq: seq[VCSCommitInfo] = @[]
-    var i = 0
-    while i + 3 < output.len:
-      commitsSeq.add VCSCommitInfo(
-        id: output[i],
-        description: output[i + 1],
-        date: output[i + 2],
-        author: output[i + 3],
-      )
-      i += 4
-    self.commits = commitsSeq
+
+    var commits: seq[VCSCommitInfo] = @[]
+
+    for vcs in self.vcsService.versionControlSystems:
+      let stashesFut = vcs.getStashes(5)
+      let commitsFut = vcs.getCommitHistory(5)
+
+      try:
+        await allFutures(stashesFut, commitsFut)
+
+        for stash in stashesFut.read:
+          commits.add VCSCommitInfo(
+            id: stash.id,
+            description: stash.description,
+            date: stash.date,
+            author: stash.author,
+          )
+
+        for commit in commitsFut.read:
+          commits.add commit
+      except CatchableError:
+        return
+
+      break
+
+    self.commits = commits
     self.commitsFetched = true
     self.clampCursor()
     self.markDirty()
