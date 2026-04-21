@@ -1,4 +1,4 @@
-import std/[os, parseopt, compilesettings, strformat]
+import std/[os, parseopt, compilesettings, strformat, strutils]
 
 # Helper functions
 
@@ -90,6 +90,28 @@ for kind, key, val in optParser.getopt():
       packageLinux = true
 
   of cmdEnd: assert(false) # cannot happen
+
+block:
+  echo "Download markdown parser"
+  let urlTemplate = "https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/download/v0.3/{language}.tar.gz"
+
+  let languages = @["markdown", "markdown-inline"]
+  for language in languages:
+    let url = urlTemplate.replace("{language}", language)
+    let outputPath = "./languages"
+    let tarPath = &"./languages/{language}.tar.gz"
+    var cmd: string
+    when defined(windows):
+      cmd = "powershell -Command \"Invoke-WebRequest -Uri '" & url.quoteShell & "' -OutFile '" & tarPath.quoteShell & "'\""
+    else:
+      cmd = "wget -O " & tarPath.quoteShell & " " & url.quoteShell
+    echo &"Download {cmd}"
+    exec(cmd)
+
+    let extractCmd = &"tar -xzf {tarPath.quoteShell} -C {outputPath.quoteShell}"
+    echo &"Extracting {extractCmd}"
+    exec(extractCmd)
+    rmFile(tarPath)
 
 if packageWindows:
   echo &"Package windows..."

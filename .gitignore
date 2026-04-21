@@ -59,6 +59,8 @@ build.json
 test_module.nim
 test_module2.nim
 test_module3
+*.tar.gz
+*.tar
 
 deps
 deps/winim
