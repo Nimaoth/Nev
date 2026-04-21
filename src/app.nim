@@ -1,6 +1,7 @@
 import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, generational_seq, fuzzy_matching]
+  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, generational_seq, fuzzy_matching,
+  rope_utils]
 import ui/node
 import scripting/[expose]
 import platform/[platform]
@@ -8,12 +9,12 @@ import workspaces/[workspace]
 import config_provider, app_interface
 import language_server_command_line
 import input, events, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
-import text/[custom_treesitter, overlay_map]
+import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
 import service, layout, session, command_service, toast, plugin_service
 import event_service, vcs/vcs
-import search_component
+import search_component, decoration_component
 import nimsumtree/[rope]
 
 import misc/async_process
@@ -1644,10 +1645,13 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
     prefix.add if state.merged: "(merged) " else: "(raw) "
     prefix.add store.filename
     prefix.add "."
+    let decos = popup.textEditor.getDecorationComponent().get
     if prefixOverlayId.isNone:
-      prefixOverlayId = popup.textEditor.displayMap.overlay.allocateId()
-    popup.textEditor.clearOverlays(prefixOverlayId.get)
-    popup.textEditor.addOverlay(((0, 0), (0, 0)), prefix, prefixOverlayId.get, scope = "comment", bias = Bias.Left)
+      prefixOverlayId = decos.allocateOverlayId()
+    if prefixOverlayId.isSome:
+      let overlays = @[
+        (point(0, 0).toRange, prefix, "comment", Bias.Left, 0, OverlayRenderLocation.Inline).OverlayDef]
+      decos.addOverlays(prefixOverlayId.get, replace = true, overlays)
 
   popup.addCustomCommand "reload-store", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
