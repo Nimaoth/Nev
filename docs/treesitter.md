@@ -29,26 +29,37 @@ The parsers have to placed in `{app_dir}/languages` to be detected.
 
 ## Installing external treesitter parsers
 
-Treesitter parsers currently have to be installed manually (or you take them from another editor).
-Parsers can be installed using the command `install-treesitter-parser`.
+You can use the `install-treesitter-parser-prebuilt-from-list` or `install-treesitter-parser-prebuilt` command
+to install prebuilt treesitter parsers for some language in wasm format. The parsers are downloaded from
+[Nimaoth/tree-sitter-wasm-binaries](https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases) by default.
+
+You can change the download url template using the setting `editor.treesitter-wasm-download-url`, the default is `https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/download/v0.3/{language}.tar.gz` (`{language}` gets replaced with the language name)
+
+Alternatively you can also download and compile any treesitter parser from a github repository using the `install-treesitter-parser` command.
 If `lang.xyz.text.treesitter.repository` is set to a github repository name like `alaviss/tree-sitter-nim` then you can just
 pass the language name to `install-treesitter-parser`. Otherwise you can pass the repository name directly.
 
 `install-treesitter-parser` will clone the repository in `{app_dir}/languages/tree-sitter-xyz` and then compile the parser
 to a `wasm` module.
-This requires `git` and `emscripten` to be installed and in the `PATH`.
+This requires `git`, `emscripten` and `tree-sitter` (the treesitter cli) to be installed and in the `PATH`.
 
 To see which languages have the treesitter repository preconfigured look at the [base settings](../config/settings.json)
 
 ```nim
-install-treesitter-parser "nim" # Uses repo configured in `lang.xyz.text.treesitter.repository`
+install-treesitter-parser-prebuilt-from-list # Opens a prompt with a list of languages, then installs
+                                             # the chosen language by downloading a prebuilt wasm file
+
+install-treesitter-parser-prebuilt "bash"    # Installs the treesitter parser for the given language
+                                             # by downloading a prebuilt wasm file
+
+install-treesitter-parser "nim"              # Uses repo configured in `lang.xyz.text.treesitter.repository`
 install-treesitter-parser "maxxnino/tree-sitter-zig" # username/repo-name
 install-treesitter-parser "tree-sitter/tree-sitter-typescript/typescript" # Parser is in subdirectory `typescript` in the repository
 ```
 
 ## Configuration
 
-There is not much to configure treesitter. By default the editor will look for the parser library in `{app_dir}/languages/{language}.{dll|so}`.
+There is not much to configure treesitter. By default the editor will look for the parser library in `{app_dir}/languages/{language}.{dll|so|wasm}`.
 
 ```json
 // ~/.nev/settings.json

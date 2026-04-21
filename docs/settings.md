@@ -41,6 +41,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `editor.prompt-before-quit` | bool | false | If true then you will be prompted to confirm quitting even when no unsaved changes exist. |
 | `editor.record-input-history` | bool | false | Whether the editor shows a history of the last few pressed buttons in the status bar. |
 | `editor.save-in-session` | bool | true | Any editor with this set to true will be stored in the session and restored on startup. |
+| `editor.treesitter-wasm-download-url` | string | "https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/download/v0.3/{language}.tar.gz" | Global mode to apply while the command line is open showing a command result. |
 | `editor.watch-app-config` | bool | true | Watch the config files in the app directory and automatically reload them when they change. |
 | `editor.watch-theme` | bool | true | Watch the theme directory for changes to the theme. |
 | `editor.watch-user-config` | bool | true | Watch the config files in the user directory and automatically reload them when they change. |

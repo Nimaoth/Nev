@@ -783,7 +783,10 @@
         },
         "bash": {
             "+text": {
-                "treesitter.repository": "tree-sitter/tree-sitter-bash"
+                "treesitter.repository": "tree-sitter/tree-sitter-bash",
+                "tab-width": 2,
+                "indent": "spaces",
+                "line-comment": "#"
             }
         },
         "powershell": {
