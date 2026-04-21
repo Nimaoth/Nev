@@ -26,7 +26,7 @@ It combines ideas from Neovim, Helix, and Zed with builtin developer tools like 
 
 - Vim motions
 - [LSP](docs/lsp.md)
-- [Syntax highlighting](docs/treesitter.md) using Treesitter with support for nested languages
+- Syntax highlighting using [Treesitter](docs/treesitter.md) with support for nested languages
 - Debugging using DAP
 - [Fuzzy search for various things](docs/finders.md)
 - [Sessions](docs/sessions.md)
@@ -86,6 +86,7 @@ Check out the [cheatsheet](docs/cheatsheet.md) and [getting started guide](docs/
 - [Plugin API](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html)
 - [Virtual filesystem](docs/virtual_file_system.md)
 - [Moves](docs/moves.md)
+- [Treesitter](docs/treesitter.md)
 - [Markdown](docs/markdown.md)
 
 ## Showcase
