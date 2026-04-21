@@ -7,11 +7,8 @@ Treesitter is used for e.g. syntax highlighting.
 The editor is statically linked to some treesitter parsers.
 
 The list of builtin parsers is currently:
-- C/C++
+- C
 - Nim
-- C#
-- Rust
-- Python
 - JavaScript
 - JSON
 - Markdown
