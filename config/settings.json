@@ -2,7 +2,7 @@
     "$schema": "settings.schema.json",
 
     "+ui": {
-        "theme": "app://themes/green.json",
+        "theme": "app://themes/gruvbox-dark.json",
         "hide-tab-bar-when-single": true,
     },
 
