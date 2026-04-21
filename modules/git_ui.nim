@@ -287,7 +287,7 @@ when implModule:
           if hasKey:
             let lineX = labelWidth + cx
             let lineW = keyX - lineX - cx
-            if lineW > 0:
+            if lineW > 0 and builder.textHeight > 1:
               builder.panel(&{DrawBorder}, x = lineX, y = floor(cy * 0.5) - 1, w = lineW, h = 1, border = border(0, 0, 1, 0), borderColor = lineColor)
             var xOff = keyX
             for ki, key in keys:
@@ -328,7 +328,7 @@ when implModule:
       if hasKey:
         let lineX = labelWidth + cx
         let lineW = keyX - lineX - cx
-        if lineW > 0:
+        if lineW > 0 and builder.textHeight > 1:
           builder.panel(&{DrawBorder}, x = lineX, y = floor(cy * 0.5) - 1, w = lineW, h = 1, border = border(0, 0, 1, 0), borderColor = lineColor)
         var xOff = keyX
         for ki, key in keys:
@@ -370,9 +370,11 @@ when implModule:
         currentNode.markDirty(builder)
 
         proc separator() =
-          builder.panel(&{}, h = floor(builder.textHeight * 0.5))
-          builder.panel(&{DrawBorder, DrawBorderTerminal, FillX, SizeToContentY}, border = border(0, 0, 1, 0), borderColor = accentColor)
-          builder.panel(&{}, h = floor(builder.textHeight * 0.5))
+          if builder.textHeight > 1:
+            builder.panel(&{}, h = floor(builder.textHeight * 0.5))
+          builder.panel(&{DrawBorder, DrawBorderTerminal, FillX, SizeToContentY, FillBackground}, border = border(0, 0, 1, 0), borderColor = accentColor, backgroundColor = backgroundColor)
+          if builder.textHeight > 1:
+            builder.panel(&{}, h = floor(builder.textHeight * 0.5))
 
         builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
           builder.panel(&{SizeToContentY, FillX, DrawText}, text = "GitUi", textColor = textColor)
