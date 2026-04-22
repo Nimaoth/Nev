@@ -5,7 +5,7 @@ include module_base
 
 proc newGuiPlatform*(): Platform {.rtl, raises: [].}
 
-when implModule:
+when implModule and enableGui:
   import std/[tables, options, sets, strformat, locks]
   import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
   import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer, generational_seq]
@@ -1144,3 +1144,9 @@ when implModule:
 
   proc init_module_gui_platform*() {.cdecl, exportc, dynlib.} =
     discard
+
+elif implModule and not enableGui:
+  proc init_module_gui_platform*() {.cdecl, exportc, dynlib.} =
+    discard
+  proc newGuiPlatform*(): Platform {.raises: [].} =
+    assert false
