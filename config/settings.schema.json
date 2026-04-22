@@ -386,11 +386,6 @@
         "^\\+?keybindings$": {
             "type": "object",
             "properties": {
-                "preset": {
-                    "type": "string",
-                    "enum": ["vscode", "vim", ""],
-                    "description": "Which keymap preset to load from the keybindings plugin.\nTo actually load the preset `load-configured-keybindings` has to be run. This is usually done by the app settings which specify `load-configured-keybindings` in the `wasm-plugin-post-load-commands` setting so that the preset is loaded after the wasm plugins are loaded."
-                },
                 "reapply-app": {
                     "type": "boolean",
                     "default": "false",

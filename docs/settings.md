@@ -8,7 +8,6 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `lang` | object |  | Mapping of language id to language config, used to specify various settings per language. See [here](../config/settings.json) |
 | `snippets` | object |  | Snippets per language. |
 | `startup-commands` | array |  | List of commands to execute at startup. |
-| `keybindings.preset` | "vim" "vscode" | "vim" | Which kind of keybindings to load at startup. |
 | `ui.highlight-yank` | bool | true | Highlight yanked ranges. |
 | . | . | . | . |
 | `context-lines.enabled` | bool | true |  |

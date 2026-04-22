@@ -7,11 +7,9 @@ There are also incomplete VSCode like keybindings.
 To switch to VSCode like keybindings create/extend the config file in `<USER_HOME>/.nev/settings.json` with the following:
 ```json
 {
-  "keybindings.preset": "vscode"
+  "extra-settings": ["app://config/settings-vscode.json"],
 }
 ```
-
-Possible values for `keybindings.preset`: `vim` (default), `vscode`
 
 After changing the settings restart the editor.
 
@@ -65,5 +63,3 @@ so e.g. `<C-w>x` and `<LEADER>wx` both work
 - [`explore-user-config`](finders.md#explore-user-config): Search for config files in the user directory.
 - [`explore-app-config`](finders.md#explore-app-config): Search for config files that are installed with the editor.
 - [`browse-keybinds`](finders.md#browse-keybinds): Search through current keybindings.
-- `logs`: show the log file
-- Switch keybinding preset by changing `keybindings.preset` in settings to `vim` or `vscode`
