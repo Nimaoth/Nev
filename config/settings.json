@@ -694,8 +694,8 @@
             }
         },
         "markdown": {
+            "context-lines.enabled": false,
             "+text": {
-                "context-lines.enabled": false,
                 "color-highlight": {
                     "enable": false,
                     "regex": "#([0-9a-fA-F]{6})",
