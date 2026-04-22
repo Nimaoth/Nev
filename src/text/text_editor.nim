@@ -2351,7 +2351,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool = false, for
     if gotoFirstDiff and self.diffChanges.getSome(changes) and changes.len > 0:
       self.selection = (changes[0].target.first, 0).toSelection
       self.updateTargetColumn(Last)
-      self.centerCursor(self.selection.last)
+      self.centerCursor(self.selection.last, snap = true)
 
     self.cursorHistories.setLen(0)
     self.markDirty()

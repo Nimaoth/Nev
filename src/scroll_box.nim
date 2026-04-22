@@ -1,4 +1,4 @@
-import std/[options]
+import std/[options, strformat]
 import pixie, chroma
 import results
 import misc/[util, render_command]
@@ -21,7 +21,7 @@ type
     margin*: float = 100
     extra*: float = 0
     maxIndex*: int = 0
-    defaultItemHeight*: float = 0
+    defaultItemHeight*: float = 1
 
     items*: seq[tuple[index: int, bounds: bumpy.Rect]]
     up*: bool
@@ -30,12 +30,73 @@ type
     currentOffset*: Vec2
     currentItemBounds*: bumpy.Rect
 
+    scrollHandleShrinkFactor*: float = 15
+
+proc itemHeight*(sv: ScrollBox, index: int): float =
+  if sv.items.len > 0:
+    if index < sv.items[0].index:
+      return sv.defaultItemHeight
+    if index > sv.items[^1].index:
+      return sv.defaultItemHeight
+    let i = index - sv.items[0].index
+    if i in 0..sv.items.high and sv.items[i].index == index:
+      return sv.items[i].bounds.h
+
+    # Fallback, shouldn't really happen
+    for item in sv.items:
+      if item.index == index:
+        return item.bounds.h
+  sv.defaultItemHeight
+
+proc getFirstItemOffset*(sv: ScrollBox): float =
+  if sv.items.len == 0:
+    return 0
+  let topItemIndex = sv.items[0].index
+  if topItemIndex == 0:
+    return sv.items[0].bounds.y
+  return sv.items[0].bounds.y - topItemIndex.float * sv.defaultItemHeight
+
+proc getMinFirstItemOffset*(sv: ScrollBox): float =
+  if sv.items.len == 0:
+    return 0
+
+  let firstIndex = sv.items[0].index
+  let lastIndex = sv.items[^1].index
+
+  var totalHeight = 0.0
+
+  let numItemsBefore = firstIndex
+  totalHeight += numItemsBefore.float * sv.defaultItemHeight
+
+  totalHeight += sv.items[^1].bounds.yh - sv.items[0].bounds.y
+
+  let numItemsAfter = sv.maxIndex - lastIndex
+  totalHeight += numItemsAfter.float * sv.defaultItemHeight
+
+  totalHeight -= sv.margin
+  totalHeight -= sv.itemHeight(sv.maxIndex)
+
+  return min(-totalHeight, 0)
+
+proc getScrollOffsetNorm*(sv: ScrollBox): float =
+  let min = sv.getMinFirstItemOffset()
+  if min == 0:
+    return 0
+  let curr = sv.getFirstItemOffset()
+  return abs(curr / min)
+
+proc getScrollableSize*(sv: ScrollBox): float =
+  return sv.getMinFirstItemOffset().abs / sv.defaultItemHeight.max(1)
+
+proc getScrollBarHandleHeightRatio*(sv: ScrollBox): float =
+  return sv.scrollHandleShrinkFactor / (sv.getScrollableSize() + sv.scrollHandleShrinkFactor - 1).max(1)
+
 proc clampBottom(sv: var ScrollBox) =
   if sv.items.len == 0:
     return
-  let first = sv.items[0]
-  if first.index == 0 and first.bounds.yh > sv.size.y - sv.margin:
-    let offset = first.bounds.yh - (sv.size.y - sv.margin)
+  let first {.cursor.} = sv.items[0]
+  if first.index == 0 and first.bounds.y > 0:
+    let offset = first.bounds.y
     sv.offset.y -= offset
     sv.currentOffset.y -= offset
     sv.scrollMomentum.y = 0
@@ -46,7 +107,7 @@ proc clampBottom(sv: var ScrollBox) =
 proc clampTop(sv: var ScrollBox) =
   if sv.items.len == 0:
     return
-  let last = sv.items[^1]
+  let last {.cursor.} = sv.items[^1]
   if last.index == sv.maxIndex and last.bounds.y < sv.margin:
     let offset = sv.margin - last.bounds.y
     sv.offset.y += offset
@@ -54,6 +115,38 @@ proc clampTop(sv: var ScrollBox) =
     for item in sv.items.mitems:
       item.bounds.y += offset
     return
+
+proc clampIndex0Top(sv: var ScrollBox) {.gcsafe, raises: [].} =
+  if sv.items.len == 0:
+    return
+  let first {.cursor.} = sv.items[0]
+  if first.index == 0 and first.bounds.y > 0:
+    let offset = first.bounds.y
+    sv.offset.y -= offset
+    sv.currentOffset.y -= offset
+    sv.scrollMomentum.y = 0
+    for item in sv.items.mitems:
+      item.bounds.y -= offset
+
+proc clampScrollYForIndex0(sv: var ScrollBox) {.gcsafe, raises: [].} =
+  if sv.items.len > 0:
+    var estimatedIndex0Y = sv.offset.y
+    var i = sv.index
+    while estimatedIndex0Y >= 0 and i > 0:
+      dec i
+      estimatedIndex0Y -= sv.itemHeight(i)
+    if i == 0 and estimatedIndex0Y > 0:
+      let offset = estimatedIndex0Y
+      sv.offset.y -= offset
+      sv.currentOffset.y -= offset
+      sv.scrollMomentum.y = 0
+  elif sv.index > 0:
+    let estimatedIndex0Y = sv.offset.y - sv.index.float * sv.defaultItemHeight
+    if estimatedIndex0Y > 0:
+      let offset = estimatedIndex0Y
+      sv.offset.y -= offset
+      sv.currentOffset.y -= offset
+      sv.scrollMomentum.y = 0
 
 proc clampLeft(sv: var ScrollBox) =
   sv.offset.x = min(sv.offset.x, 0.0)
@@ -63,9 +156,9 @@ proc clampLeft(sv: var ScrollBox) =
 proc clamp*(sv: var ScrollBox, maxIndex: int) =
   if sv.items.len == 0:
     return
-  let first = sv.items[0]
-  if first.index == 0 and first.bounds.yh > sv.size.y - sv.margin:
-    let offset = first.bounds.yh - (sv.size.y - sv.margin)
+  let first {.cursor.} = sv.items[0]
+  if first.index == 0 and first.bounds.y >= 0:
+    let offset = first.bounds.y
     sv.offset.y -= offset
     sv.scrollMomentum.y = 0
     for item in sv.items.mitems:
@@ -81,11 +174,16 @@ proc clamp*(sv: var ScrollBox, maxIndex: int) =
       item.bounds.y += offset
     return
 
+  sv.clampIndex0Top()
+  sv.clampScrollYForIndex0()
+
 proc scroll*(sv: var ScrollBox, offset: Vec2) =
   if offset != vec2(0):
     sv.offset += offset
     sv.currentOffset += offset
     sv.clampLeft()
+    sv.clampIndex0Top()
+    sv.clampScrollYForIndex0()
 
 proc scroll*(sv: var ScrollBox, y: float) =
   sv.scroll(vec2(0, y))
@@ -96,6 +194,8 @@ proc updateScroll*(sv: var ScrollBox, dt: float) =
     sv.offset += delta
     sv.currentOffset += delta
     sv.scrollMomentum -= delta
+    sv.clampIndex0Top()
+    sv.clampScrollYForIndex0()
 
   sv.clampLeft()
 
@@ -108,6 +208,8 @@ proc scrollWithMomentum*(sv: var ScrollBox, offset: Vec2) =
     sv.offset += offset
     sv.currentOffset += offset
     sv.clampLeft()
+    sv.clampIndex0Top()
+    sv.clampScrollYForIndex0()
 
 proc scrollWithMomentum*(sv: var ScrollBox, y: float) =
   sv.scrollWithMomentum(vec2(0, y))
@@ -219,6 +321,8 @@ proc endRender*(sv: var ScrollBox) =
       sv.offset.y = sv.items[i].bounds.y
 
     sv.clampLeft()
+    sv.clampIndex0Top()
+    sv.clampScrollYForIndex0()
     sv.offset.x = sv.items[0].bounds.x
 
 proc itemBounds*(sv: var ScrollBox, index: int): Option[bumpy.Rect] =
@@ -235,10 +339,11 @@ proc itemIndex*(sv: var ScrollBox, index: int): Option[int] =
 
 proc scrollToY*(sv: var ScrollBox, index: int, y: float) =
   if sv.itemBounds(index).getSome(b) and b.y == y:
-    # Item is already it the correct location
     return
   sv.index = index
   sv.offset.y = y
+  sv.clampIndex0Top()
+  sv.clampScrollYForIndex0()
 
 proc scrollTo*(sv: var ScrollBox, index: int, center: bool = false, centerOffscreen: bool = false, snap: bool = false) =
   for v in sv.items:
@@ -287,6 +392,8 @@ proc scrollTo*(sv: var ScrollBox, index: int, center: bool = false, centerOffscr
     else:
       sv.scrollIntoView = true
     sv.scrollCenter = center or centerOffscreen
+    sv.clampIndex0Top()
+    sv.clampScrollYForIndex0()
   elif index > lastIndex:
     let itemHeight = if sv.defaultItemHeight > 0: sv.defaultItemHeight
       elif sv.items.len > 0: sv.items[^1].bounds.h

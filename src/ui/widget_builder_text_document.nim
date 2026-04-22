@@ -1568,15 +1568,16 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   if self.uiSettings.scrollBar.get():
     buildCommands(selectionsNode.renderCommands):
       if self.scrollBox.items.len > 0:
-        let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
-        let w = ceil(builder.charWidth * 0.5)
-        let thumbHeightRatio = (currentNode.bounds.h / builder.textHeight) / max(self.numDisplayLines.float, 1.0)
-        let thumbHeight = clamp(thumbHeightRatio * currentNode.bounds.h.float, builder.textHeight, max(currentNode.bounds.h - builder.textHeight, currentNode.bounds.h * 0.9))
-        let scrollableHeight = currentNode.bounds.h.float - thumbHeight
-        let centerIndex = self.scrollBox.items.len div 2
-        let centerDisplayLine = self.scrollBox.items[centerIndex].index
-        let thumbY = (centerDisplayLine.float / self.numDisplayLines.float) * scrollableHeight
-        fillRect(rect(currentNode.bounds.w - w, floor(thumbY), w, ceil(thumbHeight)), scrollBarColor)
+        let scrollOffsetNorm = self.scrollBox.getScrollOffsetNorm()
+        let scrollableSize = self.scrollBox.getScrollableSize()
+        if scrollableSize > 0:
+          let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
+          let w = ceil(builder.charWidth * 0.5)
+          let thumbHeightRatio = self.scrollBox.getScrollBarHandleHeightRatio()
+          let thumbHeight = clamp(thumbHeightRatio * currentNode.bounds.h.float, builder.textHeight, max(currentNode.bounds.h - builder.textHeight, currentNode.bounds.h * 0.9))
+          let scrollableHeight = currentNode.bounds.h.float - thumbHeight
+          let thumbY = scrollOffsetNorm * scrollableHeight
+          fillRect(rect(currentNode.bounds.w - w, floor(thumbY), w, ceil(thumbHeight)), scrollBarColor)
 
   selectionsNode.markDirty(builder)
   currentNode.markDirty(builder)

@@ -470,6 +470,9 @@ when implModule:
         if not renderedItem:
           break
 
+      self.scrollBox.endRender()
+      self.scrollBox.clamp(self.cachedLines.high)
+
       fixups.sort(proc(a, b: auto): int = cmp(a.line, b.line))
       # Fixup chunk bounds and Transform render commands now that we know the line bounds
       assert fixups.len == self.scrollBox.items.len
@@ -486,21 +489,19 @@ when implModule:
             bounds: rect((vec2(0, lineHeight * 2 + lineBounds.y)), vec2(0)),
           )
 
-      self.scrollBox.endRender()
-      self.scrollBox.clamp(self.cachedLines.high)
-
       # Scroll bar
       buildCommands(currentNode.renderCommands):
         if self.scrollBox.items.len > 0:
-          let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
-          let topScrollOffset = clamp(self.scrollBox.items[0].index.float / self.cachedLines.high.float, 0, 1)
-          let bottomScrollOffset = clamp(self.scrollBox.items[^1].index.float / self.cachedLines.high.float, 0, 1)
-          let y = topScrollOffset * builder.currentParent.bounds.h
-          let y2 = bottomScrollOffset * builder.currentParent.bounds.h
-          let centerY = (y + y2) * 0.5
-          let h = clamp(y2 - y, builder.textHeight, builder.currentParent.bounds.h * 0.5)
-          let w = ceil(builder.charWidth * 0.5)
-          fillRect(rect(builder.currentParent.bounds.w - w, floor(centerY - h * 0.5), w, ceil(h)), scrollBarColor)
+          let scrollOffsetNorm = self.scrollBox.getScrollOffsetNorm()
+          let scrollableSize = self.scrollBox.getScrollableSize()
+          if scrollableSize > 0:
+            let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
+            let w = ceil(builder.charWidth * 0.5)
+            let thumbHeightRatio = self.scrollBox.getScrollBarHandleHeightRatio()
+            let thumbHeight = clamp(thumbHeightRatio * currentNode.bounds.h.float, builder.textHeight, max(currentNode.bounds.h - builder.textHeight, currentNode.bounds.h * 0.9))
+            let scrollableHeight = currentNode.bounds.h.float - thumbHeight
+            let thumbY = scrollOffsetNorm * scrollableHeight
+            fillRect(rect(currentNode.bounds.w - w, floor(thumbY), w, ceil(thumbHeight)), scrollBarColor)
 
   proc kind(self: UndoTreeView): string = "undotree"
   proc desc(self: UndoTreeView): string = "UndoTree"
