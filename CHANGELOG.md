@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.0](https://github.com/Nimaoth/Nev/compare/v0.4.0...v0.5.0) (2026-04-04)
+## [0.5.0](https://github.com/Nimaoth/Nev/compare/v0.4.0...v0.5.0) (2026-04-22)
 
 - Introduced a new WASM-based plugin system with dynamic API dispatching, thread support, and plugin state restoring on reload
 - Moved Vim motions to the new plugin system and removed the old one
@@ -29,6 +29,7 @@
 - Highlight parenthesis in different colors
 - Nimble no longer supported for installing dependencies (use `atlas` instead. `nimble build*` commands should still work)
 - Add more minimal toast message style
+- Added commands for downloading prebuilt treesitter wasm parsers from [Nimaoth/tree-sitter-wasm-binaries](https://github.com/Nimaoth/tree-sitter-wasm-binaries)
 
 ## [0.4.0](https://github.com/Nimaoth/Nev/compare/v0.3.0...v0.4.0) (2025-05-01)
 
