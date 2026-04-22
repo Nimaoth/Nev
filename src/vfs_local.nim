@@ -1,10 +1,12 @@
 import std/[os, options, unicode, strutils, streams, atomics, sequtils, pathnorm, tables]
-import encodings
 import nimsumtree/[rope, static_array, arc]
 import malebolgia
 import misc/[custom_async, custom_logger, util, timer, regex, id]
 import vfs
 import fsnotify
+
+when not defined(musl):
+  import encodings
 
 when defined(windows):
   import winim/lean
@@ -143,7 +145,9 @@ proc loadFileFromStream(s: Stream, flags: set[ReadFlag]): tuple[data: string, in
       # Swap bytes for big endian
       for i in countup(0, raw.len - 2, 2):
         swap(raw[i], raw[i + 1])
-    return (convert(raw, "UTF-8", "UTF-16"), false)
+    when not defined(musl):
+      return (convert(raw, "UTF-8", "UTF-16"), false)
+    return (&"Invalid utf-8", true)
 
   if bom == bomUtf8:
     s.setPosition(bomLen)
@@ -159,9 +163,10 @@ proc loadFileFromStream(s: Stream, flags: set[ReadFlag]): tuple[data: string, in
     return (data.ensureMove, false)
 
   # Try converting from CP1252
-  var converted = convert(data, "UTF-8", "CP1252")
-  if converted.validateUtf8 < 0:
-    return (converted.ensureMove, false)
+  when not defined(musl):
+    var converted = convert(data, "UTF-8", "CP1252")
+    if converted.validateUtf8 < 0:
+      return (converted.ensureMove, false)
 
   return (&"Invalid utf-8 byte at {invalidUtf8Index}", true)
 
