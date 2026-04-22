@@ -1,4 +1,5 @@
 import platform/platform
+import compilation_config
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
