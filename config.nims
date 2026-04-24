@@ -103,7 +103,6 @@ when defined(musl):
   switch("passL", "-static")
 
   # Disable system clipboard because it doesn't build with musl right now
-  switch("d", "enableSystemClipboard=false")
   switch("d", "nimWasmtimeBuildMusl=true")
 
 when defined(windows):
@@ -145,15 +144,6 @@ when defined(linux):
   switch("nimcache", "nimcache/linux")
 else:
   switch("nimcache", "nimcache/windows")
-
-# todo: build with clang
-# switch("cc", "clang")
-# switch("passC", "-fno-omit-frame-pointer -g -Wno-incompatible-function-pointer-types")
-# switch("passC", "-flto")
-# switch("passC", "-fno-omit-frame-pointer -ggdb3 -g -Wno-incompatible-function-pointer-types -gcodeview -fuse-ld=lld")
-# switch("d", "enableSystemClipboard=false")
-# switch("lineDir", "off")
-# switch("profiler", "on")
 
 # Put custom build configs which shouldn't be commited in local.nims
 when withDir(thisDir(), fileExists("local.nims")):
