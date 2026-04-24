@@ -90,8 +90,22 @@ for kind, key, val in optParser.getopt():
   of cmdEnd: assert(false) # cannot happen
 
 echo &"Run commands {cmds}"
-for cmd in cmds:
-  case cmd
+var i = 0
+while i < cmds.len:
+  defer:
+    inc i
+  case cmds[i]
+  of "ci-release":
+    when defined(windows):
+      cmds.add @["markdown-parser", "release-win", "package-win"]
+    else:
+      cmds.add @["markdown-parser", "markdown-plugin", "release-linux", "package-linux"]
+  of "ci-debug":
+    when defined(windows):
+      cmds.add @["markdown-parser", "debug-win", "package-win"]
+    else:
+      cmds.add @["markdown-parser", "markdown-plugin", "debug-linux", "package-linux"]
+
   of "markdown-parser":
     echo "Download markdown parser"
     let urlTemplate = "https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/download/v0.3/{language}.tar.gz"
@@ -117,12 +131,12 @@ for cmd in cmds:
   of "release-win":
     echo &"Build release for windows..."
     try:
-      exec """nim c --out:nev.exe -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} src/desktop_main.nim"""
+      exec """nim c --out:nev.exe -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib src/desktop_main.nim"""
       exec """./rcedit-x64.exe nev.exe --set-icon ./res/icon.ico"""
     finally:
       discard
     try:
-      exec """nim c --out:nevg.exe -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types "--passL:-ladvapi32.lib -luser32.lib" -d:enableSystemClipboard=false src/desktop_main.nim"""
+      exec """nim c --out:nevg.exe -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types "--passL:-ladvapi32.lib -luser32.lib" src/desktop_main.nim"""
       exec """./rcedit-x64.exe nevg.exe --set-icon ./res/icon.ico"""
     finally:
       discard
@@ -185,7 +199,7 @@ for cmd in cmds:
       exec(&"tar -jcvf {releaseLinuxMusl}.tar {releaseLinuxMusl}")
 
   else:
-    echo &"Unknown command '{cmd}'"
+    echo &"Unknown command '{cmds[i]}'"
     quit 1
 
 quit exitCode
