@@ -89,7 +89,7 @@ when implModule:
       ),
     )
 
-  proc readStderr(stderr: Arc[BaseChannel]): Future[void] {.gcsafe, async: (raises: []).} =
+  proc readStderr(formatter: string, stderr: Arc[BaseChannel]): Future[void] {.gcsafe, async: (raises: []).} =
     try:
       var t = ""
       while true:
@@ -99,7 +99,7 @@ when implModule:
         t.setLen(available)
         if available > 0:
           discard stderr.read(t.toOpenArrayByte(0, t.high))
-          echo t
+          log lvlWarn, &"[{formatter}] {t}"
         await sleepAsync(1.milliseconds)
     except CatchableError:
       discard
@@ -161,7 +161,6 @@ when implModule:
           log lvlError, &"[format] Failed to load file {tempFile}: {e.msg}\n{e.getStackTrace()}"
           return
 
-        echo rope
         await text.reloadFromRope(rope.clone())
 
       of File:
@@ -178,7 +177,7 @@ when implModule:
       of Stdin:
         var process = startAsyncProcess(formatterPath, formatterArgs, killOnExit = true, autoStart = false)
         discard process.start()
-        asyncSpawn readStderr(process.stderr)
+        asyncSpawn readStderr(formatterPath, process.stderr)
 
         var t = startTimer()
         let content = text.content
