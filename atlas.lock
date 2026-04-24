@@ -87,7 +87,7 @@
     "windy.Nimaoth.github.com": {
       "dir": "$deps/windy.Nimaoth.github.com",
       "url": "https://github.com/Nimaoth/windy",
-      "commit": "212963e341eefa252dc82676e38d5e8ce9a2f6cb",
+      "commit": "e09b336a567da286b64797755ec025a9dd6d01f1",
       "version": ""
     },
     "lrucache.nim.Nimaoth.github.com": {
