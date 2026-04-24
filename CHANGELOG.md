@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.1](https://github.com/Nimaoth/Nev/compare/v0.5.0...v0.5.1) (2026-04-25)
+
+- Fix key repeating not working in linux GUI version
+- Fix formatter not working
+- Added option to pass files to formatters through stdin and read output from stdout
+
 ## [0.5.0](https://github.com/Nimaoth/Nev/compare/v0.4.0...v0.5.0) (2026-04-22)
 
 - Introduced a new WASM-based plugin system with dynamic API dispatching, thread support, and plugin state restoring on reload
