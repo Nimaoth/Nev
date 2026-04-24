@@ -46,6 +46,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `editor.watch-user-config` | bool | true | Watch the config files in the user directory and automatically reload them when they change. |
 | `editor.watch-workspace-config` | bool | true | Watch the config files in the workspace directory and automatically reload them when they change. |
 | `formatter.command` | string[] | [] | Command to run. First entry is path to the formatter program, subsequent entries are passed as arguments to the formatter. |
+| `formatter.input` | "temp-file" \| "file" \| "stdin" | "temp-file" | How input is passed to the formatter `temp-file`: When formatting the file is saved to a temporary file and the formatter is run on the temporary file `file`: The formatter is run on the actual file. Make sure to save first. `stdin`: The file is passed to the formatter through stdin, and the formatter is expected to write the formatted output to stdout. |
 | `formatter.on-save` | bool | false | If true run the formatter when saving. |
 | `hover.command` | JsonNodeEx | null | Command to run when hovering something. |
 | `hover.delay` | int | 200 | How many milliseconds after hovering a word the lsp hover request is sent. |

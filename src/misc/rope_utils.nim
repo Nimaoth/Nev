@@ -418,3 +418,16 @@ proc clampOnLine*(text: Rope, r: Range[Point], includeAfter: bool = true): Range
 
 proc isEmpty*[T](r: Range[T]): bool = r.a == r.b
 proc toRange*[T](a: T): Range[T] = a...a
+
+proc `==`*(a, b: Rope): bool =
+  if a.summary != b.summary:
+    return false
+  var cursorA = a.cursor(int)
+  var cursorB = b.cursor(int)
+  while not cursorA.atEnd() and not cursorB.atEnd():
+    cursorA.seekNextRune()
+    cursorB.seekNextRune()
+    if cursorA.currentRune != cursorB.currentRune:
+      return false
+
+  return true

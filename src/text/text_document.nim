@@ -832,6 +832,12 @@ proc newTextDocument*(
     if checkpoint != "":
       self.addNextCheckpoint(checkpoint)
     self.edit(selections, oldSelections, texts, notify, record, inclusiveEnd)
+  self.textComponent.editRopeSlice = proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[RopeSlice[int]],
+      notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].} =
+    if checkpoint != "":
+      self.addNextCheckpoint(checkpoint)
+    self.edit(selections, oldSelections, texts, notify, record, inclusiveEnd)
+
   self.addComponent(self.textComponent)
 
   self.treesitterComponent = newTreesitterComponent(self.vfs)

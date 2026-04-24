@@ -538,10 +538,14 @@ Configure the formatter command in your settings:
 // ~/.nev/settings.json
 {
     // Command to run. First entry is the formatter program, subsequent entries are arguments.
-    "formatter.command": ["nph"],
+    "lang.nim.formatter.command": ["nph", "-"], // Run nph, `-` means `use stdin`
+    "lang.nim.formatter.command": ["powershell", "-Command", "nph", "-"], // On windows you might need to run nph through powershell if installed through nimble
+    "lang.nim.formatter.on-save": false,
+    "lang.nim.formatter.input": "stdin", // Pass file through stdin. Other options are `temp-file` or `file`
+
 
     // Run the formatter automatically when saving
-    "formatter.on-save": false,
+    "lang.nim.formatter.on-save": false,
 }
 ```
 
@@ -559,7 +563,7 @@ For language-specific formatters, you can override per language:
 
 ### Usage
 
-- Run `format` to format the current document.
+- Run `.format` to format the current document.
 - If `formatter.on-save` is `true`, the formatter runs automatically when you save.
 
 ### Example keybinding

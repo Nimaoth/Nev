@@ -1,6 +1,6 @@
 import std/[options]
 import nimsumtree/[rope, buffer]
-import misc/[event]
+import misc/[event, custom_async]
 import component
 
 export component
@@ -17,13 +17,19 @@ type TextComponent* = ref object of Component
 # DLL API
 var TextComponentId* {.apprtl.}: ComponentTypeId
 
-proc textComponentContent*(self: TextComponent): Rope {.apprtl, gcsafe, raises: [].}
-proc textComponentBuffer*(self: TextComponent): var Buffer {.apprtl, gcsafe, raises: [].}
-proc getTextComponent*(self: ComponentOwner): Option[TextComponent] {.apprtl, gcsafe, raises: [].}
-proc textComponentEditString(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
-proc textComponentEditRope(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
-proc textComponentStartTransaction(self: TextComponent) {.apprtl, gcsafe, raises: [].}
-proc textComponentEndTransaction(self: TextComponent) {.apprtl, gcsafe, raises: [].}
+{.push apprtl, gcsafe, raises: [].}
+proc textComponentContent*(self: TextComponent): Rope
+proc textComponentBuffer*(self: TextComponent): var Buffer
+proc getTextComponent*(self: ComponentOwner): Option[TextComponent]
+proc textComponentEditString(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]]
+proc textComponentEditRope(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]]
+proc textComponentEditRopeSlice(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[RopeSlice[int]], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]]
+proc textComponentStartTransaction(self: TextComponent)
+proc textComponentEndTransaction(self: TextComponent)
+proc textComponentReplaceAllRope(self: TextComponent, value: sink Rope)
+proc textComponentReplaceAll(self: TextComponent, value: sink string)
+proc textComponentReloadFromRope(self: TextComponent, rope: sink Rope) {.async.}
+{.pop.}
 
 template withTransaction*(self: TextComponent, body: untyped): untyped =
   try:
@@ -57,6 +63,8 @@ proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelectio
   self.textComponentEditString(selections, oldSelections, texts, notify, record, inclusiveEnd, checkpoint)
 proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.inline.} =
   self.textComponentEditRope(selections, oldSelections, texts, notify, record, inclusiveEnd, checkpoint)
+proc edit*(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[RopeSlice[int]], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.inline.} =
+  self.textComponentEditRopeSlice(selections, oldSelections, texts, notify, record, inclusiveEnd, checkpoint)
 proc startTransaction*(self: TextComponent) = textComponentStartTransaction(self)
 proc endTransaction*(self: TextComponent) = textComponentEndTransaction(self)
 
@@ -66,12 +74,17 @@ proc `content=`*(self: TextComponent, text: string) =
   discard self.edit([fullRange], [fullRange], [text])
   self.endTransaction()
 
+proc replaceAll*(self: TextComponent, value: sink Rope) = textComponentReplaceAllRope(self, value)
+proc replaceAll*(self: TextComponent, value: sink string) = textComponentReplaceAll(self, value)
+proc reloadFromRope*(self: TextComponent, rope: sink Rope) {.async.} = await textComponentReloadFromRope(self, rope)
+
 # Implementation
 when implModule:
-  import std/[sequtils]
-  import misc/[util, custom_logger, rope_utils]
+  import std/[sequtils, unicode]
+  import misc/[util, custom_logger, rope_utils, timer]
   import nimsumtree/[clock]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
+  import text/diff
 
   logCategory "text-component"
 
@@ -81,6 +94,7 @@ when implModule:
     buffer*: Buffer
     editString*: proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].}
     editRope*: proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].}
+    editRopeSlice*: proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[RopeSlice[int]], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].}
 
   var nextBufferId = 1.BufferId
   proc getNextBufferId*(): BufferId =
@@ -121,11 +135,66 @@ when implModule:
     self.TextComponentImpl.editString(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd, checkpoint).mapIt(it.toRange)
   proc textComponentEditRope(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] =
     self.TextComponentImpl.editRope(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd, checkpoint).mapIt(it.toRange)
+  proc textComponentEditRopeSlice(self: TextComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[RopeSlice[int]], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] =
+    self.TextComponentImpl.editRopeSlice(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd, checkpoint).mapIt(it.toRange)
 
   proc textComponentStartTransaction(self: TextComponent) =
     discard self.TextComponentImpl.buffer.startTransaction()
 
   proc textComponentEndTransaction(self: TextComponent) =
     discard self.TextComponentImpl.buffer.endTransaction()
+
+  proc textComponentReplaceAllRope(self: TextComponent, value: sink Rope) =
+    let self = self.TextComponentImpl
+    let fullRange = point(0, 0)...self.content.summary().lines
+    discard self.edit([fullRange], [], [value])
+    discard self.buffer.endTransaction()
+
+  proc textComponentReplaceAll(self: TextComponent, value: sink string) =
+    let self = self.TextComponentImpl
+    let invalidUtf8Index = value.validateUtf8
+    if invalidUtf8Index >= 0:
+      log lvlError, &"[replace] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
+      return
+
+    var index = 0
+    const utf8_bom = "\xEF\xBB\xBF"
+    if value.len >= 3 and value.startsWith(utf8_bom):
+      log lvlInfo, &"[content=] Skipping utf8 bom"
+      index = 3
+
+    let fullRange = point(0, 0)...self.content.summary().lines
+    discard self.edit([fullRange], [], [value[index..^1]])
+    discard self.buffer.endTransaction()
+
+  proc textComponentReloadFromRope(self: TextComponent, rope: sink Rope) {.async.} =
+    let self = self.TextComponentImpl
+    let t = startTimer()
+
+    try:
+      let oldRope = self.content.clone()
+      var diff = RopeDiff[int]()
+      await diffRopeAsync(oldRope.clone(), rope.clone(), diff.addr).wait(300.milliseconds)
+      if self.owner.isNil:
+        return
+
+      if diff.edits.len > 0:
+        var selections = newSeq[Range[Point]]()
+        var texts = newSeq[RopeSlice[int]]()
+        for edit in diff.edits:
+          let a = oldRope.convert(edit.old.a, Point)
+          let b = oldRope.convert(edit.old.b, Point)
+          selections.add a...b
+          texts.add edit.text.clone()
+
+        discard self.edit(selections, [], texts)
+        discard self.buffer.endTransaction()
+
+        if self.content != rope:
+          self.replaceAll(rope.move)
+
+    except AsyncTimeoutError:
+      log lvlWarn, &"reloadFromRope: diff timed out after {t.elapsed.ms} ms"
+      self.replaceAll(rope.move)
 
 proc buffer*(self: TextComponent): var Buffer {.inline.} = self.textComponentBuffer()

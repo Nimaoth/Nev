@@ -9,12 +9,24 @@ export component
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
+type
+  FormatterInput* = enum TempFile = "temp-file", File = "file", Stdin = "stdin"
+
+proc typeNameToJson*(T: typedesc[FormatterInput]): string =
+  return "\"temp-file\" | \"file\" | \"stdin\""
+
 declareSettings FormatSettings, "formatter":
   ## If true run the formatter when saving.
   declare onSave, bool, false
 
   ## Command to run. First entry is path to the formatter program, subsequent entries are passed as arguments to the formatter.
   declare command, seq[string], newSeq[string]()
+
+  ## How input is passed to the formatter
+  ## `temp-file`: When formatting the file is saved to a temporary file and the formatter is run on the temporary file
+  ## `file`: The formatter is run on the actual file. Make sure to save first.
+  ## `stdin`: The file is passed to the formatter through stdin, and the formatter is expected to write the formatted output to stdout.
+  declare input, FormatterInput, FormatterInput.TempFile
 
 type
   Formatter* = ref object of RootObj
@@ -45,9 +57,10 @@ proc registerFormatter*(self: FormattingService, name: string, formatter: Format
 
 # Implementation
 when implModule:
-  import misc/[util, custom_logger, async_process]
-  import nimsumtree/[rope]
-  import text_component
+  import std/[sequtils]
+  import misc/[util, custom_logger, async_process, timer]
+  import nimsumtree/[rope, arc]
+  import text_component, channel
 
   logCategory "formatting-component"
 
@@ -76,6 +89,21 @@ when implModule:
       ),
     )
 
+  proc readStderr(stderr: Arc[BaseChannel]): Future[void] {.gcsafe, async: (raises: []).} =
+    try:
+      var t = ""
+      while true:
+        let available = stderr.flushRead()
+        if available == 0 and not stderr.isOpen:
+          break
+        t.setLen(available)
+        if available > 0:
+          discard stderr.read(t.toOpenArrayByte(0, t.high))
+          echo t
+        await sleepAsync(1.milliseconds)
+    except CatchableError:
+      discard
+
   proc formattingComponentFormat(self: FormattingComponent): Future[void] {.rtl, gcsafe, async: (raises: []).} =
     let services = getServices()
     if services == nil:
@@ -86,7 +114,6 @@ when implModule:
 
     let doc = self.owner.Document
 
-    debugf"format {doc.filename}"
     let formatterType = self.config.get("formatter.type", "")
     if formatterType != "":
       if formatterType in formattingService.formatters:
@@ -102,16 +129,18 @@ when implModule:
     try:
       let command = self.config.get("formatter.command", seq[string])
       if command.len == 0:
-        log lvlWarn, &"No formatter configured"
+        log lvlWarn, &"No formatter configured for '{doc.filename}'"
         return
 
+      let input = self.config.get("formatter.input", FormatterInput)
+
       let formatterPath = command[0]
-      let formatterArgs = command[1..^1]
+      let formatterArgs = command[1..^1].mapIt(it.replace("{filename}", doc.localizedPath))
 
-      log lvlInfo, &"Format document '{doc.filename}' with '{formatterPath} {formatterArgs}'"
+      log lvlInfo, &"Format document '{doc.filename}' with '{formatterPath} {formatterArgs}' through {input}"
 
-      let runOnTempFile = true
-      if runOnTempFile:
+      case input
+      of TempFile:
         let ext = doc.filename.splitFile.ext
         let tempFile = await self.vfs.genTempPath(prefix = "format/", suffix = ext)
         try:
@@ -132,11 +161,53 @@ when implModule:
           log lvlError, &"[format] Failed to load file {tempFile}: {e.msg}\n{e.getStackTrace()}"
           return
 
-        # discard await self.reloadFromRope(rope.clone())
+        echo rope
+        await text.reloadFromRope(rope.clone())
 
-      else:
+      of File:
         discard await runProcessAsync(formatterPath, formatterArgs & @[doc.localizedPath])
-        # await self.loadAsync(isReload = true)
+        var rope: Rope = Rope.new()
+        try:
+          await self.vfs.readRope(doc.filename, rope.addr)
+        except IOError as e:
+          log lvlError, &"[format] Failed to load file {doc.filename}: {e.msg}\n{e.getStackTrace()}"
+          return
+
+        await text.reloadFromRope(rope.clone())
+
+      of Stdin:
+        var process = startAsyncProcess(formatterPath, formatterArgs, killOnExit = true, autoStart = false)
+        discard process.start()
+        asyncSpawn readStderr(process.stderr)
+
+        var t = startTimer()
+        let content = text.content
+        for chunk in content.iterateChunks:
+          process.stdin.write(chunk.chars)
+          if t.elapsed.ms > 5:
+            await sleepAsync(1.milliseconds)
+
+        await sleepAsync(1.milliseconds)
+        process.stdin.close()
+
+        var res = newStringOfCap(content.len * 2)
+        var buf = ""
+        var ti = startTimer()
+        while not process.stdout.atEnd:
+          let available = process.stdout.flushRead()
+          if available == 0:
+            await sleepAsync(1.milliseconds)
+            if not process.isAlive and process.stdout.flushRead() == 0:
+              break
+            continue
+          buf.setLen(available)
+          if available > 0:
+            discard process.stdout.read(buf.toOpenArrayByte(0, buf.high))
+            res.add buf
+          if ti.elapsed.ms > 5:
+            await sleepAsync(1.milliseconds)
+
+        await text.reloadFromRope(Rope.new(res))
 
     except Exception as e:
       log lvlError, &"Failed to format document '{doc.filename}': {e.msg}\n{e.getStackTrace()}"
