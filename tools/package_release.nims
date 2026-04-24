@@ -73,82 +73,119 @@ proc copySharedFilesTo(dir: string) =
   cpFile2 stdPath / "system.nim", dir / "nim_std"
   cpFile2 stdPath / "stdlib.nimble", dir / "nim_std"
 
-var packageWindows = false
-var packageLinux = false
+var isCINimbleCached = "0"
+var cmds = newSeq[string]()
 
 var optParser = initOptParser("")
 for kind, key, val in optParser.getopt():
   case kind
   of cmdArgument:
-    discard
+    cmds.add key
 
   of cmdLongOption, cmdShortOption:
     case key
-    of "windows", "w":
-      packageWindows = true
-    of "linux", "l":
-      packageLinux = true
+    of "cache":
+      isCINimbleCached = val
 
   of cmdEnd: assert(false) # cannot happen
 
-block:
-  echo "Download markdown parser"
-  let urlTemplate = "https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/download/v0.3/{language}.tar.gz"
+echo &"Run commands {cmds}"
+for cmd in cmds:
+  case cmd
+  of "markdown-parser":
+    echo "Download markdown parser"
+    let urlTemplate = "https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/download/v0.3/{language}.tar.gz"
 
-  let languages = @["markdown", "markdown-inline"]
-  for language in languages:
-    let url = urlTemplate.replace("{language}", language)
-    let outputPath = "./languages"
-    let tarPath = &"./languages/{language}.tar.gz"
-    var cmd: string
-    when defined(windows):
-      cmd = "powershell -Command \"Invoke-WebRequest -Uri '" & url.quoteShell & "' -OutFile '" & tarPath.quoteShell & "'\""
-    else:
-      cmd = "wget -O " & tarPath.quoteShell & " " & url.quoteShell
-    echo &"Download {cmd}"
-    exec(cmd)
+    let languages = @["markdown", "markdown-inline"]
+    for language in languages:
+      let url = urlTemplate.replace("{language}", language)
+      let outputPath = "./languages"
+      let tarPath = &"./languages/{language}.tar.gz"
+      var cmd: string
+      when defined(windows):
+        cmd = "powershell -Command \"Invoke-WebRequest -Uri '" & url.quoteShell & "' -OutFile '" & tarPath.quoteShell & "'\""
+      else:
+        cmd = "wget -O " & tarPath.quoteShell & " " & url.quoteShell
+      echo &"Download {cmd}"
+      exec(cmd)
 
-    let extractCmd = &"tar -xzf {tarPath.quoteShell} -C {outputPath.quoteShell}"
-    echo &"Extracting {extractCmd}"
-    exec(extractCmd)
-    rmFile(tarPath)
+      let extractCmd = &"tar -xzf {tarPath.quoteShell} -C {outputPath.quoteShell}"
+      echo &"Extracting {extractCmd}"
+      exec(extractCmd)
+      rmFile(tarPath)
 
-if packageWindows:
-  echo &"Package windows..."
-  mkDir releaseWindows
-  copySharedFilesTo releaseWindows
-  cpFile2 "nev.exe", releaseWindows, optional=true
-  cpFile2 "nevg.exe", releaseWindows, optional=true
-  cpFile2 "nevt.exe", releaseWindows, optional=true
-  cpFile2 "wasmtime.dll", releaseWindows, optional=true
+  of "release-win":
+    echo &"Build release for windows..."
+    try:
+      exec """nim c --out:nev.exe -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} src/desktop_main.nim"""
+      exec """./rcedit-x64.exe nev.exe --set-icon ./res/icon.ico"""
+    finally:
+      discard
+    try:
+      exec """nim c --out:nevg.exe -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types "--passL:-ladvapi32.lib -luser32.lib" -d:enableSystemClipboard=false src/desktop_main.nim"""
+      exec """./rcedit-x64.exe nevg.exe --set-icon ./res/icon.ico"""
+    finally:
+      discard
 
-  if fileExists(&"{releaseWindows}.zip"):
-    echo &"Remove existing {releaseWindows}.zip"
-    rmFile(&"{releaseWindows}.zip")
+  of "markdown-plugin":
+    echo &"Build markdown plugin..."
+    withDir "plugins/markdown":
+      # todo: on windows
+      # exec """powershell -Command ./emsdk/emsdk.ps1 activate 4.0.10"""
+      exec """nim c -d:release --skipParentCfg --passL:"-o markdown.m.wasm" markdown.nim"""
 
-  echo &"Create {releaseWindows}.zip"
-  exec(&"powershell -Command Compress-Archive -Force -Path {releaseWindows} -DestinationPath {releaseWindows}.zip")
+  of "debug-win":
+    echo &"Build debug for windows..."
+    exec """nim c --out:nev.exe -D:enableGui=true -D:enableTerminal=true --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} src/desktop_main.nim"""
 
-if packageLinux:
-  echo &"Package linux..."
-  mkDir releaseLinux
-  copySharedFilesTo releaseLinux
-  if fileExists "nev":
-    cpFile2 "nev", releaseLinux
-    if fileExists "nevg":
-      cpFile2 "nevg", releaseLinux
+  of "package-win":
+    echo &"Package for windows..."
+    mkDir releaseWindows
+    copySharedFilesTo releaseWindows
+    cpFile2 "nev.exe", releaseWindows, optional=true
+    cpFile2 "nevg.exe", releaseWindows, optional=true
+    cpFile2 "nevt.exe", releaseWindows, optional=true
+    cpFile2 "wasmtime.dll", releaseWindows, optional=true
 
-    echo &"Create {releaseLinux}.tar"
-    exec(&"tar -jcvf {releaseLinux}.tar {releaseLinux}")
+    if fileExists(&"{releaseWindows}.zip"):
+      echo &"Remove existing {releaseWindows}.zip"
+      rmFile(&"{releaseWindows}.zip")
 
-  if fileExists "nev-musl":
-    mkDir releaseLinuxMusl
-    copySharedFilesTo releaseLinuxMusl
+    echo &"Create {releaseWindows}.zip"
+    exec(&"powershell -Command Compress-Archive -Force -Path {releaseWindows} -DestinationPath {releaseWindows}.zip")
+
+  of "release-linux":
+    exec """nim c --out:nev --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} src/desktop_main.nim"""
+    exec """nim c --out:nevg --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} src/desktop_main.nim"""
+    exec """nim c --out:nev-musl --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=false -D:enableTerminal=true --app:console -d:musl -d:nimWasmtimeBuildMusl -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} src/desktop_main.nim"""
+
+  of "debug-linux":
+    exec &"""nim c --out:nev --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=true -D:enableTerminal=true --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} src/desktop_main.nim"""
+
+  of "package-linux":
+    echo &"Package for linux..."
+    mkDir releaseLinux
+    copySharedFilesTo releaseLinux
     if fileExists "nev":
-      cpFile2 "nev-musl", releaseLinuxMusl
-      mvFile(releaseLinuxMusl / "nev-musl", releaseLinuxMusl / "nev")
+      cpFile2 "nev", releaseLinux
+      if fileExists "nevg":
+        cpFile2 "nevg", releaseLinux
 
-    echo &"Create {releaseLinuxMusl}.tar"
-    exec(&"tar -jcvf {releaseLinuxMusl}.tar {releaseLinuxMusl}")
+      echo &"Create {releaseLinux}.tar"
+      exec(&"tar -jcvf {releaseLinux}.tar {releaseLinux}")
+
+    if fileExists "nev-musl":
+      mkDir releaseLinuxMusl
+      copySharedFilesTo releaseLinuxMusl
+      if fileExists "nev":
+        cpFile2 "nev-musl", releaseLinuxMusl
+        mvFile(releaseLinuxMusl / "nev-musl", releaseLinuxMusl / "nev")
+
+      echo &"Create {releaseLinuxMusl}.tar"
+      exec(&"tar -jcvf {releaseLinuxMusl}.tar {releaseLinuxMusl}")
+
+  else:
+    echo &"Unknown command '{cmd}'"
+    quit 1
 
 quit exitCode
