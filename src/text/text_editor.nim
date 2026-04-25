@@ -4477,6 +4477,8 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
 
 method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
   # debugf "handleAction '{action}', '{arg}', record = {record}"
+  if self.commandComponent.isNil:
+    return
 
   try:
     var doRecord = record
@@ -4487,7 +4489,7 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
     if record:
       self.commands.dontRecord = true
     defer:
-      if record:
+      if self.commandComponent.isNotNil and record:
         self.commands.dontRecord = oldDontRecord
 
     let noRecordActions = [
@@ -4500,11 +4502,11 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
       self.commandComponent.bIsRecordingCurrentCommand = doRecord
 
     defer:
-      if record:
+      if self.commandComponent.isNotNil and record:
         self.commandComponent.bIsRecordingCurrentCommand = oldIsRecordingCurrentCommand
 
     defer:
-      if record:
+      if self.commandComponent.isNotNil and record:
         if self.commandComponent.recordCurrentCommandRegisters.len > 0:
           self.registers.recordCommand("." & action & " " & arg, self.commandComponent.recordCurrentCommandRegisters)
         self.commandComponent.recordCurrentCommandRegisters.setLen(0)
