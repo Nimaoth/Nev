@@ -137,6 +137,9 @@ when implModule:
     ## Any editor with this set to true will be stored in the session and restored on startup.
     declare saveInSession, bool, true
 
+  method createUI*(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayFunction] {.base.} =
+    discard
+
   method handleActivate*(self: DocumentEditor) {.base, gcsafe, raises: [].} = discard
   method handleDeactivate*(self: DocumentEditor) {.base, gcsafe, raises: [].} = discard
 

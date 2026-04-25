@@ -2,6 +2,7 @@ import std/[options, tables, json]
 import misc/[event, id]
 import events, document_editor
 import bumpy
+import ui/node
 
 include dynlib_export
 
@@ -64,6 +65,17 @@ proc viewGetActiveEditor*(self: View): Option[DocumentEditor] {.apprtl.}
 proc viewSaveState*(self: View): JsonNode {.apprtl.}
 
 when implModule:
+  import std/[sets, json]
+  method dump*(self: View): string {.base.} = "View"
+
+  method desc*(self: View): string {.base.} = "View"
+
+  method kind*(self: View): string {.base.} = ""
+
+  method display*(self: View): string {.base.} = ""
+
+  method copy*(self: View): View {.base.} = assert(false)
+
   method close*(view: View) {.base.} =
     discard
 
@@ -79,13 +91,32 @@ when implModule:
   method markDirty*(self: View, notify: bool = true) {.base.} =
     self.markDirtyBase()
 
+  method createUI*(view: View, builder: UINodeBuilder): seq[OverlayFunction] {.base.} =
+    discard
+
   method getEventHandlers*(self: View, inject: Table[string, EventHandler]): seq[EventHandler] {.base.} =
     discard
 
   method getActiveEditor*(self: View): Option[DocumentEditor] {.base.} =
     discard
 
+  method activeLeafView*(self: View): View {.base.} = self
+
   method saveState*(self: View): JsonNode {.base.} = nil
+
+  method saveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode {.base.} =
+    result = newJObject()
+    result["id"] = self.id.toJson
+
+  method leftLeaf*(self: View): View {.base.} = self
+  method rightLeaf*(self: View): View {.base.} = self
+  method topLeaf*(self: View): View {.base.} = self
+  method bottomLeaf*(self: View): View {.base.} = self
+
+  method tryGetViewLeft*(self: View): View {.base.} = nil
+  method tryGetViewRight*(self: View): View {.base.} = nil
+  method tryGetViewUp*(self: View): View {.base.} = nil
+  method tryGetViewDown*(self: View): View {.base.} = nil
 
   proc viewClose*(view: View) = close(view)
   proc viewActivate*(view: View) = activate(view)

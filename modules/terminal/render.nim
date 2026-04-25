@@ -3,7 +3,6 @@ import vmath, bumpy, chroma
 import pixie
 import misc/[util, custom_logger, custom_unicode]
 import platform/[tui]
-import ui/[widget_builders_base]
 import theme, view, dynamic_view, config_provider
 import types_impl
 

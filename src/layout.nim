@@ -139,14 +139,17 @@ when implModule:
       return
     self.viewFactories[name] = create
 
-  proc getExistingView(self: LayoutService, config: JsonNode): View {.raises: [ValueError].} =
+  proc getExistingView(self: LayoutService, config: JsonNode): View {.raises: [].} =
     let self = self.LayoutServiceImpl
     if config.kind == JNull:
       return nil
 
     if config.hasKey("id"):
-      if self.getView(config["id"].jsonTo(Id)).getSome(view):
-        return view
+      try:
+        if self.getView(config["id"].jsonTo(Id)).getSome(view):
+          return view
+      except CatchableError:
+        discard
     log lvlError, &"Missing or invalid id for {config}"
     return nil
 
@@ -175,121 +178,6 @@ when implModule:
       except ValueError as e:
         log lvlError, &"Failed to create view using view factory {kind}: {e.msg}"
     return nil
-
-  method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.base, raises: [ValueError].} =
-    if config.kind == JNull:
-      return
-
-    checkJson config.kind == JObject, "Expected object"
-    proc resolve(id: Id): View =
-      return layouts.getView(id).get(nil)
-
-    proc createView(config: JsonNode): View =
-      return layouts.getOrCreateView(config)
-
-    # debugf"{self.desc}.createViews {self}\n{config.pretty}"
-    if config.hasKey("children"):
-      let children = config["children"]
-      checkJson children.kind == JArray, "'children' must be an array"
-      var i = 0
-      for c in children.elems:
-        if c.kind == JNull:
-          continue
-        defer:
-          inc i
-        if i < self.children.len:
-          if self.children[i] != nil and self.children[i] of Layout:
-            self.children[i].Layout.createViews(c, layouts)
-          elif self.children[i] != nil:
-            # reuse existing child
-            discard
-          elif self.childTemplate != nil:
-            let newChild = self.childTemplate.copy().Layout
-            self.children.add(newChild)
-            self.activeIndex = self.activeIndex.clamp(0, self.children.high)
-            newChild.createViews(c, layouts)
-          else:
-            let view = layouts.getExistingView(c)
-            if view != nil:
-              self.children[i] = layouts.getExistingView(c)
-              self.activeIndex = self.activeIndex.clamp(0, self.children.high)
-        elif self.childTemplate != nil:
-          let newChild = self.childTemplate.copy().Layout
-          self.children.add(newChild)
-          self.activeIndex = self.activeIndex.clamp(0, self.children.high)
-          newChild.createViews(c, layouts)
-        elif c.hasKey("kind"):
-          let subLayout = createLayout(c, resolve, createView)
-          self.children.add(subLayout)
-          self.activeIndex = self.activeIndex.clamp(0, self.children.high)
-        else:
-          let view = layouts.getExistingView(c)
-          if view != nil:
-            self.children.add(view)
-            self.activeIndex = self.activeIndex.clamp(0, self.children.high)
-
-    if config.hasKey("activeIndex"):
-      let activeIndex = config["activeIndex"]
-      checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
-      self.activeIndex = activeIndex.getInt.clamp(0, self.children.high)
-
-    if config.hasKey("maximize"):
-      self.maximize = config["maximize"].jsonTo(bool)
-
-    if config.hasKey("temporary"):
-      self.temporary = config["temporary"].jsonTo(bool)
-
-    # todo: this is not nice
-    if self of AutoLayout:
-      if config.hasKey("split-ratios"):
-        self.AutoLayout.splitRatios = config["split-ratios"].jsonTo(seq[float])
-
-  method createViews(self: CenterLayout, config: JsonNode, layouts: LayoutService) {.raises: [ValueError].} =
-    if config.kind == JNull:
-      return
-
-    checkJson config.kind == JObject, "Expected object"
-    proc resolve(id: Id): View =
-      return layouts.getView(id).get(nil)
-
-    proc createView(config: JsonNode): View =
-      return layouts.getOrCreateView(config)
-
-    # debugf"{self.desc}.createViews {self}\n{config.pretty}"
-    if config.hasKey("children"):
-      let children = config["children"]
-      checkJson children.kind == JArray, "'children' must be an array"
-      for i, c in children.elems:
-        if c.kind == JNull:
-          continue
-
-        if i < self.children.len:
-          if self.children[i] != nil and self.children[i] of Layout:
-            self.children[i].Layout.createViews(c, layouts)
-          elif self.childTemplates[i] != nil:
-            let newChild = self.childTemplates[i].copy().Layout
-            self.children[i] = newChild
-            newChild.createViews(c, layouts)
-          elif c.hasKey("kind"):
-            let subLayout = createLayout(c, resolve, createView)
-            self.children[i] = subLayout
-          else:
-            self.children[i] = layouts.getExistingView(c)
-        else:
-          log lvlError, &"Too many children for main layout (max 5): {children.len}"
-
-    if config.hasKey("activeIndex"):
-      let activeIndex = config["activeIndex"]
-      checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
-      let i = activeIndex.getInt.clamp(0, self.children.high)
-      if self.children[i] != nil:
-        self.activeIndex = i
-
-    if config.hasKey("split-ratios"):
-      self.splitRatios = config["split-ratios"].jsonTo(array[4, float])
-
-    if config.hasKey("temporary"):
-      self.temporary = config["temporary"].jsonTo(bool)
 
   proc updateLayoutTree(self: LayoutService) =
     let self = self.LayoutServiceImpl
@@ -436,7 +324,10 @@ when implModule:
           checkJson layouts.kind == JObject, &"Expected object, got {layouts}"
           for key, state in layouts.fields.pairs:
             if key in self.layouts:
-              self.layouts[key].createViews(state, self)
+              proc resolve(id: Id): View = self.getView(id).get(nil)
+              proc createView(config: JsonNode): View = self.getOrCreateView(config)
+              proc getExistingView(config: JsonNode): View = self.getExistingView(config)
+              self.layouts[key].createViews(state, resolve, createView, getExistingView)
           for layout in self.layouts.values:
             layout.validateActiveIndex()
 
@@ -461,7 +352,10 @@ when implModule:
         self.updateLayoutTree()
         for (name, state) in states.pairs:
           try:
-            self.layouts[name].createViews(state, self)
+            proc resolve(id: Id): View = self.getView(id).get(nil)
+            proc createView(config: JsonNode): View = self.getOrCreateView(config)
+            proc getExistingView(config: JsonNode): View = self.getExistingView(config)
+            self.layouts[name].createViews(state, resolve, createView, getExistingView)
           except Exception as e:
             log lvlError, &"Failed to create layout from session data: {e.msg}\n{state.pretty}"
 

@@ -3,11 +3,11 @@ import vmath, bumpy, chroma
 import misc/[util, custom_logger, disposable_ref]
 import ui/node
 import platform/platform
-import ui/[widget_builders_base, widget_library]
+import ui/[widget_library]
 import text/text_editor
 import app, selector_popup, theme
 import finder/[finder, previewer, file_previewer, open_editor_previewer, data_previewer]
-import config_provider, events
+import config_provider, events, view
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}

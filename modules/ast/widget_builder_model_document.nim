@@ -5,7 +5,7 @@ import ui/node
 import text/text_document
 import ast/[model_document, model, cells, model_state]
 import platform/platform
-import ui/[widget_builders_base, widget_library]
+import ui/[widget_library]
 import app, document_editor, theme, config_provider, input, app_interface, selector_popup
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method

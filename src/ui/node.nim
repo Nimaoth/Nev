@@ -141,6 +141,8 @@ type
 
     arena*: Arena
 
+  OverlayFunction* = proc() {.closure, gcsafe, raises: [].}
+
 proc pushMaxBounds*(self: UINodeBuilder, bounds: Vec2) =
   self.maxBounds.add(bounds)
 
@@ -1587,3 +1589,6 @@ proc getStatisticsString*(self: UINodeBuilder): string =
   result.add &"Nodes: {self.nodes.len}/{totalNodes}, {allNodeSize} bytes\n"
   result.add &"Named Nodes: {self.namedNodes.len}, {namedNodeSize} bytes\n"
   result.add &"Root size: {self.root.nodeSizeBytes} bytes\n"
+
+func withAlpha*(color: Color, alpha: float32): Color =
+  color(color.r, color.g, color.b, alpha)

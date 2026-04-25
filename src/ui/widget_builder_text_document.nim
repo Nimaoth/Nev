@@ -4,7 +4,7 @@ import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer
 import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
-import ui/[widget_builders_base, widget_library]
+import ui/[widget_library]
 import app, document_editor, theme, config_provider, layout
 import text/language/[lsp_types]
 import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]

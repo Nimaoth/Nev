@@ -1,6 +1,7 @@
 import misc/[util, custom_logger]
 import document_editor
 import finder, view
+import ui/node
 
 export previewer, finder
 
@@ -45,3 +46,6 @@ method delayPreview*(self: DynamicPreviewer) =
 method deinit*(self: DynamicPreviewer) =
   if self.deinitImpl != nil:
     self.deinitImpl(self)
+
+method createUI*(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] {.base.} =
+  discard

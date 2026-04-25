@@ -2,6 +2,7 @@ import std/[options, json]
 import vmath, bumpy
 import misc/[event, id]
 import events, input
+import ui/node
 
 from scripting_api import EditorId, newEditorId
 
@@ -59,3 +60,6 @@ method getActiveEditor*(self: Popup): Option[DocumentEditor] {.base.} =
   discard
 
 method handleAction*(self: Popup, action: string, arg: string): Option[JsonNode] {.base, gcsafe, raises: [].} = JsonNode.none
+
+method createUI*(self: Popup, builder: UINodeBuilder): seq[OverlayFunction] {.base.} =
+  discard

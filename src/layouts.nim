@@ -226,8 +226,6 @@ proc contains*(self: Layout, view: View): bool =
         return true
   return false
 
-method dump*(self: View): string {.base.} = "View"
-
 proc `$`*(v: View): string =
   if v == nil:
     return "nil view"
@@ -241,7 +239,6 @@ method dump*(self: VerticalLayout): string = "VerticalLayout" & $(self[])
 method dump*(self: AlternatingLayout): string = "AlternatingLayout" & $(self[])
 method dump*(self: TabLayout): string = "TabLayout" & $(self[])
 
-method desc*(self: View): string {.base.} = "View"
 method desc*(self: Layout): string = "Layout"
 method desc*(self: CenterLayout): string = "CenterLayout"
 method desc*(self: HorizontalLayout): string = "HorizontalLayout"
@@ -249,14 +246,11 @@ method desc*(self: VerticalLayout): string = "VerticalLayout"
 method desc*(self: AlternatingLayout): string = "AlternatingLayout"
 method desc*(self: TabLayout): string = "TabLayout"
 
-method kind*(self: View): string {.base.} = ""
 method kind*(self: CenterLayout): string = "center"
 method kind*(self: HorizontalLayout): string = "horizontal"
 method kind*(self: VerticalLayout): string = "vertical"
 method kind*(self: AlternatingLayout): string = "alternating"
 method kind*(self: TabLayout): string = "tab"
-
-method copy*(self: View): View {.base.} = assert(false)
 
 proc copyNonNilChildren(self: Layout, src: Layout): Layout =
   self.children = collect:
@@ -304,8 +298,6 @@ method copy*(self: AlternatingLayout): View =
 method copy*(self: TabLayout): View =
   TabLayout().copyBase(self).copyNonNilChildren(self)
 
-method display*(self: View): string {.base.} = ""
-
 method numLeafViews*(self: Layout): int {.base.} =
   for c in self.children:
     if c != nil:
@@ -336,7 +328,6 @@ proc collapseTemporaryViews*(self: Layout) =
       if layout.temporary and layout.children.len == 1 and layout.children[0] != nil:
         self.children[i] = layout.children[0]
 
-method activeLeafView*(self: View): View {.base.} = self
 method activeLeafView*(self: Layout): View =
   if self.activeIndex in 0..self.children.high and self.children[self.activeIndex] != nil:
     return self.children[self.activeIndex].activeLeafView()
@@ -384,10 +375,6 @@ method removeView*(self: CenterLayout, view: View): bool =
         return true
 
   return false
-
-method saveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode {.base.} =
-  result = newJObject()
-  result["id"] = self.id.toJson
 
 proc toJson*(self: View): JsonNode =
   return self.saveLayout(initHashSet[Id]());
@@ -472,11 +459,6 @@ method saveLayout*(self: CenterLayout, discardedViews: HashSet[Id]): JsonNode =
   result["temporary"] = self.temporary.toJson
   result["max-children"] = self.maxChildren.toJson
   result["split-ratios"] = self.splitRatios.toJson()
-
-method leftLeaf*(self: View): View {.base.} = self
-method rightLeaf*(self: View): View {.base.} = self
-method topLeaf*(self: View): View {.base.} = self
-method bottomLeaf*(self: View): View {.base.} = self
 
 method leftLeaf*(self: TabLayout): View =
   if self == nil:
@@ -636,7 +618,6 @@ method bottomLeaf*(self: CenterLayout): View =
   if self.top != nil: return self.top.bottomLeaf()
   return nil
 
-method tryGetViewLeft*(self: View): View {.base.} = nil
 method tryGetViewLeft*(self: Layout): View = nil
 method tryGetViewLeft*(self: VerticalLayout): View =
   if self.children.len > 0:
@@ -681,7 +662,6 @@ method tryGetViewLeft*(self: TabLayout): View =
   if self.children.len > 0:
     return self.children[self.activeIndex].tryGetViewLeft()
 
-method tryGetViewRight*(self: View): View {.base.} = nil
 method tryGetViewRight*(self: Layout): View = nil
 method tryGetViewRight*(self: VerticalLayout): View =
   if self.children.len > 0:
@@ -725,7 +705,6 @@ method tryGetViewRight*(self: TabLayout): View =
   if self.children.len > 0:
     return self.children[self.activeIndex].tryGetViewRight()
 
-method tryGetViewUp*(self: View): View {.base.} = nil
 method tryGetViewUp*(self: Layout): View = nil
 method tryGetViewUp*(self: VerticalLayout): View =
   if self.children.len > 0:
@@ -771,7 +750,6 @@ method tryGetViewUp*(self: TabLayout): View =
   if self.children.len > 0:
     return self.children[self.activeIndex].tryGetViewUp()
 
-method tryGetViewDown*(self: View): View {.base.} = nil
 method tryGetViewDown*(self: Layout): View = nil
 method tryGetViewDown*(self: VerticalLayout): View =
   if self.children.len > 0:
@@ -1387,3 +1365,116 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
       if v != nil:
         return v
     raise newException(ValueError, &"Invalid kind for layout: '{kind}'")
+
+method createViews*(self: Layout, config: JsonNode,
+    resolve: proc(id: Id): View {.gcsafe, raises: [].},
+    createView: proc(config: JsonNode): View {.gcsafe, raises: [].},
+    getExistingView: proc(config: JsonNode): View {.gcsafe, raises: [].},
+    ) {.base, raises: [ValueError].} =
+  if config.kind == JNull:
+    return
+
+  checkJson config.kind == JObject, "Expected object"
+
+  # debugf"{self.desc}.createViews {self}\n{config.pretty}"
+  if config.hasKey("children"):
+    let children = config["children"]
+    checkJson children.kind == JArray, "'children' must be an array"
+    var i = 0
+    for c in children.elems:
+      if c.kind == JNull:
+        continue
+      defer:
+        inc i
+      if i < self.children.len:
+        if self.children[i] != nil and self.children[i] of Layout:
+          self.children[i].Layout.createViews(c, resolve, createView, getExistingView)
+        elif self.children[i] != nil:
+          # reuse existing child
+          discard
+        elif self.childTemplate != nil:
+          let newChild = self.childTemplate.copy().Layout
+          self.children.add(newChild)
+          self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+          newChild.createViews(c, resolve, createView, getExistingView)
+        else:
+          let view = getExistingView(c)
+          if view != nil:
+            self.children[i] = getExistingView(c)
+            self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+      elif self.childTemplate != nil:
+        let newChild = self.childTemplate.copy().Layout
+        self.children.add(newChild)
+        self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+        newChild.createViews(c, resolve, createView, getExistingView)
+      elif c.hasKey("kind"):
+        let subLayout = createLayout(c, resolve, createView)
+        self.children.add(subLayout)
+        self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+      else:
+        let view = getExistingView(c)
+        if view != nil:
+          self.children.add(view)
+          self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+
+  if config.hasKey("activeIndex"):
+    let activeIndex = config["activeIndex"]
+    checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
+    self.activeIndex = activeIndex.getInt.clamp(0, self.children.high)
+
+  if config.hasKey("maximize"):
+    self.maximize = config["maximize"].jsonTo(bool)
+
+  if config.hasKey("temporary"):
+    self.temporary = config["temporary"].jsonTo(bool)
+
+  # todo: this is not nice
+  if self of AutoLayout:
+    if config.hasKey("split-ratios"):
+      self.AutoLayout.splitRatios = config["split-ratios"].jsonTo(seq[float])
+
+method createViews*(self: CenterLayout, config: JsonNode,
+    resolve: proc(id: Id): View {.gcsafe, raises: [].},
+    createView: proc(config: JsonNode): View {.gcsafe, raises: [].},
+    getExistingView: proc(config: JsonNode): View {.gcsafe, raises: [].},
+    ) {.raises: [ValueError].} =
+  if config.kind == JNull:
+    return
+
+  checkJson config.kind == JObject, "Expected object"
+
+  # debugf"{self.desc}.createViews {self}\n{config.pretty}"
+  if config.hasKey("children"):
+    let children = config["children"]
+    checkJson children.kind == JArray, "'children' must be an array"
+    for i, c in children.elems:
+      if c.kind == JNull:
+        continue
+
+      if i < self.children.len:
+        if self.children[i] != nil and self.children[i] of Layout:
+          self.children[i].Layout.createViews(c, resolve, createView, getExistingView)
+        elif self.childTemplates[i] != nil:
+          let newChild = self.childTemplates[i].copy().Layout
+          self.children[i] = newChild
+          newChild.createViews(c, resolve, createView, getExistingView)
+        elif c.hasKey("kind"):
+          let subLayout = createLayout(c, resolve, createView)
+          self.children[i] = subLayout
+        else:
+          self.children[i] = getExistingView(c)
+      else:
+        log lvlError, &"Too many children for main layout (max 5): {children.len}"
+
+  if config.hasKey("activeIndex"):
+    let activeIndex = config["activeIndex"]
+    checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
+    let i = activeIndex.getInt.clamp(0, self.children.high)
+    if self.children[i] != nil:
+      self.activeIndex = i
+
+  if config.hasKey("split-ratios"):
+    self.splitRatios = config["split-ratios"].jsonTo(array[4, float])
+
+  if config.hasKey("temporary"):
+    self.temporary = config["temporary"].jsonTo(bool)
