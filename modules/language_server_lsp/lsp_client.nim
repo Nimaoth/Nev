@@ -1,4 +1,4 @@
-import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts]
+import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os]
 import misc/[util, myjsonutils, custom_async, response]
 import text/language/[language_server_base, lsp_types]
 import scripting/expose

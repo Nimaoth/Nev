@@ -147,7 +147,8 @@ proc loadFileFromStream(s: Stream, flags: set[ReadFlag]): tuple[data: string, in
         swap(raw[i], raw[i + 1])
     when not defined(musl):
       return (convert(raw, "UTF-8", "UTF-16"), false)
-    return (&"Invalid utf-8", true)
+    else:
+      return (&"Invalid utf-8", true)
 
   if bom == bomUtf8:
     s.setPosition(bomLen)

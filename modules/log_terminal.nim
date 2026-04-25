@@ -5,7 +5,7 @@ include module_base
 
 # Implementation
 when implModule:
-  import std/[atomics, strformat, typedthreads, terminal, colors, locks, tables]
+  import std/[tables]
   import nimsumtree/[arc]
   import misc/[util, custom_async]
   import dynamic_view, terminal/terminal, service, layout
@@ -30,7 +30,7 @@ when implModule:
   proc handleNewChannelsMain(self: LogChannels) {.async.} =
     while true:
       try:
-        await sleepAsync(500)
+        await sleepAsync(500.milliseconds)
       except CatchableError:
         discard
 

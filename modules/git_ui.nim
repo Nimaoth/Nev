@@ -13,7 +13,7 @@ include module_base
 when implModule:
   import std/[sets, math, sequtils]
   import misc/[custom_logger, util, id, myjsonutils, jsonex, rope_utils, async_process, custom_async]
-  import text_component, event_service, document_editor, document, dynamic_view, layout, command_component, platform_service
+  import text_component, event_service, document_editor, document, dynamic_view, view, layout, command_component, platform_service
   import nimsumtree/[buffer, clock, rope]
   import ui/node
   import command_service, workspaces/workspace, config_component, text_editor_component

@@ -1,8 +1,6 @@
-import std/[options, json]
+import std/[json]
 import misc/[event, id, custom_async]
 import service
-import compilation_config
-
 include dynlib_export
 
 type
@@ -29,10 +27,11 @@ proc getRecentSessions*(self: SessionService): Future[seq[string]] {.inline, asy
 
 # Implementation
 when implModule:
-  import std/[strutils, tables]
+  import std/[options, strutils, tables]
   import misc/[custom_logger, util, myjsonutils]
   import scripting/[expose]
   import dispatch_tables, event_service, vfs_service
+  import compilation_config
 
   {.push gcsafe.}
   {.push raises: [].}

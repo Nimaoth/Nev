@@ -9,6 +9,8 @@ include dynlib_export
 
 type
   LanguageServerDynamic* = ref object of LanguageServer
+    startImpl*: proc(self: LanguageServerDynamic) {.gcsafe, async: (raises: []).}
+    stopImpl*: proc(self: LanguageServerDynamic) {.gcsafe, raises: [].}
     connectImpl*: proc(self: LanguageServerDynamic, document: Document) {.gcsafe, raises: [].}
     disconnectImpl*: proc(self: LanguageServerDynamic, document: Document) {.gcsafe, raises: [].}
     getDefinitionImpl*: proc(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.gcsafe, raises: [].}
@@ -36,6 +38,14 @@ proc newLanguageServerDynamic*(): LanguageServerDynamic =
   return server
 
 when implModule:
+  method start*(self: LanguageServerDynamic) {.gcsafe, async: (raises: []).} =
+    if self.startImpl != nil:
+      await self.startImpl(self)
+
+  method stop*(self: LanguageServerDynamic) {.gcsafe, raises: [].} =
+    if self.stopImpl != nil:
+      self.stopImpl(self)
+
   method connect*(self: LanguageServerDynamic, document: Document) {.gcsafe, raises: [].} =
     if self.connectImpl != nil:
       self.connectImpl(self, document)
@@ -186,6 +196,13 @@ when implModule:
       return Response[JsonNode].default.toFuture
 
 else:
+  proc start*(self: LanguageServerDynamic) {.gcsafe, async: (raises: []).} =
+    if self.startImpl != nil:
+      await self.startImpl(self)
+
+  proc stop*(self: LanguageServerDynamic) {.gcsafe, raises: [].} =
+    if self.stopImpl != nil:
+      self.stopImpl(self)
 
   proc connect*(self: LanguageServerDynamic, document: Document) {.gcsafe, raises: [].} =
     if self.connectImpl != nil:

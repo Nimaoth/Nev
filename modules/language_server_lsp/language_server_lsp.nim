@@ -231,8 +231,8 @@ when implModule:
 
     log lvlInfo, &"[{self.name}] handleDiagnostics: client gone"
 
-  method start*(self: LanguageServerLSP): Future[void] = discard
-  method stop*(self: LanguageServerLSP) {.gcsafe, raises: [].} =
+  proc lspStop*(self: LanguageServerDynamic) {.gcsafe, raises: [].} =
+    let self = self.LanguageServerLSP
     log lvlInfo, fmt"[{self.name}] Stopping language server for '{self.name}'"
     asyncSpawn self.client.stop()
     self.client = nil
@@ -898,6 +898,7 @@ when implModule:
       client.name = name
 
       var lsp = LanguageServerLSP(client: client, name: name)
+      lsp.stopImpl = lspStop
       lsp.getCompletionTriggerCharsImpl = lspGetCompletionTriggerChars
       lsp.getDefinitionImpl = lspGetDefinition
       lsp.getDeclarationImpl = lspGetDeclaration
