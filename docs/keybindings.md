@@ -30,6 +30,32 @@ vim.base             ← bottom (from `editor.base-modes`)    -  This one is alw
 
 ---
 
+## Global vs active commands/contexts
+
+Commands and contexts fall into two categories, `global` and `active`.
+- `global` contexts are `editor`, `vim.base`, `vscode.base` and any other context in the `editor.base-modes` setting.
+- `active` contexts are `vscode`, `vim`, `vim.normal`, `vim.insert`, `vim.completion` etc.
+- `global` commands can be bound in `global` contexts and `active` contexts
+- `active` commands can be bound in `active` contexts directly or in `global` contexts by prefix the command with `.`
+
+Examples:
+
+```json
+// keybindings.json
+{
+  "vim.base": { // global context
+    "G": "close-active-view",  // global command bound in global context
+    "L": ".vim.delete-left",   // active command bound in global context
+  },
+  "vim.normal": { // active context
+    "G": "close-active-view",  // global command bound in active context
+    "L": "vim.delete-left",    // active command bound in active context
+  },
+}
+```
+
+---
+
 ## Input mode settings
 
 | Setting                                | Purpose                                                       |
@@ -141,6 +167,7 @@ To bind `<LEADER>m` in Vim Normal mode and `<C-m>` in VSCode mode to maximize th
     "vim": {
         ":": ["command-line"]
     },
+    "-vim.normal": ["D", "<C-r>"], // Clear keybindings defined in vim.normal mode in previous keybindings.json files
     "vim.normal": {
         "a": ["vim.insert-mode", "right"],
         "i": ["vim.insert-mode"]
@@ -278,6 +305,19 @@ Keybindings can be **multi-key sequences**, like `"d<text_object>"` or `"<SPACE>
 ```json
 "a": ["command-a"],
 "aa": ["command-aa"] // This will never be triggered because "a" triggers first
+```
+
+---
+
+## Clearing keybindings
+
+You can clear keybindings defined in other `keybindings.json` files loaded before the current `keybindings.json` file by prefixing the context with `-`:
+
+
+```json
+{
+    "-vim.normal": ["D", "<C-r>"], // Clear specific keybindings defined in vim.normal mode in previous keybindings.json files
+}
 ```
 
 ---

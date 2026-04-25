@@ -180,9 +180,14 @@ when implModule:
     config.descriptions[keys] = description
     config.revision += 1
 
-  proc removeCommand*(config: EventHandlerConfig, keys: string) =
-    config.commands.del(keys)
+  proc removeCommandDescription*(config: EventHandlerConfig, keys: string) =
+    config.descriptions.del(keys)
     config.revision += 1
+
+  proc removeCommand*(config: EventHandlerConfig, subContext: string, keys: string) =
+    if subContext in config.commands:
+      config.commands[subContext].del(keys)
+      config.revision += 1
 
   proc clearCommands*(config: EventHandlerConfig) =
     config.commands.clear
@@ -518,7 +523,12 @@ when implModule:
 
   proc removeCommand*(self: EventHandlerService, context: string, keys: string) {.expose("events").} =
     # log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
-    self.getEventHandlerConfig(context).removeCommand(keys)
+    let (baseContext, subContext) = if (let i = context.find('#'); i != -1):
+      (context[0..<i], context[i+1..^1])
+    else:
+      (context, "")
+
+    self.getEventHandlerConfig(baseContext).removeCommand(subContext, keys)
     self.invalidateCommandToKeysMap()
 
   proc addCommandDescription*(self: EventHandlerService, context: string, keys: string, description: string = "") {.expose("events").} =

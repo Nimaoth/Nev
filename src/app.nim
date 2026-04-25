@@ -152,7 +152,8 @@ proc getActiveEditor*(self: App): Option[DocumentEditor]
 proc help*(self: App, about: string = "")
 proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none)
 proc closeUnusedDocuments*(self: App)
-proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
+proc addCommandScript*(self: App, context: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
+proc removeCommandScript*(self: App, context: string, keys: string)
 proc currentEventHandlers*(self: App): seq[EventHandler]
 proc defaultHandleCommand*(self: App, command: string): Option[string]
 proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.}
@@ -392,6 +393,20 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
           else:
             self.events.setKeyDefinitions(name, keys)
           continue
+
+        elif context.startsWith("-"):
+          # e.g. "-vim.base": {...} -> remove commands in this context
+          if commands.kind != JArray:
+            log lvlError, &"Value has to be array for '{context}'"
+            continue
+
+          let actualContext = context[1..^1]
+          for keys in commands.elems:
+            if keys.kind == JString:
+              self.removeCommandScript(actualContext, keys.getStr)
+            else:
+              log lvlError, &"Value has to be string in '{context}', but is {keys}"
+          continue
       except CatchableError:
         log(lvlError, &"Invalid key definition in '{filename}:{loc.line}{loc.column}': {getCurrentExceptionMsg()}")
 
@@ -410,7 +425,7 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
                 log lvlError, &"Invalid command in keybinding settings '{filename}:{loc.line}:{loc.column}': {cmd}"
               else:
                 let description = command.fields.getOrDefault("description", newJexString("")).getStr
-                self.addCommandScript(context, "", keys, name, args, description, source = loc)
+                self.addCommandScript(context, keys, name, args, description, source = loc)
             else:
               let description = command.fields.getOrDefault("description", newJexString("")).getStr
               self.events.addCommandDescription(context, keys, description)
@@ -420,7 +435,7 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
             if not ok:
               log lvlError, &"Invalid command in keybinding settings '{filename}:{loc.line}:{loc.column}': {command}"
             else:
-              self.addCommandScript(context, "", keys, name, args, source = loc)
+              self.addCommandScript(context, keys, name, args, source = loc)
 
         except CatchableError:
           log(lvlError, &"Invalid command in '{filename}:{loc.line}{loc.column}': {getCurrentExceptionMsg()}")
@@ -3013,7 +3028,7 @@ proc changeAnimationSpeed*(self: App, factor: float) {.expose("editor").} =
   self.platform.builder.animationSpeedModifier *= factor
   log lvlInfo, fmt"{self.platform.builder.animationSpeedModifier}"
 
-proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) =
+proc addCommandScript*(self: App, context: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) =
   let command = if arg.len == 0: action else: action & " " & arg
 
   let context = if context.endsWith("."):
@@ -3021,12 +3036,12 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
   else:
     context
 
-  # log(lvlInfo, fmt"Adding command to '{context}': ('{subContext}', '{keys}', '{command}')")
+  # log(lvlInfo, fmt"Adding command to '{context}': ('{keys}', '{command}')")
 
   let (baseContext, subContext) = if (let i = context.find('#'); i != -1):
-    (context[0..<i], context[i+1..^1] & subContext)
+    (context[0..<i], context[i+1..^1])
   else:
-    (context, subContext)
+    (context, "")
 
   if description.len > 0:
     self.events.commandDescriptions[baseContext & subContext & keys] = description
@@ -3037,6 +3052,23 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
     source.filename = pluginSystem.getCurrentContext() & source.filename
 
   self.events.getEventHandlerConfig(baseContext).addCommand(subContext, keys, command, source)
+  self.events.invalidateCommandToKeysMap()
+
+proc removeCommandScript*(self: App, context: string, keys: string) =
+  let context = if context.endsWith("."):
+    context[0..^2]
+  else:
+    context
+
+  let (baseContext, subContext) = if (let i = context.find('#'); i != -1):
+    (context[0..<i], context[i+1..^1])
+  else:
+    (context, "")
+
+  let config = self.events.getEventHandlerConfig(baseContext)
+  self.events.commandDescriptions.del(baseContext & subContext & keys)
+  config.removeCommandDescription(keys)
+  config.removeCommand(subContext, keys)
   self.events.invalidateCommandToKeysMap()
 
 # todo: move to layout
