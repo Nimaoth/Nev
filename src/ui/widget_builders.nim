@@ -5,7 +5,7 @@ import ui/node
 import platform/platform
 import ui/[widget_builder_text_document, widget_builder_selector_popup, widget_library]
 import document_editor, theme, view, layout, config_provider, command_service, toast, document_editor_render
-import text/text_editor
+import text/text_editor, popup
 import render_view, dynamic_view
 from scripting_api import nil
 import vcs/vcs, service
