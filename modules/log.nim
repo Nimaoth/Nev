@@ -33,17 +33,26 @@ when defined(featMemChannels):
   {.pop.}
 
 # Nice wrappers
-proc newLogChannel*(name: string, flags: set[LogChannelFlag] = {LogColor, LogStderr, LogInMemory}): LogChannel =
+proc newLogChannel*(name: string, flags: set[LogChannelFlag] = {LogColor, LogStderr, LogFile, LogInMemory}): LogChannel =
   logAddChannel(name, flags)
 
 template log*(level: LogLevel, channel: LogChannel, category: LogCategory, message: string) =
   logImpl(level, channel, category, message)
 
-template logCategory*(name: string) =
+template logCategory*(name: string, defaultChannel: LogChannel) =
   let category = logAddCategory(name)
 
   template log(level: LogLevel, message: string) =
     logImpl(defaultChannel, level, category, message)
+
+  template log(channel: LogChannel, level: LogLevel, message: string) =
+    logImpl(channel, level, category, message)
+
+template logCategory*(name: string) =
+  let category = logAddCategory(name)
+
+  template log(level: LogLevel, message: string) =
+    logImpl(nil, level, category, message)
 
   template log(channel: LogChannel, level: LogLevel, message: string) =
     logImpl(channel, level, category, message)
@@ -106,9 +115,12 @@ when implModule:
   var channelsLock: Lock
   channelsLock.initLock()
 
+  let defaultChannel = newLogChannel("main-channel")
+
   proc logImpl(channel: LogChannel, level: LogLevel, category: LogCategory, message: string) =
-    let channel = cast[ptr LogChannelObjImpl](channel)
-    channel.channel.send(LogMessage(level: level, category: category, message: message))
+    let channel = if channel != nil: channel else: defaultChannel
+    let channelImpl = cast[ptr LogChannelObjImpl](channel)
+    channelImpl.channel.send(LogMessage(level: level, category: category, message: message))
 
   proc logAddCategory(name: string): LogCategory =
     let category = categoryCounter.fetchAdd(1)
@@ -238,8 +250,6 @@ when implModule:
 
         if not any:
           sleep(10)
-
-  let defaultChannel = newLogChannel("main-channel")
 
   proc getMemChannels*(): seq[tuple[name: string, stdin: Arc[BaseChannel], stdout: Arc[BaseChannel]]] =
     {.gcsafe.}:
