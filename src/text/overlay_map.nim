@@ -3,6 +3,10 @@ import nimsumtree/[rope, sumtree, buffer, clock, static_array]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils, array_set]
 import syntax_map, theme, chroma
 
+import log
+
+logCategory "overlay-map"
+
 var debugOverlayMap* = false
 
 {.push gcsafe.}
@@ -49,8 +53,6 @@ type
   OverlayMapChunkKind* {.pure.} = enum
     Identity    # Chunk represents raw underlying text
     String      # An inserted string. Can be empty. Replaces the underlying text.
-    Rope        # An inserted rope. Can be empty. Replaces the underlying text.
-    # DisplayMap
 
   OverlayRenderLocation* {.pure.} = enum
     Inline
@@ -71,8 +73,6 @@ type
       scope*: string
       renderId*: int
       location*: OverlayRenderLocation
-    of OverlayMapChunkKind.Rope:
-      r: RopeSlice[Point]
 
   OverlayMapChunkSummary* = object
     src*: Point # 8 bytes
@@ -90,7 +90,6 @@ func clone*(self: OverlayMapChunk): OverlayMapChunk =
   case self.kind
   of OverlayMapChunkKind.Identity: OverlayMapChunk(kind: OverlayMapChunkKind.Identity, id: self.id, src: self.src, dst: self.dst, srcBytes: self.srcBytes, dstBytes: self.dstBytes, bias: self.bias)
   of OverlayMapChunkKind.String: OverlayMapChunk(kind: OverlayMapChunkKind.String, id: self.id, src: self.src, dst: self.dst, srcBytes: self.srcBytes, dstBytes: self.dstBytes, text: self.text, scope: self.scope, bias: self.bias, renderId: self.renderId, location: self.location)
-  of OverlayMapChunkKind.Rope: OverlayMapChunk(kind: OverlayMapChunkKind.Rope, id: self.id, src: self.src, dst: self.dst, srcBytes: self.srcBytes, dstBytes: self.dstBytes, r: self.r.clone(), bias: self.bias)
 
 func summary*(self: OverlayMapChunk): OverlayMapChunkSummary =
   var idCounts: Array[uint16, 16]
@@ -319,9 +318,6 @@ proc toOverlayBytes*(self: OverlayMapChunkCursor, overlay: OverlayMapSnapshot, o
     let offset = item.text.toOpenArray(0, item.text.high).pointToOffset(localPoint)
     offset
 
-  of OverlayMapChunkKind.Rope:
-    0
-
   return (self.startPos.dstBytes + offset).clamp(self.startPos.dstBytes, self.endPos.dstBytes)
 
 proc toOverlayBytes*(self: OverlayMapSnapshot, overlayPoint: OverlayPoint, bias: Bias = Bias.Right): int =
@@ -481,18 +477,19 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch
         logEdit &"  -> {overlayEdit}"
 
       else:
-        echo &"+++++++++++++++++++++++++++++++++++++ todo: delete {chunk.kind}"
+        discard
 
     if insert:
       logEdit &"insert {e}, {chunk}, {c.startPos}...{c.endPos}"
-      if chunk.kind == Identity:
+      case chunk.kind
+      of Identity:
         chunk.src += (editRel.new.b - editRel.new.a)
         chunk.srcBytes += byteEdit.new.b - byteEdit.new.a
         chunk.dst += (editRel.new.b - editRel.new.a)
         chunk.dstBytes += byteEdit.new.b - byteEdit.new.a
         logEdit &"  -> {chunk}"
 
-      elif chunk.kind == OverlayMapChunkKind.String:
+      of OverlayMapChunkKind.String:
         chunk.src += (editRel.new.b - editRel.new.a)
         chunk.srcBytes += byteEdit.new.b - byteEdit.new.a
         logEdit &"  -> {chunk}"
@@ -505,9 +502,6 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch
         overlayEdit.new.a = c.endPos.dst
         overlayEdit.new.b = c.endPos.dst
         logEdit &"  -> {overlayEdit}"
-
-      else:
-        echo &"+++++++++++++++++++++++++++++++++++++ todo: insert {chunk.kind}"
 
     # if we delete past the end of the current chunk, we need to delete everything in between and part of the last chunk
     if delete and e.old.b > c.endPos.src:
@@ -529,14 +523,15 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch
           old: (editClamped.old.a - c.startPos.src).toPoint...(editClamped.old.b - c.startPos.src).toPoint,
           new: (editClamped.new.a - c.startPos.src).toPoint...(editClamped.new.b - c.startPos.src).toPoint)
 
-        if chunk.kind == Identity:
+        case chunk.kind
+        of Identity:
           chunk.src += editClampedRel.old.a - editClampedRel.old.b
           chunk.srcBytes += byteEditClamped.old.a - byteEditClamped.old.b
           chunk.dst += editClampedRel.old.a - editClampedRel.old.b
           chunk.dstBytes += byteEditClamped.old.a - byteEditClamped.old.b
           logEdit &"  -> {chunk}"
 
-        elif chunk.kind == OverlayMapChunkKind.String:
+        of OverlayMapChunkKind.String:
           chunk.src += editClampedRel.old.a - editClampedRel.old.b
           chunk.srcBytes += byteEditClamped.old.a - byteEditClamped.old.b
           logEdit &"  -> {chunk}"
@@ -545,9 +540,6 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch
           logEdit &"delete2 inside overlay, diff: {diff}, overlayEdit: {overlayEdit} ->"
           overlayEdit.old.b = overlayEdit.old.b + diff
           logEdit &"  -> {overlayEdit}"
-
-        else:
-          echo &"+++++++++++++++++++++++++++++++++++++ todo: delete to {chunk.kind}"
 
       else:
         if overlayEdit.old.b > overlayEdit.old.a or overlayEdit.new.b > overlayEdit.new.a:
@@ -687,16 +679,7 @@ proc clear*(self: var OverlayMapSnapshot, id: int = -1): Patch[OverlayPoint] =
     newMap.append c.suffix()
 
   if not patch.isValid:
-    echo &"OverlayMapSnapshot.clear {id}, {self.desc}"
-    echo &"Invalid patch {patch}"
-    echo self
-    echo "========================="
-    echo OverlayMapSnapshot(
-      map: newMap,
-      buffer: self.buffer.clone(),
-      version: self.version + 1,
-    )
-    # patch = initPatch([initEdit(overlayPoint(0, 0)...self.endOverlayPoint, overlayPoint(0, 0)...newMap.summary.dst)])
+    patch = initPatch([initEdit(overlayPoint(0, 0)...self.endOverlayPoint, overlayPoint(0, 0)...newMap.summary.dst)])
   self = OverlayMapSnapshot(
     map: newMap,
     buffer: self.buffer.clone(),
@@ -811,7 +794,7 @@ proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, s
 
 proc enqueueOperation*(self: OverlayMap, op: sink OverlayMapOperation) =
   if op.id notin 0..self.allocatedIds.high or not self.allocatedIds[op.id]:
-    echo &"Trying to add overlay with invalid id {op.id}. Allocate an id using allocateId"
+    log lvlError, &"Trying to add overlay with invalid id {op.id}. Allocate an id using allocateId"
     return
   logOverlayMapUpdate &"OverlayMap.enqueueOperation {op.id} replace={op.replace} overlays={op.newOverlays.len}"
   if op.replace:
@@ -955,12 +938,6 @@ proc setupSubIterAfterSeek(self: var OverlayChunkIterator) =
       self.stringOffset = item.text.toOpenArray(0, item.text.high).pointToOffset((self.overlayPoint - self.overlayMapCursor.startPos.dst).toPoint)
       self.stringRuneOffset = item.text.toOpenArray(0, item.text.high).pointToCount((self.overlayPoint - self.overlayMapCursor.startPos.dst).toPoint).int
       logIter &"OverlayChunkIterator.seek {self.overlayPoint} -> {self.stringLine}, {self.stringOffset}"
-    of OverlayMapChunkKind.Rope:
-      # todo
-      self.subIterKind = OverlayMapChunkKind.Rope
-      self.stringLine = 0 # todo
-      self.stringOffset = 0 # todo
-      self.stringRuneOffset = 0 # todo
 
 proc seek*(self: var OverlayChunkIterator, point: Point) =
   logIter &"OverlayChunkIterator.seekPoint1 {self.styledChunks.point} -> {point}"
@@ -1130,10 +1107,6 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
       self.overlayChunk = overlayChunk.some
       return self.overlayChunk
 
-    of OverlayMapChunkKind.Rope:
-      # todo
-      discard
-
     else:
       discard
 
@@ -1146,9 +1119,9 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
   if self.overlayMapCursor.startPos.src == self.overlayMapCursor.endPos.src:
     if currentPoint < self.overlayMap.map.summary.src:
       # this should not happen
-      echo &"ERROR {currentPoint}, {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}, {currentChunk}\n{self.overlayMap}"
+      log lvlError, &"ERROR {currentPoint}, {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}, {currentChunk}\n{self.overlayMap}"
       self.overlayMapCursor.next()
-      echo &"  OverlayChunkIterator.next3 {self.overlayPoint} -> {self.overlayMapCursor.toOverlayPoint(currentPoint)}"
+      log lvlError, &"  OverlayChunkIterator.next3 {self.overlayPoint} -> {self.overlayMapCursor.toOverlayPoint(currentPoint)}"
       self.overlayPoint = self.overlayMapCursor.toOverlayPoint(currentPoint)
       return OverlayChunk.none
 
