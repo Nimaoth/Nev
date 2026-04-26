@@ -33,7 +33,7 @@ when defined(featMemChannels):
   {.pop.}
 
 # Nice wrappers
-proc newLogChannel*(name: string, flags: set[LogChannelFlag] = {LogColor, LogStderr, LogFile, LogInMemory}): LogChannel =
+proc newLogChannel*(name: string, flags: set[LogChannelFlag] = {LogColor, LogFile, LogInMemory}): LogChannel =
   logAddChannel(name, flags)
 
 template log*(level: LogLevel, channel: LogChannel, category: LogCategory, message: string) =
