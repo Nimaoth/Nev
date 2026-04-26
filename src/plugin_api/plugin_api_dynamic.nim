@@ -163,9 +163,6 @@ proc textEditorGetSelections*(instance: ptr InstanceData, args: LispVal, namedAr
 proc textEditorLineLength*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
   let res = instance.textEditorLineLength(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "line", int32), )
   return res.toJson().jsonTo(LispVal)
-proc textEditorAddModeChangedHandler*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  let res = instance.textEditorAddModeChangedHandler(getArg(args, namedArgs, 0, "fun", uint32), )
-  return res.toJson().jsonTo(LispVal)
 proc textEditorGetSettingRaw*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
   let res = instance.textEditorGetSettingRaw(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "name", string), )
   return res.toJson().jsonTo(LispVal)
@@ -327,7 +324,6 @@ proc dispatchDynamic*(instance: ptr InstanceData, name: string, args: LispVal, n
   of "text-editor.get-selection": textEditorGetSelection(instance, args, namedArgs)
   of "text-editor.get-selections": textEditorGetSelections(instance, args, namedArgs)
   of "text-editor.line-length": textEditorLineLength(instance, args, namedArgs)
-  of "text-editor.add-mode-changed-handler": textEditorAddModeChangedHandler(instance, args, namedArgs)
   of "text-editor.get-setting-raw": textEditorGetSettingRaw(instance, args, namedArgs)
   of "text-editor.set-setting-raw": textEditorSetSettingRaw(instance, args, namedArgs)
   of "text-editor.evaluate-expressions": textEditorEvaluateExpressions(instance, args, namedArgs)

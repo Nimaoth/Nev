@@ -240,7 +240,7 @@ when enableGui:
 {.push warning[UnusedImport]:off.}
 import text/text_editor
 import plugin_service
-import selector_popup, layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, toast
+import selector_popup, layout/layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, toast
 import language_server_dynamic
 import scripting/expose
 import config_provider, event_service
@@ -346,7 +346,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, fra
         plat.requestedRender = false
         plat.builder.beginFrame(size, plat.redrawEverything)
         try:
-          app.updateWidgetTree(frameIndex)
+          app.updateWidgetTree(plat.builder, frameIndex)
           plat.builder.endFrame()
         except:
           discard
@@ -420,7 +420,6 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, fra
       logger().flush()
 
 import service
-gServices = Services()
 gServices.addBuiltinServices()
 
 plat.vfs = gServices.getService(VFSService).get.vfs2
@@ -428,11 +427,11 @@ plat.init(gAppOptions)
 gServices.getService(PlatformService).get.setPlatform(plat)
 gServices.waitForServices()
 
-
+import module_imports
 when defined(useDynlib):
   import std/dynlib
   var modules: seq[(string, LibHandle)] = @[]
-  proc loadModule(name: string) =
+  proc loadModule(name: string) {.raises: [].} =
     try:
       let path = &"{getAppDir()}\\native_plugins\\{name}.dll"
       log lvlDebug, &"loadLib '{path}'"
@@ -445,25 +444,18 @@ when defined(useDynlib):
       if init != nil:
         log lvlDebug, &"Init module '{name}'"
         init()
-    except CatchableError as e:
+    except Exception as e:
       log lvlError, &"Failed to load module '{name}': {e.msg}"
 
   try:
     log lvlInfo, "Load dynamic modules"
-    for (kind, path) in walkDir(getAppDir() / "native_plugins", relative=false):
-      case kind
-      of pcFile:
-        if path.endsWith("dll"):
-          loadModule(path.splitFile.name)
-      else:
-        discard
+    module_imports.loadModulesDynamically(loadModule)
 
     debugf"Finished loading modules"
   except OSError as e:
     log lvlError, &"Failed to load modules: {e.msg}"
 
 else:
-  import module_imports
   log lvlInfo, "Load static modules"
   initModules()
 
@@ -487,7 +479,7 @@ proc main() =
     p.requestedRender = false
     p.builder.beginFrame(size)
     try:
-      app.updateWidgetTree(frameIndex)
+      app.updateWidgetTree(p.builder, frameIndex)
       p.builder.endFrame()
     except:
       discard

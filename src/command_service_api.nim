@@ -4,7 +4,7 @@ from scripting_api as api import nil
 import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils, async_process, delayed_task, timer]
 import scripting/[expose]
 import platform/[platform]
-import events, vfs, layout
+import events, vfs, layout/layout
 import dispatch_tables, config_provider, service, platform_service, register
 import language_server_command_line
 

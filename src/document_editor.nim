@@ -1,4 +1,4 @@
-import std/[tables, options, sets, hashes]
+import std/[tables, options, sets, hashes, json]
 import bumpy
 import misc/[event, custom_logger, id, custom_async, util, generational_seq, jsonex]
 import ui/node
@@ -11,6 +11,8 @@ include dynlib_export
 
 import platform/[platform]
 import document, service, config_provider
+
+from scripting_api import EditorId
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -34,6 +36,9 @@ type
     config*: ConfigStore
 
     renderImpl*: proc(self: DocumentEditor, builder: UINodeBuilder): seq[proc() {.closure, gcsafe, raises: [].}] {.gcsafe, raises: [].}
+    getStateImpl*: proc(self: DocumentEditor): JsonNode {.gcsafe, raises: [].}
+    restoreStateImpl*: proc(self: DocumentEditor, state: JsonNode) {.gcsafe, raises: [].}
+    deinitImpl*: proc(self: DocumentEditor) {.gcsafe, raises: [].}
 
   DocumentFactory* = ref object of RootObj
     priority*: int = 0
@@ -101,7 +106,7 @@ proc getDocument*(self: DocumentEditorService, id: DocumentId): Option[Document]
 proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor]
 proc getDocumentByPath*(self: DocumentEditorService, path: string, usage = ""): Option[Document]
 proc getEditorsForDocument*(self: DocumentEditorService, document: Document): seq[DocumentEditor]
-proc createEditorForDocument*(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor]
+proc documentEditorCreateEditorForDocument(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor]
 proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx, id = Id.none): Document
 proc documentEditorSetActive(self: DocumentEditor, newActive: bool)
 proc documentEditorGetEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].}
@@ -109,6 +114,11 @@ proc documentEditorGetOrOpenDocument(self: DocumentEditorService, path: string, 
 proc documentEditorAddDocumentFactory(self: DocumentEditorService, factory: DocumentFactory)
 proc documentEditorAddDocumentEditorFactory(self: DocumentEditorService, factory: DocumentEditorFactory)
 proc documentEditorSetDocument(self: DocumentEditor, document: Document)
+proc documentEditorGetExistingEditor(self: DocumentEditorService, path: string): Option[EditorId]
+proc documentEditorGetAllEditors(self: DocumentEditorService): seq[EditorId]
+proc documentEditorOpenDocument(self: DocumentEditorService, path: string, load = true, id = Id.none): Option[Document]
+proc documentEditorCloseEditor(self: DocumentEditorService, editor: DocumentEditor)
+proc documentEditorTryCloseDocument(self: DocumentEditorService, document: Document)
 {.pop.}
 
 
@@ -119,17 +129,43 @@ proc getOrOpenDocument*(self: DocumentEditorService, path: string, load = true, 
 proc addDocumentFactory*(self: DocumentEditorService, factory: DocumentFactory) = documentEditorAddDocumentFactory(self, factory)
 proc addDocumentEditorFactory*(self: DocumentEditorService, factory: DocumentEditorFactory) = documentEditorAddDocumentEditorFactory(self, factory)
 proc setDocument*(self: DocumentEditor, document: Document) = documentEditorSetDocument(self, document)
+proc getExistingEditor*(self: DocumentEditorService, path: string): Option[EditorId] = documentEditorGetExistingEditor(self, path)
+proc getAllEditors*(self: DocumentEditorService): seq[EditorId] = documentEditorGetAllEditors(self)
+proc openDocument*(self: DocumentEditorService, path: string, load = true, id = Id.none): Option[Document] = documentEditorOpenDocument(self, path, load, id)
+proc closeEditor*(self: DocumentEditorService, editor: DocumentEditor) = documentEditorCloseEditor(self, editor)
+proc tryCloseDocument*(self: DocumentEditorService, document: Document) = documentEditorTryCloseDocument(self, document)
+proc createEditorForDocument*(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor] = documentEditorCreateEditorForDocument(self, document, options)
 
 proc `active=`*(self: DocumentEditor, newActive: bool) = documentEditorSetActive(self, newActive)
 {.pop.}
+
+proc getStateJson*(self: DocumentEditor): JsonNode {.gcsafe, raises: [].} =
+  if self.getStateImpl != nil:
+    return self.getStateImpl(self)
+  return newJObject()
+
+proc restoreStateJson*(self: DocumentEditor, state: JsonNode) {.gcsafe, raises: [].} =
+  if self.restoreStateImpl != nil:
+    self.restoreStateImpl(self, state)
+
+proc deinit*(self: DocumentEditor) {.gcsafe, raises: [].} =
+  if self.deinitImpl != nil:
+    self.deinitImpl(self)
+
+proc anyUnsavedChanges*(self: DocumentEditorService): bool =
+  for editor in self.allEditors:
+    let doc = editor.currentDocument
+    assert doc != nil
+    let isDirty = doc.isBackedByFile and not doc.requiresLoad and doc.lastSavedRevision != doc.revision
+    if isDirty:
+      return true
+  return false
 
 when implModule:
   import std/[json, algorithm]
   import misc/[array_set]
   import vmath
-  import scripting/expose
   import input, platform_service, dispatch_tables
-  from scripting_api import EditorId
 
   addBuiltinService(DocumentEditorService)
 
@@ -173,9 +209,6 @@ when implModule:
     else:
       return nil
 
-  method deinit*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
-    discard
-
   method canEdit*(self: DocumentEditor, document: Document): bool {.base, gcsafe, raises: [].} =
     return false
 
@@ -207,12 +240,6 @@ when implModule:
     discard
 
   method handleMouseMove*(self: DocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) {.base, gcsafe, raises: [].} =
-    discard
-
-  method getStateJson*(self: DocumentEditor): JsonNode {.base, gcsafe, raises: [].} =
-    return newJObject()
-
-  method restoreStateJson*(self: DocumentEditor, state: JsonNode) {.base, gcsafe, raises: [].} =
     discard
 
   method getStatisticsString*(self: DocumentEditor): string {.base, gcsafe, raises: [].} = discard
@@ -299,10 +326,7 @@ when implModule:
       if editor.getDocument() != nil and editor.getDocument().filename == path:
         result.add editor
 
-  proc getEditorForId*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] =
-    return self.getEditor(id)
-
-  proc openDocument*(self: DocumentEditorService, path: string, load = true, id = Id.none): Option[Document] =
+  proc documentEditorOpenDocument(self: DocumentEditorService, path: string, load = true, id = Id.none): Option[Document] =
     try:
       log lvlInfo, &"Open new document '{path}'"
 
@@ -335,7 +359,7 @@ when implModule:
 
     return self.platform
 
-  proc createEditorForDocument*(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor] =
+  proc documentEditorCreateEditorForDocument(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor] =
     for factory in self.editorFactories:
       if factory.canEditDocument(document, options):
         result = factory.createEditor(self.services, document, options).some
@@ -350,7 +374,7 @@ when implModule:
       if platform.isNotNil:
         platform.requestRender()
 
-  proc tryCloseDocument*(self: DocumentEditorService, document: Document) =
+  proc documentEditorTryCloseDocument(self: DocumentEditorService, document: Document) =
     # log lvlInfo, fmt"tryCloseDocument: '{document.filename}'"
 
     if document in self.pinnedDocuments:
@@ -366,7 +390,7 @@ when implModule:
     if not hasAnotherEditor:
       document.deinit()
 
-  proc closeEditor*(self: DocumentEditorService, editor: DocumentEditor) =
+  proc documentEditorCloseEditor(self: DocumentEditorService, editor: DocumentEditor) =
     let document = editor.getDocument()
     log lvlInfo, fmt"closeEditor: '{editor.getDocument().filename}'"
 
@@ -378,21 +402,11 @@ when implModule:
 
     self.tryCloseDocument(document)
 
-  ###########################################################################
-
-  proc getDocumentEditorService(): Option[DocumentEditorService] =
-    {.gcsafe.}:
-      if getServices().isNil: return DocumentEditorService.none
-      return getServices().getService(DocumentEditorService)
-
-  static:
-    addInjector(DocumentEditorService, getDocumentEditorService)
-
-  proc getAllEditors*(self: DocumentEditorService): seq[EditorId] {.expose("editors").} =
+  proc documentEditorGetAllEditors(self: DocumentEditorService): seq[EditorId] =
     for id in self.allEditors.keys:
       result.add id.EditorId
 
-  proc getExistingEditor*(self: DocumentEditorService, path: string): Option[EditorId] {.expose("editors").} =
+  proc documentEditorGetExistingEditor(self: DocumentEditorService, path: string): Option[EditorId] =
     ## Returns an existing editor for the given file if one exists,
     ## or none otherwise.
     defer:
@@ -409,8 +423,6 @@ when implModule:
       return id.EditorId.some
 
     return EditorId.none
-
-  addGlobalDispatchTable "editors", genDispatchTable("editors")
 
 else:
   proc getEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.inline.} = documentEditorGetEventHandlers(self, inject)

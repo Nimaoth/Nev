@@ -44,10 +44,14 @@ type
 func serviceName*(_: typedesc[Workspace]): string = "Workspace"
 
 # DLL API
-proc workspaceSearchPaths*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.apprtl, gcsafe, raises: [].}
-proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.apprtl, gcsafe, raises: [].}
-proc workspaceSetWorkspaceFolder*(self: Workspace, path: string) {.apprtl, gcsafe, raises: [].}
-proc workspaceAddWorkspaceFolder(self: Workspace, path: string, recomputeFileCache: bool = true) {.apprtl, gcsafe, raises: [].}
+{.push apprtl, gcsafe, raises: [].}
+proc workspaceSearchPaths*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]]
+proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]]
+proc workspaceSetWorkspaceFolder*(self: Workspace, path: string)
+proc workspaceAddWorkspaceFolder(self: Workspace, path: string, recomputeFileCache: bool = true)
+proc workspaceGetAbsolutePath(self: Workspace, path: string): string
+proc getRelativePathAndWorkspaceSync*(self: Workspace, absolutePath: string): Option[tuple[root, path: string]]
+{.pop.}
 
 # Nice wrappers
 
@@ -55,6 +59,7 @@ proc search*(self: Workspace, paths: seq[string], query: string, maxResults: int
 proc search*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.inline.} = workspaceSearch(self, query, maxResults, customArgs, additionalPaths)
 proc setWorkspaceFolder*(self: Workspace, path: string) {.inline.} = workspaceSetWorkspaceFolder(self, path)
 proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) = workspaceAddWorkspaceFolder(self, path, recomputeFileCache)
+proc getAbsolutePath*(self: Workspace, path: string): string = workspaceGetAbsolutePath(self, path)
 
 proc info*(self: Workspace): WorkspaceInfo =
   try:
@@ -245,7 +250,7 @@ when implModule:
   proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.gcsafe, raises: [].} =
     searchWorkspace(self, query, maxResults, customArgs, additionalPaths)
 
-  proc getAbsolutePath*(self: Workspace, path: string): string =
+  proc workspaceGetAbsolutePath(self: Workspace, path: string): string =
     if path.isAbsolute:
       return path.normalizeNativePath
     else:

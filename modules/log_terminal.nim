@@ -1,4 +1,4 @@
-#use terminal log:MemChannels
+#use terminal log:MemChannels layout
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -8,7 +8,7 @@ when implModule:
   import std/[tables]
   import nimsumtree/[arc]
   import misc/[util, custom_async]
-  import dynamic_view, terminal/terminal, service, layout
+  import dynamic_view, terminal/terminal, service, layout/layout
   from scripting_api import CreateTerminalOptions
   import channel
   import log

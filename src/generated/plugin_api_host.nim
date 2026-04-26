@@ -119,7 +119,6 @@ type
     mStackRestore*: Option[ExternT]
     initPlugin*: FuncT
     handleCommand*: FuncT
-    handleModeChanged*: FuncT
     handleViewRenderCallback*: FuncT
     handleChannelUpdate*: FuncT
     notifyTaskComplete*: FuncT
@@ -157,14 +156,6 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
       funcs.handleCommand = f.get.of_field.func_field
     else:
       result.add "Failed to find exported function \'" & $"handle_command" &
-          "\'"
-  block:
-    let f = instance.getExport(context, "handle_mode_changed")
-    if f.isSome:
-      assert f.get.kind == WASMTIME_EXTERN_FUNC
-      funcs.handleModeChanged = f.get.of_field.func_field
-    else:
-      result.add "Failed to find exported function \'" & $"handle_mode_changed" &
           "\'"
   block:
     let f = instance.getExport(context, "handle_view_render_callback")
@@ -298,56 +289,6 @@ proc handleCommand*(funcs: ExportedFuncs; fun: uint32; data: uint32;
       retVal[i0] = p0[i0]
   return wasmtime.ok(retVal)
 
-proc handleModeChanged*(funcs: ExportedFuncs; fun: uint32; old: string;
-                        new: string): WasmtimeResult[void] =
-  var args: array[max(1, 5), ValT]
-  var results: array[max(1, 0), ValT]
-  var trap: ptr WasmTrapT = nil
-  var memory = funcs.mem
-  let savePoint = stackSave(funcs.mStackSave.get.of_field.func_field,
-                            funcs.mContext)
-  defer:
-    discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
-                         funcs.mContext, savePoint.val)
-  var dataPtrWasm0: WasmPtr
-  var dataPtrWasm1: WasmPtr
-  args[0] = toWasmVal(fun)
-  if old.len > 0:
-    dataPtrWasm0 = block:
-      let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
-                            funcs.mContext, (old.len * 1).int32, 4)
-      if temp.isErr:
-        return temp.toResult(void)
-      temp.val
-    args[1] = toWasmVal(cast[int32](dataPtrWasm0))
-    block:
-      for i0 in 0 ..< old.len:
-        memory[dataPtrWasm0 + i0] = cast[uint8](old[i0])
-  else:
-    args[1] = toWasmVal(0.int32)
-  args[2] = toWasmVal(cast[int32](old.len))
-  if new.len > 0:
-    dataPtrWasm1 = block:
-      let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
-                            funcs.mContext, (new.len * 1).int32, 4)
-      if temp.isErr:
-        return temp.toResult(void)
-      temp.val
-    args[3] = toWasmVal(cast[int32](dataPtrWasm1))
-    block:
-      for i0 in 0 ..< new.len:
-        memory[dataPtrWasm1 + i0] = cast[uint8](new[i0])
-  else:
-    args[3] = toWasmVal(0.int32)
-  args[4] = toWasmVal(cast[int32](new.len))
-  let res = funcs.handleModeChanged.addr.call(funcs.mContext,
-      args.toOpenArray(0, 5 - 1), results.toOpenArray(0, 0 - 1), trap.addr).toResult(
-      void)
-  if trap != nil:
-    return trap.toResult(void)
-  if res.isErr:
-    return res.toResult(void)
-  
 proc handleViewRenderCallback*(funcs: ExportedFuncs; id: int32; fun: uint32;
                                data: uint32): WasmtimeResult[void] =
   var args: array[max(1, 3), ValT]
@@ -760,7 +701,6 @@ proc textEditorGetSelections*(instance: ptr InstanceData; editor: TextEditor): s
     Selection]
 proc textEditorLineLength*(instance: ptr InstanceData; editor: TextEditor;
                            line: int32): int32
-proc textEditorAddModeChangedHandler*(instance: ptr InstanceData; fun: uint32): int32
 proc textEditorGetSettingRaw*(instance: ptr InstanceData; editor: TextEditor;
                               name: sink string): string
 proc textEditorSetSettingRaw*(instance: ptr InstanceData; editor: TextEditor;
@@ -3059,19 +2999,6 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         editor.id = convert(parameters[0].i64, uint64)
         line = convert(parameters[1].i32, int32)
         let res = textEditorLineLength(instance, editor, line)
-        parameters[0].i32 = cast[int32](res)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
-          [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/text-editor",
-                                 "add-mode-changed-handler", ty):
-        var instance = cast[ptr InstanceData](store.getData())
-        var fun: uint32
-        fun = convert(parameters[0].i32, uint32)
-        let res = textEditorAddModeChangedHandler(instance, fun)
         parameters[0].i32 = cast[int32](res)
     if e.isErr:
       return e

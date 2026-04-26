@@ -75,10 +75,6 @@ proc initPlugin() =
   emscripten_stack_init()
   NimMain()
 
-proc handleModeChanged(fun: uint32, old: WitString; new: WitString) =
-  let fun = cast[proc(old: WitString, new: WitString) {.cdecl.}](fun)
-  fun(old, new)
-
 proc handleViewRenderCallback(id: int32; fun: uint32; data: uint32): void =
   let fun = cast[proc(id: int32, data: uint32) {.cdecl.}](fun)
   fun(id, data)
@@ -268,9 +264,6 @@ when pluginWorld == "plugin":
 
   proc defineCommand*(name: WitString; active: bool; docs: WitString; params: WitList[(WitString, WitString)]; returntype: WitString; context: WitString; data: uint32; handler: CommandHandler) =
     defineCommand(name, active, docs, params, returntype, context, cast[uint32](handler), cast[uint32](data))
-
-  proc addModeChangedHandler*(fun: proc(old: WitString, new: WitString) {.cdecl.}) =
-    discard addModeChangedHandler(cast[uint32](fun))
 
   proc selections*(editor: TextEditor): WitList[Selection] =
     return editor.getSelections()

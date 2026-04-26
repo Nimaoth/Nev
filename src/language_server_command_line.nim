@@ -3,7 +3,7 @@ import nimsumtree/rope
 import misc/[custom_logger, custom_async, util, response, rope_utils, event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
-import dispatch_tables, document_editor, service, layout, events, config_provider, command_service
+import dispatch_tables, document_editor, service, layout/layout, events, config_provider, command_service
 import text/text_document
 
 logCategory "language-server-command-line"
@@ -78,7 +78,7 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
     let currentNamespace = if layout.popups.len > 0:
       "popup.selector".some
     else:
-      layout.getActiveViewEditor().mapIt(it.getNamespace)
+      layout.getActiveEditor(includeCommandLine = false).mapIt(it.getNamespace())
     {.gcsafe.}:
       for table in activeDispatchTables.mitems:
         if not table.global and table.namespace.some != currentNamespace:

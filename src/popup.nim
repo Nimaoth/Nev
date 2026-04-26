@@ -4,6 +4,8 @@ import misc/[event, id]
 import events, input
 import ui/node
 
+import document_editor
+
 from scripting_api import EditorId, newEditorId
 
 {.push gcsafe.}
@@ -15,6 +17,17 @@ type Popup* = ref object of RootObj
   lastBounds*: Rect
   onMarkedDirty*: Event[void]
   mDirty: bool
+  initImpl*: proc(self: Popup) {.gcsafe, raises: [].}
+  deinitImpl*: proc(self: Popup) {.gcsafe, raises: [].}
+  cancelImpl*: proc(self: Popup) {.gcsafe, raises: [].}
+  getEventHandlersImpl*: proc(self: Popup): seq[EventHandler] {.gcsafe, raises: [].}
+  handleScrollImpl*: proc(self: Popup, scroll: Vec2, mousePosWindow: Vec2) {.gcsafe, raises: [].}
+  handleMousePressImpl*: proc(self: Popup, button: MouseButton, mousePosWindow: Vec2) {.gcsafe, raises: [].}
+  handleMouseReleaseImpl*: proc(self: Popup, button: MouseButton, mousePosWindow: Vec2) {.gcsafe, raises: [].}
+  handleMouseMoveImpl*: proc(self: Popup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) {.gcsafe, raises: [].}
+  getActiveEditorImpl*: proc(self: Popup): Option[DocumentEditor] {.gcsafe, raises: [].}
+  handleActionImpl*: proc(self: Popup, action: string, arg: string): Option[JsonNode] {.gcsafe, raises: [].}
+  renderImpl*: proc(self: Popup, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].}
 
 func id*(self: Popup): EditorId = self.id
 
@@ -28,38 +41,51 @@ proc markDirty*(self: Popup) =
 proc resetDirty*(self: Popup) =
   self.mDirty = false
 
-method initImpl*(self: Popup) {.base.} = discard
-
 proc init*(self: Popup) =
   self.id = newEditorId()
   self.userId = newId()
-  self.initImpl()
+  if self.initImpl != nil:
+    self.initImpl(self)
 
-method deinit*(self: Popup) {.base.} = discard
+proc deinit*(self: Popup) =
+  if self.deinitImpl != nil:
+    self.deinitImpl(self)
 
-method cancel*(self: Popup) {.base.} = discard
+proc cancel*(self: Popup) =
+  if self.cancelImpl != nil:
+    self.cancelImpl(self)
 
-method getEventHandlers*(self: Popup): seq[EventHandler] {.base.} =
+proc getEventHandlers*(self: Popup): seq[EventHandler] =
+  if self.getEventHandlersImpl != nil:
+    return self.getEventHandlersImpl(self)
   return @[]
 
-method handleScroll*(self: Popup, scroll: Vec2, mousePosWindow: Vec2) {.base.} =
-  discard
+proc handleScroll*(self: Popup, scroll: Vec2, mousePosWindow: Vec2) =
+  if self.handleScrollImpl != nil:
+    self.handleScrollImpl(self, scroll, mousePosWindow)
 
-method handleMousePress*(self: Popup, button: MouseButton, mousePosWindow: Vec2) {.base.} =
-  discard
+proc handleMousePress*(self: Popup, button: MouseButton, mousePosWindow: Vec2) =
+  if self.handleMousePressImpl != nil:
+    self.handleMousePressImpl(self, button, mousePosWindow)
 
-method handleMouseRelease*(self: Popup, button: MouseButton, mousePosWindow: Vec2) {.base.} =
-  discard
+proc handleMouseRelease*(self: Popup, button: MouseButton, mousePosWindow: Vec2) =
+  if self.handleMouseReleaseImpl != nil:
+    self.handleMouseReleaseImpl(self, button, mousePosWindow)
 
-method handleMouseMove*(self: Popup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) {.base.} =
-  discard
+proc handleMouseMove*(self: Popup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
+  if self.handleMouseMoveImpl != nil:
+    self.handleMouseMoveImpl(self, mousePosWindow, mousePosDelta, modifiers, buttons)
 
-import document_editor
+proc getActiveEditor*(self: Popup): Option[DocumentEditor] =
+  if self.getActiveEditorImpl != nil:
+    return self.getActiveEditorImpl(self)
 
-method getActiveEditor*(self: Popup): Option[DocumentEditor] {.base.} =
-  discard
+proc handleAction*(self: Popup, action: string, arg: string): Option[JsonNode] =
+  if self.handleActionImpl != nil:
+    return self.handleActionImpl(self, action, arg)
+  return JsonNode.none
 
-method handleAction*(self: Popup, action: string, arg: string): Option[JsonNode] {.base, gcsafe, raises: [].} = JsonNode.none
-
-method createUI*(self: Popup, builder: UINodeBuilder): seq[OverlayFunction] {.base.} =
-  discard
+proc createUI*(self: Popup, builder: UINodeBuilder): seq[OverlayFunction] =
+  if self.renderImpl != nil:
+    return self.renderImpl(self, builder)
+  return @[]

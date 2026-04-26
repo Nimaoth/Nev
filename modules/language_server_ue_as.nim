@@ -1,4 +1,4 @@
-#use language_server_lsp, language_server_regex
+#use language_server_lsp language_server_regex
 
 # language_server_ue_as: Unreal Engine AngelScript language server module.
 #

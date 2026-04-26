@@ -4,7 +4,7 @@ import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, my
 import ui/node
 import platform/[tui]
 import nimsumtree/[rope, arc]
-import dynamic_view, events, config_provider, layout, theme, vterm, input, input_api, channel, register
+import dynamic_view, events, config_provider, layout/layout, theme, vterm, input, input_api, channel, register
 from scripting_api import SshOptions, RunInTerminalOptions, CreateTerminalOptions
 import types
 

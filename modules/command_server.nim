@@ -1,3 +1,4 @@
+#use layout
 import misc/[custom_async]
 import app_options
 
@@ -22,7 +23,7 @@ when implModule and defined(appCommandServer):
   import misc/[custom_logger, util, myjsonutils]
   import asynctools/asyncipc
   import chronos/transports/stream
-  import service, command_service, layout, config_provider
+  import service, command_service, layout/layout, config_provider
 
   logCategory "command-server"
 

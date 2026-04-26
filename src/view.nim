@@ -19,6 +19,22 @@ type
     onDetached*: Event[void]
     detached*: bool # Whether the view is detached from any parent and can be moved around freely
     absoluteBounds*: Rect # Absolute bounds when detached
+    renderImpl*: proc(view: View, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].}
+    copyImpl*: proc(self: View): View {.gcsafe, raises: [].}
+    closeImpl*: proc(view: View) {.gcsafe, raises: [].}
+    activateImpl*: proc(view: View) {.gcsafe, raises: [].}
+    deactivateImpl*: proc(view: View) {.gcsafe, raises: [].}
+    checkDirtyImpl*: proc(view: View) {.gcsafe, raises: [].}
+    markDirtyImpl*: proc(view: View, notify: bool = true) {.gcsafe, raises: [].}
+    getEventHandlersImpl*: proc(view: View, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].}
+    getActiveEditorImpl*: proc(view: View): Option[DocumentEditor] {.gcsafe, raises: [].}
+    activeLeafViewImpl*: proc(view: View): View {.gcsafe, raises: [].}
+    saveLayoutImpl*: proc(view: View, discardedViews: HashSet[Id]): JsonNode {.gcsafe, raises: [].}
+    saveStateImpl*: proc(view: View): JsonNode {.gcsafe, raises: [].}
+    dumpImpl*: proc(self: View): string {.gcsafe, raises: [].}
+    descImpl*: proc(self: View): string {.gcsafe, raises: [].}
+    kindImpl*: proc(self: View): string {.gcsafe, raises: [].}
+    displayImpl*: proc(self: View): string {.gcsafe, raises: [].}
 
 var viewIdCounter {.apprtl.}: int32 = 1
 
@@ -73,69 +89,97 @@ proc viewSaveState*(self: View): JsonNode
 proc viewSaveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode
 proc viewCopy*(view: View): View
 
-proc viewLeftLeaf*(self: View): View
-proc viewRightLeaf*(self: View): View
-proc viewTopLeaf*(self: View): View
-proc viewBottomLeaf*(self: View): View
-proc viewTryGetViewLeft*(self: View): View
-proc viewTryGetViewRight*(self: View): View
-proc viewTryGetViewUp*(self: View): View
-proc viewTryGetViewDown*(self: View): View
+proc viewCreateUI(view: View, builder: UINodeBuilder): seq[OverlayFunction]
 {.pop.}
 
 when implModule:
   import std/[sets, json]
-  method dump*(self: View): string {.base.} = "View"
+  method dump*(self: View): string {.base.} =
+    if self.dumpImpl != nil:
+      return self.dumpImpl(self)
+    return "View"
 
-  method desc*(self: View): string {.base.} = "View"
+  method desc*(self: View): string {.base.} =
+    if self.descImpl != nil:
+      return self.descImpl(self)
+    return "View"
 
-  method kind*(self: View): string {.base.} = ""
+  method kind*(self: View): string {.base.} =
+    if self.kindImpl != nil:
+      return self.kindImpl(self)
+    return ""
 
-  method display*(self: View): string {.base.} = ""
+  method display*(self: View): string {.base.} =
+    if self.displayImpl != nil:
+      return self.displayImpl(self)
+    return ""
 
-  method copy*(self: View): View {.base.} = assert(false)
+  method copy*(self: View): View {.base.} =
+    if self.copyImpl != nil:
+      return self.copyImpl(self)
+    assert(false)
 
   method close*(view: View) {.base.} =
-    discard
+    if view.closeImpl != nil:
+      view.closeImpl(view)
 
   method activate*(view: View) {.base.} =
-    view.active = true
+    if view.activateImpl != nil:
+      view.activateImpl(view)
+    else:
+      if view.active:
+        return
+      view.active = true
+      view.markDirtyBase()
 
   method deactivate*(view: View) {.base.} =
-    view.active = false
+    if view.deactivateImpl != nil:
+      view.deactivateImpl(view)
+    else:
+      if not view.active:
+        return
+      view.active = false
+      view.markDirtyBase()
 
   method checkDirty*(view: View) {.base.} =
-    discard
+    if view.checkDirtyImpl != nil:
+      view.checkDirtyImpl(view)
 
   method markDirty*(self: View, notify: bool = true) {.base.} =
-    self.markDirtyBase()
+    if self.markDirtyImpl != nil:
+      self.markDirtyImpl(self, notify)
+    else:
+      self.markDirtyBase(notify)
 
   method createUI*(view: View, builder: UINodeBuilder): seq[OverlayFunction] {.base.} =
-    discard
+    if view.renderImpl != nil:
+      return view.renderImpl(view, builder)
+    return @[]
 
   method getEventHandlers*(self: View, inject: Table[string, EventHandler]): seq[EventHandler] {.base.} =
-    discard
+    if self.getEventHandlersImpl != nil:
+      return self.getEventHandlersImpl(self, inject)
 
   method getActiveEditor*(self: View): Option[DocumentEditor] {.base.} =
-    discard
+    if self.getActiveEditorImpl != nil:
+      return self.getActiveEditorImpl(self)
 
-  method activeLeafView*(self: View): View {.base.} = self
+  method activeLeafView*(self: View): View {.base.} =
+    if self.activeLeafViewImpl != nil:
+      return self.activeLeafViewImpl(self)
+    return self
 
-  method saveState*(self: View): JsonNode {.base.} = nil
+  method saveState*(self: View): JsonNode {.base.} =
+    if self.saveStateImpl != nil:
+      return self.saveStateImpl(self)
+    return nil
 
   method saveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode {.base.} =
-    result = newJObject()
-    result["id"] = self.id.toJson
-
-  method leftLeaf*(self: View): View {.base.} = self
-  method rightLeaf*(self: View): View {.base.} = self
-  method topLeaf*(self: View): View {.base.} = self
-  method bottomLeaf*(self: View): View {.base.} = self
-
-  method tryGetViewLeft*(self: View): View {.base.} = nil
-  method tryGetViewRight*(self: View): View {.base.} = nil
-  method tryGetViewUp*(self: View): View {.base.} = nil
-  method tryGetViewDown*(self: View): View {.base.} = nil
+    if self.saveLayoutImpl != nil:
+      return self.saveLayoutImpl(self, discardedViews)
+    else:
+      result = newJObject()
+      result["id"] = self.id.toJson
 
   proc viewDump*(self: View): string = dump(self)
   proc viewDesc*(self: View): string = desc(self)
@@ -152,16 +196,13 @@ when implModule:
   proc viewActiveLeafView*(self: View): View = activeLeafView(self)
   proc viewSaveState*(self: View): JsonNode = saveState(self)
   proc viewSaveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode = saveLayout(self, discardedViews)
-  proc viewCopy*(view: View): View = copy(view)
+  proc viewCopy*(view: View): View =
+    if view.copyImpl != nil:
+      view.copyImpl(view)
+    else:
+      copy(view)
 
-  proc viewLeftLeaf*(self: View): View = leftLeaf(self)
-  proc viewRightLeaf*(self: View): View = rightLeaf(self)
-  proc viewTopLeaf*(self: View): View = topLeaf(self)
-  proc viewBottomLeaf*(self: View): View = bottomLeaf(self)
-  proc viewTryGetViewLeft*(self: View): View = tryGetViewLeft(self)
-  proc viewTryGetViewRight*(self: View): View = tryGetViewRight(self)
-  proc viewTryGetViewUp*(self: View): View = tryGetViewUp(self)
-  proc viewTryGetViewDown*(self: View): View = tryGetViewDown(self)
+  proc viewCreateUI(view: View, builder: UINodeBuilder): seq[OverlayFunction] = createUI(view, builder)
 
 else:
   proc dump*(self: View): string = viewDump(self)
@@ -181,11 +222,4 @@ else:
   proc saveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode = viewSaveLayout(self, discardedViews)
   proc copy*(view: View): View = viewCopy(view)
 
-  proc leftLeaf*(self: View): View = viewLeftLeaf(self)
-  proc rightLeaf*(self: View): View = viewRightLeaf(self)
-  proc topLeaf*(self: View): View = viewTopLeaf(self)
-  proc bottomLeaf*(self: View): View = viewBottomLeaf(self)
-  proc tryGetViewLeft*(self: View): View = viewTryGetViewLeft(self)
-  proc tryGetViewRight*(self: View): View = viewTryGetViewRight(self)
-  proc tryGetViewUp*(self: View): View = viewTryGetViewUp(self)
-  proc tryGetViewDown*(self: View): View = viewTryGetViewDown(self)
+  proc createUI*(view: View, builder: UINodeBuilder): seq[OverlayFunction] = viewCreateUI(view, builder)

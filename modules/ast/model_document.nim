@@ -1074,7 +1074,7 @@ method unregister*(self: ModelDocumentEditor) =
 proc getModelDocumentEditor(wrapper: api.ModelDocumentEditor): Option[ModelDocumentEditor] =
   {.gcsafe.}:
     if gAppInterface.isNil: return ModelDocumentEditor.none
-    if gAppInterface.getEditorForId(wrapper.id).getSome(editor):
+    if gAppInterface.getEditor(wrapper.id).getSome(editor):
       if editor of ModelDocumentEditor:
         return editor.ModelDocumentEditor.some
     return ModelDocumentEditor.none

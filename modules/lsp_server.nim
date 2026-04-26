@@ -1,4 +1,4 @@
-#use language_server_lsp, terminal, workspace_edit, language_server_ue_as, language_server_ue_cpp, language_server_regex
+#use language_server_lsp terminal workspace_edit language_server_ue_as language_server_ue_cpp language_server_regex layout
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -15,7 +15,7 @@ when implModule and defined(appLspServer):
   import misc/[custom_logger, util, custom_async, event, connection, response]
   import channel
   import nimsumtree/arc
-  import service, command_service, layout
+  import service, command_service, layout/layout
   import vfs
   import terminal/terminal
   import scripting_api, language_server_ue_as, language_server_ue_cpp

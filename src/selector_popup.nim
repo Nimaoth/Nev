@@ -3,11 +3,12 @@ import bumpy, vmath
 import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, custom_logger, disposable_ref]
 import scripting/[expose]
 import app_interface, text/text_editor, popup, events,
-  selector_popup_builder, dispatch_tables, layout, service, config_provider, view, command_service
+  selector_popup_builder, dispatch_tables, layout/layout, service, config_provider, view, command_service
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
 import plugin_service
 import search_component
+import ui/node
 
 export popup, selector_popup_builder, service
 
@@ -70,6 +71,8 @@ type
     cachedFinderItems*: seq[FinderItem]
     cachedScrollOffset*: int
 
+var createUIImpl*: proc(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFunction] {.closure, gcsafe, raises: [],}
+
 proc getSearchString*(self: SelectorPopup): string {.gcsafe, raises: [].}
 proc closed*(self: SelectorPopup): bool {.gcsafe, raises: [].}
 proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] {.gcsafe, raises: [].}
@@ -95,10 +98,10 @@ proc getCompletionMatches*(self: SelectorPopup, i: int, pattern: string, text: s
     discard matchFuzzy(pattern, text, result, true, config)
   self.completionMatchPositions[i] = result
 
-method initImpl*(self: SelectorPopup) {.gcsafe, raises: [].} =
+proc selectorPopupInit*(self: SelectorPopup) {.gcsafe, raises: [].} =
   self.handleItemsUpdated()
 
-method deinit*(self: SelectorPopup) {.gcsafe, raises: [].} =
+proc selectorPopupDeinit*(self: SelectorPopup) {.gcsafe, raises: [].} =
   logScope lvlInfo, &"[deinit] Destroying selector popup"
 
   let config = self.services.getService(ConfigService).get.runtime
@@ -128,7 +131,7 @@ proc getPreviewSelection*(self: SelectorPopup): Option[Selection] =
     return Selection.none
   return self.previewEditor.selection.some
 
-method getActiveEditor*(self: SelectorPopup): Option[DocumentEditor] =
+proc selectorPopupGetActiveEditor(self: SelectorPopup): Option[DocumentEditor] =
   if self.focusPreview and self.previewEditor.isNotNil:
     return self.previewEditor.DocumentEditor.some
   if not self.focusPreview and self.textEditor.isNotNil:
@@ -153,7 +156,7 @@ proc getEventHandler(self: SelectorPopup, context: string): EventHandler =
 
   return self.eventHandlers[context]
 
-method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
+proc selectorPopupGetEventHandlers*(self: SelectorPopup): seq[EventHandler] =
   if self.textEditor.isNil:
     return @[]
 
@@ -273,7 +276,7 @@ proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
     if handled:
       self.layout.popPopup(self)
 
-method cancel*(self: SelectorPopup) =
+proc selectorPopupCancel*(self: SelectorPopup) =
   if self.accepted:
     return
 
@@ -366,7 +369,7 @@ proc toggleFocusPreview*(self: SelectorPopup) {.expose("popup.selector").} =
 genDispatcher("popup.selector")
 addActiveDispatchTable "popup.selector", genDispatchTable("popup.selector")
 
-method handleAction*(self: SelectorPopup, action: string, arg: string): Option[JsonNode] {.gcsafe, raises: [].} =
+proc selectorPopupHandleAction*(self: SelectorPopup, action: string, arg: string): Option[JsonNode] {.gcsafe, raises: [].} =
   # debugf"SelectorPopup.handleAction {action} '{arg}'"
   if self.textEditor.isNil:
     return JsonNode.none
@@ -458,6 +461,16 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.settings = SelectorSettings.new(services.getService(ConfigService).get.runtime)
   popup.scale = vec2(0.5, 0.5)
   popup.scope = scopeName.get("")
+  popup.initImpl = proc(self: Popup) = selectorPopupInit(self.SelectorPopup)
+  popup.deinitImpl = proc(self: Popup) = selectorPopupDeinit(self.SelectorPopup)
+  popup.getActiveEditorImpl = proc(self: Popup): Option[DocumentEditor] = selectorPopupGetActiveEditor(self.SelectorPopup)
+  popup.getEventHandlersImpl = proc(self: Popup): seq[EventHandler] = selectorPopupGetEventHandlers(self.SelectorPopup)
+  popup.cancelImpl = proc(self: Popup) = selectorPopupCancel(self.SelectorPopup)
+  popup.handleActionImpl = proc(self: Popup, action: string, arg: string): Option[JsonNode] = selectorPopupHandleAction(self.SelectorPopup, action, arg)
+  popup.renderImpl = proc(self: Popup, builder: UINodeBuilder): seq[OverlayFunction] =
+    {.gcsafe.}:
+      createUIImpl(self.SelectorPopup, builder)
+
   let document = newTextDocument(services, createLanguageServer=false, filename="ed://.selector-popup-search-bar")
   popup.textEditor = newTextEditor(document, services)
   popup.textEditor.usage = "search-bar"

@@ -7,7 +7,7 @@ import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, config_provider, service, vfs, vfs_service, language_server_list
 import syntax_map
 import pkg/[chroma, results]
-import vcs/vcs, layout, event_service, toast
+import vcs/vcs, layout/layout, event_service, toast
 import language_server_component, config_component, move_database, move_component, text_component, treesitter_component,
   language_component, formatting_component
 import display_map

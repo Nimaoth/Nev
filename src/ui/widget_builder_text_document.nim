@@ -5,7 +5,7 @@ import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
 import ui/[widget_library]
-import app, document_editor, theme, config_provider, layout
+import app, document_editor, theme, config_provider, layout/layout
 import text/language/[lsp_types]
 import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]
 import view

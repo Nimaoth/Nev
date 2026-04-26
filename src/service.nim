@@ -32,7 +32,7 @@ type
     deinitImpl*: proc(self: Service) {.gcsafe, raises: [].}
     tickImpl*: proc(self: Service) {.gcsafe, raises: [].}
 
-var gServices*: Services
+var gServices*: Services = Services()
 
 proc getServices*(): Services {.gcsafe, apprtl.} =
   {.gcsafe.}:
@@ -136,7 +136,9 @@ proc getService*(self: Services, T: typedesc, state: Option[ServiceState] = Serv
   return T.none
 
 proc getServiceChecked*(self: Services, T: typedesc, state: Option[ServiceState] = ServiceState.none): T {.gcsafe, raises: [].} =
-  return self.getService(T, state).get
+  let res = self.getService(T, state)
+  assert res.isSome, &"getServiceChecked " & T.serviceName & ": Not found"
+  return res.get
 
 proc getServiceAsync*(self: Services, T: typedesc): Future[Option[T]] {.gcsafe, async: (raises: []).} =
   var service = self.getService(T.serviceName, ServiceState.Running.some)

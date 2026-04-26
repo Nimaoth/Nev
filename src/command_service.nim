@@ -1,8 +1,10 @@
-import std/[options, strutils, sequtils]
-import misc/[jsonex]
-import service, lisp, document_editor
+import std/[options, strutils, sequtils, strformat, json, streams]
+import misc/[jsonex, myjsonutils]
+import service, lisp, document_editor, log
 
 include dynlib_export
+
+logCategory "commands"
 
 type
   CommandHandler* = proc(command: Option[string]): Option[string] {.gcsafe.}
@@ -56,6 +58,61 @@ proc commandLineEditor*(self: CommandService): DocumentEditor {.inline.} = comma
 proc checkPermissions*(self: CommandService, command: string, permissions: CommandPermissions): bool {.inline.} = commandServiceCheckPermissions(self, command, permissions)
 proc openCommandLine*(self: CommandService, initialValue: string = "", prefix: string = "", handler: CommandHandler = nil) {.inline.} = commandServiceOpenCommandLine(self, initialValue, prefix, handler)
 
+import std/[macros, genasts]
+
+proc getArg*[T](args: JsonNodeEx, namedArgs: JsonNodeEx, index: int, name: string): T {.gcsafe.} =
+  if args != nil and index < args.elems.len:
+    return args.elems[index].jsonTo(T)
+  if namedArgs != nil and name in namedArgs.fields:
+    return namedArgs.fields[name].jsonTo(T)
+  return T.default
+
+macro registerCommandImpl(self: CommandService, name: string, impl: typed): untyped =
+  let typ = impl.getTypeImpl[0]
+  var callImpl = nnkCall.newTree(impl)
+  let jsonArg = ident "arg"
+  for i in countdown(typ.len - 1, 1):
+    let originalArgumentName = typ[i][0]
+    let originalArgumentType = typ[i][1]
+    var mappedArgumentType = originalArgumentType.repr.parseExpr
+    let index = newLit(i - 1)
+    # todo: default value
+    let arg = genAst(jsonArg, index, originalArgumentName = newLit(originalArgumentName.repr), originalArgumentType):
+      getArg[originalArgumentType](jsonArg, nil, index, originalArgumentName)
+    callImpl.insert(1, arg)
+
+  let returnType = typ[0]
+  let call = if returnType.repr == "":
+    genAst(callImpl):
+      callImpl
+      return newJexNull()
+  else:
+    quote do:
+      return `callImpl`.toJsonEx
+
+  result = genAst(call, argName = jsonArg):
+    proc(argName: JsonNodeEx): JsonNodeEx {.closure.} =
+      call
+
+  return result
+
+proc registerCommand*[T](self: CommandService, name: string, impl: T) =
+  let implCl = registerCommandImpl(self, name, impl)
+  discard self.registerCommand(Command(
+    namespace: "",
+    name: name,
+    description: "",
+    execute: proc(argsString: string): string {.gcsafe, raises: [CatchableError].} =
+      try:
+        let args = newJexArray()
+        for a in newStringStream(argsString).parseJsonexFragments():
+          args.add a
+        let res = implCl(args)
+        return $res
+      except CatchableError as e:
+        log lvlError, &"registerCommand[T]: Failed to execute command '{argsString}'"
+  ))
+
 proc parseCommand*(json: JsonNodeEx): tuple[command: string, args: string, ok: bool] {.raises: [ValueError].} =
   if json.kind == JString:
     let commandStr = json.getStr
@@ -83,13 +140,11 @@ proc parseCommand*(json: JsonNodeEx): tuple[command: string, args: string, ok: b
 # Implementation
 when implModule:
   import std/[strformat, tables, sugar, json, streams, hashes]
-  import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils, parsejsonex, timer]
+  import misc/[util, custom_async, custom_unicode, myjsonutils, parsejsonex, timer]
   import text/language/[language_server_base]
   import events
   import config_provider, dispatch_tables, input_api
   import nimsumtree/rope, register
-
-  logCategory "commands"
 
   {.push gcsafe.}
   {.push raises: [].}

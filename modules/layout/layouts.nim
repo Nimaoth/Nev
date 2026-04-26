@@ -82,6 +82,16 @@ proc setSplitRatio*(self: AutoLayout, index: int, value: float) =
       self.splitRatios[i] = 0.5
   self.splitRatios[index] = value.clamp(0, 1)
 
+method leftLeaf*(self: View): View {.base.} = self
+method rightLeaf*(self: View): View {.base.} = self
+method topLeaf*(self: View): View {.base.} = self
+method bottomLeaf*(self: View): View {.base.} = self
+
+method tryGetViewLeft*(self: View): View {.base.} = nil
+method tryGetViewRight*(self: View): View {.base.} = nil
+method tryGetViewUp*(self: View): View {.base.} = nil
+method tryGetViewDown*(self: View): View {.base.} = nil
+
 method getView*(self: Layout, path: string): View {.base.} =
   if path == "":
     return self
@@ -232,25 +242,59 @@ proc `$`*(v: View): string =
   else:
     v.dump
 
-method dump*(self: Layout): string = "Layout" & $(self[])
-method dump*(self: CenterLayout): string = "CenterLayout" & $(self[])
-method dump*(self: HorizontalLayout): string = "HorizontalLayout" & $(self[])
-method dump*(self: VerticalLayout): string = "VerticalLayout" & $(self[])
-method dump*(self: AlternatingLayout): string = "AlternatingLayout" & $(self[])
-method dump*(self: TabLayout): string = "TabLayout" & $(self[])
+proc layoutDump*(self: View): string =
+  let self = self.Layout
+  "Layout" & $(self[])
+proc centerLayoutDump*(self: View): string =
+  let self = self.CenterLayout
+  "CenterLayout" & $(self[])
+proc horizontalLayoutDump*(self: View): string =
+  let self = self.HorizontalLayout
+  "HorizontalLayout" & $(self[])
+proc verticalLayoutDump*(self: View): string =
+  let self = self.VerticalLayout
+  "VerticalLayout" & $(self[])
+proc alternatingLayoutDump*(self: View): string =
+  let self = self.AlternatingLayout
+  "AlternatingLayout" & $(self[])
+proc tabLayoutDump*(self: View): string =
+  let self = self.TabLayout
+  "TabLayout" & $(self[])
 
-method desc*(self: Layout): string = "Layout"
-method desc*(self: CenterLayout): string = "CenterLayout"
-method desc*(self: HorizontalLayout): string = "HorizontalLayout"
-method desc*(self: VerticalLayout): string = "VerticalLayout"
-method desc*(self: AlternatingLayout): string = "AlternatingLayout"
-method desc*(self: TabLayout): string = "TabLayout"
+proc layoutDesc*(self: View): string =
+  let self = self.Layout
+  "Layout"
+proc centerLayoutDesc*(self: View): string =
+  let self = self.CenterLayout
+  "CenterLayout"
+proc horizontalLayoutDesc*(self: View): string =
+  let self = self.HorizontalLayout
+  "HorizontalLayout"
+proc verticalLayoutDesc*(self: View): string =
+  let self = self.VerticalLayout
+  "VerticalLayout"
+proc alternatingLayoutDesc*(self: View): string =
+  let self = self.AlternatingLayout
+  "AlternatingLayout"
+proc tabLayoutDesc*(self: View): string =
+  let self = self.TabLayout
+  "TabLayout"
 
-method kind*(self: CenterLayout): string = "center"
-method kind*(self: HorizontalLayout): string = "horizontal"
-method kind*(self: VerticalLayout): string = "vertical"
-method kind*(self: AlternatingLayout): string = "alternating"
-method kind*(self: TabLayout): string = "tab"
+proc centerLayoutKind*(self: View): string =
+  let self = self.CenterLayout
+  "center"
+proc horizontalLayoutKind*(self: View): string =
+  let self = self.HorizontalLayout
+  "horizontal"
+proc verticalLayoutKind*(self: View): string =
+  let self = self.VerticalLayout
+  "vertical"
+proc alternatingLayoutKind*(self: View): string =
+  let self = self.AlternatingLayout
+  "alternating"
+proc tabLayoutKind*(self: View): string =
+  let self = self.TabLayout
+  "tab"
 
 proc copyNonNilChildren(self: Layout, src: Layout): Layout =
   self.children = collect:
@@ -278,24 +322,45 @@ proc copyBase(self: Layout, src: Layout): Layout =
   self.maxChildren = src.maxChildren
   self.maximize = src.maximize
   self.temporary = src.temporary
+  self.renderImpl = src.renderImpl
+  self.copyImpl = src.copyImpl
+  self.closeImpl = src.closeImpl
+  self.activateImpl = src.activateImpl
+  self.deactivateImpl = src.deactivateImpl
+  self.checkDirtyImpl = src.checkDirtyImpl
+  self.markDirtyImpl = src.markDirtyImpl
+  self.getEventHandlersImpl = src.getEventHandlersImpl
+  self.getActiveEditorImpl = src.getActiveEditorImpl
+  self.activeLeafViewImpl = src.activeLeafViewImpl
+  self.saveLayoutImpl = src.saveLayoutImpl
+  self.saveStateImpl = src.saveStateImpl
+  self.dumpImpl = src.dumpImpl
+  self.descImpl = src.descImpl
+  self.kindImpl = src.kindImpl
+  self.displayImpl = src.displayImpl
   return self
 
-method copy*(self: CenterLayout): View =
+proc centerLayoutCopy*(self: View): View =
+  let self = self.CenterLayout
   CenterLayout(
     childTemplates: self.childTemplates.mapIt(if it != nil: it.copy().Layout else: nil),
     splitRatios: self.splitRatios,
   ).copyBase(self).copyAllChildren(self)
 
-method copy*(self: HorizontalLayout): View =
+proc horizontalLayoutCopy*(self: View): View =
+  let self = self.HorizontalLayout
   HorizontalLayout(splitRatios: self.splitRatios).copyBase(self).copyNonNilChildren(self)
 
-method copy*(self: VerticalLayout): View =
+proc verticalLayoutCopy*(self: View): View =
+  let self = self.VerticalLayout
   VerticalLayout(splitRatios: self.splitRatios).copyBase(self).copyNonNilChildren(self)
 
-method copy*(self: AlternatingLayout): View =
+proc alternatingLayoutCopy*(self: View): View =
+  let self = self.AlternatingLayout
   AlternatingLayout(splitRatios: self.splitRatios).copyBase(self).copyNonNilChildren(self)
 
-method copy*(self: TabLayout): View =
+proc tabLayoutCopy*(self: View): View =
+  let self = self.TabLayout
   TabLayout().copyBase(self).copyNonNilChildren(self)
 
 method numLeafViews*(self: Layout): int {.base.} =
@@ -328,7 +393,8 @@ proc collapseTemporaryViews*(self: Layout) =
       if layout.temporary and layout.children.len == 1 and layout.children[0] != nil:
         self.children[i] = layout.children[0]
 
-method activeLeafView*(self: Layout): View =
+proc layoutActiveLeafView*(self: View): View =
+  let self = self.Layout
   if self.activeIndex in 0..self.children.high and self.children[self.activeIndex] != nil:
     return self.children[self.activeIndex].activeLeafView()
 
@@ -379,7 +445,8 @@ method removeView*(self: CenterLayout, view: View): bool =
 proc toJson*(self: View): JsonNode =
   return self.saveLayout(initHashSet[Id]());
 
-method saveLayout*(self: Layout, discardedViews: HashSet[Id]): JsonNode =
+proc layoutSaveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode =
+  let self = self.Layout
   # todo: make this configurable through parameter??
   # if self.children.len == 0:
   #   return nil
@@ -401,7 +468,8 @@ method saveLayout*(self: Layout, discardedViews: HashSet[Id]): JsonNode =
   result["max-children"] = self.maxChildren.toJson
   result["children"] = children
 
-method saveLayout*(self: AutoLayout, discardedViews: HashSet[Id]): JsonNode =
+proc autoLayoutSaveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode =
+  let self = self.AutoLayout
   # todo: make this configurable through parameter??
   # if self.children.len == 0:
   #   return nil
@@ -424,7 +492,8 @@ method saveLayout*(self: AutoLayout, discardedViews: HashSet[Id]): JsonNode =
   result["max-children"] = self.maxChildren.toJson
   result["split-ratios"] = self.splitRatios.toJson()
 
-method saveLayout*(self: CenterLayout, discardedViews: HashSet[Id]): JsonNode =
+proc centerLayoutSaveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode =
+  let self = self.CenterLayout
   result = newJObject()
   result["kind"] = self.kind.toJson
   var children = newJArray()
@@ -1221,6 +1290,8 @@ method changeSplitSize*(self: CenterLayout, change: float, vertical: bool): bool
 
   return false
 
+include layout_render
+
 proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raises: [].} = nil,
   createView: proc(config: JsonNode): View {.gcsafe, raises: [].} = nil): View {.raises: [ValueError].} =
   # debugf"createLayout {config}"
@@ -1266,7 +1337,18 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
 
   case kind
   of "center":
-    let res = CenterLayout(children: newSeq[View](5), childTemplates: newSeq[Layout](5))
+    let res = CenterLayout(
+      children: newSeq[View](5),
+      childTemplates: newSeq[Layout](5),
+      dumpImpl: centerLayoutDump,
+      descImpl: centerLayoutDesc,
+      kindImpl: centerLayoutKind,
+      renderImpl: renderCenterLayout,
+      copyImpl: centerLayoutCopy,
+      saveLayoutImpl: centerLayoutSaveLayout,
+      activeLeafViewImpl: layoutActiveLeafView,
+    )
+
     if config.hasKey("slots"):
       res.slots = config["slots"].jsonTo(Table[string, string])
     if config.hasKey("children"):
@@ -1337,25 +1419,57 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
     return res
 
   of "horizontal":
-    let res = HorizontalLayout()
+    let res = HorizontalLayout(
+      dumpImpl: horizontalLayoutDump,
+      descImpl: horizontalLayoutDesc,
+      kindImpl: horizontalLayoutKind,
+      renderImpl: renderHorizontalLayout,
+      copyImpl: horizontalLayoutCopy,
+      saveLayoutImpl: autoLayoutSaveLayout,
+      activeLeafViewImpl: layoutActiveLeafView,
+    )
     res.parseLayoutFields()
     res.parseAutoLayoutFields()
     return res
 
   of "vertical":
-    let res = VerticalLayout()
+    let res = VerticalLayout(
+      dumpImpl: verticalLayoutDump,
+      descImpl: verticalLayoutDesc,
+      kindImpl: verticalLayoutKind,
+      renderImpl: renderVerticalLayout,
+      copyImpl: verticalLayoutCopy,
+      saveLayoutImpl: autoLayoutSaveLayout,
+      activeLeafViewImpl: layoutActiveLeafView,
+    )
     res.parseLayoutFields()
     res.parseAutoLayoutFields()
     return res
 
   of "alternating":
-    let res = AlternatingLayout()
+    let res = AlternatingLayout(
+      dumpImpl: alternatingLayoutDump,
+      descImpl: alternatingLayoutDesc,
+      kindImpl: alternatingLayoutKind,
+      renderImpl: renderAlternatingLayout,
+      copyImpl: alternatingLayoutCopy,
+      saveLayoutImpl: autoLayoutSaveLayout,
+      activeLeafViewImpl: layoutActiveLeafView,
+    )
     res.parseLayoutFields()
     res.parseAutoLayoutFields()
     return res
 
   of "tab":
-    let res = TabLayout()
+    let res = TabLayout(
+      dumpImpl: tabLayoutDump,
+      descImpl: tabLayoutDesc,
+      kindImpl: tabLayoutKind,
+      renderImpl: renderTabLayout,
+      copyImpl: tabLayoutCopy,
+      saveLayoutImpl: layoutSaveLayout,
+      activeLeafViewImpl: layoutActiveLeafView,
+    )
     res.parseLayoutFields()
     return res
 

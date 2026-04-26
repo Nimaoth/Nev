@@ -1,4 +1,4 @@
-#use stats
+#use stats layout
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
@@ -60,7 +60,7 @@ when implModule:
   import vmath, chroma
   import misc/[custom_logger, util, custom_async, custom_unicode, jsonex, myjsonutils, timer]
   import ui/node
-  import view, dynamic_view, layout, service, events, command_service
+  import view, dynamic_view, layout/layout, service, events, command_service
   import theme
   import vcs/vcs
   import platform_service, stats
@@ -716,13 +716,13 @@ when implModule:
     view.sectionRenderers["commitHistory"] = renderCommitHistory
     view.sectionRenderers["stats"] = renderStats
 
-    view.renderImpl = proc(self: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] =
+    view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] =
       renderDashboard(self.DashboardView, builder)
-    view.getEventHandlersImpl = proc(self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] =
+    view.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
       getEventHandlers(self.DashboardView, inject)
-    view.descImpl = proc(self: DynamicView): string = desc(self.DashboardView)
-    view.kindImpl = proc(self: DynamicView): string = kind(self.DashboardView)
-    view.displayImpl = proc(self: DynamicView): string = display(self.DashboardView)
+    view.descImpl = proc(self: View): string = desc(self.DashboardView)
+    view.kindImpl = proc(self: View): string = kind(self.DashboardView)
+    view.displayImpl = proc(self: View): string = display(self.DashboardView)
 
     let platformService = services.getService(PlatformService).get
     discard view.onMarkedDirty.subscribe proc() =

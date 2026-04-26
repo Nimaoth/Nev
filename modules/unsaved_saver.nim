@@ -1,3 +1,5 @@
+#use layout
+
 ##[
 ## unsaved_saver
 
@@ -28,7 +30,7 @@ include module_base
 when implModule:
   import std/[options, json, strformat, uri, times]
   import misc/[custom_logger, util, myjsonutils, custom_async, id, array_set, delayed_task]
-  import document, document_editor, service, event_service, config_component, layout, vfs_service, vfs, text_component
+  import document, document_editor, service, event_service, config_component, layout/layout, vfs_service, vfs, text_component
 
   logCategory "unsaved-saver"
 

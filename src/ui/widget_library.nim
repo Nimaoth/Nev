@@ -1,6 +1,6 @@
 import std/[strformat, strutils, os]
 import misc/[custom_unicode, custom_logger]
-import document, ui/node, view, theme, config_provider, layout
+import document, ui/node, view, theme, config_provider, layout/layout
 import chroma
 import service
 

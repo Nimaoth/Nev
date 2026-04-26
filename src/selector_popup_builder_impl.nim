@@ -1,7 +1,7 @@
 import std/[sugar, options, json, tables]
 import vmath
 import misc/[util, rect_utils, myjsonutils, disposable_ref]
-import selector_popup_builder, layout, selector_popup
+import selector_popup_builder, layout/layout, selector_popup
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
 
@@ -38,4 +38,4 @@ proc pushSelectorPopupImpl(self: LayoutService, builder: SelectorPopupBuilder): 
 
   self.pushPopup popup
 
-gPushSelectorPopupImpl = pushSelectorPopupImpl
+setSelectorPopupBuilderImpl pushSelectorPopupImpl

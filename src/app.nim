@@ -12,7 +12,7 @@ import input, events, document, document_editor, popup, dispatch_tables, theme, 
 import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
-import service, layout, session, command_service, toast, plugin_service
+import service, layout/layout, session, command_service, toast, plugin_service
 import event_service, vcs/vcs
 import search_component, decoration_component
 import nimsumtree/[rope]
@@ -113,7 +113,7 @@ type
     inputHistory*: string
     clearInputHistoryTask: DelayedTask
 
-    layout*: LayoutServiceImpl
+    layout*: LayoutService
 
     loadedFontSize: float
     loadedLineDistance: float
@@ -179,7 +179,7 @@ proc handleDropFile*(self: App, path, content: string)
 
 import text/[text_editor, text_document]
 import selector_popup
-import finder/[file_previewer, open_editor_previewer]
+import finder/[file_previewer]
 
 # todo: remove this function
 proc setLocationList(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none) =
@@ -741,7 +741,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.generalSettings = GeneralSettings.new(self.config.runtime)
   self.debugSettings = DebugSettings.new(self.config.runtime)
 
-  self.layout = services.getService(LayoutServiceImpl).get
+  self.layout = services.getService(LayoutService).get
   self.editors = services.getService(DocumentEditorService).get
   self.session = services.getService(SessionService).get
   self.events = services.getService(EventHandlerService).get
@@ -762,7 +762,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
   EditorSettings.new(self.logDocument.TextDocument.config).saveInSession.set(false)
-  self.layout.pinnedDocuments.incl(self.logDocument)
+  self.editors.pinnedDocuments.incl(self.logDocument)
 
   self.uiSettings = UiSettings.new(self.config.runtime)
   self.generalSettings = GeneralSettings.new(self.config.runtime)
@@ -1133,7 +1133,7 @@ proc prompt(self: App, choices: seq[string], title: string = ""): Future[Option[
   return fut
 
 proc quit*(self: App) {.expose("editor").} =
-  let unsavedChanges = self.layout.anyUnsavedChanges()
+  let unsavedChanges = self.editors.anyUnsavedChanges()
   if self.generalSettings.promptBeforeQuit.get() or unsavedChanges:
     var title = "Quit?"
     if unsavedChanges:
@@ -1145,7 +1145,7 @@ proc quit*(self: App) {.expose("editor").} =
     self.closeRequested = true
 
 proc quitImmediately*(self: App, exitCode: int = 0) {.expose("editor").} =
-  let unsavedChanges = self.layout.anyUnsavedChanges()
+  let unsavedChanges = self.editors.anyUnsavedChanges()
   if self.generalSettings.promptBeforeQuit.get() or unsavedChanges:
     var title = "Quit?"
     if unsavedChanges:
@@ -1743,7 +1743,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
 
       if state.targetEditor != nil:
         state.targetEditor.markDirty()
-      for editor in self.layout.visibleEditors:
+      for editor in self.editors.allEditors:
         editor.markDirty()
     else:
       log lvlError, &"Failed to toggle setting '{key}', not a bool"
@@ -1766,7 +1766,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
 
       if state.targetEditor != nil:
         state.targetEditor.markDirty()
-      for editor in self.layout.visibleEditors:
+      for editor in self.editors.allEditors:
         editor.markDirty()
       return true
     except Exception as e:
@@ -1786,7 +1786,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
 
     if state.targetEditor != nil:
       state.targetEditor.markDirty()
-    for editor in self.layout.visibleEditors:
+    for editor in self.editors.allEditors:
       editor.markDirty()
     return true
 
@@ -1822,96 +1822,6 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     self.commands.openCommandLine "", "slot: ", proc(path: Option[string]): Option[string] =
       if path.getSome(path):
         discard self.layout.openFile(item.data, path)
-    return true
-
-  self.layout.pushPopup popup
-
-proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) {.expose("editor").} =
-  defer:
-    self.platform.requestRender()
-
-  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
-    var items = newSeq[FinderItem]()
-    var hiddenViews = self.layout.getHiddenViews()
-    let activeView = self.layout.layout.activeLeafView()
-
-    for i in countdown(hiddenViews.high, 0):
-      let v = hiddenViews[i]
-      if v of EditorView:
-        let view = v.EditorView
-        let document = view.editor.getDocument
-        let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
-        let dirtyMarker = if isDirty: " * " else: "   "
-        let (directory, name) = document.filename.splitPath
-        let (root, relativeDirectory) = self.workspace.getRelativePathAndWorkspaceSync(directory).get(("", directory))
-        items.add FinderItem(
-          displayName: dirtyMarker & name,
-          filterText: name,
-          data: $view.editor.id,
-          details: @[root // relativeDirectory],
-        )
-
-    self.layout.layout.forEachView proc(v: View): bool =
-      if v of EditorView:
-        let view = v.EditorView
-        let document = view.editor.getDocument
-        let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
-        let dirtyMarker = if isDirty: "* " else: "  "
-        let activeMarker = if view.View == activeView:
-          "#"
-        else:
-          "."
-        let (directory, name) = document.filename.splitPath
-        let (root, relativeDirectory) = self.workspace.getRelativePathAndWorkspaceSync(directory).get(("", directory))
-        items.add FinderItem(
-          displayName: activeMarker & dirtyMarker & name,
-          filterText: name,
-          data: $view.editor.id,
-          details: @[root // relativeDirectory],
-        )
-
-    return items
-
-  let source = newSyncDataSource(getItems)
-  var finder = newFinder(source, filterAndSort=true)
-  finder.filterThreshold = float.low
-
-  let previewer = if preview:
-    newOpenEditorPreviewer(self.services).Previewer.toDisposableRef.some
-  else:
-    DisposableRef[Previewer].none
-
-  var popup = newSelectorPopup(self.services, "open".some, finder.some, previewer)
-  popup.scale.x = scaleX
-  popup.scale.y = scaleY
-  popup.previewScale = previewScale
-
-  popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    let editorId = item.data.parseInt.EditorId.catch:
-      log lvlError, fmt"Failed to parse editor id from data '{item}'"
-      return true
-
-    discard self.layout.tryOpenExisting(editorId)
-    return true
-
-  popup.addCustomCommand "close-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil:
-      return false
-
-    let item = popup.getSelectedItem().getOr:
-      return true
-
-    let editorId = item.data.parseInt.EditorIdNew.catch:
-      log lvlError, fmt"Failed to parse editor id from data '{item}'"
-      return true
-
-    if self.editors.getEditorForId(editorId).getSome(editor):
-      if self.layout.getViewForEditor(editor).getSome(view):
-        self.layout.closeView(view, restoreHidden = false)
-      else:
-        self.editors.closeEditor(editor)
-
-    source.retrigger()
     return true
 
   self.layout.pushPopup popup
@@ -2691,8 +2601,8 @@ proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
   self.exploreFiles(self.workspace.getWorkspacePath())
 
 proc exploreCurrentFileDirectory*(self: App) {.expose("editor").} =
-  if self.layout.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
-    self.exploreFiles(view.document.filename.splitPath.head)
+  if self.layout.getActiveEditor().getSome(editor) and editor.currentDocument.isNotNil:
+    self.exploreFiles(editor.currentDocument.filename.splitPath.head)
 
 proc reloadConfigAsync*(self: App) {.async.} =
   await self.loadConfigFrom(appConfigDir, "app")
@@ -2712,12 +2622,12 @@ proc reloadTheme*(self: App) {.expose("editor").} =
   asyncSpawn self.setTheme(self.themes.theme.path, force = true)
 
 proc currentFilePath*(self: App): string {.expose("editor").} =
-  if self.layout.tryGetCurrentEditorView().getSome(view) and view.editor != nil and view.editor.getDocument() != nil:
-    return view.editor.getDocument().filename
+  if self.layout.getActiveEditor().getSome(editor) and editor.currentDocument.isNotNil:
+    return editor.currentDocument.filename
 
 proc currentLocalFilePath*(self: App): string {.expose("editor").} =
-  if self.layout.tryGetCurrentEditorView().getSome(view) and view.editor != nil and view.editor.getDocument() != nil:
-    return view.editor.getDocument().localizedPath()
+  if self.layout.getActiveEditor().getSome(editor) and editor.currentDocument.isNotNil:
+    return editor.currentDocument.localizedPath()
 
 proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)

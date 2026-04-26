@@ -4,7 +4,7 @@ import misc/[util, custom_logger, array_set]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
 import ui/[widget_library]
-import theme, view, document_editor, document_editor_render, layout, service
+import theme, view, document_editor, document_editor_render, layout/layout, service
 import types_impl, debugger, dap_client
 
 import ui/node

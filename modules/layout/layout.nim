@@ -1,14 +1,17 @@
+#use status_line
 import std/[options, json]
 import misc/[custom_async, id]
 import service, view, popup, selector_popup_builder, dynamic_view
 import document, document_editor
 import ui/node
+from scripting_api import EditorId
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type
   CreateView* = proc(config: JsonNode): View {.gcsafe, raises: [ValueError].}
-  LayoutService* = ref object of Service
+  LayoutService* = ref object of DynamicService
     fallbackView*: View
 
   EditorView* = ref object of DynamicView
@@ -16,45 +19,137 @@ type
     document*: Document # todo: remove
     editor*: DocumentEditor
 
+  PushSelectorPopupImpl* = proc(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup {.gcsafe, raises: [].}
+
 func serviceName*(_: typedesc[LayoutService]): string = "LayoutService"
 
 # DLL API
-proc layoutServicePopups(self: LayoutService): lent seq[Popup] {.apprtl, gcsafe, raises: [].}
-proc layoutServiceAllViews(self: LayoutService): lent seq[View] {.apprtl, gcsafe, raises: [].}
-proc layoutServiceAddView(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) {.apprtl, gcsafe, raises: [].}
-proc layoutServiceAddViewRegisterView(self: LayoutService, view: View, last: bool = true) {.apprtl, gcsafe, raises: [].}
-proc layoutServiceShowView(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) {.apprtl, gcsafe, raises: [].}
-proc layoutServiceCloseView(self: LayoutService, view: View, keepHidden: bool = false, restoreHidden: bool = true) {.apprtl, gcsafe, raises: [].}
-proc layoutServiceTryGetCurrentView(self: LayoutService): Option[View] {.apprtl, gcsafe, raises: [].}
-proc layoutServiceAddViewFactory(self: LayoutService, name: string, create: CreateView, override: bool = false) {.apprtl, gcsafe, raises: [].}
-proc layoutServicePushSelectorPopup(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup {.apprtl, gcsafe, raises: [].}
-proc layoutServiceOpenFile(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] {.apprtl, gcsafe, raises: [].}
-proc layoutServiceIsViewVisible(self: LayoutService, view: View): bool {.apprtl, gcsafe, raises: [].}
-proc layoutServicePromptString(self: LayoutService, title: string = ""): Future[Option[string]] {.apprtl, gcsafe, async: (raises: [])}
-proc layoutServicePrompt(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.apprtl, gcsafe, async: (raises: [])}
-proc layoutServiceTryActivateEditor(self: LayoutService, editor: DocumentEditor) {.apprtl, gcsafe, raises: [].}
-proc layoutServiceTryActivateView(self: LayoutService, view: View) {.apprtl, gcsafe, raises: [].}
-proc layoutServiceNewEditorView(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView {.apprtl, gcsafe, raises: [].}
-proc layoutServiceGetActiveEditor(self: LayoutService, includeCommandLine: bool = true, includePopups: bool = true): Option[DocumentEditor] {.apprtl, gcsafe, raises: [].}
+{.push rtl, gcsafe, raises: [].}
+proc layoutServicePopups(self: LayoutService): lent seq[Popup]
+proc layoutServiceAllViews(self: LayoutService): lent seq[View]
+proc layoutServiceAddView(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true)
+proc layoutServiceAddViewRegisterView(self: LayoutService, view: View, last: bool = true)
+proc layoutServiceShowView(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true)
+proc layoutServiceCloseView(self: LayoutService, view: View, keepHidden: bool = false, restoreHidden: bool = true)
+proc layoutServiceTryGetCurrentView(self: LayoutService): Option[View]
+proc layoutServiceFocusView(self: LayoutService, slot: string)
+proc layoutServiceAddViewFactory(self: LayoutService, name: string, create: CreateView, override: bool = false)
+proc layoutServicePushSelectorPopup(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup
+proc layoutServiceOpenFile(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor]
+proc layoutServiceIsViewVisible(self: LayoutService, view: View): bool
+proc layoutServiceTryActivateEditor(self: LayoutService, editor: DocumentEditor)
+proc layoutServiceTryActivateView(self: LayoutService, view: View)
+proc layoutServiceNewEditorView(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView
+proc layoutServiceGetActiveEditor(self: LayoutService, includeCommandLine: bool = true, includePopups: bool = true): Option[DocumentEditor]
+proc layoutServiceShowEditor(self: LayoutService, editorId: EditorId, slot: string = "", focus: bool = true)
+proc layoutServiceGetView(self: LayoutService, id: Id): Option[View]
+proc layoutServiceGetView2(self: LayoutService, id: int32): Option[View]
+proc layoutServiceGetViewForEditor(self: LayoutService, editor: DocumentEditor): Option[View]
+proc layoutServiceCloseActiveView(self: LayoutService, closeOpenPopup: bool = true, restoreHidden: bool = true)
+proc layoutServiceGetPopupForId(self: LayoutService, id: EditorId): Option[Popup]
+proc layoutServicePushPopup(self: LayoutService, popup: Popup)
+proc layoutServicePopPopup(self: LayoutService, popup: Popup = nil)
+proc layoutServiceCreateAndAddView(self: LayoutService, document: Document, slot: string = ""): Option[DocumentEditor]
+proc layoutServiceTryCloseDocument(self: LayoutService, document: Document, force: bool): bool
+proc layoutServiceHideActiveView(self: LayoutService, closeOpenPopup: bool = true)
+proc layoutServiceHideOtherViews(self: LayoutService)
+proc layoutServiceCloseOtherViews(self: LayoutService)
+proc layoutServiceFocusViewLeft(self: LayoutService)
+proc layoutServiceFocusViewRight(self: LayoutService)
+proc layoutServiceFocusViewUp(self: LayoutService)
+proc layoutServiceFocusViewDown(self: LayoutService)
+proc layoutServiceFocusNextView(self: LayoutService, slot: string = "")
+proc layoutServiceFocusPrevView(self: LayoutService, slot: string = "")
+proc layoutServiceOpenPrevView(self: LayoutService)
+proc layoutServiceOpenNextView(self: LayoutService)
+proc layoutServiceOpenLastView(self: LayoutService)
+proc layoutServiceSetLayout(self: LayoutService, layout: string)
+proc layoutServiceSetActiveViewIndex(self: LayoutService, slot: string, index: int)
+proc layoutServiceMoveActiveViewFirst(self: LayoutService)
+proc layoutServiceMoveActiveViewPrev(self: LayoutService)
+proc layoutServiceMoveActiveViewNext(self: LayoutService)
+proc layoutServiceMoveActiveViewNextAndGoBack(self: LayoutService)
+proc layoutServiceSplitView(self: LayoutService, slot: string = "")
+proc layoutServiceMoveView(self: LayoutService, slot: string)
+proc layoutServiceWrapLayout(self: LayoutService, layout: JsonNode, slot: string = "**")
+proc layoutServiceOpen(self: LayoutService, path: string, slot: string = "")
+proc layoutServiceLayout(self: LayoutService): View
+proc layoutServiceRender(self: LayoutService, builder: UINodeBuilder): seq[OverlayFunction]
+proc setSelectorPopupBuilderImpl*(impl: PushSelectorPopupImpl)
+{.pop.}
+
+{.push rtl, gcsafe.}
+proc layoutServicePromptString(self: LayoutService, title: string = ""): Future[Option[string]] {.async: (raises: []).}
+proc layoutServicePrompt(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.async: (raises: []).}
+{.pop.}
 
 # Nice wrappers
-proc popups*(self: LayoutService): lent seq[Popup] {.inline.} = self.layoutServicePopups()
-proc allViews*(self: LayoutService): lent seq[View] {.inline.} = self.layoutServiceAllViews()
-proc addView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) {.inline.} = layoutServiceAddView(self, view, slot, focus, addToHistory)
+{.push inline}
+proc popups*(self: LayoutService): lent seq[Popup] = self.layoutServicePopups()
+proc allViews*(self: LayoutService): lent seq[View] = self.layoutServiceAllViews()
+proc addView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) = layoutServiceAddView(self, view, slot, focus, addToHistory)
 proc registerView*(self: LayoutService, view: View, last = true) = layoutServiceAddViewRegisterView(self, view, last)
-proc showView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) {.inline.} = self.layoutServiceShowView(view, slot, focus, addToHistory)
-proc closeView*(self: LayoutService, view: View, keepHidden: bool = false, restoreHidden: bool = true) {.inline.} = self.layoutServiceCloseView(view, keepHidden, restoreHidden)
-proc tryGetCurrentView*(self: LayoutService): Option[View] {.inline.} = self.layoutServiceTryGetCurrentView()
-proc addViewFactory*(self: LayoutService, name: string, create: CreateView, override: bool = false) {.inline.} = self.layoutServiceAddViewFactory(name, create, override)
-proc pushSelectorPopup*(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup {.inline.} = self.layoutServicePushSelectorPopup(builder)
-proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] {.inline.} = self.layoutServiceOpenFile(path, slot)
-proc isViewVisible*(self: LayoutService, view: View): bool {.inline.} = self.layoutServiceIsViewVisible(view)
+proc getView*(self: LayoutService, id: Id): Option[View] = layoutServiceGetView(self, id)
+proc getView*(self: LayoutService, id: int32): Option[View] = layoutServiceGetView2(self, id)
+proc getViewForEditor*(self: LayoutService, editor: DocumentEditor): Option[View] = layoutServiceGetViewForEditor(self, editor)
+proc showView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) = self.layoutServiceShowView(view, slot, focus, addToHistory)
+proc closeView*(self: LayoutService, view: View, keepHidden: bool = false, restoreHidden: bool = true) = self.layoutServiceCloseView(view, keepHidden, restoreHidden)
+proc tryGetCurrentView*(self: LayoutService): Option[View] = self.layoutServiceTryGetCurrentView()
+proc focusView*(self: LayoutService, slot: string) = layoutServiceFocusView(self, slot)
+proc addViewFactory*(self: LayoutService, name: string, create: CreateView, override: bool = false) = self.layoutServiceAddViewFactory(name, create, override)
+proc pushSelectorPopup*(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup = self.layoutServicePushSelectorPopup(builder)
+proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] = self.layoutServiceOpenFile(path, slot)
+proc isViewVisible*(self: LayoutService, view: View): bool = self.layoutServiceIsViewVisible(view)
 proc promptString*(self: LayoutService, title: string = ""): Future[Option[string]] {.async: (raises: [])} = await layoutServicePromptString(self, title)
 proc prompt*(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.gcsafe, async: (raises: [])} = await layoutServicePrompt(self, choices, title)
-proc tryActivateEditor*(self: LayoutService, editor: DocumentEditor) {.inline.} = layoutServiceTryActivateEditor(self, editor)
+proc tryActivateEditor*(self: LayoutService, editor: DocumentEditor) = layoutServiceTryActivateEditor(self, editor)
 proc tryActivateView*(self: LayoutService, view: View) = layoutServiceTryActivateView(self, view)
-proc newEditorView*(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView {.inline.} = layoutServiceNewEditorView(editor, document, id)
+proc newEditorView*(editor: DocumentEditor, document: Document, id: Option[Id] = Id.none): EditorView = layoutServiceNewEditorView(editor, document, id)
 proc getActiveEditor*(self: LayoutService, includeCommandLine: bool = true, includePopups: bool = true): Option[DocumentEditor] = layoutServiceGetActiveEditor(self, includeCommandLine, includePopups)
+proc showEditor*(self: LayoutService, editorId: EditorId, slot: string = "", focus: bool = true) = layoutServiceShowEditor(self, editorId, slot, focus)
+proc closeActiveView*(self: LayoutService, closeOpenPopup: bool = true, restoreHidden: bool = true) = layoutServiceCloseActiveView(self, closeOpenPopup, restoreHidden)
+proc getPopupForId*(self: LayoutService, id: EditorId): Option[Popup] = layoutServiceGetPopupForId(self, id)
+proc pushPopup*(self: LayoutService, popup: Popup) = layoutServicePushPopup(self, popup)
+proc popPopup*(self: LayoutService, popup: Popup = nil) = layoutServicePopPopup(self, popup)
+proc createAndAddView*(self: LayoutService, document: Document, slot: string = ""): Option[DocumentEditor] = layoutServiceCreateAndAddView(self, document, slot)
+proc tryCloseDocument*(self: LayoutService, document: Document, force: bool): bool = layoutServiceTryCloseDocument(self, document, force)
+proc hideActiveView*(self: LayoutService, closeOpenPopup: bool = true) = layoutServiceHideActiveView(self, closeOpenPopup)
+proc hideOtherViews*(self: LayoutService) = layoutServiceHideOtherViews(self)
+proc closeOtherViews*(self: LayoutService) = layoutServiceCloseOtherViews(self)
+proc focusViewLeft*(self: LayoutService) = layoutServiceFocusViewLeft(self)
+proc focusViewRight*(self: LayoutService) = layoutServiceFocusViewRight(self)
+proc focusViewUp*(self: LayoutService) = layoutServiceFocusViewUp(self)
+proc focusViewDown*(self: LayoutService) = layoutServiceFocusViewDown(self)
+proc focusNextView*(self: LayoutService, slot: string = "") = layoutServiceFocusNextView(self, slot)
+proc focusPrevView*(self: LayoutService, slot: string = "") = layoutServiceFocusPrevView(self, slot)
+proc openPrevView*(self: LayoutService) = layoutServiceOpenPrevView(self)
+proc openNextView*(self: LayoutService) = layoutServiceOpenNextView(self)
+proc openLastView*(self: LayoutService) = layoutServiceOpenLastView(self)
+proc setLayout*(self: LayoutService, layout: string) = layoutServiceSetLayout(self, layout)
+proc setActiveViewIndex*(self: LayoutService, slot: string, index: int) = layoutServiceSetActiveViewIndex(self, slot, index)
+proc moveActiveViewFirst*(self: LayoutService) = layoutServiceMoveActiveViewFirst(self)
+proc moveActiveViewPrev*(self: LayoutService) = layoutServiceMoveActiveViewPrev(self)
+proc moveActiveViewNext*(self: LayoutService) = layoutServiceMoveActiveViewNext(self)
+proc moveActiveViewNextAndGoBack*(self: LayoutService) = layoutServiceMoveActiveViewNextAndGoBack(self)
+proc splitView*(self: LayoutService, slot: string = "") = layoutServiceSplitView(self, slot)
+proc moveView*(self: LayoutService, slot: string) = layoutServiceMoveView(self, slot)
+proc wrapLayout*(self: LayoutService, layout: JsonNode, slot: string = "**") = layoutServiceWrapLayout(self, layout, slot)
+proc open*(self: LayoutService, path: string, slot: string = "") = layoutServiceOpen(self, path, slot)
+proc rootLayout*(self: LayoutService): View = layoutServiceLayout(self)
+proc render*(self: LayoutService, builder: UINodeBuilder): seq[OverlayFunction] = layoutServiceRender(self, builder)
+{.pop.}
+
+proc showView*(self: LayoutService, viewId: Id, slot: string = "", focus: bool = true, addToHistory: bool = true) =
+  if self.getView(viewId).getSome(view):
+    self.showView(view, slot, focus, addToHistory)
+
+proc showView*(self: LayoutService, viewId: int32, slot: string = "", focus: bool = true, addToHistory: bool = true) =
+  if self.getView(viewId).getSome(view):
+    self.showView(view, slot, focus, addToHistory)
+
+proc closeView*(self: LayoutService, viewId: int32, keepHidden: bool = false, restoreHidden: bool = true) =
+  if self.getView(viewId).getSome(view):
+    self.closeView(view, keepHidden, restoreHidden)
 
 proc getViews*(self: LayoutService, T: typedesc): seq[T] =
   var res = newSeq[T]()
@@ -69,11 +164,9 @@ when implModule:
   import results
   import platform/platform
   import misc/[custom_logger, rect_utils, myjsonutils, util, jsonex]
-  import scripting/expose
   import workspaces/workspace
-  import finder/finder
-  import platform_service, dispatch_tables, events, config_provider, vfs, vfs_service, session, layouts, command_service
-  from scripting_api import EditorId
+  import finder/[finder, previewer, open_editor_previewer]
+  import platform_service, events, config_provider, vfs, vfs_service, session, layouts, command_service, status_line, theme
   import nimsumtree/arc
 
   export layouts
@@ -86,8 +179,6 @@ when implModule:
   type
     LayoutProperties* = ref object
       props: Table[string, float32]
-
-    PushSelectorPopupImpl = proc(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup {.gcsafe, raises: [].}
 
     LayoutServiceImpl* = ref object of LayoutService
       platform: Platform
@@ -111,17 +202,19 @@ when implModule:
       onEditorRegistered*: Event[DocumentEditor]
       onEditorDeregistered*: Event[DocumentEditor]
 
-      pinnedDocuments*: seq[Document]
-
       pushSelectorPopupImpl: PushSelectorPopupImpl
       activeView*: View
       mAllViews*: seq[View]
 
       viewFactories: Table[string, CreateView]
 
-  var gPushSelectorPopupImpl*: PushSelectorPopupImpl
+  var gPushSelectorPopupImpl: PushSelectorPopupImpl
 
-  proc getView*(self: LayoutService, id: Id): Option[View]
+  # todo: the selector popup builder stuff should be in a separate module
+  proc setSelectorPopupBuilderImpl*(impl: PushSelectorPopupImpl) =
+    {.gcsafe.}:
+      gPushSelectorPopupImpl = impl
+
   proc preRender*(self: LayoutService)
 
   proc layoutServicePopups(self: LayoutService): lent seq[Popup] =
@@ -219,9 +312,7 @@ when implModule:
 
   func serviceName*(_: typedesc[LayoutServiceImpl]): string = "LayoutService"
 
-  addBuiltinService(LayoutServiceImpl, PlatformService, ConfigService, DocumentEditorService, Workspace, VFSService, SessionService, CommandService)
-
-  method init*(self: LayoutServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  proc layoutServiceInit(self: LayoutServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"LayoutService.init"
     self.platform = self.services.getService(PlatformService).get.platform
     assert self.platform != nil
@@ -392,7 +483,7 @@ when implModule:
   proc editorViewDisplay(self: EditorView): string = self.document.filename
 
   proc editorViewSaveState(self: EditorView): JsonNode =
-    if not EditorSettings.new(self.editor.config).saveInSession.get(true):
+    if not self.editor.config.get("editor.save-in-session", true):
       return nil
 
     result = newJObject()
@@ -407,7 +498,7 @@ when implModule:
     view.editor.active = true
 
   proc editorViewDeactivate(view: EditorView) =
-    view.active = true
+    view.active = false
     view.editor.active = false
 
   proc editorViewMarkDirty(view: EditorView, notify: bool = true) =
@@ -425,17 +516,17 @@ when implModule:
     if id.isSome:
       self.mId = id.get
 
-    self.renderImpl = proc(self: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] = editorViewRender(self.EditorView, builder)
-    # self.closeImpl = proc(self: DynamicView) = editorViewClose(self.EditorView)
-    self.activateImpl = proc(self: DynamicView) = editorViewActivate(self.EditorView)
-    self.deactivateImpl = proc(self: DynamicView) = editorViewDeactivate(self.EditorView)
-    self.markDirtyImpl = proc (self: DynamicView, notify: bool) = editorViewMarkDirty(self.EditorView, notify)
-    self.getEventHandlersImpl = proc (self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] = editorViewGetEventHandlers(self.EditorView, inject)
-    self.descImpl = proc (self: DynamicView): string = editorViewDesc(self.EditorView)
-    self.kindImpl = proc (self: DynamicView): string = editorViewKind(self.EditorView)
-    self.displayImpl = proc (self: DynamicView): string = editorViewDisplay(self.EditorView)
-    self.saveStateImpl = proc (self: DynamicView): JsonNode = editorViewSaveState(self.EditorView)
-    self.getActiveEditorImpl = proc (self: DynamicView): Option[DocumentEditor] = editorViewGetActiveEditor(self.EditorView)
+    self.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] = editorViewRender(self.EditorView, builder)
+    # self.closeImpl = proc(self: View) = editorViewClose(self.EditorView)
+    self.activateImpl = proc(self: View) = editorViewActivate(self.EditorView)
+    self.deactivateImpl = proc(self: View) = editorViewDeactivate(self.EditorView)
+    self.markDirtyImpl = proc (self: View, notify: bool) = editorViewMarkDirty(self.EditorView, notify)
+    self.getEventHandlersImpl = proc (self: View, inject: Table[string, EventHandler]): seq[EventHandler] = editorViewGetEventHandlers(self.EditorView, inject)
+    self.descImpl = proc (self: View): string = editorViewDesc(self.EditorView)
+    self.kindImpl = proc (self: View): string = editorViewKind(self.EditorView)
+    self.displayImpl = proc (self: View): string = editorViewDisplay(self.EditorView)
+    self.saveStateImpl = proc (self: View): JsonNode = editorViewSaveState(self.EditorView)
+    self.getActiveEditorImpl = proc (self: View): Option[DocumentEditor] = editorViewGetActiveEditor(self.EditorView)
     # self.onClick = editorViewHandleClick
     # self.onScroll = editorViewHandleScroll
     # self.onDrag = editorViewHandleDrag
@@ -443,16 +534,7 @@ when implModule:
 
     return self
 
-  proc anyUnsavedChanges*(self: LayoutService): bool =
-    let self = self.LayoutServiceImpl
-    for view in self.mAllViews:
-      if view of EditorView:
-        let doc = view.EditorView.document
-        assert doc != nil
-        let isDirty = not doc.requiresLoad and doc.lastSavedRevision != doc.revision
-        if isDirty:
-          return true
-    return false
+  proc layoutServiceLayout(self: LayoutService): View = self.LayoutServiceImpl.layout
 
   proc layoutServiceTryGetCurrentView(self: LayoutService): Option[View] =
     let self = self.LayoutServiceImpl
@@ -471,20 +553,13 @@ when implModule:
     else:
       EditorView.none
 
-  proc getPopupForId*(self: LayoutService, id: EditorId): Option[Popup] =
+  proc layoutServiceGetPopupForId(self: LayoutService, id: EditorId): Option[Popup] =
     let self = self.LayoutServiceImpl
     for popup in self.mPopups:
       if popup.id == id:
         return popup.some
 
     return Popup.none
-
-  proc getActiveViewEditor*(self: LayoutService): Option[DocumentEditor] =
-    let self = self.LayoutServiceImpl
-    if self.tryGetCurrentEditorView().getSome(view):
-      return view.editor.some
-
-    return DocumentEditor.none
 
   proc layoutServiceGetActiveEditor(self: LayoutService, includeCommandLine: bool = true, includePopups: bool = true): Option[DocumentEditor] =
     let self = self.LayoutServiceImpl
@@ -499,7 +574,7 @@ when implModule:
 
     return DocumentEditor.none
 
-  proc getView*(self: LayoutService, id: Id): Option[View] =
+  proc layoutServiceGetView(self: LayoutService, id: Id): Option[View] =
     ## Returns the index of the view for the given editor.
     let self = self.LayoutServiceImpl
     for i, view in self.mAllViews:
@@ -508,7 +583,7 @@ when implModule:
 
     return View.none
 
-  proc getView*(self: LayoutService, id: int32): Option[View] =
+  proc layoutServiceGetView2(self: LayoutService, id: int32): Option[View] =
     ## Returns the index of the view for the given editor.
     let self = self.LayoutServiceImpl
     for i, view in self.mAllViews:
@@ -517,7 +592,7 @@ when implModule:
 
     return View.none
 
-  proc getViewForEditor*(self: LayoutService, editor: DocumentEditor): Option[View] =
+  proc layoutServiceGetViewForEditor(self: LayoutService, editor: DocumentEditor): Option[View] =
     ## Returns the index of the view for the given editor.
     let self = self.LayoutServiceImpl
     for i, view in self.mAllViews:
@@ -569,7 +644,7 @@ when implModule:
     view.markDirty()
     self.platform.requestRender()
 
-  proc createAndAddView*(self: LayoutService, document: Document, slot: string = ""): Option[DocumentEditor] =
+  proc layoutServiceCreateAndAddView(self: LayoutService, document: Document, slot: string = ""): Option[DocumentEditor] =
     let self = self.LayoutServiceImpl
     if self.editors.createEditorForDocument(document).getSome(editor):
       var view = newEditorView(editor, document)
@@ -596,14 +671,14 @@ when implModule:
     if self.getViewForEditor(editor).getSome(view):
       self.tryActivateView(view)
 
-  proc pushPopup*(self: LayoutService, popup: Popup) =
+  proc layoutServicePushPopup(self: LayoutService, popup: Popup) =
     let self = self.LayoutServiceImpl
     popup.init()
     self.mPopups.add(popup)
     discard popup.onMarkedDirty.subscribe () => self.platform.requestRender()
     self.platform.requestRender()
 
-  proc popPopup*(self: LayoutService, popup: Popup = nil) =
+  proc layoutServicePopPopup(self: LayoutService, popup: Popup = nil) =
     let self = self.LayoutServiceImpl
     if self.mPopups.len > 0 and (popup == nil or self.mPopups[self.mPopups.high] == popup):
       let popup = self.mPopups.pop()
@@ -615,7 +690,7 @@ when implModule:
     let self = self.LayoutServiceImpl
     self.pushSelectorPopupImpl(self, builder)
 
-  proc layoutServicePromptString(self: LayoutService, title: string = ""): Future[Option[string]] {.apprtl, gcsafe, async: (raises: [])} =
+  proc layoutServicePromptString(self: LayoutService, title: string = ""): Future[Option[string]] {.rtl, gcsafe, async: (raises: [])} =
     let self = self.LayoutServiceImpl
     defer:
       self.platform.requestRender()
@@ -651,7 +726,7 @@ when implModule:
     except CatchableError:
       return string.none
 
-  proc layoutServicePrompt(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.apprtl, gcsafe, async: (raises: [])} =
+  proc layoutServicePrompt(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.rtl, gcsafe, async: (raises: [])} =
     let self = self.LayoutServiceImpl
     defer:
       self.platform.requestRender()
@@ -696,19 +771,13 @@ when implModule:
 
   ###########################################################################
 
-  proc getLayoutService(): Option[LayoutService] =
-    {.gcsafe.}:
-      if getServices().isNil: return LayoutService.none
-      return getServices().getService(LayoutService)
+  template expose(name: static string, fun: untyped): untyped = fun
 
-  static:
-    addInjector(LayoutService, getLayoutService)
-
-  proc changeSplitSize*(self: LayoutService, change: float, vertical: bool) {.expose("layout").} =
+  proc changeSplitSize*(self: LayoutService, change: float, vertical: bool) =
     let self = self.LayoutServiceImpl
     discard self.layout.changeSplitSize(change, vertical)
 
-  proc toggleMaximizeViewLocal*(self: LayoutService, slot: string = "**") {.expose("layout").} =
+  proc toggleMaximizeViewLocal*(self: LayoutService, slot: string = "**") =
     let self = self.LayoutServiceImpl
     let view = self.layout.getView(slot)
     if view != nil and view of Layout:
@@ -716,12 +785,12 @@ when implModule:
       layout.maximize = not layout.maximize
       self.platform.requestRender()
 
-  proc toggleMaximizeView*(self: LayoutService) {.expose("layout").} =
+  proc toggleMaximizeView*(self: LayoutService) =
     let self = self.LayoutServiceImpl
     self.maximizeView = not self.maximizeView
     self.platform.requestRender()
 
-  proc setMaxViews*(self: LayoutService, slot: string, maxViews: int = int.high) {.expose("layout").} =
+  proc setMaxViews*(self: LayoutService, slot: string, maxViews: int = int.high) =
     ## Set the maximum number of views that can be open at the same time
     let self = self.LayoutServiceImpl
     let view = self.layout.getView(slot)
@@ -754,7 +823,7 @@ when implModule:
         return true
     return res
 
-  proc getNumVisibleViews*(self: LayoutService): int {.expose("layout").} =
+  proc getNumVisibleViews*(self: LayoutService): int =
     ## Returns the amount of visible views
     let self = self.LayoutServiceImpl
     var res = 0
@@ -763,7 +832,7 @@ when implModule:
         inc res
     return res
 
-  proc getNumHiddenViews*(self: LayoutService): int {.expose("layout").} =
+  proc getNumHiddenViews*(self: LayoutService): int =
     ## Returns the amount of hidden views
     let self = self.LayoutServiceImpl
     return self.getHiddenViews().len
@@ -805,30 +874,20 @@ when implModule:
 
     self.platform.requestRender()
 
-  proc showView*(self: LayoutService, viewId: Id, slot: string = "", focus: bool = true, addToHistory: bool = true) =
-    let self = self.LayoutServiceImpl
-    if self.getView(viewId).getSome(view):
-      self.showView(view, slot, focus, addToHistory)
-
-  proc showView*(self: LayoutService, viewId: int32, slot: string = "", focus: bool = true, addToHistory: bool = true) =
-    let self = self.LayoutServiceImpl
-    if self.getView(viewId).getSome(view):
-      self.showView(view, slot, focus, addToHistory)
-
-  proc showEditor*(self: LayoutService, editorId: EditorId, slot: string = "", focus: bool = true) {.expose("layout").} =
+  proc layoutServiceShowEditor(self: LayoutService, editorId: EditorId, slot: string = "", focus: bool = true) =
     ## Make the given editor visible
     let self = self.LayoutServiceImpl
-    let editor = self.editors.getEditorForId(editorId.EditorIdNew).getOr:
+    let editor = self.editors.getEditor(editorId.EditorIdNew).getOr:
       log lvlError, &"No editor with id {editorId} exists"
       return
 
-    assert editor.getDocument().isNotNil
+    assert editor.currentDocument.isNotNil
 
-    log lvlInfo, &"showEditor editorId={editorId}, filename={editor.getDocument().filename}"
+    log lvlInfo, &"showEditor editorId={editorId}, filename={editor.currentDocument.filename}"
     if self.getViewForEditor(editor).getSome(view):
       self.showView(view, slot, focus)
 
-  proc getOrOpenEditor*(self: LayoutService, path: string): Option[EditorId] {.expose("layout").} =
+  proc getOrOpenEditor*(self: LayoutService, path: string): Option[EditorId] =
     ## Returns an existing editor for the given file if one exists,
     ## otherwise a new editor is created for the file.
     ## The returned editor will not be shown automatically.
@@ -928,15 +987,10 @@ when implModule:
     except LayoutError as e:
       log lvlError, "Failed to close view: " & e.msg
 
-  proc closeView*(self: LayoutService, viewId: int32, keepHidden: bool = false, restoreHidden: bool = true) =
-    let self = self.LayoutServiceImpl
-    if self.getView(viewId).getSome(view):
-      self.closeView(view, keepHidden, restoreHidden)
-
-  proc tryCloseDocument*(self: LayoutService, document: Document, force: bool): bool =
+  proc layoutServiceTryCloseDocument(self: LayoutService, document: Document, force: bool): bool =
     let self = self.LayoutServiceImpl
     assert document != nil
-    if document in self.pinnedDocuments:
+    if document in self.editors.pinnedDocuments:
       log lvlWarn, &"Can't close document '{document.filename}' because it's pinned"
       return false
 
@@ -957,7 +1011,7 @@ when implModule:
     self.editors.tryCloseDocument(document)
     return true
 
-  proc hideActiveView*(self: LayoutService, closeOpenPopup: bool = true) {.expose("layout").} =
+  proc layoutServiceHideActiveView(self: LayoutService, closeOpenPopup: bool = true) =
     ## Hide the active view, removing it from the current layout tree.
     ## To reopen the view, use commands like `show-last-hidden-view` or `choose-open`.
     let self = self.LayoutServiceImpl
@@ -970,7 +1024,7 @@ when implModule:
     self.layout.collapseTemporaryViews()
     self.platform.requestRender()
 
-  proc closeActiveView*(self: LayoutService, closeOpenPopup: bool = true, restoreHidden: bool = true) {.expose("layout").} =
+  proc layoutServiceCloseActiveView(self: LayoutService, closeOpenPopup: bool = true, restoreHidden: bool = true) =
     ## Permanently close the active view.
     let self = self.LayoutServiceImpl
     if closeOpenPopup and self.mPopups.len > 0:
@@ -983,7 +1037,7 @@ when implModule:
 
       self.closeView(view, keepHidden = false, restoreHidden = restoreHidden)
 
-  proc hideOtherViews*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceHideOtherViews(self: LayoutService) =
     ## Hides all views except for the active one.
     let self = self.LayoutServiceImpl
     let view = self.layout.activeLeafView()
@@ -998,7 +1052,7 @@ when implModule:
 
     self.platform.requestRender()
 
-  proc closeOtherViews*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceCloseOtherViews(self: LayoutService) =
     ## Permanently closes all views except for the active one.
     let self = self.LayoutServiceImpl
     let view = self.layout.activeLeafView()
@@ -1012,42 +1066,42 @@ when implModule:
 
     self.platform.requestRender()
 
-  proc focusViewLeft*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceFocusViewLeft(self: LayoutService) =
     let self = self.LayoutServiceImpl
     let view = self.layout.tryGetViewLeft()
     if view != nil:
       self.tryActivateView(view)
     self.platform.requestRender()
 
-  proc focusViewRight*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceFocusViewRight(self: LayoutService) =
     let self = self.LayoutServiceImpl
     let view = self.layout.tryGetViewRight()
     if view != nil:
       self.tryActivateView(view)
     self.platform.requestRender()
 
-  proc focusViewUp*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceFocusViewUp(self: LayoutService) =
     let self = self.LayoutServiceImpl
     let view = self.layout.tryGetViewUp()
     if view != nil:
       self.tryActivateView(view)
     self.platform.requestRender()
 
-  proc focusViewDown*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceFocusViewDown(self: LayoutService) =
     let self = self.LayoutServiceImpl
     let view = self.layout.tryGetViewDown()
     if view != nil:
       self.tryActivateView(view)
     self.platform.requestRender()
 
-  proc focusView*(self: LayoutService, slot: string) {.expose("layout").} =
+  proc layoutServiceFocusView(self: LayoutService, slot: string) =
     let self = self.LayoutServiceImpl
     let view = self.layout.getView(slot)
     if view != nil:
       self.tryActivateView(view)
     self.platform.requestRender()
 
-  proc focusNextView*(self: LayoutService, slot: string = "") {.expose("layout").} =
+  proc layoutServiceFocusNextView(self: LayoutService, slot: string = "") =
     let self = self.LayoutServiceImpl
     let view = self.layout.getView(slot)
     if view != nil and view of Layout:
@@ -1066,7 +1120,7 @@ when implModule:
             break
     self.platform.requestRender()
 
-  proc focusPrevView*(self: LayoutService, slot: string = "") {.expose("layout").} =
+  proc layoutServiceFocusPrevView(self: LayoutService, slot: string = "") =
     let self = self.LayoutServiceImpl
     let view = self.layout.getView(slot)
     if view != nil and view of Layout:
@@ -1085,7 +1139,7 @@ when implModule:
             break
     self.platform.requestRender()
 
-  proc openPrevView*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceOpenPrevView(self: LayoutService) =
     let self = self.LayoutServiceImpl
     if self.focusHistory.len == 0:
       return
@@ -1107,7 +1161,7 @@ when implModule:
       self.showView(viewId, addToHistory = false)
       break
 
-  proc openNextView*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceOpenNextView(self: LayoutService) =
     let self = self.LayoutServiceImpl
     if self.focusHistory.len == 0:
       return
@@ -1130,7 +1184,7 @@ when implModule:
       self.showView(viewId, addToHistory = false)
       break
 
-  proc openLastView*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceOpenLastView(self: LayoutService) =
     let self = self.LayoutServiceImpl
     for i in countdown(self.mAllViews.high, 0):
       let view = self.mAllViews[i]
@@ -1141,7 +1195,7 @@ when implModule:
         self.platform.requestRender()
         break
 
-  proc setLayout*(self: LayoutService, layout: string) {.expose("layout").} =
+  proc layoutServiceSetLayout(self: LayoutService, layout: string) =
     let self = self.LayoutServiceImpl
     if layout in self.layouts:
       self.layout = self.layouts[layout]
@@ -1152,7 +1206,7 @@ when implModule:
     else:
       log lvlError, &"Unknown layout '{layout}'"
 
-  proc setActiveViewIndex*(self: LayoutService, slot: string, index: int) {.expose("layout").} =
+  proc layoutServiceSetActiveViewIndex(self: LayoutService, slot: string, index: int) =
     let self = self.LayoutServiceImpl
     let view = self.layout.getView(slot)
     if view != nil and view of Layout:
@@ -1160,7 +1214,7 @@ when implModule:
       layout.activeIndex = index.clamp(0, layout.children.high)
     self.platform.requestRender()
 
-  proc moveActiveViewFirst*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceMoveActiveViewFirst(self: LayoutService) =
     let self = self.LayoutServiceImpl
     let layout = self.layout.activeLeafLayout()
     let currentView = layout.activeLeafView()
@@ -1176,7 +1230,7 @@ when implModule:
       self.platform.requestRender()
     self.platform.requestRender()
 
-  proc moveActiveViewPrev*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceMoveActiveViewPrev(self: LayoutService) =
     let self = self.LayoutServiceImpl
     let layout = self.layout.activeLeafLayout()
     let currentView = layout.activeLeafView()
@@ -1191,7 +1245,7 @@ when implModule:
         discard
       self.platform.requestRender()
 
-  proc moveActiveViewNext*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceMoveActiveViewNext(self: LayoutService) =
     let self = self.LayoutServiceImpl
     let layout = self.layout.activeLeafLayout()
     let currentView = layout.activeLeafView()
@@ -1206,7 +1260,7 @@ when implModule:
         discard
       self.platform.requestRender()
 
-  proc moveActiveViewNextAndGoBack*(self: LayoutService) {.expose("layout").} =
+  proc layoutServiceMoveActiveViewNextAndGoBack(self: LayoutService) =
     let self = self.LayoutServiceImpl
     if self.viewHistory.len == 0:
       return
@@ -1231,7 +1285,7 @@ when implModule:
 
     self.platform.requestRender()
 
-  proc splitView*(self: LayoutService, slot: string = "") {.expose("layout").} =
+  proc layoutServiceSplitView(self: LayoutService, slot: string = "") =
     let self = self.LayoutServiceImpl
     defer:
       self.platform.requestRender()
@@ -1239,7 +1293,7 @@ when implModule:
     if self.tryGetCurrentEditorView().getSome(view):
       discard self.createAndAddView(view.document, slot = slot)
 
-  proc moveView*(self: LayoutService, slot: string) {.expose("layout").} =
+  proc layoutServiceMoveView(self: LayoutService, slot: string) =
     let self = self.LayoutServiceImpl
     defer:
       self.platform.requestRender()
@@ -1257,7 +1311,7 @@ when implModule:
         return
       self.layout.collapseTemporaryViews()
 
-  proc wrapLayout(self: LayoutService, layout: JsonNode, slot: string = "**") {.expose("layout").} =
+  proc layoutServiceWrapLayout(self: LayoutService, layout: JsonNode, slot: string = "**") =
     ## Wraps the active view with the specified layout.
     ## You can either pass a JSON object specifying a layout configuration (like in a settings file)
     ## or a string representing the name of a layout.
@@ -1300,7 +1354,7 @@ when implModule:
     except LayoutError:
       discard
 
-  proc chooseLayout(self: LayoutService) {.expose("layout").} =
+  proc chooseLayout(self: LayoutService) =
     let self = self.LayoutServiceImpl
     var builder = SelectorPopupBuilder()
     builder.scope = "layout".some
@@ -1330,17 +1384,17 @@ when implModule:
 
     discard self.pushSelectorPopup(builder)
 
-  proc logLayout*(self: LayoutService) {.expose("layout").} =
+  proc logLayout*(self: LayoutService) =
     let self = self.LayoutServiceImpl
     log lvlInfo, self.layout.saveLayout(initHashSet[Id]()).pretty
 
-  proc logViews*(self: LayoutService) {.expose("layout").} =
+  proc logViews*(self: LayoutService) =
     let self = self.LayoutServiceImpl
     for v in self.mAllViews:
       if v != nil:
         debugf"{v}"
 
-  proc open*(self: LayoutService, path: string, slot: string = "") {.expose("layout").} =
+  proc layoutServiceOpen(self: LayoutService, path: string, slot: string = "") =
     ## Opens the specified file. Relative paths are relative to the main workspace.
     ## `path` - File path to open.
     ## `slot` - Where in the layout to put the opened file. If not specified the default slot is used.
@@ -1351,4 +1405,213 @@ when implModule:
       path = self.workspace.getAbsolutePath(path)
     discard self.openFile(path, slot)
 
-  addGlobalDispatchTable "layout", genDispatchTable("layout")
+  proc chooseOpen*(self: LayoutService, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) =
+    let self = self.LayoutServiceImpl
+    defer:
+      self.platform.requestRender()
+
+    proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
+      var items = newSeq[FinderItem]()
+      var hiddenViews = self.getHiddenViews()
+      let activeView = self.layout.activeLeafView()
+
+      for i in countdown(hiddenViews.high, 0):
+        let v = hiddenViews[i]
+        if v of EditorView:
+          let view = v.EditorView
+          let document = view.editor.currentDocument
+          let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
+          let dirtyMarker = if isDirty: " * " else: "   "
+          let (directory, name) = document.filename.splitPath
+          let (root, relativeDirectory) = self.workspace.getRelativePathAndWorkspaceSync(directory).get(("", directory))
+          items.add FinderItem(
+            displayName: dirtyMarker & name,
+            filterText: name,
+            data: $view.editor.id,
+            details: @[root // relativeDirectory],
+          )
+
+      self.layout.forEachView proc(v: View): bool =
+        if v of EditorView:
+          let view = v.EditorView
+          let document = view.editor.currentDocument
+          let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
+          let dirtyMarker = if isDirty: "* " else: "  "
+          let activeMarker = if view.View == activeView:
+            "#"
+          else:
+            "."
+          let (directory, name) = document.filename.splitPath
+          let (root, relativeDirectory) = self.workspace.getRelativePathAndWorkspaceSync(directory).get(("", directory))
+          items.add FinderItem(
+            displayName: activeMarker & dirtyMarker & name,
+            filterText: name,
+            data: $view.editor.id,
+            details: @[root // relativeDirectory],
+          )
+
+      return items
+
+    let source = newSyncDataSource(getItems)
+    var finder = newFinder(source, filterAndSort=true)
+    finder.filterThreshold = float.low
+
+    let previewer = if preview:
+      newOpenEditorPreviewer(self.services).Previewer.some
+    else:
+      Previewer.none
+
+    var builder = SelectorPopupBuilder()
+    builder.scope = "open".some
+    builder.previewScale = previewScale
+    builder.scaleX = scaleX
+    builder.scaleY = scaleY
+    builder.finder = finder.some
+    builder.previewer = previewer
+
+    builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
+      let editorId = item.data.parseInt.EditorIdNew.catch:
+        log lvlError, fmt"Failed to parse editor id from data '{item}'"
+        return true
+
+      if self.editors.getEditor(editorId).getSome(editor):
+        if self.getViewForEditor(editor).getSome(view):
+          self.showView(view)
+      return true
+
+    builder.customActions["close-selected"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
+      let item = popup.getSelectedItem().getOr:
+        return true
+
+      let editorId = item.data.parseInt.EditorIdNew.catch:
+        log lvlError, fmt"Failed to parse editor id from data '{item}'"
+        return true
+
+      if self.editors.getEditor(editorId).getSome(editor):
+        if self.getViewForEditor(editor).getSome(view):
+          self.closeView(view, restoreHidden = false)
+        else:
+          self.editors.closeEditor(editor)
+
+      source.retrigger()
+      return true
+
+    discard self.pushSelectorPopup builder
+
+  proc layoutServiceRender(self: LayoutService, builder: UINodeBuilder): seq[OverlayFunction] =
+    let self = self.LayoutServiceImpl
+    if self.layout == nil:
+      return
+
+    let newActiveView = self.layout.activeLeafView()
+    if newActiveView != self.activeView and newActiveView != nil:
+      if self.activeView != nil:
+        self.activeView.deactivate()
+      newActiveView.activate()
+      self.activeView = newActiveView
+      newActiveView.markDirty(notify=false)
+
+    if self.maximizeView:
+      let bounds = builder.currentParent.bounds
+      builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
+        let view = self.layout.activeLeafView()
+        if view != nil:
+          result.add view.createUI(builder)
+        elif self.fallbackView != nil:
+          result.add self.fallbackView.createUI(builder)
+        else:
+          builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+
+    else:
+      let visibleViews = self.getNumVisibleViews()
+      if visibleViews == 0 and self.fallbackView != nil:
+        result.add self.fallbackView.createUI(builder)
+      else:
+        result.add self.layout.createUI(builder)
+
+  proc init_module_layout*() {.cdecl, exportc, dynlib.} =
+    getServices().addService(LayoutServiceImpl(
+      initImpl: proc(self: Service): Future[Result[void, ref CatchableError]] {.gcsafe, async: (raises: []).} =
+        return await self.LayoutServiceImpl.layoutServiceInit()
+      ),
+      @[
+        PlatformService.serviceName,
+        ConfigService.serviceName,
+        DocumentEditorService.serviceName,
+        Workspace.serviceName,
+        VFSService.serviceName,
+        SessionService.serviceName,
+        CommandService.serviceName
+      ])
+
+    let cmds = getServiceChecked(CommandService)
+    let self = getServiceChecked(LayoutServiceImpl)
+    let statusLine = getServiceChecked(StatusLineService)
+
+    statusLine.addRenderer "layout", proc(builder: UINodeBuilder): seq[OverlayFunction] =
+      let layout = self.layout.activeLeafLayout()
+      let maximizedText = if self.maximizeView:
+        "Fullscreen"
+      elif layout != nil:
+        let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
+        if layout.maximize:
+          fmt"Max 1/{maxText}"
+        else:
+          fmt"{layout.children.len}/{maxText}"
+      else:
+        ""
+      let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[Layout {self.layoutName} - {layout.desc} - {maximizedText}]")
+      return @[]
+
+    statusLine.addRenderer "layout.min", proc(builder: UINodeBuilder): seq[OverlayFunction] =
+      let layout = self.layout.activeLeafLayout()
+      let maximizedText = if self.maximizeView:
+        "Fullscreen"
+      elif layout != nil:
+        let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
+        if layout.maximize:
+          fmt"Max 1/{maxText}"
+        else:
+          fmt"{layout.children.len}/{maxText}"
+      else:
+        ""
+      let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[{maximizedText}]")
+      return @[]
+
+    cmds.registerCommand "change-split-size", proc(change: float, vertical: bool) = self.changeSplitSize(change, vertical)
+    cmds.registerCommand "toggle-maximize-view-local", proc(slot: Option[string]) = self.toggleMaximizeViewLocal(slot.get("**"))
+    cmds.registerCommand "toggle-maximize-view", proc() = self.toggleMaximizeView()
+    cmds.registerCommand "set-max-views", proc(slot: string, maxViews: Option[int]) = self.setMaxViews(slot, maxViews.get(int.high))
+    cmds.registerCommand "get-num-visible-views", proc(): int = self.getNumVisibleViews()
+    cmds.registerCommand "get-num-hidden-views", proc(): int = self.getNumHiddenViews()
+    cmds.registerCommand "get-or-open-editor", proc(path: string): Option[EditorId] = self.getOrOpenEditor(path)
+    cmds.registerCommand "hide-active-view", proc(closeOpenPopup: Option[bool]) = self.hideActiveView(closeOpenPopup.get(true))
+    cmds.registerCommand "close-active-view", proc(closeOpenPopup: Option[bool], restoreHidden: Option[bool]) = self.layoutServiceCloseActiveView(closeOpenPopup.get(true), restoreHidden.get(true))
+    cmds.registerCommand "hide-other-views", proc() = self.hideOtherViews()
+    cmds.registerCommand "close-other-views", proc() = self.closeOtherViews()
+    cmds.registerCommand "focus-view-left", proc() = self.focusViewLeft()
+    cmds.registerCommand "focus-view-right", proc() = self.focusViewRight()
+    cmds.registerCommand "focus-view-up", proc() = self.focusViewUp()
+    cmds.registerCommand "focus-view-down", proc() = self.focusViewDown()
+    cmds.registerCommand "focus-view", proc(slot: string) = self.layoutServiceFocusView(slot)
+    cmds.registerCommand "focus-next-view", proc(slot: Option[string]) = self.focusNextView(slot.get(""))
+    cmds.registerCommand "focus-prev-view", proc(slot: Option[string]) = self.focusPrevView(slot.get(""))
+    cmds.registerCommand "open-prev-view", proc() = self.openPrevView()
+    cmds.registerCommand "open-next-view", proc() = self.openNextView()
+    cmds.registerCommand "open-last-view", proc() = self.openLastView()
+    cmds.registerCommand "set-layout", proc(layout: string) = self.setLayout(layout)
+    cmds.registerCommand "set-active-view-index", proc(slot: string, index: int) = self.setActiveViewIndex(slot, index)
+    cmds.registerCommand "move-active-view-first", proc() = self.moveActiveViewFirst()
+    cmds.registerCommand "move-active-view-prev", proc() = self.moveActiveViewPrev()
+    cmds.registerCommand "move-active-view-next", proc() = self.moveActiveViewNext()
+    cmds.registerCommand "move-active-view-next-and-go-back", proc() = self.moveActiveViewNextAndGoBack()
+    cmds.registerCommand "split-view", proc(slot: Option[string]) = self.splitView(slot.get(""))
+    cmds.registerCommand "move-view", proc(slot: string) = self.moveView(slot)
+    cmds.registerCommand "wrap-layout", proc(layout: JsonNode, slot: Option[string]) = self.wrapLayout(layout, slot.get("**"))
+    cmds.registerCommand "choose-layout", proc() = self.chooseLayout()
+    cmds.registerCommand "log-layout", proc() = self.logLayout()
+    cmds.registerCommand "log-views", proc() = self.logViews()
+    cmds.registerCommand "open", proc(path: string, slot: Option[string]) = self.open(path, slot.get(""))
+    cmds.registerCommand "choose-open", proc(preview: Option[bool], scaleX: Option[float], scaleY: Option[float], previewScale: Option[float]) = self.chooseOpen(preview.get(true), scaleX.get(0.8), scaleY.get(0.8), previewScale.get(0.6))

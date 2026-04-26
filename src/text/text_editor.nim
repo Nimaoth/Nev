@@ -12,7 +12,7 @@ import document, document_editor, events, vmath, bumpy, input, custom_treesitter
   text_document, snippet
 import completion, completion_provider_document, completion_provider_lsp,
   completion_provider_snippet, selector_popup_builder, dispatch_tables, register
-import config_provider, service, layout, platform_service, vfs, vfs_service, command_service, toast
+import config_provider, service, layout/layout, platform_service, vfs, vfs_service, command_service, toast
 import diff, plugin_service, move_database, event_service
 import workspaces/workspace
 import finder/[previewer, finder]
@@ -358,6 +358,9 @@ type
   TextDocumentEditorFactory* = ref object of DocumentEditorFactory
 
 proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEditor
+proc textEditorGetStateJson*(self: DocumentEditor): JsonNode
+proc textEditorRestoreStateJson*(self: DocumentEditor, state: JsonNode) {.gcsafe, raises: [].}
+proc textEditorDeinit*(self: DocumentEditor) {.gcsafe, raises: [].}
 
 func serviceName*(_: typedesc[TextDocumentEditorService]): string = "TextDocumentEditorService"
 
@@ -683,7 +686,8 @@ method setDocumentImpl*(self: TextDocumentEditor, document: Document) {.gcsafe, 
   self.onDocumentChanged.invoke((oldDocument.Document,))
   self.handleDocumentChanged()
 
-method deinit*(self: TextDocumentEditor) =
+proc textEditorDeinit*(self: DocumentEditor) =
+  let self = self.TextDocumentEditor
   self.unregister()
   self.eventBus.emit(&"editor/{self.id}/destroy", $self.id)
 
@@ -1065,7 +1069,7 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor,
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
   {.gcsafe.}:
     if getServices().getService(DocumentEditorService).getSome(editors):
-      if editors.getEditorForId(wrapper.id.EditorIdNew).getSome(editor):
+      if editors.getEditor(wrapper.id.EditorIdNew).getSome(editor):
         if editor of TextDocumentEditor:
           return editor.TextDocumentEditor.some
   return TextDocumentEditor.none
@@ -4800,6 +4804,9 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.commands = self.services.getService(CommandServiceImpl).get
   self.displayMap = DisplayMap.new()
   self.diffDisplayMap = DisplayMap.new()
+  self.getStateImpl = textEditorGetStateJson
+  self.restoreStateImpl = textEditorRestoreStateJson
+  self.deinitImpl = textEditorDeinit
   discard self.displayMap.overlay.onUpdated.subscribe proc(args: (OverlayMap, OverlayMapSnapshot, Patch[OverlayPoint], seq[int])) =
     if not self.textEditorComponent.isNil:
       self.textEditorComponent.onOverlaysChanged.invoke((args[3],))
@@ -4872,7 +4879,8 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
 method unregister*(self: TextDocumentEditor) =
   self.editors.unregisterEditor(self)
 
-method getStateJson*(self: TextDocumentEditor): JsonNode =
+proc textEditorGetStateJson*(self: DocumentEditor): JsonNode =
+  let self = self.TextDocumentEditor
   let selection = if self.textEditorComponent.mTargetSelections.getSome(s) and s.len > 0:
     s.last.toSelection
   else:
@@ -4881,7 +4889,8 @@ method getStateJson*(self: TextDocumentEditor): JsonNode =
     "selection": selection.toJson
   }
 
-method restoreStateJson*(self: TextDocumentEditor, state: JsonNode) =
+proc textEditorRestoreStateJson*(self: DocumentEditor, state: JsonNode) =
+  let self = self.TextDocumentEditor
   if state.kind != JObject:
     return
   try:

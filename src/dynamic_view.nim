@@ -1,8 +1,5 @@
-
-import std/[tables, json, sets]
 import misc/[custom_logger, util]
-import view, events
-import ui/node, document_editor
+import view
 
 export view
 
@@ -13,22 +10,13 @@ include dynlib_export
 type
   OverlayRenderFunc* = proc() {.closure, gcsafe, raises: [].}
   DynamicView* = ref object of View
-    renderImpl*: proc(view: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].}
-    closeImpl*: proc(view: DynamicView) {.gcsafe, raises: [].}
-    activateImpl*: proc(view: DynamicView) {.gcsafe, raises: [].}
-    deactivateImpl*: proc(view: DynamicView) {.gcsafe, raises: [].}
-    checkDirtyImpl*: proc(view: DynamicView) {.gcsafe, raises: [].}
-    markDirtyImpl*: proc(view: DynamicView, notify: bool = true) {.gcsafe, raises: [].}
-    getEventHandlersImpl*: proc(view: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].}
-    getActiveEditorImpl*: proc(view: DynamicView): Option[DocumentEditor] {.gcsafe, raises: [].}
-    saveLayoutImpl*: proc(view: DynamicView, discardedViews: HashSet[Id]): JsonNode {.gcsafe, raises: [].}
-    saveStateImpl*: proc(view: DynamicView): JsonNode {.gcsafe, raises: [].}
-    descImpl*: proc(self: DynamicView): string {.gcsafe, raises: [].}
-    kindImpl*: proc(self: DynamicView): string {.gcsafe, raises: [].}
-    copyImpl*: proc(self: DynamicView): View {.gcsafe, raises: [].}
-    displayImpl*: proc(self: DynamicView): string {.gcsafe, raises: [].}
 
 when implModule:
+  import std/[tables, json, sets]
+  import misc/[custom_logger, util]
+  import view, events
+  import ui/node, document_editor
+
   method close*(view: DynamicView) =
     if view.closeImpl != nil:
       view.closeImpl(view)
@@ -41,7 +29,6 @@ when implModule:
         return
       view.active = true
       view.markDirtyBase()
-
 
   method deactivate*(view: DynamicView) =
     if view.deactivateImpl != nil:

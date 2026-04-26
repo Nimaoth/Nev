@@ -44,7 +44,7 @@ method createUI*(self: DataPreviewer, builder: UINodeBuilder): seq[OverlayFuncti
   if self.editor.isNotNil:
     result.add self.editor.createUI(builder)
 
-method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFunction] =
+proc selectorPopupCreateUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFunction] =
   let app = ({.gcsafe.}: gEditor)
   # let dirty = self.dirty
   self.resetDirty()
@@ -266,3 +266,5 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
 
     if sizeToContentY:
       currentNode.h = currentNode.last.h + currentNode.border.top + currentNode.border.bottom
+
+createUIImpl = selectorPopupCreateUI

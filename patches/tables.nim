@@ -2420,15 +2420,6 @@ proc rawGet[A](t: CountTable[A], key: A): int =
     h = nextTry(h, high(t.data))
   result = -1 - h # < 0 => MISSING; insert idx = -1 - result
 
-proc rawGet[A, B](t: CountTable[A], key: B): int =
-  if t.data.len == 0:
-    return -1
-  var h: Hash = hash(key) and high(t.data) # start with real hash value
-  while t.data[h].val != 0:
-    if t.data[h].key == key: return h
-    h = nextTry(h, high(t.data))
-  result = -1 - h # < 0 => MISSING; insert idx = -1 - result
-
 template ctget(t, key, def: untyped): untyped =
   var index = rawGet(t, key)
   result = if index >= 0: t.data[index].val else: def

@@ -1,4 +1,4 @@
-#use workspace_edit log
+#use workspace_edit log layout
 import std/[strformat, strutils, os, sets, tables, options, json, sequtils, uri]
 import misc/[id, custom_logger, util, custom_async, async_process, event, response, rope_utils, array_view, jsonex, myjsonutils]
 import text/language/[language_server_base, lsp_types]
@@ -21,7 +21,7 @@ when implModule:
   import text/[treesitter_type_conv]
   import service, event_service, document_editor, document, config_provider, vfs, vfs_service, selector_popup_builder
   import nimsumtree/[arc, rope, buffer]
-  import layout, command_service, toast
+  import layout/layout, command_service, toast
   import finder/[finder, data_previewer]
 
   logCategory "language-server-lsp"

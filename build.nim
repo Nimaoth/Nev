@@ -1,4 +1,4 @@
-import std/[parseopt, options, strutils, os, strformat, dirs, sequtils, unicode, osproc, times, tables, json, jsonutils, threadpool, sets, sugar]
+import std/[parseopt, options, strutils, os, strformat, dirs, sequtils, unicode, osproc, times, tables, json, jsonutils, threadpool, sets, sugar, algorithm]
 import src/misc/timer
 
 var optParser = initOptParser("")
@@ -216,6 +216,20 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
       let opt = if debug: "none" else: "speed"
       let cmd = &"nim c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependencies} {allFeatures} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:{opt} --lineDir:off -d:mallocImport {m.path}"
       if parallel:
+        while cmds.len >= 10:
+          for i in countdown(cmds.high, 0):
+            if cmds[i].fv.isReady:
+              let (output, err) = ^cmds[i].fv
+              if err == 0:
+                inc numBuilt
+              else:
+                inc numFailed
+                failedModules.add(cmds[i].module)
+              echo &"=========================================== Build output for {cmds[i].module} ================================"
+              echo output
+              cmds.del(i)
+              break
+          sleep(10)
         let v = runCmdAsync(cmd)
         if v != nil:
           cmds.add((v, name))
@@ -257,17 +271,51 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
     echo &"Failed to write build.json: {e.msg}"
 
   try:
-    var imports = ""
+    proc topoSort(modules: Table[string, ModuleInfo]): seq[string] =
+      var inDegree = initCountTable[string]()
+      var graph = initTable[string, seq[string]]()
+      for name in modules.keys:
+        inDegree[name] = 0
+        graph[name] = @[]
+      for (name, m) in modules.pairs:
+        for dep in m.dependencies:
+          if dep.module in modules:
+            graph[name].add(dep.module)
+            inc inDegree, dep.module
+      var queue: seq[string] = @[]
+      for name in modules.keys:
+        if name in inDegree and inDegree[name] > 0:
+          continue
+        queue.add(name)
+      while queue.len > 0:
+        var node = queue.pop()
+        result.add(node)
+        for neighbor in graph[node]:
+          inc inDegree, neighbor, -1
+          if inDegree[neighbor] == 0:
+            queue.add(neighbor)
+
+    var sortedNames = topoSort(modules)
+    assert sortedNames.toSet().len == modules.len
+
+    var imports = "when not defined(useDynlib):\n"
     var inits = "proc initModules*() =\n"
     var deinits = "proc shutdownModules*() =\n"
-    for (name, m) in modules.pairs:
-      let path = m.path.replace("\\", "/")
-      imports.add &"import \"../{path}\"\n"
-      inits.add &"  when declared(init_module_{name}): init_module_{name}()\n"
+    var loads = "proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =\n"
+
+    for name in sortedNames:
       deinits.add &"  when declared(shutdown_module_{name}): shutdown_module_{name}()\n"
 
+    sortedNames.reverse()
+    for name in sortedNames:
+      let m = modules[name]
+      let path = m.path.replace("\\", "/")
+      imports.add &"  import \"../{path}\"\n"
+      inits.add &"  when declared(init_module_{name}): init_module_{name}()\n"
+      loads.add &"  loadModule(\"{name}\")\n"
+
     if not dry:
-      writeFile("src/module_imports.nim", &"{imports}\n{inits}\n{deinits}")
+      writeFile("src/module_imports.nim", &"{imports}\n{inits}\n{deinits}\n{loads}")
   except CatchableError as e:
     echo &"Failed to write module_imports.nim: {e.msg}"
 

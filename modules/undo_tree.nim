@@ -1,4 +1,4 @@
-#use command_component
+#use command_component layout
 import std/[options, algorithm, strutils, times, tables, json]
 import service, dynamic_view
 import component
@@ -12,7 +12,7 @@ include module_base
 when implModule:
   import std/sets
   import misc/[custom_logger, util, id, myjsonutils]
-  import text_component, document_editor, document, layout, command_component, events, platform_service
+  import text_component, document_editor, document, layout/layout, command_component, events, platform_service
   import nimsumtree/[buffer, clock]
   import ui/node
   import command_service
@@ -517,19 +517,19 @@ when implModule:
 
   proc newUndoTreeView*(): UndoTreeView =
     result = UndoTreeView()
-    result.renderImpl = proc(view: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] =
+    result.renderImpl = proc(view: View, builder: UINodeBuilder): seq[OverlayRenderFunc] =
       let undoView = view.UndoTreeView
       renderUndoTree(undoView, builder)
 
-    result.getEventHandlersImpl = proc(self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] =
+    result.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
       getUndoTreeViewEventHandlers(self.UndoTreeView, inject)
 
-    result.kindImpl = proc(self: DynamicView): string = kind(self.UndoTreeView)
-    result.descImpl = proc(self: DynamicView): string = desc(self.UndoTreeView)
-    result.displayImpl = proc(self: DynamicView): string = display(self.UndoTreeView)
-    result.copyImpl = proc(self: DynamicView): View = copy(self.UndoTreeView)
-    result.saveLayoutImpl = proc(self: DynamicView, discardedViews: HashSet[Id]): JsonNode = saveLayout(self.UndoTreeView, discardedViews)
-    result.saveStateImpl = proc(self: DynamicView): JsonNode = saveState(self.UndoTreeView)
+    result.kindImpl = proc(self: View): string = kind(self.UndoTreeView)
+    result.descImpl = proc(self: View): string = desc(self.UndoTreeView)
+    result.displayImpl = proc(self: View): string = display(self.UndoTreeView)
+    result.copyImpl = proc(self: View): View = copy(self.UndoTreeView)
+    result.saveLayoutImpl = proc(self: View, discardedViews: HashSet[Id]): JsonNode = saveLayout(self.UndoTreeView, discardedViews)
+    result.saveStateImpl = proc(self: View): JsonNode = saveState(self.UndoTreeView)
 
   proc init_module_undo_tree*() {.cdecl, exportc, dynlib.} =
     let services = getServices()

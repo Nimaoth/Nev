@@ -1,4 +1,4 @@
-#use command_component, snippet_component, search_component
+#use command_component snippet_component search_component layout
 import platform/platform
 
 const currentSourcePath2 = currentSourcePath()
@@ -10,7 +10,7 @@ when implModule:
   import nimsumtree/[buffer, rope, clock, arc]
   import scripting_api
   import input_api
-  import service, config_provider, layout
+  import service, config_provider, layout/layout
   import document_editor, document, text_editor_component, text_component, move_component, command_component, snippet_component
   import config_component, command_service, search_component, decoration_component
   import register
@@ -282,11 +282,12 @@ when implModule:
   proc moveCursorLine(editor: TextEditor, amount: int, includeEol: bool = true) =
     editor.setSelections editor.multiMove(editor.selections, "line-down", amount, false, includeEol).mapIt(it.last.toSelection)
 
-  proc sliceSelection(rope: Rope, selection: Selection, inclusive = false): RopeSlice[Point] =
+  proc sliceSelection(rope: Rope, selectionRaw: Selection, inclusive = false): RopeSlice[Point] =
+    let selectionNorm = selectionRaw.normalized
     let selection = if inclusive:
-      (selection.first, rope.clipPoint(point(selection.last.line, selection.last.column + 1), Bias.Right).toCursor)
+      (selectionNorm.first, rope.clipPoint(point(selectionNorm.last.line, selectionNorm.last.column + 1), Bias.Right).toCursor)
     else:
-      selection
+      selectionNorm
     rope[selection.toRange]
 
   proc slice(rope: RopeSlice[Point], a, b: int): RopeSlice[Point] =

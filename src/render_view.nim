@@ -2,7 +2,7 @@ import std/[strformat, tables, sets]
 import misc/[custom_logger, util, delayed_task, timer, render_command]
 import view, service
 import platform/platform
-import platform_service, layout, events, command_service
+import platform_service, layout/layout, events, command_service
 
 {.push gcsafe, raises: [].}
 

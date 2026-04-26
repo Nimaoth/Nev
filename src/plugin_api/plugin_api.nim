@@ -2,7 +2,7 @@ import std/[macros, strutils, os, strformat, sequtils, json, sets, tables, atomi
 import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils, regex, rope_regex, generational_seq, shared_buffer]
 import nimsumtree/[rope, sumtree, arc, clock, buffer]
 import service
-import layout
+import layout/layout
 import text/[text_editor, text_document, overlay_map]
 import view
 import render_view as rv
@@ -492,12 +492,10 @@ converter toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
 proc editorActiveEditor*(instance: ptr InstanceData, options: ActiveEditorFlags): Option[Editor] =
   if instance.host == nil:
     return
-  if ActiveEditorFlag.IncludeCommandLine in options and instance.host.commands.commandLineMode():
-    return Editor(id: instance.host.commands.commandLineEditor.id.uint64).some
-  if ActiveEditorFlag.IncludePopups in options and instance.host.layout.popups.len > 0 and instance.host.layout.popups.last.getActiveEditor().getSome(editor):
+  let includeCommandLine = ActiveEditorFlag.IncludeCommandLine in options
+  let includePopups = ActiveEditorFlag.IncludePopups in options
+  if instance.host.layout.getActiveEditor(includeCommandLine = includeCommandLine, includePopups = includePopups).getSome(editor):
     return Editor(id: editor.id.uint64).some
-  if instance.host.layout.tryGetCurrentEditorView().getSome(view):
-    return Editor(id: view.editor.id.uint64).some
   return Editor.none
 
 proc editorGetDocument*(instance: ptr InstanceData; editor: Editor): Option[Document] =
@@ -512,12 +510,11 @@ proc editorGetDocument*(instance: ptr InstanceData; editor: Editor): Option[Docu
 proc textEditorActiveTextEditor*(instance: ptr InstanceData, options: ActiveEditorFlags): Option[TextEditor] =
   if instance.host == nil:
     return
-  if ActiveEditorFlag.IncludeCommandLine in options and instance.host.commands.commandLineMode() and instance.host.commands.commandLineEditor of TextDocumentEditor:
-    return TextEditor(id: instance.host.commands.commandLineEditor.id.uint64).some
-  if ActiveEditorFlag.IncludePopups in options and instance.host.layout.popups.len > 0 and instance.host.layout.popups.last.getActiveEditor().getSome(editor) and editor of TextDocumentEditor:
+  let includeCommandLine = ActiveEditorFlag.IncludeCommandLine in options
+  let includePopups = ActiveEditorFlag.IncludePopups in options
+  if instance.host.layout.getActiveEditor(includeCommandLine = includeCommandLine, includePopups = includePopups).getSome(editor) and
+      editor of TextDocumentEditor:
     return TextEditor(id: editor.id.uint64).some
-  if instance.host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
-    return TextEditor(id: view.editor.TextDocumentEditor.id.uint64).some
   return TextEditor.none
 
 proc textEditorGetDocument*(instance: ptr InstanceData; editor: TextEditor): Option[TextDocument] =
@@ -674,17 +671,6 @@ proc textEditorDefineMove*(instance: ptr InstanceData; move: sink string; fun: u
     return @[]
 
   instance.host.moves.registerMove(move, moveImpl)
-
-proc textEditor_addModeChangedHandler*(instance: ptr InstanceData, fun: uint32): int32 =
-  if instance.host == nil:
-    return
-  if instance.host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
-    let editor = view.editor.TextDocumentEditor
-    discard editor.onModeChanged.subscribe proc(args: tuple[removed: seq[string], added: seq[string]]) =
-      let res = instance.funcs.handleModeChanged(fun, $args.removed, $args.added)
-      if res.isErr:
-        log lvlError, "Failed to call handleModeChanged: " & res.err.msg
-  return 0
 
 proc textEditorSetMode*(instance: ptr InstanceData; editor: TextEditor, mode: sink string, exclusive: bool): void =
   if instance.host == nil:

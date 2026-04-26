@@ -1,3 +1,4 @@
+#use layout
 import nimsumtree/[arc]
 import misc/[id]
 import channel, view
@@ -33,7 +34,7 @@ when implModule:
   import ui/node
   import platform/platform
   import finder/[finder, previewer]
-  import dynamic_view, events, config_provider, layout, theme, vterm, input, input_api, selector_popup_builder, vfs, vfs_service
+  import dynamic_view, events, config_provider, layout/layout, theme, vterm, input, input_api, selector_popup_builder, vfs, vfs_service
   import text_editor_component, config_component, register, service, command_service
   import types_impl
   import render
@@ -2655,15 +2656,15 @@ when implModule:
         result = renderTerminal(view, builder, width, height, cellWidth, cellHeight)
         view.setSize(width, height, cellWidth, cellHeight)
 
-      view.renderImpl = proc(self: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] = renderTerminal(self.TerminalView, builder)
-      view.closeImpl = proc(self: DynamicView) = closeTerminalView(self.TerminalView)
-      view.activateImpl = proc(self: DynamicView) = activateTerminalView(self.TerminalView)
-      view.deactivateImpl = proc(self: DynamicView) = deactivateTerminalView(self.TerminalView)
-      view.getEventHandlersImpl = proc (self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] = getEventHandlers(self.TerminalView, inject)
-      view.descImpl = proc (self: DynamicView): string = desc(self.TerminalView)
-      view.kindImpl = proc (self: DynamicView): string = kind(self.TerminalView)
-      view.displayImpl = proc (self: DynamicView): string = display(self.TerminalView)
-      view.saveStateImpl = proc (self: DynamicView): JsonNode = saveState(self.TerminalView)
+      view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] = renderTerminal(self.TerminalView, builder)
+      view.closeImpl = proc(self: View) = closeTerminalView(self.TerminalView)
+      view.activateImpl = proc(self: View) = activateTerminalView(self.TerminalView)
+      view.deactivateImpl = proc(self: View) = deactivateTerminalView(self.TerminalView)
+      view.getEventHandlersImpl = proc (self: View, inject: Table[string, EventHandler]): seq[EventHandler] = getEventHandlers(self.TerminalView, inject)
+      view.descImpl = proc (self: View): string = desc(self.TerminalView)
+      view.kindImpl = proc (self: View): string = kind(self.TerminalView)
+      view.displayImpl = proc (self: View): string = display(self.TerminalView)
+      view.saveStateImpl = proc (self: View): JsonNode = saveState(self.TerminalView)
       view.onClick = handleClick
       view.onScroll = handleScroll
       view.onDrag = handleDrag
@@ -2720,15 +2721,15 @@ when implModule:
         result = renderTerminal(view, builder, width, height, cellWidth, cellHeight)
         view.setSize(width, height, cellWidth, cellHeight)
 
-      view.renderImpl = proc(self: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] = renderTerminal(self.TerminalView, builder)
-      view.closeImpl = proc(self: DynamicView) = closeTerminalView(self.TerminalView)
-      view.activateImpl = proc(self: DynamicView) = activateTerminalView(self.TerminalView)
-      view.deactivateImpl = proc(self: DynamicView) = deactivateTerminalView(self.TerminalView)
-      view.getEventHandlersImpl = proc (self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] = getEventHandlers(self.TerminalView, inject)
-      view.descImpl = proc (self: DynamicView): string = desc(self.TerminalView)
-      view.kindImpl = proc (self: DynamicView): string = kind(self.TerminalView)
-      view.displayImpl = proc (self: DynamicView): string = display(self.TerminalView)
-      view.saveStateImpl = proc (self: DynamicView): JsonNode = saveState(self.TerminalView)
+      view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] = renderTerminal(self.TerminalView, builder)
+      view.closeImpl = proc(self: View) = closeTerminalView(self.TerminalView)
+      view.activateImpl = proc(self: View) = activateTerminalView(self.TerminalView)
+      view.deactivateImpl = proc(self: View) = deactivateTerminalView(self.TerminalView)
+      view.getEventHandlersImpl = proc (self: View, inject: Table[string, EventHandler]): seq[EventHandler] = getEventHandlers(self.TerminalView, inject)
+      view.descImpl = proc (self: View): string = desc(self.TerminalView)
+      view.kindImpl = proc (self: View): string = kind(self.TerminalView)
+      view.displayImpl = proc (self: View): string = display(self.TerminalView)
+      view.saveStateImpl = proc (self: View): JsonNode = saveState(self.TerminalView)
       view.onClick = handleClick
       view.onScroll = handleScroll
       view.onDrag = handleDrag

@@ -354,8 +354,6 @@ interface text-editor {
   get-selections: func(editor: text-editor) -> list<selection>;
   /// Return the length of the given line (0 based)
   line-length: func(editor: text-editor, line: s32) -> s32;
-  /// Add a callback which will be called whenever any editor changes mode.
-  add-mode-changed-handler: func(fun: u32) -> s32;
 
   /// Returns the value of the setting with the given path, encoded as JSON.
   get-setting-raw: func(editor: text-editor, name: string) -> string;
@@ -617,7 +615,6 @@ interface guest {
   use types.{rope, selection, vec2f};
   init-plugin: func();
   handle-command: func(fun: u32, data: u32, arguments: string) -> string;
-  handle-mode-changed: func(fun: u32, old: string, new: string);
   handle-view-render-callback: func(id: s32, fun: u32, data: u32);
   handle-channel-update: func(fun: u32, data: u32, closed: bool) -> channel-listen-response;
   notify-task-complete: func(task: u64, canceled: bool);

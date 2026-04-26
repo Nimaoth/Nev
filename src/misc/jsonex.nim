@@ -1696,6 +1696,9 @@ proc toJsonEx*(node: JsonNode, opt = initToJsonOptions()): JsonNodeEx =
   of JsonNodeKind.JNull:
     result = newJexNull()
 
+proc fromJsonExHook*(a: var JsonNode, b: JsonNodeEx, opt = Joptions()) =
+  a = b.toJson()
+
 when isMainModule:
   echo pretty(parseJsonex """
 {

@@ -1,4 +1,4 @@
-#use hover_component
+#use hover_component layout
 import platform/[tui]
 import nimsumtree/[arc]
 import service, command_service, channel, view
@@ -15,7 +15,7 @@ when implModule:
   import std/[options, json, tables, sugar, strtabs, streams, sets, sequtils, enumerate, osproc, macros, genasts]
   import vmath, bumpy, chroma
   import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap, arena, array_view, rope_utils, array_set]
-  import dap_client, config_provider, selector_popup_builder, events, dynamic_view, document, document_editor, layout, platform_service, session
+  import dap_client, config_provider, selector_popup_builder, events, dynamic_view, document, document_editor, layout/layout, platform_service, session
   import text/language/[language_server_base]
   import text/[treesitter_type_conv]
   import platform/platform
@@ -135,18 +135,18 @@ when implModule:
 
   proc createDebuggerView[T](debugger: Debugger): T =
     let view = T()
-    view.kindImpl = proc(self: DynamicView): string = kind(self.T)
-    view.descImpl = proc(self: DynamicView): string = desc(self.T)
-    view.displayImpl = proc(self: DynamicView): string = display(self.T)
-    view.copyImpl = proc(self: DynamicView): View = copy(self.T)
-    view.saveLayoutImpl = proc(self: DynamicView, discardedViews: HashSet[Id]): JsonNode = saveLayout(self.T, discardedViews)
-    view.saveStateImpl = proc(self: DynamicView): JsonNode = saveState(self.T)
-    view.getEventHandlersImpl = proc(self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] = getEventHandlers(self.T, inject)
+    view.kindImpl = proc(self: View): string = kind(self.T)
+    view.descImpl = proc(self: View): string = desc(self.T)
+    view.displayImpl = proc(self: View): string = display(self.T)
+    view.copyImpl = proc(self: View): View = copy(self.T)
+    view.saveLayoutImpl = proc(self: View, discardedViews: HashSet[Id]): JsonNode = saveLayout(self.T, discardedViews)
+    view.saveStateImpl = proc(self: View): JsonNode = saveState(self.T)
+    view.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] = getEventHandlers(self.T, inject)
 
     proc renderDebuggerView(view: T, builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].} =
       return view.renderView(builder, debugger)
 
-    view.renderImpl = proc(self: DynamicView, builder: UINodeBuilder): seq[OverlayRenderFunc] = renderDebuggerView(self.T, builder)
+    view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] = renderDebuggerView(self.T, builder)
     return view
 
   var gCurrentVariablesView: VariablesView = nil
@@ -278,7 +278,7 @@ when implModule:
 
   proc createOutputView*(debugger: Debugger): OutputView =
     let self = createDebuggerView[OutputView](debugger)
-    self.getActiveEditorImpl = proc(view: DynamicView): Option[DocumentEditor] =
+    self.getActiveEditorImpl = proc(view: View): Option[DocumentEditor] =
       if debugger.outputEditor != nil:
         debugger.outputEditor.some
       else:
@@ -326,14 +326,14 @@ when implModule:
       gDebugger = self
 
     self.languageServer = newLanguageServerDebugger(self)
-    self.editors = self.services.getService(DocumentEditorService).get
-    self.layout = self.services.getService(LayoutService).get
-    self.vfs = self.services.getService(VFSService).get.vfs2
-    self.events = self.services.getService(EventHandlerService).get
-    self.config = self.services.getService(ConfigService).get
-    self.platform = self.services.getService(PlatformService).get.platform
-    self.workspace = self.services.getService(Workspace).get
-    self.commands = self.services.getService(CommandService).get
+    self.editors = self.services.getServiceChecked(DocumentEditorService)
+    self.layout = self.services.getServiceChecked(LayoutService)
+    self.vfs = self.services.getServiceChecked(VFSService).vfs2
+    self.events = self.services.getServiceChecked(EventHandlerService)
+    self.config = self.services.getServiceChecked(ConfigService)
+    self.platform = self.services.getServiceChecked(PlatformService).platform
+    self.workspace = self.services.getServiceChecked(Workspace)
+    self.commands = self.services.getServiceChecked(CommandService)
 
     discard self.editors.onEditorRegistered.subscribe (e: DocumentEditor) {.gcsafe, raises: [].} =>
       self.handleEditorRegistered(e)

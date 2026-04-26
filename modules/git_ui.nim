@@ -1,4 +1,4 @@
-#use command_component
+#use command_component layout
 import std/[options, algorithm, strutils, times, tables, json]
 import service
 import component
@@ -13,7 +13,7 @@ include module_base
 when implModule:
   import std/[sets, math, sequtils]
   import misc/[custom_logger, util, id, myjsonutils, jsonex, rope_utils, async_process, custom_async]
-  import text_component, event_service, document_editor, document, dynamic_view, view, layout, command_component, platform_service
+  import text_component, event_service, document_editor, document, dynamic_view, view, layout/layout, command_component, platform_service
   import nimsumtree/[buffer, clock, rope]
   import ui/node
   import command_service, workspaces/workspace, config_component, text_editor_component
@@ -493,25 +493,25 @@ when implModule:
   proc newGitUiView*(): GitUiView =
     result = GitUiView()
     result.uiId = newId()
-    result.renderImpl = proc(view: DynamicView, builder: UINodeBuilder): seq[dynamic_view.OverlayRenderFunc] =
+    result.renderImpl = proc(view: View, builder: UINodeBuilder): seq[dynamic_view.OverlayRenderFunc] =
       let gitUiView = view.GitUiView
       renderGitUi(gitUiView, builder)
 
-    result.getEventHandlersImpl = proc(self: DynamicView, inject: Table[string, EventHandler]): seq[EventHandler] =
+    result.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
       getGitUiViewEventHandlers(self.GitUiView, inject)
 
-    result.getActiveEditorImpl = proc(self: DynamicView): Option[DocumentEditor] =
+    result.getActiveEditorImpl = proc(self: View): Option[DocumentEditor] =
       let gitUiView = self.GitUiView
       if gitUiView.editCommit and gitUiView.commitEditor != nil:
         return gitUiView.commitEditor.some
       return DocumentEditor.none
 
-    result.kindImpl = proc(self: DynamicView): string = kind(self.GitUiView)
-    result.descImpl = proc(self: DynamicView): string = desc(self.GitUiView)
-    result.displayImpl = proc(self: DynamicView): string = display(self.GitUiView)
-    result.copyImpl = proc(self: DynamicView): View = copy(self.GitUiView)
-    result.saveLayoutImpl = proc(self: DynamicView, discardedViews: HashSet[Id]): JsonNode = saveLayout(self.GitUiView, discardedViews)
-    result.saveStateImpl = proc(self: DynamicView): JsonNode = saveState(self.GitUiView)
+    result.kindImpl = proc(self: View): string = kind(self.GitUiView)
+    result.descImpl = proc(self: View): string = desc(self.GitUiView)
+    result.displayImpl = proc(self: View): string = display(self.GitUiView)
+    result.copyImpl = proc(self: View): View = copy(self.GitUiView)
+    result.saveLayoutImpl = proc(self: View, discardedViews: HashSet[Id]): JsonNode = saveLayout(self.GitUiView, discardedViews)
+    result.saveStateImpl = proc(self: View): JsonNode = saveState(self.GitUiView)
 
   proc delayedInit(view: GitUiView) {.async: (raises: []).} =
     view.commitDoc = view.editors.createDocument("text", ".git-commit-message", load = false, %%*{"createLanguageServer": false})

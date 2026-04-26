@@ -1,7 +1,7 @@
 import std/[options, tables, sets]
 import vmath, bumpy
 import misc/[id, custom_logger, util, event, response]
-import dap_client, config_provider, command_service, events, dynamic_view, document, document_editor, layout
+import dap_client, config_provider, command_service, events, dynamic_view, document, document_editor, layout/layout
 import platform/platform
 import finder/[previewer]
 import workspaces/workspace, vfs, vfs_service, language_server_dynamic
