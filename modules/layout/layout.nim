@@ -165,7 +165,7 @@ when implModule:
   import platform/platform
   import misc/[custom_logger, rect_utils, myjsonutils, util, jsonex]
   import workspaces/workspace
-  import finder/[finder, previewer, open_editor_previewer]
+  import finder/[finder, previewer]
   import platform_service, events, config_provider, vfs, vfs_service, session, layouts, command_service, status_line, theme
   import nimsumtree/arc
 
@@ -1405,6 +1405,127 @@ when implModule:
       path = self.workspace.getAbsolutePath(path)
     discard self.openFile(path, slot)
 
+  proc layoutServiceRender(self: LayoutService, builder: UINodeBuilder): seq[OverlayFunction] =
+    let self = self.LayoutServiceImpl
+    if self.layout == nil:
+      return
+
+    let newActiveView = self.layout.activeLeafView()
+    if newActiveView != self.activeView and newActiveView != nil:
+      if self.activeView != nil:
+        self.activeView.deactivate()
+      newActiveView.activate()
+      self.activeView = newActiveView
+      newActiveView.markDirty(notify=false)
+
+    if self.maximizeView:
+      let bounds = builder.currentParent.bounds
+      builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
+        let view = self.layout.activeLeafView()
+        if view != nil:
+          result.add view.createUI(builder)
+        elif self.fallbackView != nil:
+          result.add self.fallbackView.createUI(builder)
+        else:
+          builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+
+    else:
+      let visibleViews = self.getNumVisibleViews()
+      if visibleViews == 0 and self.fallbackView != nil:
+        result.add self.fallbackView.createUI(builder)
+      else:
+        result.add self.layout.createUI(builder)
+
+  proc chooseOpen*(self: LayoutService, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6)
+
+  proc init_module_layout*() {.cdecl, exportc, dynlib.} =
+    getServices().addService(LayoutServiceImpl(
+      initImpl: proc(self: Service): Future[Result[void, ref CatchableError]] {.gcsafe, async: (raises: []).} =
+        return await self.LayoutServiceImpl.layoutServiceInit()
+      ),
+      @[
+        PlatformService.serviceName,
+        ConfigService.serviceName,
+        DocumentEditorService.serviceName,
+        Workspace.serviceName,
+        VFSService.serviceName,
+        SessionService.serviceName,
+        CommandService.serviceName
+      ])
+
+    let cmds = getServiceChecked(CommandService)
+    let self = getServiceChecked(LayoutServiceImpl)
+    let statusLine = getServiceChecked(StatusLineService)
+
+    statusLine.addRenderer "layout", proc(builder: UINodeBuilder): seq[OverlayFunction] =
+      let layout = self.layout.activeLeafLayout()
+      let maximizedText = if self.maximizeView:
+        "Fullscreen"
+      elif layout != nil:
+        let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
+        if layout.maximize:
+          fmt"Max 1/{maxText}"
+        else:
+          fmt"{layout.children.len}/{maxText}"
+      else:
+        ""
+      let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[Layout {self.layoutName} - {layout.desc} - {maximizedText}]")
+      return @[]
+
+    statusLine.addRenderer "layout.min", proc(builder: UINodeBuilder): seq[OverlayFunction] =
+      let layout = self.layout.activeLeafLayout()
+      let maximizedText = if self.maximizeView:
+        "Fullscreen"
+      elif layout != nil:
+        let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
+        if layout.maximize:
+          fmt"Max 1/{maxText}"
+        else:
+          fmt"{layout.children.len}/{maxText}"
+      else:
+        ""
+      let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[{maximizedText}]")
+      return @[]
+
+    cmds.registerCommand "change-split-size", proc(change: float, vertical: bool) = self.changeSplitSize(change, vertical)
+    cmds.registerCommand "toggle-maximize-view-local", proc(slot: Option[string]) = self.toggleMaximizeViewLocal(slot.get("**"))
+    cmds.registerCommand "toggle-maximize-view", proc() = self.toggleMaximizeView()
+    cmds.registerCommand "set-max-views", proc(slot: string, maxViews: Option[int]) = self.setMaxViews(slot, maxViews.get(int.high))
+    cmds.registerCommand "get-num-visible-views", proc(): int = self.getNumVisibleViews()
+    cmds.registerCommand "get-num-hidden-views", proc(): int = self.getNumHiddenViews()
+    cmds.registerCommand "get-or-open-editor", proc(path: string): Option[EditorId] = self.getOrOpenEditor(path)
+    cmds.registerCommand "hide-active-view", proc(closeOpenPopup: Option[bool]) = self.hideActiveView(closeOpenPopup.get(true))
+    cmds.registerCommand "close-active-view", proc(closeOpenPopup: Option[bool], restoreHidden: Option[bool]) = self.layoutServiceCloseActiveView(closeOpenPopup.get(true), restoreHidden.get(true))
+    cmds.registerCommand "hide-other-views", proc() = self.hideOtherViews()
+    cmds.registerCommand "close-other-views", proc() = self.closeOtherViews()
+    cmds.registerCommand "focus-view-left", proc() = self.focusViewLeft()
+    cmds.registerCommand "focus-view-right", proc() = self.focusViewRight()
+    cmds.registerCommand "focus-view-up", proc() = self.focusViewUp()
+    cmds.registerCommand "focus-view-down", proc() = self.focusViewDown()
+    cmds.registerCommand "focus-view", proc(slot: string) = self.layoutServiceFocusView(slot)
+    cmds.registerCommand "focus-next-view", proc(slot: Option[string]) = self.focusNextView(slot.get(""))
+    cmds.registerCommand "focus-prev-view", proc(slot: Option[string]) = self.focusPrevView(slot.get(""))
+    cmds.registerCommand "open-prev-view", proc() = self.openPrevView()
+    cmds.registerCommand "open-next-view", proc() = self.openNextView()
+    cmds.registerCommand "open-last-view", proc() = self.openLastView()
+    cmds.registerCommand "set-layout", proc(layout: string) = self.setLayout(layout)
+    cmds.registerCommand "set-active-view-index", proc(slot: string, index: int) = self.setActiveViewIndex(slot, index)
+    cmds.registerCommand "move-active-view-first", proc() = self.moveActiveViewFirst()
+    cmds.registerCommand "move-active-view-prev", proc() = self.moveActiveViewPrev()
+    cmds.registerCommand "move-active-view-next", proc() = self.moveActiveViewNext()
+    cmds.registerCommand "move-active-view-next-and-go-back", proc() = self.moveActiveViewNextAndGoBack()
+    cmds.registerCommand "split-view", proc(slot: Option[string]) = self.splitView(slot.get(""))
+    cmds.registerCommand "move-view", proc(slot: string) = self.moveView(slot)
+    cmds.registerCommand "wrap-layout", proc(layout: JsonNode, slot: Option[string]) = self.wrapLayout(layout, slot.get("**"))
+    cmds.registerCommand "choose-layout", proc() = self.chooseLayout()
+    cmds.registerCommand "log-layout", proc() = self.logLayout()
+    cmds.registerCommand "log-views", proc() = self.logViews()
+    cmds.registerCommand "open", proc(path: string, slot: Option[string]) = self.open(path, slot.get(""))
+    cmds.registerCommand "choose-open", proc(preview: Option[bool], scaleX: Option[float], scaleY: Option[float], previewScale: Option[float]) = self.chooseOpen(preview.get(true), scaleX.get(0.8), scaleY.get(0.8), previewScale.get(0.6))
+
+  import finder/[open_editor_previewer]
   proc chooseOpen*(self: LayoutService, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) =
     let self = self.LayoutServiceImpl
     defer:
@@ -1497,121 +1618,3 @@ when implModule:
       return true
 
     discard self.pushSelectorPopup builder
-
-  proc layoutServiceRender(self: LayoutService, builder: UINodeBuilder): seq[OverlayFunction] =
-    let self = self.LayoutServiceImpl
-    if self.layout == nil:
-      return
-
-    let newActiveView = self.layout.activeLeafView()
-    if newActiveView != self.activeView and newActiveView != nil:
-      if self.activeView != nil:
-        self.activeView.deactivate()
-      newActiveView.activate()
-      self.activeView = newActiveView
-      newActiveView.markDirty(notify=false)
-
-    if self.maximizeView:
-      let bounds = builder.currentParent.bounds
-      builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
-        let view = self.layout.activeLeafView()
-        if view != nil:
-          result.add view.createUI(builder)
-        elif self.fallbackView != nil:
-          result.add self.fallbackView.createUI(builder)
-        else:
-          builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
-
-    else:
-      let visibleViews = self.getNumVisibleViews()
-      if visibleViews == 0 and self.fallbackView != nil:
-        result.add self.fallbackView.createUI(builder)
-      else:
-        result.add self.layout.createUI(builder)
-
-  proc init_module_layout*() {.cdecl, exportc, dynlib.} =
-    getServices().addService(LayoutServiceImpl(
-      initImpl: proc(self: Service): Future[Result[void, ref CatchableError]] {.gcsafe, async: (raises: []).} =
-        return await self.LayoutServiceImpl.layoutServiceInit()
-      ),
-      @[
-        PlatformService.serviceName,
-        ConfigService.serviceName,
-        DocumentEditorService.serviceName,
-        Workspace.serviceName,
-        VFSService.serviceName,
-        SessionService.serviceName,
-        CommandService.serviceName
-      ])
-
-    let cmds = getServiceChecked(CommandService)
-    let self = getServiceChecked(LayoutServiceImpl)
-    let statusLine = getServiceChecked(StatusLineService)
-
-    statusLine.addRenderer "layout", proc(builder: UINodeBuilder): seq[OverlayFunction] =
-      let layout = self.layout.activeLeafLayout()
-      let maximizedText = if self.maximizeView:
-        "Fullscreen"
-      elif layout != nil:
-        let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
-        if layout.maximize:
-          fmt"Max 1/{maxText}"
-        else:
-          fmt"{layout.children.len}/{maxText}"
-      else:
-        ""
-      let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[Layout {self.layoutName} - {layout.desc} - {maximizedText}]")
-      return @[]
-
-    statusLine.addRenderer "layout.min", proc(builder: UINodeBuilder): seq[OverlayFunction] =
-      let layout = self.layout.activeLeafLayout()
-      let maximizedText = if self.maximizeView:
-        "Fullscreen"
-      elif layout != nil:
-        let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
-        if layout.maximize:
-          fmt"Max 1/{maxText}"
-        else:
-          fmt"{layout.children.len}/{maxText}"
-      else:
-        ""
-      let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[{maximizedText}]")
-      return @[]
-
-    cmds.registerCommand "change-split-size", proc(change: float, vertical: bool) = self.changeSplitSize(change, vertical)
-    cmds.registerCommand "toggle-maximize-view-local", proc(slot: Option[string]) = self.toggleMaximizeViewLocal(slot.get("**"))
-    cmds.registerCommand "toggle-maximize-view", proc() = self.toggleMaximizeView()
-    cmds.registerCommand "set-max-views", proc(slot: string, maxViews: Option[int]) = self.setMaxViews(slot, maxViews.get(int.high))
-    cmds.registerCommand "get-num-visible-views", proc(): int = self.getNumVisibleViews()
-    cmds.registerCommand "get-num-hidden-views", proc(): int = self.getNumHiddenViews()
-    cmds.registerCommand "get-or-open-editor", proc(path: string): Option[EditorId] = self.getOrOpenEditor(path)
-    cmds.registerCommand "hide-active-view", proc(closeOpenPopup: Option[bool]) = self.hideActiveView(closeOpenPopup.get(true))
-    cmds.registerCommand "close-active-view", proc(closeOpenPopup: Option[bool], restoreHidden: Option[bool]) = self.layoutServiceCloseActiveView(closeOpenPopup.get(true), restoreHidden.get(true))
-    cmds.registerCommand "hide-other-views", proc() = self.hideOtherViews()
-    cmds.registerCommand "close-other-views", proc() = self.closeOtherViews()
-    cmds.registerCommand "focus-view-left", proc() = self.focusViewLeft()
-    cmds.registerCommand "focus-view-right", proc() = self.focusViewRight()
-    cmds.registerCommand "focus-view-up", proc() = self.focusViewUp()
-    cmds.registerCommand "focus-view-down", proc() = self.focusViewDown()
-    cmds.registerCommand "focus-view", proc(slot: string) = self.layoutServiceFocusView(slot)
-    cmds.registerCommand "focus-next-view", proc(slot: Option[string]) = self.focusNextView(slot.get(""))
-    cmds.registerCommand "focus-prev-view", proc(slot: Option[string]) = self.focusPrevView(slot.get(""))
-    cmds.registerCommand "open-prev-view", proc() = self.openPrevView()
-    cmds.registerCommand "open-next-view", proc() = self.openNextView()
-    cmds.registerCommand "open-last-view", proc() = self.openLastView()
-    cmds.registerCommand "set-layout", proc(layout: string) = self.setLayout(layout)
-    cmds.registerCommand "set-active-view-index", proc(slot: string, index: int) = self.setActiveViewIndex(slot, index)
-    cmds.registerCommand "move-active-view-first", proc() = self.moveActiveViewFirst()
-    cmds.registerCommand "move-active-view-prev", proc() = self.moveActiveViewPrev()
-    cmds.registerCommand "move-active-view-next", proc() = self.moveActiveViewNext()
-    cmds.registerCommand "move-active-view-next-and-go-back", proc() = self.moveActiveViewNextAndGoBack()
-    cmds.registerCommand "split-view", proc(slot: Option[string]) = self.splitView(slot.get(""))
-    cmds.registerCommand "move-view", proc(slot: string) = self.moveView(slot)
-    cmds.registerCommand "wrap-layout", proc(layout: JsonNode, slot: Option[string]) = self.wrapLayout(layout, slot.get("**"))
-    cmds.registerCommand "choose-layout", proc() = self.chooseLayout()
-    cmds.registerCommand "log-layout", proc() = self.logLayout()
-    cmds.registerCommand "log-views", proc() = self.logViews()
-    cmds.registerCommand "open", proc(path: string, slot: Option[string]) = self.open(path, slot.get(""))
-    cmds.registerCommand "choose-open", proc(preview: Option[bool], scaleX: Option[float], scaleY: Option[float], previewScale: Option[float]) = self.chooseOpen(preview.get(true), scaleX.get(0.8), scaleY.get(0.8), previewScale.get(0.6))

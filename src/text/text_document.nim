@@ -7,7 +7,7 @@ import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, config_provider, service, vfs, vfs_service, language_server_list
 import syntax_map
 import pkg/[chroma, results]
-import vcs/vcs, layout/layout, event_service, toast
+import vcs/vcs, event_service, toast
 import language_server_component, config_component, move_database, move_component, text_component, treesitter_component,
   language_component, formatting_component
 import display_map
@@ -898,25 +898,7 @@ method deinit*(self: TextDocument) =
 method `$`*(self: TextDocument): string =
   return self.filename
 
-proc addFileVcsAsync*(self: TextDocument, prompt: bool = true) {.async.} =
-  let path = self.localizedPath
-  let vcsService = self.services.getService(VCSService).get
-  let vcs = vcsService.getVcsForFile(path).getOr:
-    return
-
-  if prompt:
-    let layoutService = self.services.getService(LayoutService).get
-    let text = await layoutService.prompt(@["Yes", "No"], "VCS: Add " & path)
-    if not self.isInitialized:
-      return
-    if text.isSome and text.get != "Yes":
-      return
-
-  let res = await vcs.addFile(path)
-  if not self.isInitialized:
-    return
-
-  log lvlInfo, &"Add result: {res}"
+proc addFileVcsAsync*(self: TextDocument, prompt: bool = true) {.async.}
 
 proc saveAsync*(self: TextDocument) {.async.} =
   try:
@@ -1978,3 +1960,25 @@ proc trimTrailingWhitespace*(self: TextDocument) =
     discard self.edit(selections, selections, [""])
 
 func isInitialized*(self: TextDocument): bool = self.isInitialized
+
+import layout/layout
+
+proc addFileVcsAsync*(self: TextDocument, prompt: bool = true) {.async.} =
+  let path = self.localizedPath
+  let vcsService = self.services.getService(VCSService).get
+  let vcs = vcsService.getVcsForFile(path).getOr:
+    return
+
+  if prompt:
+    let layoutService = self.services.getService(LayoutService).get
+    let text = await layoutService.prompt(@["Yes", "No"], "VCS: Add " & path)
+    if not self.isInitialized:
+      return
+    if text.isSome and text.get != "Yes":
+      return
+
+  let res = await vcs.addFile(path)
+  if not self.isInitialized:
+    return
+
+  log lvlInfo, &"Add result: {res}"
