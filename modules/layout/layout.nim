@@ -1455,39 +1455,38 @@ when implModule:
 
     let cmds = getServiceChecked(CommandService)
     let self = getServiceChecked(LayoutServiceImpl)
-    let statusLine = getServiceChecked(StatusLineService)
-
-    statusLine.addRenderer "layout", proc(builder: UINodeBuilder): seq[OverlayFunction] =
-      let layout = self.layout.activeLeafLayout()
-      let maximizedText = if self.maximizeView:
-        "Fullscreen"
-      elif layout != nil:
-        let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
-        if layout.maximize:
-          fmt"Max 1/{maxText}"
+    if getService(StatusLineService).getSome(statusLine):
+      statusLine.addRenderer "layout", proc(builder: UINodeBuilder): seq[OverlayFunction] =
+        let layout = self.layout.activeLeafLayout()
+        let maximizedText = if self.maximizeView:
+          "Fullscreen"
+        elif layout != nil:
+          let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
+          if layout.maximize:
+            fmt"Max 1/{maxText}"
+          else:
+            fmt"{layout.children.len}/{maxText}"
         else:
-          fmt"{layout.children.len}/{maxText}"
-      else:
-        ""
-      let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[Layout {self.layoutName} - {layout.desc} - {maximizedText}]")
-      return @[]
+          ""
+        let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[Layout {self.layoutName} - {layout.desc} - {maximizedText}]")
+        return @[]
 
-    statusLine.addRenderer "layout.min", proc(builder: UINodeBuilder): seq[OverlayFunction] =
-      let layout = self.layout.activeLeafLayout()
-      let maximizedText = if self.maximizeView:
-        "Fullscreen"
-      elif layout != nil:
-        let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
-        if layout.maximize:
-          fmt"Max 1/{maxText}"
+      statusLine.addRenderer "layout.min", proc(builder: UINodeBuilder): seq[OverlayFunction] =
+        let layout = self.layout.activeLeafLayout()
+        let maximizedText = if self.maximizeView:
+          "Fullscreen"
+        elif layout != nil:
+          let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
+          if layout.maximize:
+            fmt"Max 1/{maxText}"
+          else:
+            fmt"{layout.children.len}/{maxText}"
         else:
-          fmt"{layout.children.len}/{maxText}"
-      else:
-        ""
-      let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[{maximizedText}]")
-      return @[]
+          ""
+        let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[{maximizedText}]")
+        return @[]
 
     cmds.registerCommand "change-split-size", proc(change: float, vertical: bool) = self.changeSplitSize(change, vertical)
     cmds.registerCommand "toggle-maximize-view-local", proc(slot: Option[string]) = self.toggleMaximizeViewLocal(slot.get("**"))

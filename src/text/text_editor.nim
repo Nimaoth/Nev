@@ -4446,7 +4446,7 @@ genDispatcher("editor.text")
 addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] =
-  # debugf"[textedit] handleAction {action}, '{args}'"
+  # debugf"[textedit] handleActionInternal {action}, '{args}'"
 
   var args = args.copy
   args.elems.insert api.TextDocumentEditor(id: self.id.EditorId).toJson, 0
@@ -4530,7 +4530,7 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
       if result.isSome:
         return
 
-    let res = self.commands.executeCommand(action & " " & arg, record = false)
+    let res = self.commands.executeCommand(action & " " & arg, record = false, context = newJexInt(self.id.int))
     if res.isSome:
       return newJString(res.get).some
   except CatchableError:

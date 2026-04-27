@@ -26,12 +26,30 @@ gServices.addBuiltinServices()
 gServices.getService(PlatformService).get.setPlatform(NilPlatform())
 gServices.waitForServices()
 
+init_module_layout()
 init_module_vim()
 
-getServiceChecked(CommandService).logCommands = false
+getServiceChecked(CommandService).logCommands = true
 let eventService = getServiceChecked(EventHandlerService)
 
-proc addCommandScript*(context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) =
+proc removeCommandScript(context: string, keys: string) =
+  let context = if context.endsWith("."):
+    context[0..^2]
+  else:
+    context
+
+  let (baseContext, subContext) = if (let i = context.find('#'); i != -1):
+    (context[0..<i], context[i+1..^1])
+  else:
+    (context, "")
+
+  let config = eventService.getEventHandlerConfig(baseContext)
+  eventService.commandDescriptions.del(baseContext & subContext & keys)
+  config.removeCommandDescription(keys)
+  config.removeCommand(subContext, keys)
+  eventService.invalidateCommandToKeysMap()
+
+proc addCommandScript*(context: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) =
   let command = if arg.len == 0: action else: action & " " & arg
 
   let context = if context.endsWith("."):
@@ -40,9 +58,9 @@ proc addCommandScript*(context: string, subContext: string, keys: string, action
     context
 
   let (baseContext, subContext) = if (let i = context.find('#'); i != -1):
-    (context[0..<i], context[i+1..^1] & subContext)
+    (context[0..<i], context[i+1..^1])
   else:
-    (context, subContext)
+    (context, "")
 
   if description.len > 0:
     eventService.commandDescriptions[baseContext & subContext & keys] = description
@@ -76,6 +94,22 @@ proc loadKeybindingsFromJson*(json: JsonNodeEx, filename: string) =
           else:
             eventService.setKeyDefinitions(name, keys)
           continue
+
+        elif context.startsWith("-"):
+          # e.g. "-vim.base": {...} -> remove commands in this context
+          if commands.kind != JArray:
+            echo &"Value has to be array for '{context}'"
+            assert false
+            continue
+
+          let actualContext = context[1..^1]
+          for keys in commands.elems:
+            if keys.kind == JString:
+              removeCommandScript(actualContext, keys.getStr)
+            else:
+              echo &"Value has to be string in '{context}', but is {keys}"
+              assert false
+          continue
       except CatchableError:
         echo &"Invalid key definition in '{filename}:{loc.line}{loc.column}': {getCurrentExceptionMsg()}"
         assert false
@@ -97,7 +131,7 @@ proc loadKeybindingsFromJson*(json: JsonNodeEx, filename: string) =
                 assert false
               else:
                 let description = command.fields.getOrDefault("description", newJexString("")).getStr
-                addCommandScript(context, "", keys, name, args, description, source = loc)
+                addCommandScript(context, keys, name, args, description, source = loc)
             else:
               let description = command.fields.getOrDefault("description", newJexString("")).getStr
               eventService.addCommandDescription(context, keys, description)
@@ -108,7 +142,7 @@ proc loadKeybindingsFromJson*(json: JsonNodeEx, filename: string) =
               echo &"Invalid command in keybinding settings '{filename}:{loc.line}:{loc.column}': {command}"
               assert false
             else:
-              addCommandScript(context, "", keys, name, args, source = loc)
+              addCommandScript(context, keys, name, args, source = loc)
 
         except CatchableError:
           echo &"Invalid command in '{filename}:{loc.line}{loc.column}': {getCurrentExceptionMsg()}"
@@ -168,7 +202,7 @@ proc testInput(keys, oldText, newText: string) =
   var delayed: seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]] = @[]
   for (inputs, mods, text) in parseInputs(keys):
     let handlers = editor.getEventHandlers(initTable[string, EventHandler]())
-    discard handlers.handleEvent(inputs.a, mods, delayed)
+    discard handlers.handleEvent(inputs.a, mods, delayed, debug = true)
   let newTextActual = document.contentString()
   let newSelActual = editor.TextDocumentEditor.selections
   check newTextActual == newText

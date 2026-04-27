@@ -341,7 +341,7 @@ when implModule:
 
   var vimCommands: seq[Command] = newSeqOfCap[Command](100)
   proc defineCommand(name: string, active: bool, docs: string, params: seq[(string, string)], returnType: string, context: string,
-      impl: proc(data: uint64, argsString: string): string {.cdecl, raises: [CatchableError].}) =
+      impl: proc(argsString: string): string {.cdecl, raises: [CatchableError].}) =
     let vimCommands = ({.gcsafe.}: vimCommands.addr)
     vimCommands[].add Command(
       namespace: "",
@@ -350,17 +350,15 @@ when implModule:
       parameters: params,
       returnType: returnType,
       signature: "",
+      active: active,
       execute: proc(args: string): string {.gcsafe, raises: [].} =
         try:
           if active:
-            let layout = getServiceChecked(LayoutService)
-            let activeEditor = layout.getActiveEditor()
-            if activeEditor.isSome:
-              {.gcsafe.}:
-                return impl(activeEditor.get.id.uint64, args)
+            {.gcsafe.}:
+              return impl(args)
           else:
             {.gcsafe.}:
-              return impl(0, args)
+              return impl(args)
         except CatchableError:
           discard
     )
@@ -398,11 +396,9 @@ when implModule:
           params = @[],
           returnType = inReturnType,
           context = inContext):
-          proc(editor: uint64, argsString: string): string {.cdecl.} =
+          proc(argsString: string): string {.cdecl.} =
             var args = newJArray()
             try:
-              if inActive:
-                args.add(editor.toJson)
               for a in newStringStream(argsString).parseJsonFragments():
                 args.add a
               let res = jsonWrapperName(args)
@@ -421,11 +417,9 @@ when implModule:
           params = @[],
           returnType = inReturnType,
           context = inContext):
-          proc(editor: uint64, argsString: string): string {.cdecl.} =
+          proc(argsString: string): string {.cdecl.} =
             var args = newJArray()
             try:
-              if inActive:
-                args.add(editor.toJson)
               for a in newStringStream(argsString).parseJsonFragments():
                 args.add a
               let res = jsonWrapperName(args)
@@ -806,7 +800,6 @@ when implModule:
           for i, selection in enumerateTextObjects(editor, res, move, backwards):
             if i == 0: continue
             let cursor = if backwards: selection.last else: selection.first
-            # echo i, ", ", selection, ", ", cursor, ", ", it
             if cursor == it.last:
               continue
             if editor.lineLength(selection.first.line) == 0:
@@ -819,7 +812,6 @@ when implModule:
             if selection.first.column >= editor.lineLength(selection.first.line) or text.charAt(selection.first.toPoint) notin Whitespace:
               res = cursor
               break
-        # echo res, ", ", it, ", ", which
         res.toSelection(it, which)
       )
 

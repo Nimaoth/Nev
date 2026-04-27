@@ -19,6 +19,7 @@ type
     parameters*: seq[tuple[name: string, `type`: string]]
     returnType*: string
     signature*: string
+    active*: bool
     execute*: proc(args: string): string {.gcsafe, raises: [CatchableError].}
 
   CommandPermissions* = object
@@ -35,7 +36,7 @@ func serviceName*(_: typedesc[CommandService]): string = "CommandService"
 # DLL API
 proc commandServiceRegisterCommand(self: CommandService, command: sink Command, override: bool = false): CommandId {.apprtl, gcsafe, raises: [].}
 proc commandServiceHandleCommand(self: CommandService, command: string): Option[string] {.apprtl, gcsafe, raises: [].}
-proc commandServiceExecuteCommand(self: CommandService, command: string, record: bool = true): Option[string] {.apprtl, gcsafe, raises: [].}
+proc commandServiceExecuteCommand(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil): Option[string] {.apprtl, gcsafe, raises: [].}
 proc commandServiceUnregisterCommandByName(self: CommandService, command: string) {.apprtl, gcsafe, raises: [].}
 proc commandServiceUnregisterCommandById(self: CommandService, id: CommandId) {.apprtl, gcsafe, raises: [].}
 proc commandServiceAddPrefixCommandHandler(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) {.apprtl, gcsafe, raises: [].}
@@ -48,7 +49,7 @@ proc commandServiceOpenCommandLine(self: CommandService, initialValue: string = 
 # Nice wrappers
 proc registerCommand*(self: CommandService, command: sink Command, override: bool = false): CommandId {.inline.} = commandServiceRegisterCommand(self, command, override)
 proc handleCommand*(self: CommandService, command: string): Option[string] {.inline.} = commandServiceHandleCommand(self, command)
-proc executeCommand*(self: CommandService, command: string, record: bool = true): Option[string] {.inline.} = commandServiceExecuteCommand(self, command, record)
+proc executeCommand*(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil): Option[string] {.inline.} = commandServiceExecuteCommand(self, command, record, context)
 proc unregisterCommand*(self: CommandService, command: string) {.inline.} = commandServiceUnregisterCommandByName(self, command)
 proc unregisterCommand*(self: CommandService, id: CommandId) {.inline.} = commandServiceUnregisterCommandById(self, id)
 proc addPrefixCommandHandler*(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) {.inline.} = commandServiceAddPrefixCommandHandler(self, prefix, handler)
@@ -386,7 +387,7 @@ when implModule:
       log lvlError, &"Failed to run alias '{action}': invalid configuration. Expected string | string[], got '{alias}'"
       return string.none
 
-  proc commandServiceExecuteCommand(self: CommandService, command: string, record: bool = true): Option[string] =
+  proc commandServiceExecuteCommand(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil): Option[string] =
     let self = self.CommandServiceImpl
     var doRecord = record
     if self.dontRecord:
@@ -439,7 +440,11 @@ when implModule:
 
     if self.commands.contains(action):
       try:
-        return self.commands[action].execute(arg).some
+        let command = self.commands[action]
+        if command.active:
+          let contextStr = if context == nil: "null" else: $context
+          arg = contextStr & " " & arg
+        return command.execute(arg).some
       except Exception as e:
         log lvlError, &"Failed to run command '{command}': {e.msg}"
         return string.none
