@@ -212,7 +212,7 @@ suite "Document with components":
 
   test "create document":
     let document = newTextDocument(gServices, "", "abc")
-    let editor = newTextEditor(document, gServices)
+    let editor = newTextEditor(document, gServices, newJexObject())
 
   test "parse":
     let (text, s) = parseTextAndSelections """[]abc

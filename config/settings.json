@@ -61,6 +61,7 @@
         "\\..shell-command-results$": "shell-command-results",
         "\\..selector-popup-search-bar$": "selector-popup-search-bar",
         "\\..terminal-output$": "terminal-output",
+        "\\..command-line$": "command-line",
         "nimble..*?\\..paths$": "nim-paths",
         "/(vector|string|thread|iostream)$": "cpp",
         "..+/MSVC/..+/include(/..+?)*/[a-z0-9_]+$": "cpp",
