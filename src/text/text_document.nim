@@ -743,6 +743,25 @@ proc applyMoveFallback*(self: TextDocument, move: string, selections: openArray[
     case move
     of "language-word":
       return selections.mapIt(self.getLanguageWordBoundary(it.last))
+    of "completion-selection":
+      return selections.mapIt(block:
+        if it.last.column == 0:
+          it.last.toSelection
+        else:
+          var c = self.rope.cursorT(it.last.toPoint)
+
+          let identRunes {.cursor.} = self.settings.completionWordChars.get()
+          var column = c.position.column
+          while c.position.column > 0:
+            c.seekPrevRune()
+            if c.currentRune in identRunes:
+              column = c.position.column
+            else:
+              break
+
+          ((it.last.line, column.int), it.last)
+      )
+
     of "ts-text-object", "ts":
       let capture = if largs.len > 0:
         largs[0].toJson.jsonTo(string)
@@ -1404,21 +1423,7 @@ proc tabWidth*(self: TextDocument): int =
   return self.settings.tabWidth.get()
 
 proc getCompletionSelectionAt*(self: TextDocument, cursor: Cursor): Selection =
-  if cursor.column == 0:
-    return cursor.toSelection
-
-  var c = self.rope.cursorT(cursor.toPoint)
-
-  let identRunes {.cursor.} = self.settings.completionWordChars.get()
-  var column = c.position.column
-  while c.position.column > 0:
-    c.seekPrevRune()
-    if c.currentRune in identRunes:
-      column = c.position.column
-    else:
-      break
-
-  result = ((cursor.line, column.int), cursor)
+  return self.applyMoveFallback("completion-selection", [cursor.toSelection], 1, [], nil)[0]
 
 proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 0, siblingIndex: int = 0): Option[Selection] =
   result = Selection.none

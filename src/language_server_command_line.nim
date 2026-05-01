@@ -4,7 +4,7 @@ import misc/[custom_logger, custom_async, util, response, rope_utils, event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
 import dispatch_tables, document_editor, service, layout/layout, events, config_provider, command_service
-import text/text_document
+import document, text_component, move_component, language_component, language_server_component
 
 logCategory "language-server-command-line"
 
@@ -39,12 +39,14 @@ method init*(self: LanguageServerCommandLineService): Future[Result[void, ref Ca
   self.languageServer = newLanguageServerCommandLine(self.services)
   self.config = self.services.getService(ConfigService).get.runtime
   discard self.languageServer.documents.onEditorRegistered.subscribe proc(editor: DocumentEditor) =
-    let doc = editor.getDocument()
-    if doc of TextDocument:
-      let textDoc = doc.TextDocument
-      let languages = self.config.get("lsp.command-line.languages", newSeq[string]())
-      if textDoc.languageId in languages and not textDoc.hasLanguageServer(self.languageServer):
-        discard textDoc.addLanguageServer(self.languageServer)
+    let doc = editor.currentDocument
+    let language = doc.getLanguageComponent().getOr:
+      return
+    let lsps = doc.getLanguageServerComponent().getOr:
+      return
+    let languages = self.config.get("lsp.command-line.languages", newSeq[string]())
+    if language.languageId in languages and not lsps.hasLanguageServer(self.languageServer):
+      discard lsps.addLanguageServer(self.languageServer)
   return ok()
 
 method getDefinition*(self: LanguageServerCommandLine, filename: string, location: Cursor):
@@ -54,23 +56,23 @@ method getDefinition*(self: LanguageServerCommandLine, filename: string, locatio
 method getCompletions*(self: LanguageServerCommandLine, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
   let layout = self.services.getService(LayoutService).get
 
-  var completions: seq[CompletionItem]
+  var completions = newSeq[CompletionItem]()
 
   var useActive = false
-  if self.documents.getDocument(filename).getSome(document) and document of TextDocument:
-    let textDoc = document.TextDocument
-    if textDoc.rope.startsWith(".") or document.TextDocument.rope.startsWith("^"):
+  if self.documents.getDocument(filename).getSome(document):
+    let text = document.getTextComponent().getOr:
+      return CompletionList(items: completions).success
+
+    if text.content.startsWith(".") or text.content.startsWith("^"):
       useActive = true
 
-    let rope = textDoc.rope
-
-    if location.line >= rope.lines:
+    if location.line >= text.content.lines:
       return CompletionList(items: completions).success
 
-    if location.column > rope.lineLen(location.line):
+    if location.column > text.content.lineLen(location.line):
       return CompletionList(items: completions).success
 
-    let spaceIndex = rope.slice(point(location.line, 0)...location.toPoint).find(" ")
+    let spaceIndex = text.content.slice(point(location.line, 0)...location.toPoint).find(" ")
     if spaceIndex >= 0:
       return CompletionList(items: completions).success
 

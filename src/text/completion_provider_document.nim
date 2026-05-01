@@ -1,7 +1,8 @@
 import std/[strutils, sets, algorithm]
-import misc/[custom_unicode, util, event, timer, custom_logger, fuzzy_matching, delayed_task, custom_async]
+import misc/[custom_unicode, util, event, timer, custom_logger, fuzzy_matching, delayed_task, custom_async, rope_utils]
+import nimsumtree/rope
 import language/[lsp_types]
-import completion, text_document
+import completion, document, text_component, move_component, language_component
 import scripting_api
 
 import nimsumtree/[buffer, clock]
@@ -12,7 +13,7 @@ logCategory "Comp-Doc"
 
 type
   CompletionProviderDocument* = ref object of CompletionProvider
-    document: TextDocument
+    document: Document
     wordCache: HashSet[string]
     updateTask: DelayedTask
     revision: int
@@ -23,8 +24,12 @@ type
 proc refilterCompletions(self: CompletionProviderDocument) {.async.}
 
 proc updateFilterText(self: CompletionProviderDocument) =
-  let selection = self.document.getCompletionSelectionAt(self.location)
-  self.currentFilterText = self.document.contentString(selection)
+  let text = self.document.getTextComponent().getOr:
+    return
+  let moves = self.document.getMoveComponent().getOr:
+    return
+  let selection = moves.applyMove(self.location.toPoint.toRange, "completion-selection")
+  self.currentFilterText = text.content(selection)
 
 type CompletionProviderDocumentThreadState = object
   rope: Rope
@@ -84,21 +89,26 @@ proc updateWordCache(self: CompletionProviderDocument) {.async.} =
   defer:
     self.isUpdatingAsync = false
 
-  var data = CompletionProviderDocumentThreadState(rope: self.document.buffer.visibleText.clone(), cursors: self.cursors)
+  if self.document.isNil:
+    return
+  let text = self.document.getTextComponent().getOr:
+    return
+
+  var data = CompletionProviderDocumentThreadState(rope: text.buffer.visibleText.clone(), cursors: self.cursors)
   while true:
-    let oldId = (self.document.buffer.version, self.document.buffer.remoteId)
+    let oldId = (text.buffer.version, text.buffer.remoteId)
     await spawnAsync(cacheWordsThread, data.addr)
     if self.document.isNil:
       return
 
-    let newId = (self.document.buffer.version, self.document.buffer.remoteId)
+    let newId = (text.buffer.version, text.buffer.remoteId)
     if oldId == newId:
       self.wordCache = data.wordCache
       inc self.revision
       asyncSpawn self.refilterCompletions()
       return
 
-    data.rope = self.document.buffer.visibleText.clone()
+    data.rope = text.buffer.visibleText.clone()
     data.cursors = self.cursors
 
 proc refilterCompletions(self: CompletionProviderDocument) {.async.} =
@@ -147,7 +157,7 @@ method forceUpdateCompletions*(provider: CompletionProviderDocument) =
   provider.updateFilterText()
   provider.updateTask.reschedule()
 
-proc newCompletionProviderDocument*(document: TextDocument): CompletionProviderDocument =
+proc newCompletionProviderDocument*(document: Document): CompletionProviderDocument =
   let self = CompletionProviderDocument(document: document)
 
   self.updateTask = startDelayed(50, repeat=false):

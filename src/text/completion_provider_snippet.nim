@@ -1,14 +1,15 @@
 import std/[json, tables]
-import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching, jsonex]
+import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching, jsonex, rope_utils]
+import nimsumtree/rope
 import language/[lsp_types]
-import completion, text_document
+import completion, document, text_component, move_component, language_component
 import config_provider
 
 logCategory "Comp-Snip"
 
 type
   CompletionProviderSnippet* = ref object of CompletionProvider
-    document: TextDocument
+    document: Document
     unfilteredCompletions: seq[CompletionItem]
     didCacheCompletionItems: bool = false
     configStore: ConfigStore
@@ -20,8 +21,9 @@ proc invalidateCompletionItemCache(self: CompletionProviderSnippet) =
 
 proc cacheCompletionItems(self: CompletionProviderSnippet) =
   self.didCacheCompletionItems = true
+  let languageId = self.document.getLanguageComponent().mapIt(it.languageId).get("")
   try:
-    let snippets = self.configStore.get("snippets." & self.document.languageId, newJexObject())
+    let snippets = self.configStore.get("snippets." & languageId, newJexObject())
     for (name, definition) in snippets.fields.pairs:
       # todo: handle language scope
       # let scopes = definition["scope"].getStr.split(",")
@@ -33,11 +35,11 @@ proc cacheCompletionItems(self: CompletionProviderSnippet) =
           text.add "\n"
         text.add line.getStr
 
-      let edit = lsp_types.TextEdit(`range`: Range(start: Position(line: -1, character: -1), `end`: Position(line: -1, character: -1)), newText: text)
+      let edit = lsp_types.TextEdit(`range`: lsp_types.Range(start: Position(line: -1, character: -1), `end`: Position(line: -1, character: -1)), newText: text)
       self.unfilteredCompletions.add(CompletionItem(label: prefix, detail: name.some, insertTextFormat: InsertTextFormat.Snippet.some, textEdit: lsp_types.init(lsp_types.CompletionItemTextEditVariant, edit).some))
 
   except:
-    log lvlError, fmt"Failed to get snippets for language {self.document.languageId}"
+    log lvlError, fmt"Failed to get snippets for language {languageId}"
 
 proc refilterCompletions(self: CompletionProviderSnippet) =
   # debugf"[Snip.refilterCompletions] {self.location}: '{self.currentFilterText}'"
@@ -69,14 +71,18 @@ proc refilterCompletions(self: CompletionProviderSnippet) =
   self.onCompletionsUpdated.invoke (self)
 
 proc updateFilterText(self: CompletionProviderSnippet) =
-  let selection = self.document.getCompletionSelectionAt(self.location)
-  self.currentFilterText = self.document.contentString(selection)
+  let text = self.document.getTextComponent().getOr:
+    return
+  let moves = self.document.getMoveComponent().getOr:
+    return
+  let selection = moves.applyMove(self.location.toPoint.toRange, "completion-selection")
+  self.currentFilterText = text.content(selection)
 
 method forceUpdateCompletions*(provider: CompletionProviderSnippet) =
   provider.updateFilterText()
   provider.refilterCompletions()
 
-proc newCompletionProviderSnippet*(configStore: ConfigStore, document: TextDocument):
+proc newCompletionProviderSnippet*(configStore: ConfigStore, document: Document):
     CompletionProviderSnippet =
 
   let self = CompletionProviderSnippet(configStore: configStore, document: document)

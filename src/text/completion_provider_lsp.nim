@@ -1,6 +1,7 @@
-import misc/[custom_unicode, util, custom_async, event, timer, custom_logger, fuzzy_matching, response]
+import misc/[custom_unicode, util, custom_async, event, timer, custom_logger, fuzzy_matching, response, rope_utils]
 import language/[lsp_types, language_server_base]
-import completion, text_document
+import nimsumtree/rope
+import completion, document, text_component, move_component
 import scripting_api
 
 {.push gcsafe.}
@@ -10,7 +11,7 @@ logCategory "Comp-Lsp"
 
 type
   CompletionProviderLsp* = ref object of CompletionProvider
-    document: TextDocument
+    document: Document
     lastResponseLocation: Cursor
     languageServer: LanguageServer
     unfilteredCompletions: seq[CompletionItem]
@@ -18,8 +19,12 @@ type
     isFiltering: bool = false
 
 proc updateFilterText(self: CompletionProviderLsp) =
-  let selection = self.document.getCompletionSelectionAt(self.location)
-  self.currentFilterText = self.document.contentString(selection)
+  let text = self.document.getTextComponent().getOr:
+    return
+  let moves = self.document.getMoveComponent().getOr:
+    return
+  let selection = moves.applyMove(self.location.toPoint.toRange, "completion-selection")
+  self.currentFilterText = text.content(selection)
 
 proc refilterCompletions(self: CompletionProviderLsp) {.async.} =
   if self.isFiltering:
@@ -94,6 +99,6 @@ method forceUpdateCompletions*(provider: CompletionProviderLsp) =
   asyncSpawn provider.refilterCompletions()
   asyncSpawn provider.getLspCompletionsAsync()
 
-proc newCompletionProviderLsp*(document: TextDocument, languageServer: LanguageServer): CompletionProviderLsp =
+proc newCompletionProviderLsp*(document: Document, languageServer: LanguageServer): CompletionProviderLsp =
   let self = CompletionProviderLsp(document: document, languageServer: languageServer)
   self
