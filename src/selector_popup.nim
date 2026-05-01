@@ -1,16 +1,16 @@
 import std/[sugar, options, json, streams, tables]
 import bumpy, vmath
-import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, custom_logger, disposable_ref]
-import scripting/[expose]
-import app_interface, text/text_editor, popup, events,
-  selector_popup_builder, dispatch_tables, layout/layout, service, config_provider, view, command_service
+import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, custom_logger, disposable_ref, rope_utils, jsonex]
+import nimsumtree/[rope, buffer]
+import popup, events,
+  selector_popup_builder, layout/layout, service, config_provider, view, command_service
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
-import plugin_service
-import search_component
+import search_component, document_editor, text_component, text_editor_component, config_component
 import ui/node
-
 export popup, selector_popup_builder, service
+
+import scripting/[expose], dispatch_tables
 
 {.push gcsafe.}
 
@@ -25,11 +25,10 @@ type
     services*: Services
     layout*: LayoutService
     events*: EventHandlerService
-    plugins: PluginService
     editors: DocumentEditorService
     commands: CommandService
-    textEditor*: TextDocumentEditor
-    previewEditor*: TextDocumentEditor
+    textEditor*: DocumentEditor
+    previewEditor*: DocumentEditor
     previewView*: View
     selected*: int
     scrollOffset*: int
@@ -122,14 +121,20 @@ proc addCustomCommand*(self: SelectorPopup, name: string,
   self.customCommands[name] = command
 
 proc getSearchString*(self: SelectorPopup): string =
-  if self.textEditor.isNil:
+  if self.textEditor.isNil or self.textEditor.currentDocument.isNil:
     return ""
-  return self.textEditor.document.contentString
+  return self.textEditor.currentDocument.getTextComponent().mapIt($it.content).get("")
+
+proc setSearchString*(self: SelectorPopup, query: string) =
+  if self.textEditor.isNil or self.textEditor.currentDocument.isNil:
+    return
+  if self.textEditor.currentDocument.getTextComponent().getSome(text):
+    text.content = query
 
 proc getPreviewSelection*(self: SelectorPopup): Option[Selection] =
   if self.previewEditor.isNil:
     return Selection.none
-  return self.previewEditor.selection.some
+  return self.previewEditor.getTextEditorComponent().mapIt(it.selection.toSelection)
 
 proc selectorPopupGetActiveEditor(self: SelectorPopup): Option[DocumentEditor] =
   if self.focusPreview and self.previewEditor.isNotNil:
@@ -455,7 +460,6 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.services = services
   popup.layout = services.getService(LayoutService).get
   popup.events = services.getService(EventHandlerService).get
-  popup.plugins = services.getService(PluginService).get
   popup.editors = services.getService(DocumentEditorService).get
   popup.commands = services.getService(CommandService).get
   popup.settings = SelectorSettings.new(services.getService(ConfigService).get.runtime)
@@ -471,20 +475,26 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
     {.gcsafe.}:
       createUIImpl(self.SelectorPopup, builder)
 
-  let document = newTextDocument(services, createLanguageServer=false, filename="ed://.selector-popup-search-bar")
-  popup.textEditor = newTextEditor(document, services)
-  popup.textEditor.usage = "search-bar"
+  let document = popup.editors.createDocument("text", "ed://.selector-popup-search-bar", load = false, %%*{"createLanguageServer": false})
+  document.usage = "search-bar"
+  popup.textEditor = popup.editors.createEditorForDocument(document, %%*{
+    "usage": "search-bar",
+    "settings": {
+      "text.disable-completions": true,
+      "ui.line-numbers": "none",
+      "ui.whitespace-char": " ",
+      "text.cursor-margin": 0,
+      "text.disable-scrolling": true,
+      "text.default-mode": "vim.insert",
+      "text.highlight-matches.enable": false,
+    },
+  }).get(nil)
   popup.textEditor.renderHeader = false
-  popup.textEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
-  popup.textEditor.settings.highlightMatches.enable.set(false)
-  popup.textEditor.disableScrolling = true
-  popup.textEditor.settings.disableCompletions.set(true)
   popup.textEditor.active = true
-  popup.textEditor.setDefaultMode(forceNotify = true)
 
   finder.get.minScore = popup.settings.minScore.get()
 
-  discard popup.textEditor.document.textChanged.subscribe (arg: TextDocument) =>
+  discard popup.textEditor.currentDocument.getTextComponent().get.onEdit.subscribe (args: tuple[oldText: Rope, patch: Patch[Point]]) =>
     popup.handleTextChanged()
 
   discard popup.textEditor.onMarkedDirty.subscribe () =>
@@ -495,15 +505,18 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
 
     # todo: make sure this previewDocument is destroyed, we're overriding it right now
     # in the previewer with a temp document or an existing one
-    let previewDocument = newTextDocument(services, createLanguageServer=false, filename="ed://selector_popup_preview")
+    let previewDocument = popup.editors.createDocument("text", "ed://selector_popup_preview", load = false, %%*{"createLanguageServer": false})
     previewDocument.readOnly = true
 
-    popup.previewEditor = newTextEditor(previewDocument, services)
-    popup.previewEditor.usage = "preview"
+    popup.previewEditor = popup.editors.createEditorForDocument(previewDocument, %%*{"usage": "preview"}).get(nil)
     popup.previewEditor.renderHeader = true
-    popup.previewEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
-    popup.previewEditor.settings.disableCompletions.set(true)
-    popup.previewEditor.settings.cursorMargin.set(0.0)
+    if popup.previewEditor.getConfigComponent().getSome(config):
+      config.set("text.disable-completions", true)
+      config.set("ui.line-numbers", "none")
+      config.set("ui.whitespace-char", " ")
+      config.set("text.cursor-margin", 0)
+      config.set("text.default-mode", "vim.insert")
+      config.set("text.cursor-margin", 0.0)
 
     discard popup.previewEditor.onMarkedDirty.subscribe () =>
       popup.markDirty()

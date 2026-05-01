@@ -156,12 +156,18 @@ proc extendJson*(a: var JsonNodeEx, b: JsonNodeEx) =
   else:
     a = b
 
-proc configStoreGet(self: ConfigStore, key: string): JsonNodeEx {.apprtl, gcsafe, raises: [].}
-proc configStoreSet(self: ConfigStore, key: string, jsonValue: JsonNodeEx) {.apprtl, gcsafe, raises: [].}
+{.push apprtl, gcsafe, raises: [].}
+proc configStoreGet(self: ConfigStore, key: string): JsonNodeEx
+proc configStoreSet(self: ConfigStore, key: string, jsonValue: JsonNodeEx)
+proc configStoreSetSettings(self: ConfigStore, settings: JsonNodeEx)
+{.pop.}
 
 proc set*[T](self: ConfigStore, key: string, value: T) =
   let jsonValue = when T is JsonNodeEx: value else: value.toJsonEx(defaultToJsonOptions)
   configStoreSet(self, key, jsonValue)
+
+proc setSettings*(self: ConfigStore, settings: JsonNodeEx) =
+  configStoreSetSettings(self, settings)
 
 proc getValue*(self: ConfigStore, key: string): JsonNodeEx =
   result = self.configStoreGet(key)
@@ -455,7 +461,6 @@ when implModule:
   proc setUserData(node: JsonNodeEx, userData: int)
   proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx)
   proc setParent*(self: ConfigStore, parent: ConfigStore)
-  proc setSettings*(self: ConfigStore, settings: JsonNodeEx)
 
   addBuiltinService(ConfigService)
 
@@ -705,7 +710,7 @@ when implModule:
 
       self.onConfigChanged.invoke("")
 
-  proc setSettings*(self: ConfigStore, settings: JsonNodeEx) =
+  proc configStoreSetSettings(self: ConfigStore, settings: JsonNodeEx) =
     self.settings = newJexObject()
     self.settings.setUserData(self.id)
     settings.setUserData(self.id)

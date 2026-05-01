@@ -360,6 +360,7 @@ when implModule:
     return self.platform
 
   proc documentEditorCreateEditorForDocument(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor] =
+    assert document != nil
     for factory in self.editorFactories:
       if factory.canEditDocument(document, options):
         result = factory.createEditor(self.services, document, options).some

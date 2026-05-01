@@ -9,6 +9,7 @@ import platform/[platform]
 import service, dispatch_tables, platform_service
 import selector_popup, vcs, layout/layout, vfs, config_provider
 from scripting_api import SelectionCursor, ScrollSnapBehaviour, toSelection
+import text_editor_component, move_component, command_component
 
 logCategory "vcs_api"
 
@@ -217,32 +218,31 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
   popup.addCustomCommand "prev-change", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
-    popup.previewEditor.selection = popup.previewEditor.getPrevChange(popup.previewEditor.selection.first).last.toSelection
-    popup.previewEditor.scrollToCursor(SelectionCursor.Last)
-    popup.previewEditor.centerCursor()
+    if popup.previewEditor.getTextEditorComponent().getSome(te) and popup.previewEditor.getMoveComponent().getSome(moves):
+      te.selection = moves.applyMove(te.selection, "(prev-change)")
+      te.centerCursor(te.selection.b)
     return true
 
   popup.addCustomCommand "next-change", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
-    popup.previewEditor.selection = popup.previewEditor.getNextChange(popup.previewEditor.selection.first).last.toSelection
-    popup.previewEditor.scrollToCursor(SelectionCursor.Last)
-    popup.previewEditor.centerCursor()
+    if popup.previewEditor.getTextEditorComponent().getSome(te) and popup.previewEditor.getMoveComponent().getSome(moves):
+      te.selection = moves.applyMove(te.selection, "(next-change)")
+      te.centerCursor(te.selection.b)
     return true
 
   popup.addCustomCommand "stage-change", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
-    if popup.previewEditor.document.staged:
-      asyncSpawn popup.previewEditor.unstageSelectedAsync()
-    else:
-      asyncSpawn popup.previewEditor.stageSelectedAsync()
+    if popup.previewEditor.getCommandComponent().getSome(commands):
+      commands.executeCommand("stage-selected")
     return true
 
   popup.addCustomCommand "revert-change", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
-    asyncSpawn popup.previewEditor.revertSelectedAsync()
+    if popup.previewEditor.getCommandComponent().getSome(commands):
+      commands.executeCommand("revert-selected")
     return true
 
   let layout = self.services.getService(LayoutService).get

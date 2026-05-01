@@ -9,12 +9,13 @@ import workspaces/[workspace]
 import config_provider, app_interface
 import language_server_command_line
 import input, events, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
+import text_component, text_editor_component
 import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
 import service, layout/layout, session, command_service, toast, plugin_service
 import event_service, vcs/vcs
-import search_component, decoration_component
+import search_component, decoration_component, move_component
 import nimsumtree/[rope]
 
 import misc/async_process
@@ -783,16 +784,22 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   asyncSpawn self.setTheme(self.uiSettings.theme.get())
 
   self.commands.languageServerCommandLine = self.services.getService(LanguageServerCommandLineService).get.languageServer
-  let commandLineTextDocument = newTextDocument(self.services, "ed://.command-line", language="command-line".some, load=false)
-  self.commands.mCommandLineEditor = newTextEditor(commandLineTextDocument, self.services)
+
+  let commandLineTextDocument = self.editors.createDocument("text", "ed://.command-line", load = false, %%*{})
+  assert commandLineTextDocument != nil
+  self.commands.mCommandLineEditor = self.editors.createEditorForDocument(commandLineTextDocument, %%*{
+    "usage": "command-line",
+    "settings": {
+      "text.disable-completions": true,
+      "ui.line-numbers": "none",
+      "ui.whitespace-char": " ",
+      "text.cursor-margin": 0,
+      "text.disable-scrolling": true,
+      "text.default-mode": "vim.insert",
+      "text.highlight-matches.enable": false,
+    },
+  }).get(nil)
   self.commands.commandLineEditor.renderHeader = false
-  self.commands.commandLineEditor.TextDocumentEditor.usage = "command-line"
-  self.commands.commandLineEditor.TextDocumentEditor.disableScrolling = true
-  self.commands.commandLineEditor.TextDocumentEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
-  self.commands.commandLineEditor.TextDocumentEditor.settings.highlightMatches.enable.set(false)
-  self.commands.commandLineEditor.TextDocumentEditor.hideCursorWhenInactive = true
-  self.commands.commandLineEditor.TextDocumentEditor.settings.cursorMargin.set(0.0)
-  self.commands.commandLineEditor.TextDocumentEditor.defaultScrollBehaviour = ScrollBehaviour.ScrollToMargin
   discard self.commands.commandLineEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
   self.editors.commandLineEditor = self.commands.commandLineEditor
   self.commands.defaultCommandHandler = proc(command: Option[string]): Option[string] =
@@ -1759,7 +1766,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
 
     let store = state.stores[state.index]
     let key = item.displayName
-    let value = popup.previewEditor.document.contentString
+    let value = $popup.previewEditor.currentDocument.getTextComponent().get.content
     try:
       let valueJson = value.parseJsonEx
       store.set(key, valueJson)
@@ -2417,13 +2424,13 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
     if fileInfo.isFile:
       if self.layout.openFile(path).getSome(editor):
-        if editor of TextDocumentEditor and popup.getPreviewSelection().getSome(selection):
-          editor.TextDocumentEditor.selection = selection
-          editor.TextDocumentEditor.centerCursor()
+        if editor.getTextEditorComponent().getSome(te) and popup.getPreviewSelection().getSome(selection):
+          te.selection = selection.toRange
+          te.centerCursor(te.selection.b)
       return true
     else:
       currentDirectory[] = fileInfo.path
-      popup.textEditor.document.content = ""
+      popup.setSearchString ""
       source.retrigger()
       return false
 
@@ -2441,13 +2448,13 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
       if fileInfo.isFile:
         if self.layout.openFile(path).getSome(editor):
-          if editor of TextDocumentEditor and popup.getPreviewSelection().getSome(selection):
-            editor.TextDocumentEditor.selection = selection
-            editor.TextDocumentEditor.centerCursor()
+          if editor.getTextEditorComponent().getSome(te) and popup.getPreviewSelection().getSome(selection):
+            te.selection = selection.toRange
+            te.centerCursor(te.selection.b)
         return true
       else:
         currentDirectory[] = path
-      popup.textEditor.document.content = ""
+      popup.setSearchString ""
       source.retrigger()
     return true
 
@@ -2456,7 +2463,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
     log lvlInfo, fmt"go up: {currentDirectory[]} -> {parent}"
     currentDirectory[] = parent
 
-    popup.textEditor.document.content = ""
+    popup.setSearchString ""
     source.retrigger()
     return true
 
@@ -2582,17 +2589,17 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
   popup.addCustomCommand "prev-change", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
-    popup.previewEditor.selection = popup.previewEditor.getPrevChange(popup.previewEditor.selection.first).last.toSelection
-    popup.previewEditor.scrollToCursor(SelectionCursor.Last)
-    popup.previewEditor.centerCursor()
+    if popup.previewEditor.getTextEditorComponent().getSome(te) and popup.previewEditor.getMoveComponent().getSome(moves):
+      te.selection = moves.applyMove(te.selection, "(prev-change)")
+      te.centerCursor(te.selection.b)
     return true
 
   popup.addCustomCommand "next-change", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
-    popup.previewEditor.selection = popup.previewEditor.getNextChange(popup.previewEditor.selection.first).last.toSelection
-    popup.previewEditor.scrollToCursor(SelectionCursor.Last)
-    popup.previewEditor.centerCursor()
+    if popup.previewEditor.getTextEditorComponent().getSome(te) and popup.previewEditor.getMoveComponent().getSome(moves):
+      te.selection = moves.applyMove(te.selection, "(next-change)")
+      te.centerCursor(te.selection.b)
     return true
 
   self.layout.pushPopup popup

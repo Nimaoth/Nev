@@ -269,7 +269,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   defaultScrollBehaviour*: ScrollBehaviour = ScrollToMargin
   nextScrollBehaviour*: Option[ScrollBehaviour]
   defaultSnapBehaviour*: ScrollSnapBehaviour = MinDistanceOffscreen
-  hideCursorWhenInactive*: bool
   cursorVisible*: bool = true
   blinkCursor: bool = true
   blinkCursorTask: DelayedTask
@@ -357,7 +356,7 @@ type
   TextDocumentFactory* = ref object of DocumentFactory
   TextDocumentEditorFactory* = ref object of DocumentEditorFactory
 
-proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEditor
+proc newTextEditor*(document: TextDocument, services: Services, initialSettings: JsonNodeEx): TextDocumentEditor
 proc textEditorGetStateJson*(self: DocumentEditor): JsonNode
 proc textEditorRestoreStateJson*(self: DocumentEditor, state: JsonNode) {.gcsafe, raises: [].}
 proc textEditorDeinit*(self: DocumentEditor) {.gcsafe, raises: [].}
@@ -392,7 +391,8 @@ proc createDocument(self: TextDocumentFactory, services: Services, path: string,
   var createLanguageServer = true
   if options != nil and options.kind == JObject:
     try:
-      createLanguageServer = options["createLanguageServer"].jsonTo(bool)
+      if options.hasKey("createLanguageServer"):
+        createLanguageServer = options["createLanguageServer"].jsonTo(bool)
     except CatchableError:
       discard # todo
   return newTextDocument(services, path, app=false, load=load, createLanguageServer=createLanguageServer, id = id)
@@ -401,7 +401,13 @@ proc canEditDocument*(self: TextDocumentEditorFactory, document: Document, optio
   return document of TextDocument
 
 proc createEditor*(self: TextDocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor =
-  let textEditor = newTextEditor(document.TextDocument, services)
+  var initialSettings: JsonNodeEx = newJexObject()
+  if options != nil and options.kind == JObject and options.hasKey("settings"):
+    initialSettings = options["settings"]
+    if initialSettings.kind != JObject:
+      log lvlError, &"createTextEditor: 'settings' must be an object"
+      initialSettings = newJexObject()
+  let textEditor = newTextEditor(document.TextDocument, services, initialSettings)
   if options != nil and options.kind == JObject:
     try:
       if options.hasKey("usage"):
@@ -4785,7 +4791,7 @@ proc createTextEditorInstance(): TextDocumentEditor =
     allTextEditors.add editor
   return editor
 
-proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEditor =
+proc newTextEditor*(document: TextDocument, services: Services, initialSettings: JsonNodeEx): TextDocumentEditor =
   var self = createTextEditorInstance()
   self.services = services
   self.platform = self.services.getService(PlatformService).get.platform
@@ -4817,7 +4823,8 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   discard self.displayMap.diffMap.onInlineDiffsUpdated.subscribe (args: (DiffMap,)) => self.markDirty()
   discard self.diffDisplayMap.diffMap.onInlineDiffsUpdated.subscribe (args: (DiffMap,)) => self.markDirty()
 
-  self.config = self.configService.addStore("editor/" & $self.id, &"settings://editor/{self.id}")
+  assert initialSettings != nil
+  self.config = self.configService.addStore("editor/" & $self.id, &"settings://editor/{self.id}", settings = initialSettings)
   discard self.config.onConfigChanged.subscribe proc(key: string) =
     # Keep this simple and cheap, this is called often
     self.configChanged = true
