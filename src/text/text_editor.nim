@@ -22,6 +22,7 @@ import lisp
 import view
 import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, snippet_component, text_component, contextline_component
 import move_component
+import ui/node
 
 import "../../modules"/[workspace_edit, search_component]
 
@@ -249,9 +250,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   diffChanges*: Option[seq[LineMapping]]
   diffRevision: int = 0
 
-  usage*: string # Unique string identifying what the editor is used for,
-                 # e.g. command-line/preview/search-bar
-
   cursorsId*: Id
   completionsId*: Id
   signatureHelpId*: Id
@@ -389,13 +387,32 @@ proc canOpenFile(self: TextDocumentFactory, path: string): bool =
 
 proc createDocument(self: TextDocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil, id = Id.none): Document =
   var createLanguageServer = true
+  var language = string.none
+  var initialSettings: JsonNodeEx = newJexObject()
   if options != nil and options.kind == JObject:
     try:
       if options.hasKey("createLanguageServer"):
         createLanguageServer = options["createLanguageServer"].jsonTo(bool)
+      if options.hasKey("language"):
+        language = options["language"].jsonTo(Option[string])
+      if options.hasKey("settings"):
+        initialSettings = options["settings"]
+        if initialSettings.kind != JObject:
+          log lvlError, &"createTextEditor: 'settings' must be an object"
+          initialSettings = newJexObject()
     except CatchableError:
       discard # todo
-  return newTextDocument(services, path, app=false, load=load, createLanguageServer=createLanguageServer, id = id)
+  let document = newTextDocument(services, path, app=false, language=language, load=load, createLanguageServer=createLanguageServer, id = id, initialSettings = initialSettings)
+  if options != nil and options.kind == JObject:
+    try:
+      if options.hasKey("staged"):
+        document.staged = options["staged"].jsonTo(bool)
+      if options.hasKey("usage"):
+        document.usage = options["usage"].jsonTo(string)
+    except CatchableError:
+      discard # todo
+
+  return document
 
 proc canEditDocument*(self: TextDocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool =
   return document of TextDocument
@@ -2380,9 +2397,11 @@ proc addOverlay*(self: TextDocumentEditor, selection: Selection, text: string, i
   self.displayMap.overlay.addOverlay(selection.toRange, text, id, scope, bias, renderId, location)
   self.markDirty()
 
-proc startDiff*(self: TextDocumentEditor, diffTarget: string = "", gotoFirstDiff: bool = false) {.expose("editor.text").} =
+proc startDiff*(self: TextDocumentEditor, diffTarget: string = "", gotoFirstDiff: bool = false, staged: bool = false) {.expose("editor.text").} =
   self.showDiff = true
   self.diffTarget = diffTarget
+  if self.document != nil:
+    self.document.staged = staged
   asyncSpawn self.updateDiffAsync(gotoFirstDiff)
 
 proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
@@ -4791,6 +4810,8 @@ proc createTextEditorInstance(): TextDocumentEditor =
     allTextEditors.add editor
   return editor
 
+import ui/widget_builder_text_document
+
 proc newTextEditor*(document: TextDocument, services: Services, initialSettings: JsonNodeEx): TextDocumentEditor =
   var self = createTextEditorInstance()
   self.services = services
@@ -4880,6 +4901,9 @@ proc newTextEditor*(document: TextDocument, services: Services, initialSettings:
   self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 
   self.setDefaultMode(forceNotify = true)
+
+  self.renderImpl = proc(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayFunction] =
+    self.createUI(builder)
 
   return self
 

@@ -5,7 +5,7 @@ import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
 import ui/[widget_library]
-import app, document_editor, theme, config_provider, layout/layout
+import document_editor, theme, config_provider, layout/layout
 import text/language/[lsp_types]
 import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]
 import view
@@ -186,7 +186,7 @@ proc getScreenPos(self: TextDocumentEditor, builder: UINodeBuilder, state: var L
     return vec2(state.absoluteBounds.x + chunkBounds.x + offset, state.absoluteBounds.y + chunkBounds.y).some
   return Vec2.none
 
-proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
+proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, cursorBounds: Rect) =
   let backgroundColor = builder.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
   let borderColor = builder.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
   let activeHoverColor = builder.theme.color("editor.foreground", color(1, 1, 1))
@@ -220,7 +220,7 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
     hoverPanel.rawY = cursorBounds.y
     hoverPanel.pivot = vec2(0, 1)
 
-proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
+proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, cursorBounds: Rect) =
   let backgroundColor = builder.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
   let borderColor = builder.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
   let textColor = builder.theme.color("editor.foreground", color(1, 1, 1))
@@ -278,9 +278,9 @@ proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: 
   signatureHelpPanel.rawY = cursorBounds.y
   signatureHelpPanel.pivot = vec2(0, 1)
 
-proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
-  let totalLineHeight = app.platform.totalLineHeight
-  let charWidth = app.platform.charWidth
+proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, cursorBounds: Rect) =
+  let totalLineHeight = builder.textHeight
+  let charWidth = builder.charWidth
 
   let transparentBackground = self.uiSettings.background.transparent.get()
   var backgroundColor = builder.theme.color(@["editorSuggestWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
@@ -552,7 +552,7 @@ proc toUINodeFlags(fontStyle: set[FontStyle]): UINodeFlags =
   if Bold in fontStyle:
     result.incl TextBold
 
-proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode, renderCommands: var RenderCommands, state: var LineDrawerState) =
+proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, currentNode: UINode, renderCommands: var RenderCommands, state: var LineDrawerState) =
   if state.chunkBounds.len == 0:
     return
 
@@ -625,7 +625,7 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
         var cursorVisible = self.cursorVisible
         if cursorTrail > 0:
           if self.cursorHistories[i].len != 0:
-            let alpha = 1 - exp(-cursorSpeed * app.platform.deltaTime)
+            let alpha = 1 - exp(-cursorSpeed * state.platform.deltaTime)
             var nextPos = mix(self.cursorHistories[i].last, cursorBounds.xy, alpha)
             if (nextPos - cursorBounds.xy).length < 1:
               nextPos = cursorBounds.xy
@@ -1316,7 +1316,7 @@ proc drawContextBreadcrumbs*(state: var LineDrawerState, commands: var RenderCom
 
   commands.commands[backgroundCommandIndex].bounds.h = y + h
 
-proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode,
+proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNode: UINode,
     selectionsNode: UINode, lineNumberNode: UINode, backgroundColor: Color, textColor: Color, sizeToContentX: bool,
     sizeToContentY: bool) =
   var flags = 0.UINodeFlags
@@ -1541,7 +1541,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if not chunk.displayChunk.styledChunk.chunk.external:
       self.lastRenderedChunks.add (chunk.range, chunk.displayRange)
 
-  self.drawCursors(builder, app, currentNode, currentNode.renderCommands, state)
+  self.drawCursors(builder, currentNode, currentNode.renderCommands, state)
 
   var ropeCursor = self.displayMap.buffer.visibleText.cursorT(Point)
   let visibleTextRange = self.visibleTextRange(2)
@@ -1698,7 +1698,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.currentCenterCursorRelativeYPos = (chunk.bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
 
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayFunction] =
-  let app = ({.gcsafe.}: gEditor)
   self.preRender(builder.currentParent.bounds)
 
   let arenaCheckpoint = builder.arena.checkpoint()
@@ -1804,7 +1803,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
           var t = startTimer()
 
           if self.document != nil and self.document.isInitialized:
-            self.createTextLines(builder, app, textNode, selectionsNode, lineNumberNode,
+            self.createTextLines(builder, textNode, selectionsNode, lineNumberNode,
               backgroundColor, textColor, sizeToContentX, sizeToContentY)
 
           let e = t.elapsed.ms
@@ -1828,15 +1827,15 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
 
   if self.showCompletions and self.active:
     res.add proc() =
-      self.createCompletions(builder, app, self.lastCursorLocationBounds.get(rect(100, 100, 10, 10)))
+      self.createCompletions(builder, self.lastCursorLocationBounds.get(rect(100, 100, 10, 10)))
 
   if self.hoverComponent.showHover:
     res.add proc() =
-      self.createHover(builder, app, self.lastHoverLocationBounds.get(rect(100, 100, 10, 10)))
+      self.createHover(builder, self.lastHoverLocationBounds.get(rect(100, 100, 10, 10)))
 
   if self.showSignatureHelp:
     res.add proc() =
-      self.createSignatureHelp(builder, app, self.lastSignatureHelpLocationBounds.get(rect(100, 100, 10, 10)))
+      self.createSignatureHelp(builder, self.lastSignatureHelpLocationBounds.get(rect(100, 100, 10, 10)))
 
   if self.scrollBox.scrollMomentum.x.abs > 0.0001 or self.scrollBox.scrollMomentum.y.abs > 0.0001:
     self.markDirty()

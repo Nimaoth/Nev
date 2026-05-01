@@ -3,7 +3,6 @@ import misc/[custom_logger, custom_async, util, binary_encoder]
 import document_editor, vfs, vfs_service, service
 import nimsumtree/[rope, sumtree, arc]
 import layout/layout
-import text/[text_editor, text_document]
 import config_provider, compilation_config, command_service
 import plugin_service, wasm_engine
 import lisp

@@ -3,7 +3,7 @@ import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutil
 import nimsumtree/[rope, sumtree, arc, clock, buffer]
 import service
 import layout/layout
-import text/[text_editor, text_document, overlay_map]
+import text/[overlay_map]
 import view
 import render_view as rv
 import platform/platform, platform_service
@@ -18,9 +18,9 @@ from scripting_api as sca import nil
 
 {.push gcsafe, raises: [].}
 
-logCategory "plugin-api-v0"
+logCategory "plugin-api-v1"
 
-const apiVersion: int32 = 0
+const apiVersion: int32 = 1
 
 type Resource = object of RootObj
 
@@ -77,7 +77,7 @@ type
     vfs: VFS
     permissions: PluginPermissions
     commands: seq[CommandId]
-    customRenderers: seq[tuple[editor: TextDocumentEditor, id: CustomRendererId]]
+    customRenderers: seq[tuple[editor: DocumentEditor, id: CustomRendererId]]
     namespace: string
     args: string
     destroyRequested: Atomic[bool]
@@ -513,7 +513,7 @@ proc textEditorActiveTextEditor*(instance: ptr InstanceData, options: ActiveEdit
   let includeCommandLine = ActiveEditorFlag.IncludeCommandLine in options
   let includePopups = ActiveEditorFlag.IncludePopups in options
   if instance.host.layout.getActiveEditor(includeCommandLine = includeCommandLine, includePopups = includePopups).getSome(editor) and
-      editor of TextDocumentEditor:
+      editor.getTextEditorComponent().isSome():
     return TextEditor(id: editor.id.uint64).some
   return TextEditor.none
 
@@ -522,7 +522,7 @@ proc textEditorGetDocument*(instance: ptr InstanceData; editor: TextEditor): Opt
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor):
     let document = editor.getDocument()
-    if document != nil and document of text_document.TextDocument:
+    if document != nil and document.getTextComponent().isSome:
       return TextDocument(id: document.id.uint64).some
   return TextDocument.none
 
@@ -530,111 +530,111 @@ proc textEditorAllTextEditors*(instance: ptr InstanceData): seq[TextEditor] =
   if instance.host == nil:
     return
   for editor in instance.host.editors.allEditors:
-    if editor of TextDocumentEditor:
-      result.add TextEditor(id: editor.TextDocumentEditor.id.uint64)
+    if editor.getTextEditorComponent().isSome():
+      result.add TextEditor(id: editor.id.uint64)
 
 proc textEditorAsTextEditor*(instance: ptr InstanceData; editor: Editor): Option[TextEditor] =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return TextEditor(id: editor.TextDocumentEditor.id.uint64).some
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().isSome():
+    return TextEditor(id: editor.id.uint64).some
   return TextEditor.none
 
 proc textEditorAsTextDocument*(instance: ptr InstanceData; document: Document): Option[TextDocument] =
   if instance.host == nil:
     return
-  if instance.host.editors.getDocument(document.id.DocumentId).getSome(document) and document of text_document.TextDocument:
-    return TextDocument(id: text_document.TextDocument(document).id.uint64).some
+  if instance.host.editors.getDocument(document.id.DocumentId).getSome(document) and document.getTextComponent().isSome:
+    return TextDocument(id: document.id.uint64).some
   return TextDocument.none
 
 proc textEditorLineLength*(instance: ptr InstanceData; editor: TextEditor; line: int32): int32 =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.lineLength(line.int).int32
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.lineLength(line.int).int32
 
 proc textEditorClearTabStops*(instance: ptr InstanceData; editor: TextEditor): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.clearTabStops()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.clearTabStops()
 
 proc textEditorUndo*(instance: ptr InstanceData; editor: TextEditor): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.undo()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.undo()
 
 proc textEditorRedo*(instance: ptr InstanceData; editor: TextEditor): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.redo()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.redo()
 
 proc textEditorStartTransaction*(instance: ptr InstanceData; editor: TextEditor): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.startTransaction()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.startTransaction()
 
 proc textEditorEndTransaction*(instance: ptr InstanceData; editor: TextEditor): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.endTransaction()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.endTransaction()
 
 proc textEditorCopy*(instance: ptr InstanceData; editor: TextEditor, register: sink string, inclusiveEnd: bool): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.copy(register, inclusiveEnd)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.copy(register, inclusiveEnd)
 
 proc textEditorPaste*(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection], register: sink string, inclusiveEnd: bool): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    asyncSpawn editor.TextDocumentEditor.pasteAsync(selections.mapIt(it.toInternal), register, inclusiveEnd)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    asyncSpawn te.pasteAsync(selections.mapIt(it.toInternal), register, inclusiveEnd)
 
 proc textEditorAutoShowCompletions*(instance: ptr InstanceData; editor: TextEditor): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.autoShowCompletions()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.autoShowCompletions()
 
 proc textEditorApplyMove*(instance: ptr InstanceData; editor: TextEditor; selection: Selection; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    let textEditor = editor.TextDocumentEditor
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    let textEditor = te
     return textEditor.getSelectionsForMove(@[selection.toInternal], move, count, includeEol, wrap).mapIt(it.toWasm)
 
 proc textEditorMultiMove*(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    let textEditor = editor.TextDocumentEditor
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    let textEditor = te
     return textEditor.getSelectionsForMove(selections.mapIt(it.toInternal), move, count, includeEol, wrap).mapIt(it.toWasm)
 
 proc textEditorSetSelection*(instance: ptr InstanceData; editor: TextEditor; s: Selection): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    let textEditor = editor.TextDocumentEditor
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    let textEditor = te
     textEditor.selection = ((s.first.line.int, s.first.column.int), (s.last.line.int, s.last.column.int))
 
 proc textEditorSetSelections*(instance: ptr InstanceData; editor: TextEditor; s: sink seq[Selection]): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    let textEditor = editor.TextDocumentEditor
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    let textEditor = te
     if s.len > 0:
       textEditor.selections = s.mapIt(it.toInternal)
 
 proc textEditorGetSelection*(instance: ptr InstanceData; editor: TextEditor): Selection =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    let textEditor = editor.TextDocumentEditor
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    let textEditor = te
     let s = textEditor.selection
     Selection(first: Cursor(line: s.first.line.int32, column: s.first.column.int32), last: Cursor(line: s.last.line.int32, column: s.last.column.int32))
   else:
@@ -643,15 +643,15 @@ proc textEditorGetSelection*(instance: ptr InstanceData; editor: TextEditor): Se
 proc textEditorGetSelections*(instance: ptr InstanceData; editor: TextEditor): seq[Selection] =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.selections.mapIt(it.toWasm)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.selections.mapIt(it.toWasm)
 
 proc textEditorEdit*(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; contents: sink seq[string], inclusive: bool): seq[Selection] =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
     let selections = selections.mapIt(it.toInternal)
-    let res = editor.TextDocumentEditor.edit(selections, contents, inclusiveEnd = inclusive)
+    let res = te.edit(selections, contents, inclusiveEnd = inclusive)
     return res.mapIt(it.toWasm)
   return selections
 
@@ -672,47 +672,41 @@ proc textEditorDefineMove*(instance: ptr InstanceData; move: sink string; fun: u
 
   instance.host.moves.registerMove(move, moveImpl)
 
-proc textEditorAddModeChangedHandler*(instance: ptr InstanceData, fun: uint32): int32 =
-  if instance.host == nil:
-    return
-  log lvlError, &"TextEditor.addModeChangedHandler not supported anymore"
-  return 0
-
 proc textEditorSetMode*(instance: ptr InstanceData; editor: TextEditor, mode: sink string, exclusive: bool): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.setMode(mode, exclusive)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.setMode(mode, exclusive)
 
 proc textEditorMode*(instance: ptr InstanceData; editor: TextEditor): string =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.mode()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.mode()
 
 proc textEditorModes*(instance: ptr InstanceData; editor: TextEditor): seq[string] =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.modes()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.modes()
 
 proc textEditorHideCompletions*(instance: ptr InstanceData; editor: TextEditor) =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.hideCompletions()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.hideCompletions()
 
 proc textEditorScrollToCursor*(instance: ptr InstanceData; editor: TextEditor; behaviour: Option[ScrollBehaviour]; relativePosition: float32): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.scrollToCursor(sca.SelectionCursor.Last, scrollBehaviour = behaviour.mapIt(it.toInternal), relativePosition=relativePosition)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.scrollToCursor(sca.SelectionCursor.Last, scrollBehaviour = behaviour.mapIt(it.toInternal), relativePosition=relativePosition)
 
 proc textEditorUpdateTargetColumn*(instance: ptr InstanceData; editor: TextEditor): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.updateTargetColumn()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.updateTargetColumn()
 
 proc textEditorCommand*(instance: ptr InstanceData; editor: TextEditor, name: sink string, arguments: sink string): Result[string, CommandError] =
   if instance.host == nil:
@@ -720,7 +714,7 @@ proc textEditorCommand*(instance: ptr InstanceData; editor: TextEditor, name: si
   if not instance.host.commands.checkPermissions(name, instance.permissions.commands):
     result.err(CommandError.NotAllowed)
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
     if editor.handleAction(name, arguments, true).getSome(res):
       return results.ok($res)
   result.err(CommandError.NotFound)
@@ -728,26 +722,26 @@ proc textEditorCommand*(instance: ptr InstanceData; editor: TextEditor, name: si
 proc textEditorRecordCurrentCommand*(instance: ptr InstanceData; editor: TextEditor; registers: sink seq[string]): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.commandComponent.recordCurrentCommand(registers)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.commandComponent.recordCurrentCommand(registers)
 
 proc textEditorGetUsage*(instance: ptr InstanceData; editor: TextEditor): string =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.getUsage()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.getUsage()
 
 proc textEditorGetRevision*(instance: ptr InstanceData; editor: TextEditor): int32 =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.getRevision().int32
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.getRevision().int32
 
 proc textEditorContent*(instance: ptr InstanceData; editor: TextEditor): RopeResource =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    let textEditor = editor.TextDocumentEditor
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    let textEditor = te
     if textEditor.document != nil:
       return RopeResource(rope: textEditor.document.rope.clone().slice().suffix(Point()))
   return RopeResource(rope: createRope("").slice().suffix(Point()))
@@ -755,9 +749,8 @@ proc textEditorContent*(instance: ptr InstanceData; editor: TextEditor): RopeRes
 proc textDocumentContent*(instance: ptr InstanceData; document: TextDocument): RopeResource =
   if instance.host == nil:
     return
-  if instance.host.editors.getDocument(document.id.DocumentId).getSome(document) and document of text_document.TextDocument:
-    let textDocument = text_document.TextDocument(document)
-    return RopeResource(rope: textDocument.rope.clone().slice().suffix(Point()))
+  if instance.host.editors.getDocument(document.id.DocumentId).getSome(document) and document.getTextComponent().getSome(text):
+    return RopeResource(rope: text.content.clone().slice().suffix(Point()))
   return RopeResource(rope: createRope("").slice().suffix(Point()))
 
 proc textDocumentPath*(instance: ptr InstanceData; document: TextDocument): string =
@@ -770,108 +763,108 @@ proc textDocumentPath*(instance: ptr InstanceData; document: TextDocument): stri
 proc textEditorGetSettingRaw*(instance: ptr InstanceData, editor: TextEditor, name: sink string): string =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return $editor.TextDocumentEditor.config.get(name, newJexNull())
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return $te.config.get(name, newJexNull())
 
 proc textEditorSetSettingRaw*(instance: ptr InstanceData, editor: TextEditor, name: sink string, value: sink string) =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
     try:
       # todo: permissions
-      editor.TextDocumentEditor.config.set(name, parseJsonex(value))
+      te.config.set(name, parseJsonex(value))
     except CatchableError as e:
       log lvlError, &"set-setting-raw: Failed to set setting '{name}' to {value}: {e.msg}"
 
 proc textEditorSetSearchQueryFromMove*(instance: ptr InstanceData, editor: TextEditor, move: sink string, count: int32, prefix: sink string, suffix: sink string): Selection =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.setSearchQueryFromMove(move, count, prefix, suffix)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.setSearchQueryFromMove(move, count, prefix, suffix)
 
 proc textEditorSetSearchQuery*(instance: ptr InstanceData, editor: TextEditor, query: sink string, escapeRegex: bool, prefix: sink string, suffix: sink string): bool =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.setSearchQuery(query, escapeRegex, prefix, suffix)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.setSearchQuery(query, escapeRegex, prefix, suffix)
 
 proc textEditorGetSearchQuery*(instance: ptr InstanceData, editor: TextEditor): string =
   if instance.host == nil:
     return ""
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.getSearchQuery()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.getSearchQuery()
   return ""
 
 proc textEditorToggleLineComment*(instance: ptr InstanceData, editor: TextEditor) =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.toggleLineComment()
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.toggleLineComment()
 
 proc textEditorInsertText*(instance: ptr InstanceData, editor: TextEditor, text: sink string, autoIndent: bool) =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.insertText(text, autoIndent)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.insertText(text, autoIndent)
 
 proc textEditorOpenSearchBar*(instance: ptr InstanceData; editor: TextEditor; query: sink string; scrollToPreview: bool; selectResult: bool): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.openSearchBar(query, scrollToPreview, selectResult)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.openSearchBar(query, scrollToPreview, selectResult)
 
 proc textEditorEvaluateExpressions*(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; inclusive: bool; prefix: sink string; suffix: sink string; addSelectionIndex: bool): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.evaluateExpressions(selections.mapIt(it.toInternal), inclusive, prefix, suffix, addSelectionIndex)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.evaluateExpressions(selections.mapIt(it.toInternal), inclusive, prefix, suffix, addSelectionIndex)
 
 proc textEditorIndent*(instance: ptr InstanceData; editor: TextEditor; delta: int32): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
     if delta >= 0:
       for i in 0..<delta:
-        editor.TextDocumentEditor.indent()
+        te.indent()
     else:
       for i in 0..<(-delta):
-        editor.TextDocumentEditor.unindent()
+        te.unindent()
 
 proc textEditorGetCommandCount*(instance: ptr InstanceData; editor: TextEditor): int32 =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.getCommandCount().int32
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.getCommandCount().int32
 
 proc textEditorGetVisibleLineCount*(instance: ptr InstanceData; editor: TextEditor): int32 =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.screenLineCount().int32
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.screenLineCount().int32
 
 proc textEditorSetCursorScrollOffset*(instance: ptr InstanceData; editor: TextEditor; cursor: Cursor; scrollOffset: float32): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.setCursorScrollOffset(cursor.toInternal, scrollOffset)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.setCursorScrollOffset(cursor.toInternal, scrollOffset)
 
 proc textEditorCreateAnchors*(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]): seq[(Anchor, Anchor)] =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.createAnchors(selections.mapIt(it.toInternal)).mapIt(it.toWasm)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.createAnchors(selections.mapIt(it.toInternal)).mapIt(it.toWasm)
 
 proc textEditorResolveAnchors*(instance: ptr InstanceData; editor: TextEditor; anchors: sink seq[(Anchor, Anchor)]): seq[Selection] =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return editor.TextDocumentEditor.resolveAnchors(anchors.mapIt(it.toInternal)).mapIt(it.toWasm)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    return te.resolveAnchors(anchors.mapIt(it.toInternal)).mapIt(it.toWasm)
 
 proc textEditorAddCustomRenderCallback*(instance: ptr InstanceData; editor: TextEditor; fun: uint32; data: uint32): int64 =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    let id = editor.TextDocumentEditor.decorations.addCustomRenderer proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 =
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    let id = te.decorations.addCustomRenderer proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 =
       try:
         let ret = instance.funcs.handleTextOverlayRender(fun, data, id, size.toWasm, localOffset.int32).okOr(err):
           log lvlWarn, "Failed to call custom render callback: " & err.msg
@@ -893,44 +886,44 @@ proc textEditorAddCustomRenderCallback*(instance: ptr InstanceData; editor: Text
       except CatchableError as e:
         log lvlWarn, &"Failed to run custom render: {e.msg}"
         echo e.getStackTrace()
-    instance.customRenderers.add((editor.TextDocumentEditor, id))
+    instance.customRenderers.add((editor, id))
     return id.int64
 
 proc textEditorRemoveCustomRenderCallback*(instance: ptr InstanceData; editor: TextEditor; cb: int64): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.decorations.removeCustomRenderer(cb.CustomRendererId)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.decorations.removeCustomRenderer(cb.CustomRendererId)
     for i in 0..instance.customRenderers.high:
-      if instance.customRenderers[i].editor == editor.TextDocumentEditor and instance.customRenderers[i].id.int64 == cb:
+      if instance.customRenderers[i].editor == te and instance.customRenderers[i].id.int64 == cb:
         instance.customRenderers.removeSwap(i)
         break
 
 proc textEditorAddOverlay*(instance: ptr InstanceData; editor: TextEditor; selections: Selection; text: sink string; id: int64; scope: sink string; bias: Bias; renderId: int64; location: OverlayRenderLocation): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.addOverlay(selections.toInternal, text, id.int, scope, bias.toInternal, renderId.int, location.toInternal)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.addOverlay(selections.toInternal, text, id.int, scope, bias.toInternal, renderId.int, location.toInternal)
 
 proc textEditorClearOverlays*(instance: ptr InstanceData; editor: TextEditor; id: int64): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.clearOverlays(id.int)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.clearOverlays(id.int)
 
 proc textEditorAllocateOverlayId*(instance: ptr InstanceData; editor: TextEditor): int64 =
   if instance.host == nil:
     return -1
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    let overlay = editor.TextDocumentEditor.displayMap.overlay
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    let overlay = te.displayMap.overlay
     return overlay.allocateId().get(-1).int64
   return -1
 
 proc textEditorReleaseOverlayId*(instance: ptr InstanceData; editor: TextEditor; id: int64): void =
   if instance.host == nil:
     return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.displayMap.overlay.releaseId(id.int)
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getTextEditorComponent().getSome(te):
+    te.displayMap.overlay.releaseId(id.int)
 
 proc typesNewSharedBuffer*(instance: ptr InstanceData, size: int64): SharedBufferResource =
   return SharedBufferResource(buffer: SharedBuffer.new(size))

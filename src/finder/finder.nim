@@ -1,7 +1,8 @@
-import std/[algorithm, sugar, strutils]
-import misc/[regex, timer, fuzzy_matching, util, custom_async, event, id, custom_logger]
+import std/[algorithm, sugar, strutils, json, tables]
+import misc/[regex, timer, fuzzy_matching, util, custom_async, event, id, custom_logger, myjsonutils]
 import malebolgia
 import nimsumtree/arc
+import scripting_api
 
 logCategory "finder"
 
@@ -385,3 +386,46 @@ proc retrigger*(self: SyncDataSource) {.gcsafe, raises: [].} =
 
 proc data*(list: ItemList): lent ItemListData =
   return list.data.get
+
+proc parsePathAndLocationFromItemData*(item: FinderItem):
+    Option[tuple[path: string, location: Option[Cursor], isFile: Option[bool], editorId: Option[EditorId]]] {.gcsafe, raises: [].} =
+  try:
+    if not item.data.startsWith("{"):
+      return (item.data, Cursor.none, bool.none, EditorId.none).some
+
+    let jsonData = item.data.parseJson.catch:
+      return
+
+    if jsonData.kind != JObject:
+      return
+
+    if not jsonData.hasKey "path":
+      return
+
+    let editorId = if jsonData.hasKey "editorId":
+      jsonData["editorId"].jsonTo(Option[EditorId])
+    else:
+      EditorId.none
+
+    let path = jsonData.fields["path"]
+    if path.kind != JString:
+      return
+
+    let isFile = if jsonData.hasKey("isFile") and jsonData.fields["isFile"].kind == JBool:
+      jsonData.fields["isFile"].getBool.some
+    else:
+      bool.none
+
+    var cursor: Option[Cursor] = if jsonData.hasKey "line":
+      (
+        jsonData.fields["line"].getInt,
+        jsonData.fields.getOrDefault("column", % 0).getInt,
+      ).some.catch:
+        Cursor.none
+    else:
+      Cursor.none
+
+    return (path.getStr, cursor, isFile, editorId).some
+
+  except:
+    return

@@ -15,14 +15,14 @@ import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
 import service, layout/layout, session, command_service, toast, plugin_service
 import event_service, vcs/vcs
-import search_component, decoration_component, move_component
+import search_component, decoration_component, move_component, command_component
 import nimsumtree/[rope]
 
 import misc/async_process
 
 import plugin_system_wasm
 
-import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
+import scripting_api as api except DocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
 
 {.push gcsafe.}
@@ -121,8 +121,6 @@ type
 
     editors*: DocumentEditorService
 
-    logDocument: Document
-
     mEventHandlers*: seq[EventHandler]
     eventHandlers*: Table[string, EventHandler]
     modeEventHandler: EventHandler
@@ -178,7 +176,6 @@ proc handleModsChanged*(self: App, old: Modifiers, new: Modifiers)
 proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
 
-import text/[text_editor, text_document]
 import selector_popup
 import finder/[file_previewer]
 
@@ -761,10 +758,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.fallbackFonts.add "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
   self.fallbackFonts.add "app://fonts/NotoEmoji/NotoEmoji.otf"
 
-  self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
-  EditorSettings.new(self.logDocument.TextDocument.config).saveInSession.set(false)
-  self.editors.pinnedDocuments.incl(self.logDocument)
-
   self.uiSettings = UiSettings.new(self.config.runtime)
   self.generalSettings = GeneralSettings.new(self.config.runtime)
 
@@ -785,9 +778,9 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.commands.languageServerCommandLine = self.services.getService(LanguageServerCommandLineService).get.languageServer
 
-  let commandLineTextDocument = self.editors.createDocument("text", "ed://.command-line", load = false, %%*{})
-  assert commandLineTextDocument != nil
-  self.commands.mCommandLineEditor = self.editors.createEditorForDocument(commandLineTextDocument, %%*{
+  let commandLineDocument = self.editors.createDocument("text", "ed://.command-line", load = false, %%*{})
+  assert commandLineDocument != nil
+  self.commands.mCommandLineEditor = self.editors.createEditorForDocument(commandLineDocument, %%*{
     "usage": "command-line",
     "settings": {
       "text.disable-completions": true,
@@ -957,9 +950,6 @@ proc shutdown*(self: App) =
 
   self.saveAppState()
 
-  # Clear log document so we don't log to it as it will be destroyed.
-  self.logDocument = nil
-
   for popup in self.layout.popups:
     popup.deinit()
 
@@ -978,16 +968,6 @@ proc shutdown*(self: App) =
     custom_treesitter.freeDynamicLibraries()
 
 proc handleLog(self: App, level: Level, args: openArray[string]) =
-  if self.config != nil and self.debugSettings.logToInternalDocument.get():
-    let str = substituteLog(defaultFmtStr, level, args) & "\n"
-    if self.logDocument.isNotNil:
-      let selection = self.logDocument.TextDocument.lastCursor.toSelection
-      discard self.logDocument.TextDocument.edit([selection], [selection], [self.logBuffer & str])
-      self.logBuffer = ""
-
-    else:
-      self.logBuffer.add str
-
   if level == lvlError:
     let str = substituteLog("", level, args)
     self.toast.showToast("Error", str, "error")
@@ -1164,10 +1144,9 @@ proc quitImmediately*(self: App, exitCode: int = 0) {.expose("editor").} =
     quit(exitCode)
 
 proc help*(self: App, about: string = "") {.expose("editor").} =
-  const introductionMd = staticRead"../docs/getting_started.md"
-  let docsPath = "app://docs/getting_started.md"
-  let textDocument = newTextDocument(self.services, docsPath, introductionMd, load=true)
-  textDocument.load()
+  let textDocument = self.editors.openDocument("app://docs/getting_started.md").getOr:
+    log lvlError, &"[help] File not found"
+    return
   discard self.layout.createAndAddView(textDocument)
 
 proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
@@ -1185,18 +1164,11 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.statusBarOnTop = not self.statusBarOnTop
   self.platform.requestRender(true)
 
-proc logs*(self: App, slot: string = "", focus: bool = true, scrollToBottom: bool = false) {.expose("editor").} =
-  let editors = self.editors.getEditorsForDocument(self.logDocument)
-  let editor = if editors.len > 0:
-    self.layout.showEditor(editors[0].id.EditorId, slot = slot, focus = focus)
-    editors[0]
-  else:
-    self.layout.createAndAddView(self.logDocument).get
-
-  if scrollToBottom and editor of TextDocumentEditor:
-    let editor = editor.TextDocumentEditor
-    editor.move("(file) (end)")
-    editor.selection = editor.selection.last.toSelection
+proc logs*(self: App, slot: string = "") {.expose("editor").} =
+  let textDocument = self.editors.openDocument("app://logs/messages.log").getOr:
+    log lvlError, &"[help] File not found"
+    return
+  discard self.layout.createAndAddView(textDocument, slot)
 
 proc toggleConsoleLogger*(self: App) {.expose("editor").} =
   {.gcsafe.}:
@@ -1205,9 +1177,6 @@ proc toggleConsoleLogger*(self: App) {.expose("editor").} =
 proc closeUnusedDocuments*(self: App) =
   for document in self.editors.documents:
     if document.usage != "":
-      continue
-
-    if document == self.logDocument:
       continue
 
     let editors = self.editors.getEditorsForDocument(document)
@@ -1536,9 +1505,9 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
       targetSelection = selection.some
 
     let editor = self.layout.openFile(path)
-    if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
-      editor.TextDocumentEditor.targetSelection = targetSelection.get
-      editor.TextDocumentEditor.centerCursor()
+    if editor.getSome(editor) and targetSelection.isSome and editor.getTextEditorComponent().getSome(te):
+      te.targetSelection = targetSelection.get.toRange
+      te.centerCursor(targetSelection.get.last.toPoint)
     return true
 
   self.layout.pushPopup popup
@@ -1840,7 +1809,7 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
     for document in self.editors.documents:
-      if document == self.logDocument or document == self.commands.commandLineEditor.getDocument():
+      if document == self.commands.commandLineEditor.getDocument():
         continue
 
       let path = document.filename
@@ -1994,9 +1963,9 @@ proc gotoNextLocation*(self: App) {.expose("editor").} =
   log lvlInfo, &"[gotoNextLocation] Found {path}:{location}"
 
   let editor = self.layout.openFile(path)
-  if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
-    editor.TextDocumentEditor.targetSelection = location.get.toSelection
-    editor.TextDocumentEditor.centerCursor()
+  if editor.getSome(editor) and location.isSome and editor.getTextEditorComponent().getSome(te):
+    te.targetSelection = location.get.toPoint.toRange
+    te.centerCursor(location.get.toPoint)
 
 proc gotoPrevLocation*(self: App) {.expose("editor").} =
   if self.finderItems.len == 0:
@@ -2013,9 +1982,9 @@ proc gotoPrevLocation*(self: App) {.expose("editor").} =
   log lvlInfo, &"[gotoPrevLocation] Found {path}:{location}"
 
   let editor = self.layout.openFile(path)
-  if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
-    editor.TextDocumentEditor.targetSelection = location.get.toSelection
-    editor.TextDocumentEditor.centerCursor()
+  if editor.getSome(editor) and location.isSome and editor.getTextEditorComponent().getSome(te):
+    te.targetSelection = location.get.toPoint.toRange
+    te.centerCursor(location.get.toPoint)
 
 proc chooseLocation*(self: App) {.expose("editor").} =
   defer:
@@ -2042,9 +2011,9 @@ proc chooseLocation*(self: App) {.expose("editor").} =
       targetSelection = selection.some
 
     let editor = self.layout.openFile(path)
-    if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
-      editor.TextDocumentEditor.targetSelection = targetSelection.get
-      editor.TextDocumentEditor.centerCursor()
+    if editor.getSome(editor) and targetSelection.isSome and editor.getTextEditorComponent().getSome(te):
+      te.targetSelection = targetSelection.get.toRange
+      te.centerCursor(targetSelection.get.last.toPoint)
 
     return true
 
@@ -2142,9 +2111,9 @@ proc searchGlobalInteractive*(self: App, path: string = "") {.expose("editor").}
       targetSelection = selection.some
 
     let editor = self.layout.openFile(path)
-    if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
-      editor.TextDocumentEditor.targetSelection = targetSelection.get
-      editor.TextDocumentEditor.centerCursor()
+    if editor.getSome(editor) and targetSelection.isSome and editor.getTextEditorComponent().getSome(te):
+      te.targetSelection = targetSelection.get.toRange
+      te.centerCursor(targetSelection.get.last.toPoint)
     return true
 
   self.layout.pushPopup popup
@@ -2177,9 +2146,9 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
       targetSelection = selection.some
 
     let editor = self.layout.openFile(path)
-    if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
-      editor.TextDocumentEditor.targetSelection = targetSelection.get
-      editor.TextDocumentEditor.centerCursor()
+    if editor.getSome(editor) and targetSelection.isSome and editor.getTextEditorComponent().getSome(te):
+      te.targetSelection = targetSelection.get.toRange
+      te.centerCursor(targetSelection.get.last.toPoint)
     return true
 
   self.layout.pushPopup popup
@@ -2566,13 +2535,13 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
   popup.addCustomCommand "diff-file", proc(popup: SelectorPopup, args: JsonNode): bool =
     if filePreviewer.editor != nil:
-      filePreviewer.editor.updateDiff(true)
+      filePreviewer.editor.getCommandComponent().get.executeCommand(&"""update-diff true""")
     return true
 
   popup.addCustomCommand "diff-file-against-active", proc(popup: SelectorPopup, args: JsonNode): bool =
     if filePreviewer.editor != nil:
-      if self.layout.getActiveEditor(includeCommandLine = false, includePopups = false).getSome(editor) and editor of TextDocumentEditor:
-        filePreviewer.editor.startDiff(editor.currentDocument.filename, true)
+      if self.layout.getActiveEditor(includeCommandLine = false, includePopups = false).getSome(editor):
+        filePreviewer.editor.getCommandComponent().get.executeCommand(&"""start-diff {editor.currentDocument.filename} true""")
     return true
 
   popup.addCustomCommand "diff-active-against-file", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -2580,8 +2549,8 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
       let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool], Joptions(allowExtraKeys: true)).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
-      if self.layout.getActiveEditor(includeCommandLine = false, includePopups = false).getSome(editor) and editor of TextDocumentEditor:
-        editor.TextDocumentEditor.startDiff(fileInfo.path, true)
+      if self.layout.getActiveEditor(includeCommandLine = false, includePopups = false).getSome(editor):
+        editor.getCommandComponent().get.executeCommand(&"""start-diff {fileInfo.path} true""")
         return true
 
     return false
@@ -2938,7 +2907,8 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
   self.updateNextPossibleInputs()
 
 proc handleDropFile*(self: App, path, content: string) =
-  let document = newTextDocument(self.services, path, content)
+  let document = self.editors.createDocument("text", path, load = false, %%*{})
+  document.getTextComponent().get.content = content
   discard self.layout.createAndAddView(document)
 
 proc changeAnimationSpeed*(self: App, factor: float) {.expose("editor").} =
@@ -3079,11 +3049,6 @@ proc printStatistics*(self: App) {.expose("editor").} =
       result.add &"Command History: {self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len}\n"
       # for command in self.commandHistory:
       #   result.add &"    {command}\n"
-
-      result.add &"Text editors: {allTextEditors.len}\n"
-      for editor in allTextEditors:
-        result.add editor.getStatisticsString().indent(4)
-        result.add "\n\n"
 
       result.add &"Platform:\n{self.platform.getStatisticsString().indent(4)}\n"
       result.add &"UI:\n{self.platform.builder.getStatisticsString().indent(4)}\n"

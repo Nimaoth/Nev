@@ -1,7 +1,6 @@
 import std/[options, os, json, sugar]
 import vmath
-import misc/[custom_async, custom_logger, util, myjsonutils, disposable_ref]
-import text/[text_document, text_editor]
+import misc/[custom_async, custom_logger, util, myjsonutils, disposable_ref, jsonex, rope_utils]
 import scripting/expose
 import workspaces/workspace
 import finder/[finder, previewer, file_previewer]
@@ -9,7 +8,7 @@ import platform/[platform]
 import service, dispatch_tables, platform_service
 import selector_popup, vcs, layout/layout, vfs, config_provider
 from scripting_api import SelectionCursor, ScrollSnapBehaviour, toSelection
-import text_editor_component, move_component, command_component
+import document_editor, text_editor_component, move_component, command_component
 
 logCategory "vcs_api"
 
@@ -122,15 +121,19 @@ proc revertSelectedFileAsync(popup: SelectorPopup, self: VCSService,
 proc diffStagedFileAsync(self: VCSService, workspace: Workspace, path: string): Future[void] {.async.} =
   log lvlInfo, fmt"Diff staged '({path})'"
 
-  let stagedDocument = newTextDocument(self.services, path, load = false, createLanguageServer = false)
-  stagedDocument.usage = "staged"
-  stagedDocument.staged = true
+  let stagedDocument = getServiceChecked(DocumentEditorService).createDocument("text", path, load = false, %%*{
+    "createLanguageServer": false,
+    "staged": true,
+    "usage": "staged",
+    "settings": {
+      "editor.save-in-session": false,
+    }
+  })
   stagedDocument.readOnly = true
-  EditorSettings.new(stagedDocument.config).saveInSession.set(false)
 
   let layout = self.services.getService(LayoutService).get
   if layout.createAndAddView(stagedDocument).getSome(editor):
-    editor.TextDocumentEditor.updateDiff()
+    editor.getCommandComponent().get.executeCommand(&"""update-diff""")
 
 proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").} =
   defer:
@@ -164,11 +167,13 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
 
     else:
       let currentVersionEditor = self.services.getService(LayoutService).get.openFile(fileInfo.path)
-      if currentVersionEditor.getSome(editor) and editor of TextDocumentEditor:
-        editor.TextDocumentEditor.updateDiff()
-        if popup.getPreviewSelection().getSome(selection):
-          editor.TextDocumentEditor.selection = selection
-          editor.TextDocumentEditor.centerCursor()
+      if currentVersionEditor.getSome(editor):
+        if editor.getCommandComponent().getSome(commands):
+          commands.executeCommand(&"""update-diff""")
+
+        if popup.getPreviewSelection().getSome(selection) and editor.getTextEditorComponent().getSome(te):
+          te.selection = selection.toRange
+          te.centerCursor(selection.last.toPoint)
 
     return true
 

@@ -106,22 +106,6 @@ declareSettings DiagnosticsSettings, "":
   ## show up even when you're actively typing (diagnostics received for old document versions are discarded).
   declare snapshotHistory, int, 5
 
-declareSettingsTemplate TreesitterSettings, "text.treesitter":
-  ## Enable parsing code into ASTs using treesitter. Also requires a treesitter parser for a specific language.
-  declare enable, bool, true
-
-  ## Override the path to the treesitter parser (.dll/.so/.wasm). By default
-  declare path, Option[string], nil
-
-  ## Override the language name used for choosing the treesitter parser. If not set then the documents language id is used.
-  declare language, Option[string], nil
-
-  ## Path relative to the repository root where queries are located. If not set then the editor will look for the queries.
-  declare queries, Option[string], nil
-
-  ## Path relative to the repository root where queries are located. If not set then the editor will look for the queries.
-  declare repository, Option[string], nil
-
 declareSettings TextSettings, "text":
   ##
   use trimTrailingWhitespace, TrimTrailingWhitespaceSettings
@@ -186,7 +170,6 @@ type
     nextLineIdCounter: int32 = 0
 
     singleLine*: bool = false
-    staged*: bool = false
 
     lastSavedTimer: Timer
 
@@ -254,6 +237,7 @@ proc enableAutoReload*(self: TextDocument, enabled: bool)
 proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageServer)
 proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageServer)
 proc addNextCheckpoint*(self: TextDocument, checkpoint: string)
+proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, content: sink S)
 
 func buffer*(self: TextDocument): var Buffer = self.textComponent.buffer
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
@@ -806,9 +790,10 @@ proc newTextDocument*(
     languageServer: Option[LanguageServer] = LanguageServer.none,
     load: bool = false,
     createLanguageServer: bool = true,
-    id = Id.none): TextDocument =
+    id = Id.none,
+    initialSettings: JsonNodeEx = newJexObject()): TextDocument =
 
-  # log lvlInfo, &"Creating new text document '{filename}', (lang: {language}, app: {app}, ls: {createLanguageServer})"
+  log lvlInfo, &"Creating new text document '{filename}', (lang: {language})"
   new(result)
 
   var self = result
@@ -831,7 +816,8 @@ proc newTextDocument*(
   self.isBackedByFile = load
   self.requiresLoad = load
 
-  self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}")
+  assert initialSettings != nil
+  self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}", settings = initialSettings)
   self.settings = TextSettings.new(self.config)
   self.languageServerList = newLanguageServerList(self.config)
 
@@ -856,7 +842,8 @@ proc newTextDocument*(
     if checkpoint != "":
       self.addNextCheckpoint(checkpoint)
     self.edit(selections, oldSelections, texts, notify, record, inclusiveEnd)
-
+  self.textComponent.setFileAndContentImpl = proc(filename: string, content: sink Rope) =
+    self.setFileAndContent(filename, content)
   self.addComponent(self.textComponent)
 
   self.treesitterComponent = newTreesitterComponent(self.vfs)

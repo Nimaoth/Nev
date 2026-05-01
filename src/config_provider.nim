@@ -1261,5 +1261,21 @@ declareSettings DebugSettings, "debug":
   ## Write logs to an internal document which can be opened using the `logs` command.
   declare logToInternalDocument, bool, false
 
+declareSettingsTemplate TreesitterSettings, "text.treesitter":
+  ## Enable parsing code into ASTs using treesitter. Also requires a treesitter parser for a specific language.
+  declare enable, bool, true
+
+  ## Override the path to the treesitter parser (.dll/.so/.wasm). By default
+  declare path, Option[string], nil
+
+  ## Override the language name used for choosing the treesitter parser. If not set then the documents language id is used.
+  declare language, Option[string], nil
+
+  ## Path relative to the repository root where queries are located. If not set then the editor will look for the queries.
+  declare queries, Option[string], nil
+
+  ## Path relative to the repository root where queries are located. If not set then the editor will look for the queries.
+  declare repository, Option[string], nil
+
 when isMainModule:
   defineSetAllDefaultSettings()

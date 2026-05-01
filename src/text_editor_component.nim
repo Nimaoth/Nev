@@ -33,6 +33,7 @@ proc textEditorComponentSetCursorScrollOffset(self: TextEditorComponent, point: 
 proc textEditorComponentScrollToCursor2(self: TextEditorComponent, point: Point, center: bool = false, centerOffscreen: bool = false)
 proc textEditorComponentUpdateTargetColumn(self: TextEditorComponent, point: Point)
 proc textEditorComponentGetTargetColumn(self: TextEditorComponent): int
+proc textEditorScreenLineCount*(self: TextEditorComponent): int
 {.pop.}
 
 # Nice wrappers
@@ -63,6 +64,7 @@ proc edit*(self: TextEditorComponent, selections: openArray[Range[Point]], oldSe
   self.textEditorComponentEditRope(selections, oldSelections, texts, notify, record, inclusiveEnd, checkpoint)
 
 proc getTargetColumn*(self: TextEditorComponent): int = textEditorComponentGetTargetColumn(self)
+proc screenLineCount*(self: TextEditorComponent): int = textEditorScreenLineCount(self)
 
 
 template withTransaction*(self: TextEditorComponent, body: untyped): untyped =
@@ -213,7 +215,7 @@ when implModule:
     let self = self.TextEditorComponentImpl
     return self.displayMap.endDisplayPoint.row.int + 1
 
-  proc screenLineCount*(self: TextEditorComponent): int =
+  proc textEditorScreenLineCount(self: TextEditorComponent): int =
     ## Returns the number of lines that can be shown on the screen
     ## This value depends on the size of the view this editor is in and the font size
     let self = self.TextEditorComponentImpl

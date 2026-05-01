@@ -3,9 +3,9 @@ import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils, jsonex]
 import ui/node
 import platform/platform, platform_service
-import ui/[widget_builder_text_document, widget_builder_selector_popup, widget_library]
+import ui/[widget_builder_selector_popup, widget_library]
 import document_editor, theme, view, layout/layout, config_provider, command_service, toast, document_editor_render
-import text/text_editor, popup
+import popup
 import render_view, dynamic_view, status_line
 from scripting_api import nil
 import vcs/vcs, service
@@ -22,7 +22,7 @@ type BorderFlags = object
   bottom: bool
 
 renderEditorImpl = proc(self: DocumentEditor, builder: UINodeBuilder): seq[document_editor_render.OverlayRenderFunc] =
-  self.createUI(builder)
+  self.render(builder)
 
 proc none(_: typedesc[BorderFlags]): BorderFlags = BorderFlags()
 
@@ -40,11 +40,8 @@ method createUI*(self: DynamicView, builder: UINodeBuilder): seq[OverlayFunction
   return @[]
 
 method createUI*(self: EditorView, builder: UINodeBuilder): seq[OverlayFunction] =
-  if self.editor.renderImpl != nil:
-    return self.editor.renderImpl(self.editor, builder)
-  else:
-    self.resetDirty()
-    return self.editor.createUI(builder)
+  assert self.editor.renderImpl != nil
+  return self.editor.renderImpl(self.editor, builder)
 
 method createUI*(self: RenderView, builder: UINodeBuilder): seq[OverlayFunction] =
   builder.panel(&{FillX, FillY, FillBackground, MaskContent}, backgroundColor = color(0, 0, 0)):
@@ -122,8 +119,8 @@ proc updateWidgetTree*(self: App, builder: UINodeBuilder, frameIndex: int) =
             of JString:
               case s.getStr
               of "mode":
-                let modes = if layout.getActiveEditor().getSome(editor) and editor of TextDocumentEditor:
-                  let modes = editor.TextDocumentEditor.settings.modes.get()
+                let modes = if layout.getActiveEditor().getSome(editor):
+                  let modes = editor.config.get("text.modes", seq[string])
                   "[" & modes.join(", ") & "]"
                 else:
                   ""
@@ -165,7 +162,7 @@ proc updateWidgetTree*(self: App, builder: UINodeBuilder, frameIndex: int) =
           builder.pushMaxBounds(rootBounds.wh * vec2(0.75, 0.5))
           defer:
             builder.popMaxBounds()
-          commandLineOverlays.add commands.commandLineEditor.createUI(builder)
+          commandLineOverlays.add commands.commandLineEditor.render(builder)
 
       builder.panel(&{FlushBorders})
 

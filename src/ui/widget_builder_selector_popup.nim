@@ -4,8 +4,7 @@ import misc/[util, custom_logger, disposable_ref]
 import ui/node
 import platform/platform
 import ui/[widget_library]
-import text/text_editor
-import app, selector_popup, theme
+import app, selector_popup, theme, document_editor
 import finder/[finder, previewer, file_previewer, open_editor_previewer, data_previewer]
 import config_provider, events, view
 
@@ -34,15 +33,15 @@ proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBui
 
 method createUI*(self: FilePreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
   if self.editor.isNotNil:
-    result.add self.editor.createUI(builder)
+    result.add self.editor.render(builder)
 
 method createUI*(self: OpenEditorPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
   if self.editor.isNotNil:
-    result.add self.editor.createUI(builder)
+    result.add self.editor.render(builder)
 
 method createUI*(self: DataPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
   if self.editor.isNotNil:
-    result.add self.editor.createUI(builder)
+    result.add self.editor.render(builder)
 
 proc selectorPopupCreateUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFunction] =
   let app = ({.gcsafe.}: gEditor)
@@ -108,7 +107,7 @@ proc selectorPopupCreateUI*(self: SelectorPopup, builder: UINodeBuilder): seq[Ov
               x = leftBounds.w * 0.5)
 
           builder.panel(&{FillX, SizeToContentY}):
-            result.add self.textEditor.createUI(builder)
+            result.add self.textEditor.render(builder)
             builder.updateSizeToContent(currentNode)
 
             builder.panel(&{FillX, FillY, LayoutHorizontalReverse}):

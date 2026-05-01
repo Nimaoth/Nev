@@ -508,15 +508,10 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
     let previewDocument = popup.editors.createDocument("text", "ed://selector_popup_preview", load = false, %%*{"createLanguageServer": false})
     previewDocument.readOnly = true
 
-    popup.previewEditor = popup.editors.createEditorForDocument(previewDocument, %%*{"usage": "preview"}).get(nil)
+    popup.previewEditor = popup.editors.createEditorForDocument(previewDocument, %%*{
+      "usage": "preview",
+    }).get(nil)
     popup.previewEditor.renderHeader = true
-    if popup.previewEditor.getConfigComponent().getSome(config):
-      config.set("text.disable-completions", true)
-      config.set("ui.line-numbers", "none")
-      config.set("ui.whitespace-char", " ")
-      config.set("text.cursor-margin", 0)
-      config.set("text.default-mode", "vim.insert")
-      config.set("text.cursor-margin", 0.0)
 
     discard popup.previewEditor.onMarkedDirty.subscribe () =>
       popup.markDirty()

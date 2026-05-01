@@ -1,10 +1,10 @@
 import std/[tables, json, options, strformat, strutils]
-import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils, array_set]
-import text/[text_editor, text_document]
+import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils, array_set, jsonex, rope_utils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer
 import vcs/vcs
-import app_interface, vfs, service, document_editor
+import vfs, service, document_editor
+import document, text_component, move_component, text_editor_component, command_component
 
 import nimsumtree/[rope, arc]
 
@@ -15,8 +15,8 @@ type
     services*: Services
     editors*: DocumentEditorService
     vfs: Arc[VFS2]
-    editor*: TextDocumentEditor
-    tempDocument: TextDocument
+    editor*: DocumentEditor
+    tempDocument: Document
     reuseExistingDocuments: bool
     openNewDocuments: bool
     revision: int
@@ -37,8 +37,10 @@ proc newFilePreviewer*(vfs: Arc[VFS2], services: Services,
 
   result.openNewDocuments = openNewDocuments
   result.reuseExistingDocuments = reuseExistingDocuments
-  result.tempDocument = newTextDocument(services, createLanguageServer=false)
-  result.tempDocument.usage = "temp-preview"
+  result.tempDocument = result.editors.createDocument("text", "", load = false, %%*{
+    "usage": "temp-preview",
+    "createLanguageServer": false,
+  })
   result.tempDocument.readOnly = true
 
   result.editors.pinnedDocuments.incl result.tempDocument
@@ -54,49 +56,6 @@ method deinit*(self: FilePreviewer) =
     self.tempDocument.deinit()
 
   self[] = default(typeof(self[]))
-
-proc parsePathAndLocationFromItemData*(item: FinderItem):
-    Option[tuple[path: string, location: Option[Cursor], isFile: Option[bool], editorId: Option[EditorId]]] {.gcsafe, raises: [].} =
-  try:
-    if not item.data.startsWith("{"):
-      return (item.data, Cursor.none, bool.none, EditorId.none).some
-
-    let jsonData = item.data.parseJson.catch:
-      return
-
-    if jsonData.kind != JObject:
-      return
-
-    if not jsonData.hasKey "path":
-      return
-
-    let editorId = if jsonData.hasKey "editorId":
-      jsonData["editorId"].jsonTo(Option[EditorId])
-    else:
-      EditorId.none
-
-    let path = jsonData.fields["path"]
-    if path.kind != JString:
-      return
-
-    let isFile = if jsonData.hasKey("isFile") and jsonData.fields["isFile"].kind == JBool:
-      jsonData.fields["isFile"].getBool.some
-    else:
-      bool.none
-
-    var cursor: Option[Cursor] = if jsonData.hasKey "line":
-      (
-        jsonData.fields["line"].getInt,
-        jsonData.fields.getOrDefault("column", % 0).getInt,
-      ).some.catch:
-        Cursor.none
-    else:
-      Cursor.none
-
-    return (path.getStr, cursor, isFile, editorId).some
-
-  except:
-    return
 
 proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
   let revision = self.revision
@@ -115,12 +74,8 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
     self.editors.getDocument(path)
 
   if document.getSome(document):
-    if not (document of TextDocument):
-      log lvlError, &"No support for non text documents yet."
-      return
-
     log lvlInfo, &"[loadAsync] Show preview using existing document for '{path}'"
-    editor.setDocument(document.TextDocument)
+    editor.setDocument(document)
 
   elif self.tempDocument.isNotNil:
     logScope lvlInfo, &"[loadAsync] Show preview using temp document for '{path}'"
@@ -160,38 +115,38 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
       for name in listing.files:
         content.add &"F {name}\n"
 
-    if editor.document.isNil:
+    if editor.currentDocument.isNil:
       log lvlInfo, fmt"Discard file load of '{path}' because preview editor was destroyed"
       return
 
-    if self.revision > revision or editor.document.isNil:
+    if self.revision > revision or editor.currentDocument.isNil:
       log lvlInfo, fmt"Discard file load of '{path}' because a newer one was requested"
       return
 
-    if editor.document.isNil:
+    if editor.currentDocument.isNil:
       log lvlInfo, fmt"Discard file load of '{path}' because preview editor was destroyed"
       return
 
-    if self.revision > revision or editor.document.isNil:
+    if self.revision > revision or editor.currentDocument.isNil:
       log lvlInfo, fmt"Discard file load of '{path}' because a newer one was requested"
       return
 
-    self.tempDocument.setFileAndContent(path, content.move)
+    self.tempDocument.getTextComponent().get.setFileAndContent(path, content.move)
     editor.setDocument(self.tempDocument)
 
+  let te = editor.getTextEditorComponent().get
+
   if location.getSome(location):
-    editor.targetSelection = location.toSelection
-    editor.centerCursor()
+    te.targetSelection = location.toSelection.toRange
+    te.centerCursor(location.toPoint)
   else:
-    editor.targetSelection = (0, 0).toSelection
-    editor.scrollToTop()
+    te.targetSelection = point(0, 0).toRange
+    te.scrollToCursor(point(0, 0))
 
   if self.currentDiff:
-    self.editor.document.staged = self.currentStaged
-    self.editor.updateDiff(gotoFirstDiff=true)
+    self.editor.getCommandComponent().get.executeCommand(&"""start-diff "" true {self.currentStaged}""")
   else:
-    self.editor.document.staged = false
-    self.editor.closeDiff()
+    self.editor.getCommandComponent().get.executeCommand(&"""close-diff""")
 
   editor.markDirty()
 
@@ -200,13 +155,10 @@ method delayPreview*(self: FilePreviewer) =
     self.triggerLoadTask.reschedule()
 
 method previewItem*(self: FilePreviewer, item: FinderItem, editor: DocumentEditor) =
-  if not (editor of TextDocumentEditor):
-    return
-
   # logScope lvlInfo, &"previewItem {item}"
 
   inc self.revision
-  self.editor = editor.TextDocumentEditor
+  self.editor = editor
 
   var path: string
   var location: Option[Cursor]
@@ -240,21 +192,20 @@ method previewItem*(self: FilePreviewer, item: FinderItem, editor: DocumentEdito
   self.currentPath = path
   self.currentLocation = location
   self.currentIsFile = isFile
+  let te = editor.getTextEditorComponent().get
 
-  if self.editor.document.filename == path and self.editor.document.staged == self.currentStaged:
+  if self.editor.currentDocument.filename == path and self.editor.currentDocument.staged == self.currentStaged:
     if location.getSome(location):
-      self.editor.targetSelection = location.toSelection
-      self.editor.centerCursor(snap = true)
+      te.targetSelection = location.toSelection.toRange
+      te.centerCursor(location.toPoint)
     else:
-      self.editor.targetSelection = (0, 0).toSelection
-      self.editor.scrollToTop()
+      te.targetSelection = point(0, 0).toRange
+      te.scrollToCursor(point(0, 0))
 
     if self.currentDiff:
-      self.editor.document.staged = self.currentStaged
-      self.editor.updateDiff(gotoFirstDiff=true)
+      self.editor.getCommandComponent().get.executeCommand(&"""start-diff "" true {self.currentStaged}""")
     else:
-      self.editor.document.staged = false
-      self.editor.closeDiff()
+      self.editor.getCommandComponent().get.executeCommand(&"""close-diff""")
 
     self.triggerLoadTask.pause()
 

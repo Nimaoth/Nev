@@ -29,6 +29,7 @@ proc textComponentEndTransaction(self: TextComponent)
 proc textComponentReplaceAllRope(self: TextComponent, value: sink Rope)
 proc textComponentReplaceAll(self: TextComponent, value: sink string)
 proc textComponentReloadFromRope(self: TextComponent, rope: sink Rope) {.async.}
+proc textComponentSetFileAndContent(self: TextComponent, filename: string, content: sink Rope)
 {.pop.}
 
 template withTransaction*(self: TextComponent, body: untyped): untyped =
@@ -78,6 +79,8 @@ proc replaceAll*(self: TextComponent, value: sink Rope) = textComponentReplaceAl
 proc replaceAll*(self: TextComponent, value: sink string) = textComponentReplaceAll(self, value)
 proc reloadFromRope*(self: TextComponent, rope: sink Rope) {.async.} = await textComponentReloadFromRope(self, rope)
 
+proc setFileAndContent*(self: TextComponent, filename: string, content: sink Rope) = textComponentSetFileAndContent(self, filename, content)
+
 # Implementation
 when implModule:
   import std/[sequtils, unicode]
@@ -95,6 +98,7 @@ when implModule:
     editString*: proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].}
     editRope*: proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[Rope], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].}
     editRopeSlice*: proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[RopeSlice[int]], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].}
+    setFileAndContentImpl*: proc(filename: string, content: sink Rope) {.gcsafe, raises: [].}
 
   var nextBufferId = 1.BufferId
   proc getNextBufferId*(): BufferId =
@@ -196,5 +200,8 @@ when implModule:
     except AsyncTimeoutError:
       log lvlWarn, &"reloadFromRope: diff timed out after {t.elapsed.ms} ms"
       self.replaceAll(rope.move)
+
+  proc textComponentSetFileAndContent(self: TextComponent, filename: string, content: sink Rope) =
+    self.TextComponentImpl.setFileAndContentImpl(filename, content)
 
 proc buffer*(self: TextComponent): var Buffer {.inline.} = self.textComponentBuffer()

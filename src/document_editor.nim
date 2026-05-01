@@ -31,6 +31,8 @@ type
     onMarkedDirty*: Event[void]
     mDirty: bool ## Set to true to trigger rerender
     active: bool
+    usage*: string # Unique string identifying what the editor is used for,
+                   # e.g. command-line/preview/search-bar
     onActiveChanged*: Event[DocumentEditor]
     onDocumentChanged*: Event[tuple[old: Document]]
     config*: ConfigStore

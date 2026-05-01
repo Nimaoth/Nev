@@ -22,6 +22,7 @@ type Document* = ref object of ComponentOwner
   requiresLoad*: bool = false           ## Whether the document content has not been scheduled for loading yet.
   isLoadingAsync*: bool = false
   readOnly*: bool = false
+  staged*: bool = false
   filename*: string
   revision*: int
   undoableRevision*: int

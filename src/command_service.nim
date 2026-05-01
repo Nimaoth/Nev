@@ -103,14 +103,14 @@ proc registerCommand*[T](self: CommandService, name: string, impl: T) =
     namespace: "",
     name: name,
     description: "",
-    execute: proc(argsString: string): string {.gcsafe, raises: [CatchableError].} =
+    execute: proc(argsString: string): string {.gcsafe, raises: [].} =
       try:
         let args = newJexArray()
         for a in newStringStream(argsString).parseJsonexFragments():
           args.add a
         let res = implCl(args)
         return $res
-      except CatchableError as e:
+      except CatchableError:
         log lvlError, &"registerCommand[T]: Failed to execute command '{argsString}'"
   ))
 

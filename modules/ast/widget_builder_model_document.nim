@@ -2,7 +2,6 @@ import std/[strformat, tables, sugar, strutils, json]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger, custom_unicode]
 import ui/node
-import text/text_document
 import ast/[model_document, model, cells, model_state]
 import platform/platform
 import ui/[widget_library]

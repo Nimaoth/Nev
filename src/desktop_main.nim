@@ -246,6 +246,7 @@ import scripting/expose
 import config_provider, event_service
 import vcs/vcs_api
 import collab
+import text/[text_editor, text_document]
 {.pop.}
 
 import "../modules/stats"

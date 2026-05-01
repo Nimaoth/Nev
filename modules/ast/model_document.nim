@@ -9,7 +9,7 @@ import lang/[lang_language, lang_builder, cell_language, property_validator_lang
 import finder/[finder]
 
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state]
-import document, document_editor, text/text_document, events, scripting/expose, input
+import document, document_editor, events, scripting/expose, input
 import config_provider, app_interface, dispatch_tables, selector_popup
 import model, base_language, editor_language, cells, ast_ids, project
 
