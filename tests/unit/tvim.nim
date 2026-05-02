@@ -9,7 +9,7 @@ discard """
 import std/[unittest, options, json, sequtils, tables, strutils]
 import misc/[util, custom_logger, jsonex]
 import config_provider, service, document, document_editor, text_component, text_editor_component
-import text/[text_editor, text_document]
+import text/[text, text_editor, text_document]
 import platform/platform, platform_service, events, input_api, command_service, layout/layout, input
 import vim
 import scripting_api except TextDocumentEditor
@@ -27,6 +27,7 @@ gServices.getService(PlatformService).get.setPlatform(NilPlatform())
 gServices.waitForServices()
 
 init_module_layout()
+init_module_text()
 init_module_vim()
 
 getServiceChecked(CommandService).logCommands = true

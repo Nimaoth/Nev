@@ -260,11 +260,13 @@ when implModule:
     return self.displayMap.toDisplayPoint(point, bias).Point
 
   proc textEditorStartTransaction(self: TextEditorComponent) =
-    if self.TextEditorComponentImpl.document.getTextComponent().getSome(text):
+    let self = self.TextEditorComponentImpl
+    if self.document != nil and self.document.getTextComponent().getSome(text):
       text.startTransaction()
 
   proc textEditorEndTransaction(self: TextEditorComponent) =
-    if self.TextEditorComponentImpl.document.getTextComponent().getSome(text):
+    let self = self.TextEditorComponentImpl
+    if self.document != nil and self.document.getTextComponent().getSome(text):
       text.endTransaction()
 
   proc textEditorComponentEditString(self: TextEditorComponent, selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]],

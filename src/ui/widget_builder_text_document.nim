@@ -1697,7 +1697,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
     self.currentCenterCursor = centerPoint
     self.currentCenterCursorRelativeYPos = (chunk.bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
 
-method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayFunction] =
+proc createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayFunction] =
   self.preRender(builder.currentParent.bounds)
 
   let arenaCheckpoint = builder.arena.checkpoint()
