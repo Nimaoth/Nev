@@ -1,4 +1,4 @@
-#use
+#use text_editor_component
 import std/[options]
 import misc/[custom_async]
 import component, text/snippet

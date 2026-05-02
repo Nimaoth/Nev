@@ -1,4 +1,5 @@
 import std/[options, json, tables, locks]
+import nimsumtree/[arc]
 import misc/[custom_logger, custom_async, util, custom_unicode, jsonex, arena, array_view]
 import vfs
 import treesitter_type_conv
@@ -23,9 +24,11 @@ type GetTextCallback* = proc(index: int, position: Cursor): (ptr char, int)
 
 proc treesitterParseString(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree {.apprtl, gcsafe, raises: [].}
 proc treesitterParseCallback(self: TSParser, oldTree: TSTree, text: GetTextCallback): TSTree {.apprtl, gcsafe, raises: [].}
+proc treesitterQueryFile(self: TSLanguage, vfs: Arc[VFS2], id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.apprtl, gcsafe, async: (raises: []).}
 
 proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree {.inline.} = treesitterParseString(self, text, oldTree)
 proc parseCallback*(self: TSParser, oldTree: TSTree, text: GetTextCallback): TSTree {.inline.} = treesitterParseCallback(self, oldTree, text)
+proc queryFile*(self: TSLanguage, vfs: Arc[VFS2], id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] = treesitterQueryFile(self, vfs, id, path, cacheOnFail)
 
 func toTsPoint*(cursor: Cursor, line: openArray[char]): ts.TSPoint = ts.TSPoint(row: cursor.line.uint32, column: line.runeIndex(cursor.column).uint32)
 template withQueryCursor*(cursor: untyped, body: untyped): untyped =
@@ -50,13 +53,13 @@ proc getParsersLock*(): ptr Lock {.apprtl, gcsafe, raises: [].}
 proc createTsParser*(): TSParser {.apprtl, gcsafe, raises: [].}
 proc freeDynamicLibraries*() {.apprtl, gcsafe, raises: [].}
 proc unloadTreesitterLanguage*(languageId: string) {.apprtl, gcsafe, raises: [].}
-proc getTreesitterLanguage*(vfs: VFS, languageId: string, pathOverride: Option[string] = string.none): Future[Option[TSLanguage]] {.apprtl, gcsafe, raises: [].}
+proc getTreesitterLanguage*(vfs: Arc[VFS2], languageId: string, pathOverride: Option[string] = string.none): Future[Option[TSLanguage]] {.apprtl, gcsafe, raises: [].}
 proc getLoadedLanguage*(languageId: string): TSLanguage {.apprtl, gcsafe, raises: [].}
 proc getLoadedLanguageSnapshot*(languageId: string): Option[TSLanguageSnapshot] {.apprtl, gcsafe, raises: [].}
 proc treesitterQuery(self: TSLanguage, id: string, source: string, cacheOnFail = true, logSourceOnError = true): Future[Option[TSQuery]] {.apprtl, async.}
 proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true, logSourceOnError = true): Future[Option[TSQuery]] {.async.} = await treesitterQuery(self, id, source, cacheOnFail, logSourceOnError)
-var tsAllocated* {.apprtl.}: uint64 = 0
-var tsFreed* {.apprtl.}: uint64 = 0
+var tsAllocated* {.apprtlvar.}: uint64 = 0
+var tsFreed* {.apprtlvar.}: uint64 = 0
 
 when implModule:
   import std/[os, strutils, dynlib]
@@ -149,7 +152,7 @@ when implModule:
         lib.unloadLib()
       gTreesitterDllCache.clear()
 
-  proc loadLanguageDynamically(vfs: VFS, languageId: string, pathOverride: Option[string]): Future[Option[TSLanguage]] {.async.} =
+  proc loadLanguageDynamically(vfs: Arc[VFS2], languageId: string, pathOverride: Option[string]): Future[Option[TSLanguage]] {.async.} =
     try:
       const fileExtension = when defined(windows):
         "dll"
@@ -247,7 +250,7 @@ when implModule:
       log(lvlError, fmt"Failed to load language from dll: '{languageId}': {getCurrentExceptionMsg()}")
       return TSLanguage.none
 
-  proc loadLanguage(vfs: VFS, languageId: string, pathOverride: Option[string]): Future[Option[TSLanguage]] {.async.} =
+  proc loadLanguage(vfs: Arc[VFS2], languageId: string, pathOverride: Option[string]): Future[Option[TSLanguage]] {.async.} =
     let language = await loadLanguageDynamically(vfs, languageId, pathOverride)
     if language.isSome:
       return language
@@ -308,7 +311,7 @@ when implModule:
           return gLoadedLanguagesSnapshots[languageId].some
         return TSLanguageSnapshot.none
 
-  proc getTreesitterLanguage*(vfs: VFS, languageId: string, pathOverride: Option[string] = string.none): Future[Option[TSLanguage]] {.async.} =
+  proc getTreesitterLanguage*(vfs: Arc[VFS2], languageId: string, pathOverride: Option[string] = string.none): Future[Option[TSLanguage]] {.async.} =
     # log lvlInfo, &"getTreesitterLanguage {languageId}: {pathOverride}"
     let loadingLanguages = ({.gcsafe.}: gLoadingLanguages.addr)
     if loadingLanguages[].contains(languageId):
@@ -375,33 +378,36 @@ when implModule:
 
     query.some
 
-  proc queryFileImpl(self: TSLanguage, vfs: VFS, id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.async.} =
+  proc queryFileImpl(self: TSLanguage, vfs: Arc[VFS2], id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.async.} =
     try:
       let queryString = await vfs.read(path)
       return await self.query(id, queryString, cacheOnFail, logSourceOnError = false)
     except FileNotFoundError:
       return TSQuery.none
-    except IOError as e:
+    except CatchableError as e:
       log lvlError, &"Failed to load query file: {e.msg}"
       return TSQuery.none
 
-  proc queryFile*(self: TSLanguage, vfs: VFS, id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.async.} =
-    if self.queries.contains(id):
-      return self.queries[id]
-    if self.queryFutures.contains(id):
-      return await self.queryFutures[id]
+  proc treesitterQueryFile(self: TSLanguage, vfs: Arc[VFS2], id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.async: (raises: []).} =
+    try:
+      if self.queries.contains(id):
+        return self.queries[id]
+      if self.queryFutures.contains(id):
+        return await self.queryFutures[id]
 
-    let queryFuture = self.queryFileImpl(vfs, id, path, cacheOnFail)
-    self.queryFutures[id] = queryFuture
+      let queryFuture = self.queryFileImpl(vfs, id, path, cacheOnFail)
+      self.queryFutures[id] = queryFuture
 
-    let query = await queryFuture
-    self.queryFutures.del(id)
-    self.queries[id] = query
-    {.gcsafe.}:
-      withLock gLoadedLanguagesLock:
-        gLoadedLanguagesSnapshots[self.languageId].queries[id] = query
-    log lvlInfo, fmt"Loaded {id} query '{path}' for {self.languageId}"
-    return query
+      let query = await queryFuture
+      self.queryFutures.del(id)
+      self.queries[id] = query
+      {.gcsafe.}:
+        withLock gLoadedLanguagesLock:
+          gLoadedLanguagesSnapshots[self.languageId].queries[id] = query
+      log lvlInfo, fmt"Loaded {id} query '{path}' for {self.languageId}"
+      return query
+    except CatchableError:
+      return TSQuery.none
 
   proc treesitterParseString(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree =
     let oldTreePtr: ptr ts.TSTree = if oldTree.getSome(tree):

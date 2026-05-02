@@ -36,7 +36,7 @@ type
     kindImpl*: proc(self: View): string {.gcsafe, raises: [].}
     displayImpl*: proc(self: View): string {.gcsafe, raises: [].}
 
-var viewIdCounter {.apprtl.}: int32 = 1
+var viewIdCounter {.apprtlvar.}: int32 = 1
 
 proc id*(self: View): Id =
   if self.mId == idNone():

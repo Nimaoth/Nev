@@ -29,7 +29,7 @@ type
 
   EventHandler* = ref object
     states: seq[CommandState]
-    config: EventHandlerConfig
+    config*: EventHandlerConfig
     revision: int
     dfaInternal: CommandDFA
     handleAction*: proc(action: string, arg: string): EventResponse {.gcsafe, raises: [].}
@@ -58,16 +58,20 @@ type
 func serviceName*(_: typedesc[EventHandlerService]): string = "EventHandlerService"
 
 # DLL API
-proc eventsGetEventHandlerConfig(self: EventHandlerService, context: string): EventHandlerConfig {.apprtl, gcsafe, raises: [].}
-proc eventsBuildDFA(config: EventHandlerConfig): CommandDFA {.apprtl, gcsafe, raises: [].}
-proc commandInfosGetInfos(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] {.apprtl, gcsafe, raises: [].}
-proc commandInfosRebuildCommandToKeysMap(self: EventHandlerService) {.apprtl, gcsafe, raises: [].}
+{.push apprtl, gcsafe, raises: [].}
+proc eventsGetEventHandlerConfig(self: EventHandlerService, context: string): EventHandlerConfig
+proc eventsBuildDFA(config: EventHandlerConfig): CommandDFA
+proc commandInfosGetInfos(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]]
+proc commandInfosRebuildCommandToKeysMap(self: EventHandlerService)
+proc eventsAddCommand(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default)
+{.pop.}
 
 # Nice wrappers
 proc getEventHandlerConfig*(self: EventHandlerService, context: string): EventHandlerConfig {.inline.} = eventsGetEventHandlerConfig(self, context)
 proc buildDFA*(config: EventHandlerConfig): CommandDFA {.inline.} = eventsBuildDFA(config)
 proc getInfos*(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] {.inline.} = commandInfosGetInfos(self, command)
 proc rebuildCommandToKeysMap*(self: EventHandlerService) {.inline.} = commandInfosRebuildCommandToKeysMap(self)
+proc addCommand*(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default) = eventsAddCommand(config, context, keys, action, source)
 
 proc handleInputs*(config: EventHandlerConfig): bool =
   return config.settings.get("input." & config.context & ".handle-inputs", false)
@@ -170,7 +174,7 @@ when implModule:
       handler.revision = configRevision
     return handler.dfaInternal
 
-  proc addCommand*(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default) =
+  proc eventsAddCommand(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default) =
     if not config.commands.contains(context):
       config.commands[context] = initTable[string, Command]()
     config.commands[context][keys] = Command(command: action, source: source)
@@ -431,8 +435,6 @@ when implModule:
 
   proc commands*(config {.byref.}: EventHandlerConfig): lent Table[string, Table[string, Command]] =
     config.commands
-
-  proc config*(handler: EventHandler): EventHandlerConfig = handler.config
 
   proc invalidate*(self: CommandInfos) =
     self.built = false

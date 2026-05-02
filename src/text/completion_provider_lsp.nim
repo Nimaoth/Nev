@@ -1,7 +1,7 @@
 import misc/[custom_unicode, util, custom_async, event, timer, custom_logger, fuzzy_matching, response, rope_utils]
 import language/[lsp_types, language_server_base]
 import nimsumtree/rope
-import completion, document, text_component, move_component
+import completion, document, text_component, move_component, language_server_dynamic
 import scripting_api
 
 {.push gcsafe.}
@@ -13,7 +13,7 @@ type
   CompletionProviderLsp* = ref object of CompletionProvider
     document: Document
     lastResponseLocation: Cursor
-    languageServer: LanguageServer
+    languageServer: LanguageServerDynamic
     unfilteredCompletions: seq[CompletionItem]
     unfilteredVersion: int
     isFiltering: bool = false
@@ -99,6 +99,6 @@ method forceUpdateCompletions*(provider: CompletionProviderLsp) =
   asyncSpawn provider.refilterCompletions()
   asyncSpawn provider.getLspCompletionsAsync()
 
-proc newCompletionProviderLsp*(document: Document, languageServer: LanguageServer): CompletionProviderLsp =
+proc newCompletionProviderLsp*(document: Document, languageServer: LanguageServerDynamic): CompletionProviderLsp =
   let self = CompletionProviderLsp(document: document, languageServer: languageServer)
   self

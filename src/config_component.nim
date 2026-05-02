@@ -10,11 +10,13 @@ type ConfigComponent* = ref object of Component
   config*: ConfigStore
 
 # DLL API
-var ConfigComponentId* {.apprtl.}: ComponentTypeId
 
-proc getConfigComponent*(self: ComponentOwner): Option[ConfigComponent] {.apprtl, gcsafe, raises: [].}
-proc configComponentGetRaw(self: ConfigComponent, key: string): JsonNodeEx {.apprtl, gcsafe, raises: [].}
-proc configComponentSet(self: ConfigComponent, key: string, value: JsonNodeEx) {.apprtl, gcsafe, raises: [].}
+{.push apprtl, gcsafe, raises: [].}
+proc newConfigComponent*(config: ConfigStore): ConfigComponent
+proc getConfigComponent*(self: ComponentOwner): Option[ConfigComponent]
+proc configComponentGetRaw(self: ConfigComponent, key: string): JsonNodeEx
+proc configComponentSet(self: ConfigComponent, key: string, value: JsonNodeEx)
+{.pop.}
 
 # Nice wrappers
 proc get*(self: ConfigComponent, key: string, T: typedesc, defaultValue: T): T =
@@ -47,7 +49,7 @@ proc set*[T](self: ConfigComponent, key: string, value: T) {.inline.} =
 when implModule:
   import misc/[util]
 
-  ConfigComponentId = componentGenerateTypeId()
+  let ConfigComponentId = componentGenerateTypeId()
 
   type ConfigComponentImpl* = ref object of ConfigComponent
 

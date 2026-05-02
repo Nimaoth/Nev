@@ -2,14 +2,14 @@ import std/[options, tables, strutils]
 import nimsumtree/rope
 import misc/[custom_logger, custom_async, util, response, rope_utils, event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import text/language/[language_server_base, lsp_types]
+import text/language/[language_server_base, lsp_types], language_server_dynamic
 import dispatch_tables, document_editor, service, layout/layout, events, config_provider, command_service
 import document, text_component, move_component, language_component, language_server_component
 
 logCategory "language-server-command-line"
 
 type
-  LanguageServerCommandLine* = ref object of LanguageServer
+  LanguageServerCommandLine* = ref object of LanguageServerDynamic
     services: Services
     commands: CommandServiceImpl
     documents: DocumentEditorService
@@ -21,19 +21,11 @@ type
     languageServer*: LanguageServerCommandLine
     config: ConfigStore
 
-proc newLanguageServerCommandLine(services: Services): LanguageServerCommandLine =
-  var server = new LanguageServerCommandLine
-  server.name = "command-line"
-  server.services = services
-  server.commands = services.getService(CommandServiceImpl).get
-  server.events = services.getService(EventHandlerService).get
-  server.documents = services.getService(DocumentEditorService).get
-  server.capabilities.completionProvider = lsp_types.CompletionOptions().some
-  return server
-
 func serviceName*(_: typedesc[LanguageServerCommandLineService]): string = "LanguageServerCommandLineService"
 
 addBuiltinService(LanguageServerCommandLineService, DocumentEditorService, EventHandlerService, CommandService)
+
+proc newLanguageServerCommandLine(services: Services): LanguageServerCommandLine {.gcsafe, raises: [].}
 
 method init*(self: LanguageServerCommandLineService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   self.languageServer = newLanguageServerCommandLine(self.services)
@@ -49,11 +41,12 @@ method init*(self: LanguageServerCommandLineService): Future[Result[void, ref Ca
       discard lsps.addLanguageServer(self.languageServer)
   return ok()
 
-method getDefinition*(self: LanguageServerCommandLine, filename: string, location: Cursor):
-    Future[seq[Definition]] {.async.} =
+proc lspCommandLineGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  let self = self.LanguageServerCommandLine
   return newSeq[Definition]()
 
-method getCompletions*(self: LanguageServerCommandLine, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
+proc lspCommandLineGetCompletions*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
+  let self = self.LanguageServerCommandLine
   let layout = self.services.getService(LayoutService).get
 
   var completions = newSeq[CompletionItem]()
@@ -80,7 +73,7 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
     let currentNamespace = if layout.popups.len > 0:
       "popup.selector".some
     else:
-      layout.getActiveEditor(includeCommandLine = false).mapIt(it.getNamespace())
+      layout.getActiveEditor(includeCommandLine = false).mapIt(it.namespace)
     {.gcsafe.}:
       for table in activeDispatchTables.mitems:
         if not table.global and table.namespace.some != currentNamespace:
@@ -105,24 +98,6 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
             detail: value.signature.some,
             documentation: CompletionItemDocumentationVariant.init(docs).some,
           )
-
-      for (name, command) in self.commands.activeCommands.pairs:
-        var docs = ""
-        if self.events.commandInfos.getInfos(name).getSome(infos):
-          for i, info in infos:
-            if i > 0:
-              docs.add "\n"
-            docs.add &"[{info.context}] {info.keys} -> {info.command}"
-          docs.add "\n\n"
-
-        docs.add command.description
-
-        completions.add CompletionItem(
-          label: name,
-          kind: CompletionKind.Function,
-          detail: command.signature.some,
-          documentation: CompletionItemDocumentationVariant.init(docs).some,
-        )
 
   else:
     {.gcsafe.}:
@@ -152,17 +127,35 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
 
   return CompletionList(items: completions).success
 
-method getSymbols*(self: LanguageServerCommandLine, filename: string): Future[seq[Symbol]] {.async.} =
+proc lspCommandLineGetSymbols*(self: LanguageServerDynamic, filename: string): Future[seq[Symbol]] {.async.} =
+  let self = self.LanguageServerCommandLine
   var completions: seq[Symbol]
   return completions
 
-method getHover*(self: LanguageServerCommandLine, filename: string, location: Cursor): Future[Option[string]] {.async.} =
+proc lspCommandLineGetHover*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Option[string]] {.async.} =
+  let self = self.LanguageServerCommandLine
   return string.none
 
-method getInlayHints*(self: LanguageServerCommandLine, filename: string, selection: Selection):
-    Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+proc lspCommandLineGetInlayHints*(self: LanguageServerDynamic, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+  let self = self.LanguageServerCommandLine
   return success[seq[language_server_base.InlayHint]](@[])
 
-method getDiagnostics*(self: LanguageServerCommandLine, filename: string):
-    Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
+proc lspCommandLineGetDiagnostics*(self: LanguageServerDynamic, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
+  let self = self.LanguageServerCommandLine
   return success[seq[lsp_types.Diagnostic]](@[])
+
+proc newLanguageServerCommandLine(services: Services): LanguageServerCommandLine =
+  var server = new LanguageServerCommandLine
+  server.name = "command-line"
+  server.services = services
+  server.commands = services.getService(CommandServiceImpl).get
+  server.events = services.getService(EventHandlerService).get
+  server.documents = services.getService(DocumentEditorService).get
+  server.capabilities.completionProvider = lsp_types.CompletionOptions().some
+  server.getDefinitionImpl = lspCommandLineGetDefinition
+  server.getCompletionsImpl = lspCommandLineGetCompletions
+  server.getSymbolsImpl = lspCommandLineGetSymbols
+  server.getHoverImpl = lspCommandLineGetHover
+  server.getInlayHintsImpl = lspCommandLineGetInlayHints
+  server.getDiagnosticsImpl = lspCommandLineGetDiagnostics
+  return server

@@ -68,6 +68,12 @@ type
 
 func serviceName*(_: typedesc[VCSService]): string = "VCSService"
 
+{.push apprtl, gcsafe, raises: [].}
+proc vcsGetVcsForFile(self: VCSService, file: string): Option[VersionControlSystem]
+{.pop.}
+
+proc getVcsForFile*(self: VCSService, file: string): Option[VersionControlSystem] = vcsGetVcsForFile(self, file)
+
 proc updateStatus*(self: VersionControlSystem) =
   if self.updateStatusImpl != nil:
     self.updateStatusImpl(self)
@@ -146,7 +152,7 @@ when implModule:
 
     return ok()
 
-  proc getVcsForFile*(self: VCSService, file: string): Option[VersionControlSystem] =
+  proc vcsGetVcsForFile(self: VCSService, file: string): Option[VersionControlSystem] =
     result = VersionControlSystem.none
     let absolutePath = self.workspace.getAbsolutePath(file)
     var longestMatch = -1

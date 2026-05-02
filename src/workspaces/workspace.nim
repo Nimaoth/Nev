@@ -51,6 +51,7 @@ proc workspaceSetWorkspaceFolder*(self: Workspace, path: string)
 proc workspaceAddWorkspaceFolder(self: Workspace, path: string, recomputeFileCache: bool = true)
 proc workspaceGetAbsolutePath(self: Workspace, path: string): string
 proc getRelativePathAndWorkspaceSync*(self: Workspace, absolutePath: string): Option[tuple[root, path: string]]
+proc workspaceGetRelativePathSync(self: Workspace, absolutePath: string): Option[string]
 {.pop.}
 
 # Nice wrappers
@@ -60,6 +61,7 @@ proc search*(self: Workspace, query: string, maxResults: int, customArgs: seq[st
 proc setWorkspaceFolder*(self: Workspace, path: string) {.inline.} = workspaceSetWorkspaceFolder(self, path)
 proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) = workspaceAddWorkspaceFolder(self, path, recomputeFileCache)
 proc getAbsolutePath*(self: Workspace, path: string): string = workspaceGetAbsolutePath(self, path)
+proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string] = workspaceGetRelativePathSync(self, absolutePath)
 
 proc info*(self: Workspace): WorkspaceInfo =
   try:
@@ -256,7 +258,7 @@ when implModule:
     else:
       self.getWorkspacePath() // path
 
-  proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string] =
+  proc workspaceGetRelativePathSync(self: Workspace, absolutePath: string): Option[string] =
     result = string.none
     try:
       var longestMatch = 0

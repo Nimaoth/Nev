@@ -31,6 +31,9 @@ type
   DataSource* = ref object of RootObj
     onItemsChanged*: Event[ItemList]
 
+    closeImpl*: proc(self: DataSource) {.gcsafe, raises: [].}
+    setQueryImpl*: proc(self: DataSource, query: string) {.gcsafe, raises: [].}
+
   Finder* = ref object
     source*: DataSource
     queries*: seq[string]
@@ -50,8 +53,12 @@ type
     onItemsChangedHandle: Id
     onItemsChanged*: Event[void]
 
-method close*(self: DataSource) {.base, gcsafe, raises: [].} = discard
-method setQuery*(self: DataSource, query: string) {.base, gcsafe, raises: [].} = discard
+method close*(self: DataSource) {.base, gcsafe, raises: [].} =
+  if self.closeImpl != nil:
+    self.closeImpl(self)
+method setQuery*(self: DataSource, query: string) {.base, gcsafe, raises: [].} =
+  if self.setQueryImpl != nil:
+    self.setQueryImpl(self, query)
 
 proc cmp*(a, b: FinderItem): int = cmp(a.score, b.score)
 proc `<`*(a, b: FinderItem): bool = a.score < b.score

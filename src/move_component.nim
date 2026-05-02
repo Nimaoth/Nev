@@ -1,6 +1,10 @@
 import std/[options, json]
 import nimsumtree/[rope]
-import component
+import component, service
+import text/display_map
+import lisp
+
+import scripting_api except TextDocumentEditor
 
 export component
 
@@ -9,11 +13,15 @@ include dynlib_export
 type MoveComponent* = ref object of Component
   targetColumn*: int = -1
 
-# DLL API
-var MoveComponentId* {.apprtl.}: ComponentTypeId
+type MoveFunction = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] {.gcsafe, raises: [].}
 
-proc moveComponentApplyMove*(self: MoveComponent, selections: openArray[Range[Point]], move: string, count: int = 0, includeEol: bool = true, wrap: bool = true, options: JsonNode = nil): seq[Range[Point]] {.apprtl, gcsafe, raises: [].}
-proc getMoveComponent*(self: ComponentOwner): Option[MoveComponent] {.apprtl, gcsafe, raises: [].}
+# DLL API
+
+{.push apprtl, gcsafe, raises: [].}
+proc newMoveComponent*(services: Services, displayMap: DisplayMap, fallbackMoves: MoveFunction): MoveComponent
+proc moveComponentApplyMove*(self: MoveComponent, selections: openArray[Range[Point]], move: string, count: int = 0, includeEol: bool = true, wrap: bool = true, options: JsonNode = nil): seq[Range[Point]]
+proc getMoveComponent*(self: ComponentOwner): Option[MoveComponent]
+{.pop.}
 
 # Nice wrappers
 proc applyMove*(self: MoveComponent, selections: openArray[Range[Point]], move: string, count: int = 0, includeEol: bool = true, wrap: bool = true, options: JsonNode = nil): seq[Range[Point]] {.inline.} = moveComponentApplyMove(self, selections, move, count, includeEol, wrap, options)
@@ -27,13 +35,12 @@ proc applyMove*(self: MoveComponent, selection: Range[Point], move: string, coun
 when implModule:
   import std/[tables, sequtils]
   import misc/[util, myjsonutils, custom_logger, rope_utils]
-  import move_database, service
-  import text/display_map
+  import move_database
   import lisp
 
   logCategory "move-component"
 
-  MoveComponentId = componentGenerateTypeId()
+  let MoveComponentId = componentGenerateTypeId()
 
   type MoveComponentImpl* = ref object of MoveComponent
     moveDatabase*: MoveDatabase

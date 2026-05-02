@@ -20,10 +20,13 @@ type
     deinitializeImpl*: proc(self: Component) {.gcsafe, raises: [].}
 
 # DLL API
-proc componentGenerateTypeId*(): ComponentTypeId {.apprtl, gcsafe, raises: [].}
-proc componentInitialize*(self: Component, owner: ComponentOwner) {.apprtl, gcsafe, raises: [].}
-proc componentOwnerAddComponent*(self: ComponentOwner, component: Component) {.apprtl, gcsafe, raises: [].}
-proc componentOwnerGetComponent*(self: ComponentOwner, typeId: ComponentTypeId): Option[Component] {.apprtl, gcsafe, raises: [].}
+{.push apprtl, gcsafe, raises: [].}
+proc componentGenerateTypeId*(): ComponentTypeId
+proc componentInitialize*(self: Component, owner: ComponentOwner)
+proc componentDeinitialize*(self: Component)
+proc componentOwnerAddComponent*(self: ComponentOwner, component: Component)
+proc componentOwnerGetComponent*(self: ComponentOwner, typeId: ComponentTypeId): Option[Component]
+{.pop.}
 
 # Nice wrappers
 proc addComponent*(self: ComponentOwner, component: Component) = componentOwnerAddComponent(self, component)

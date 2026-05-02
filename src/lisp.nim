@@ -1156,8 +1156,6 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
     else:
       raise newException(LispError, "not a function or macro")
 
-var globalEnv*: Env = Env()
-
 # Environment
 proc baseEnv*(): Env =
   result = Env()
@@ -1306,5 +1304,3 @@ proc baseEnv*(): Env =
         str.add $args[i]
     return newString(str)
   )
-
-globalEnv = baseEnv()

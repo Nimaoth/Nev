@@ -29,7 +29,8 @@ type
     disallow*: seq[string]
 
   CommandService* = ref object of Service
-    logCommands*: bool = true
+    logCommands*: bool = false
+    dontRecord*: bool = false
 
 func serviceName*(_: typedesc[CommandService]): string = "CommandService"
 
@@ -85,11 +86,13 @@ macro registerCommandImpl(self: CommandService, name: string, impl: typed): unty
   let returnType = typ[0]
   let call = if returnType.repr == "":
     genAst(callImpl):
-      callImpl
+      {.gcsafe.}:
+        callImpl
       return newJexNull()
   else:
     quote do:
-      return `callImpl`.toJsonEx
+      {.gcsafe.}:
+        return `callImpl`.toJsonEx
 
   result = genAst(call, argName = jsonArg):
     proc(argName: JsonNodeEx): JsonNodeEx {.closure.} =
@@ -105,11 +108,31 @@ proc registerCommand*[T](self: CommandService, name: string, impl: T) =
     description: "",
     execute: proc(argsString: string): string {.gcsafe, raises: [].} =
       try:
-        let args = newJexArray()
-        for a in newStringStream(argsString).parseJsonexFragments():
-          args.add a
-        let res = implCl(args)
-        return $res
+        {.gcsafe.}:
+          let args = newJexArray()
+          for a in newStringStream(argsString).parseJsonexFragments():
+            args.add a
+          let res = implCl(args)
+          return $res
+      except CatchableError:
+        log lvlError, &"registerCommand[T]: Failed to execute command '{argsString}'"
+  ))
+
+proc registerActiveCommand*[T](self: CommandService, name: string, impl: T) =
+  let implCl = registerCommandImpl(self, name, impl)
+  discard self.registerCommand(Command(
+    namespace: "",
+    name: name,
+    description: "",
+    active: true,
+    execute: proc(argsString: string): string {.gcsafe, raises: [].} =
+      try:
+        {.gcsafe.}:
+          let args = newJexArray()
+          for a in newStringStream(argsString).parseJsonexFragments():
+            args.add a
+          let res = implCl(args)
+          return $res
       except CatchableError:
         log lvlError, &"registerCommand[T]: Failed to execute command '{argsString}'"
   ))
@@ -173,11 +196,9 @@ when implModule:
       prefixCommandHandlers: seq[tuple[prefix: string, execute: proc(command: string): Option[string] {.gcsafe, raises: [].}]]
       commandIdCounter: int = 1
       commands*: Table[string, Command]
-      activeCommands*: Table[string, Command]
       idToCommand*: Table[CommandId, string]
 
       commandsThisFrame: int
-      dontRecord*: bool = false
 
   proc all*(_: typedesc[CommandPermissions]) = CommandPermissions(allowAll: some(true), disallowAll: some(true))
   proc none*(_: typedesc[CommandPermissions]) = CommandPermissions(allowAll: some(false), disallowAll: some(none))
@@ -253,27 +274,6 @@ when implModule:
         # Command was reassigned, don't delete the new command.
         return
       self.commands.del(name)
-
-  proc registerActiveCommand*(self: CommandServiceImpl, command: sink Command, override: bool = false): CommandId =
-    if command.name == "":
-      log lvlError, &"Trying to register command with no name"
-      return
-
-    if not override and self.activeCommands.contains(command.name):
-      log lvlError, &"Trying to register command '{command.name}' which already exists"
-      return
-
-    let id = self.commandIdCounter.CommandId
-    inc self.commandIdCounter
-
-    self.unregisterCommand(command.name)
-
-    command.id = id
-    command.signature = "(" & command.parameters.mapIt(it.name & ": " & it.`type`).join(", ") & ") " & command.returnType
-    self.idToCommand[id] = command.name
-    self.activeCommands[command.name] = command.ensureMove
-
-    return id
 
   proc commandServiceRegisterCommand(self: CommandService, command: sink Command, override: bool = false): CommandId =
     let self = self.CommandServiceImpl
@@ -389,6 +389,11 @@ when implModule:
 
   proc commandServiceExecuteCommand(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil): Option[string] =
     let self = self.CommandServiceImpl
+
+    if command == "toggle-log-commands":
+      self.logCommands = not self.logCommands
+      return string.none
+
     var doRecord = record
     if self.dontRecord:
       doRecord = false

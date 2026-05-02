@@ -1,4 +1,4 @@
-#use layout
+#use layout text_editor_component
 import nimsumtree/[arc]
 import misc/[id]
 import channel, view

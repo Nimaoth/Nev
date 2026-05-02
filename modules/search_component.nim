@@ -1,3 +1,4 @@
+#use text_editor_component
 import std/[options]
 import nimsumtree/[buffer, clock, rope]
 import misc/[custom_async, delayed_task, event]

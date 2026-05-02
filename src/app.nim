@@ -1188,13 +1188,13 @@ proc closeUnusedDocuments*(self: App) =
     # Only close one document on each iteration so we don't create spikes
     break
 
-proc writeFile*(self: App, path: string = "", appFile: bool = false) {.expose("editor").} =
+proc writeFile*(self: App, path: string = "") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
   if self.getActiveEditor().getSome(editor) and editor.getDocument().isNotNil:
     try:
-      discard editor.getDocument().save(path, appFile)
+      discard editor.getDocument().save(path)
     except CatchableError:
       log(lvlError, fmt"Failed to write file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
@@ -1206,7 +1206,6 @@ proc loadFile*(self: App, path: string = "") {.expose("editor").} =
   if self.getActiveEditor().getSome(editor) and editor.getDocument().isNotNil:
     try:
       editor.getDocument().load(path)
-      editor.handleDocumentChanged()
     except CatchableError:
       log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
@@ -3049,6 +3048,17 @@ proc printStatistics*(self: App) {.expose("editor").} =
       result.add &"Command History: {self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len}\n"
       # for command in self.commandHistory:
       #   result.add &"    {command}\n"
+
+      result.add &"Text editors: {self.editors.allEditors.len}\n"
+      for editor in self.editors.allEditors:
+        result.add editor.getMemoryStats().pretty.indent(4)
+        result.add "\n\n"
+
+      result.add &"Text documents: {self.editors.documents.len}\n"
+      for document in self.editors.documents:
+        result.add document.getMemoryStats().pretty.indent(4)
+        result.add "\n\n"
+
 
       result.add &"Platform:\n{self.platform.getStatisticsString().indent(4)}\n"
       result.add &"UI:\n{self.platform.builder.getStatisticsString().indent(4)}\n"

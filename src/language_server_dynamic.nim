@@ -266,11 +266,35 @@ else:
     else:
       return seq[Symbol].default.toFuture
 
-  proc getWorkspaceSymbolsRaw*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[language_server_base.WorkspaceSymbolRaw]] {.gcsafe, raises: [].} =
-    if self.getWorkspaceSymbolsRawImpl != nil:
-      return self.getWorkspaceSymbolsRawImpl(self, filename, query)
-    else:
-      return seq[language_server_base.WorkspaceSymbolRaw].default.toFuture
+  proc getWorkspaceSymbolsRaw*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[language_server_base.WorkspaceSymbolRaw]] {.gcsafe, async: (raises: []).} =
+    try:
+      if self.getWorkspaceSymbolsRawImpl != nil:
+        return await self.getWorkspaceSymbolsRawImpl(self, filename, query)
+      elif self.getWorkspaceSymbolsImpl != nil:
+        proc toLspSymbolKind(symbolKind: SymbolType): SymbolKind =
+          try:
+            return SymbolKind(symbolKind.ord)
+          except:
+            return SymbolKind.Class
+
+        let res = await self.getWorkspaceSymbolsImpl(self, filename, query)
+        var resRaw = newSeq[language_server_base.WorkspaceSymbolRaw](res.len)
+        for i, r in res:
+          let pos = Position(line: r.location.line, character: r.location.column)
+          resRaw[i] = language_server_base.WorkspaceSymbolRaw(
+            symbol: lsp_types.WorkspaceSymbol(
+              name: r.name,
+              kind: r.symbolType.toLspSymbolKind,
+              location: WorkspaceLocationVariant(node: Location(uri: r.filename, `range`: Range(start: pos, `end`: pos)).toJson),
+            ),
+            path: r.filename,
+            location: r.location.some,
+          )
+        return resRaw
+      else:
+        return newSeq[language_server_base.WorkspaceSymbolRaw]()
+    except CatchableError:
+      return newSeq[language_server_base.WorkspaceSymbolRaw]()
 
   proc resolveWorkspaceSymbol*(self: LanguageServerDynamic, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.gcsafe, raises: [].} =
     if self.resolveWorkspaceSymbolImpl != nil:

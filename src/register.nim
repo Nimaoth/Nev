@@ -49,6 +49,7 @@ func serviceName*(_: typedesc[Registers]): string = "Registers"
 # DLL API
 {.push apprtl, gcsafe, raises: [].}
 proc registersSetRegisterText*(self: Registers, text: string, register: string = "")
+proc registersSetRegisterAsync*(self: Registers, register: string, value: sink Register): Future[void]
 proc registersGetRegisterText*(self: Registers, register: string): string
 proc registersGetRegisterAsync*(self: Registers, register: string, res: ptr Register): Future[bool]
 proc startRecordingKeys*(self: Registers, register: string)
@@ -58,12 +59,15 @@ proc stopRecordingCommands*(self: Registers, register: string)
 proc isReplayingCommands*(self: Registers): bool
 proc isReplayingKeys*(self: Registers): bool
 proc isRecordingCommands*(self: Registers, registry: string): bool
+proc registersRecordCommand(self: Registers, command: string, registers: openArray[string] = [])
 {.pop.}
 
 # Nice wrappers
 proc setRegisterText*(self: Registers, text: string, register: string = "") {.inline.} = registersSetRegisterText(self, text, register)
 proc getRegisterText*(self: Registers, register: string): string {.inline.} = registersGetRegisterText(self, register)
 proc getRegisterAsync*(self: Registers, register: string, res: ptr Register): Future[bool] {.inline.} = registersGetRegisterAsync(self, register, res)
+proc setRegisterAsync*(self: Registers, register: string, value: sink Register): Future[void] = registersSetRegisterAsync(self, register, value)
+proc recordCommand*(self: Registers, command: string, registers: openArray[string] = []) = registersRecordCommand(self, command, registers)
 
 when implModule:
   import scripting/[expose]
@@ -93,7 +97,7 @@ when implModule:
 
     return ""
 
-  proc setRegisterAsync*(self: Registers, register: string, value: sink Register): Future[void] {.async.} =
+  proc registersSetRegisterAsync(self: Registers, register: string, value: sink Register): Future[void] {.async.} =
     if register.len == 0:
       setSystemClipboardText(value.getText())
     self.registers[register] = value.move
@@ -121,7 +125,7 @@ when implModule:
 
     return false
 
-  proc recordCommand*(self: Registers, command: string, registers: openArray[string] = []) =
+  proc registersRecordCommand(self: Registers, command: string, registers: openArray[string] = []) =
     if self.bIsReplayingCommands:
       return
 

@@ -1256,6 +1256,7 @@ proc commandsDefineCommand*(instance: ptr InstanceData, name: sink string, activ
     parameters: params.mapIt((it[0], it[1])),
     returnType: returnType.ensureMove,
     description: docs.ensureMove,
+    active: active,
     execute: (proc(args: string): string {.gcsafe.} =
       let res = instance.funcs.handleCommand(fun, data, args).okOr(err):
         log lvlError, "Failed to call handleCommand: " & err.msg
@@ -1264,10 +1265,7 @@ proc commandsDefineCommand*(instance: ptr InstanceData, name: sink string, activ
       return res
     ),
   )
-  if active:
-    instance.commands.add(instance.host.commands.registerActiveCommand(command, override = true))
-  else:
-    instance.commands.add(instance.host.commands.registerCommand(command, override = true))
+  instance.commands.add(instance.host.commands.registerCommand(command, override = true))
 
 proc commandsRunCommand*(instance: ptr InstanceData, name: sink string, arguments: sink string): Result[string, CommandError] =
   if instance.host == nil:

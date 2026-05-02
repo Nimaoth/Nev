@@ -33,6 +33,7 @@ type
     active: bool
     usage*: string # Unique string identifying what the editor is used for,
                    # e.g. command-line/preview/search-bar
+    namespace*: string
     onActiveChanged*: Event[DocumentEditor]
     onDocumentChanged*: Event[tuple[old: Document]]
     config*: ConfigStore
@@ -41,6 +42,12 @@ type
     getStateImpl*: proc(self: DocumentEditor): JsonNode {.gcsafe, raises: [].}
     restoreStateImpl*: proc(self: DocumentEditor, state: JsonNode) {.gcsafe, raises: [].}
     deinitImpl*: proc(self: DocumentEditor) {.gcsafe, raises: [].}
+    handleActionImpl*: proc(self: DocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] {.gcsafe, raises: [].}
+    setDocumentImpl*: proc(self: DocumentEditor, document: Document) {.gcsafe, raises: [].}
+    getEventHandlersImpl*: proc(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].}
+    handleActivateImpl*: proc(self: DocumentEditor) {.gcsafe, raises: [].}
+    handleDeactivateImpl*: proc(self: DocumentEditor) {.gcsafe, raises: [].}
+    getMemoryStatsImpl*: proc(self: DocumentEditor): JsonNode {.gcsafe, raises: [].}
 
   DocumentFactory* = ref object of RootObj
     priority*: int = 0
@@ -100,6 +107,24 @@ proc render*(self: DocumentEditor, builder: UINodeBuilder): seq[proc() {.closure
     return self.renderImpl(self, builder)
   return @[]
 
+proc getEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.inline.} =
+  if self.getEventHandlersImpl != nil:
+    return self.getEventHandlersImpl(self, inject)
+  return newSeq[EventHandler]()
+
+proc handleActivate*(self: DocumentEditor) =
+  if self.handleActivateImpl != nil:
+    self.handleActivateImpl(self)
+
+proc handleDeactivate*(self: DocumentEditor) =
+  if self.handleDeactivateImpl != nil:
+    self.handleDeactivateImpl(self)
+
+proc getMemoryStats*(self: DocumentEditor): JsonNode =
+  if self.getMemoryStatsImpl != nil:
+    return self.getMemoryStatsImpl(self)
+  return newJObject()
+
 func active*(self: DocumentEditor): bool = self.active
 
 {.push apprtl.}
@@ -111,16 +136,18 @@ proc getEditorsForDocument*(self: DocumentEditorService, document: Document): se
 proc documentEditorCreateEditorForDocument(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor]
 proc documentEditorCreateDocument*(self: DocumentEditorService, kind: string, path: string, load: bool, options: JsonNodeEx, id = Id.none): Document
 proc documentEditorSetActive(self: DocumentEditor, newActive: bool)
-proc documentEditorGetEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].}
 proc documentEditorGetOrOpenDocument(self: DocumentEditorService, path: string, load: bool = true, id = Id.none): Option[Document] {.gcsafe, raises: [].}
 proc documentEditorAddDocumentFactory(self: DocumentEditorService, factory: DocumentFactory)
 proc documentEditorAddDocumentEditorFactory(self: DocumentEditorService, factory: DocumentEditorFactory)
-proc documentEditorSetDocument(self: DocumentEditor, document: Document)
 proc documentEditorGetExistingEditor(self: DocumentEditorService, path: string): Option[EditorId]
 proc documentEditorGetAllEditors(self: DocumentEditorService): seq[EditorId]
 proc documentEditorOpenDocument(self: DocumentEditorService, path: string, load = true, id = Id.none): Option[Document]
 proc documentEditorCloseEditor(self: DocumentEditorService, editor: DocumentEditor)
 proc documentEditorTryCloseDocument(self: DocumentEditorService, document: Document)
+proc documentEditorRegisterDocument(self: DocumentEditorService, document: Document)
+proc documentEditorUnregisterDocument(self: DocumentEditorService, document: Document)
+proc documentEditorRegisterEditor(self: DocumentEditorService, editor: DocumentEditor)
+proc documentEditorUnregisterEditor(self: DocumentEditorService, editor: DocumentEditor)
 {.pop.}
 
 
@@ -130,16 +157,23 @@ proc createDocument*(self: DocumentEditorService, kind: string, path: string, lo
 proc getOrOpenDocument*(self: DocumentEditorService, path: string, load = true, id = Id.none): Option[Document] = documentEditorGetOrOpenDocument(self, path, load, id)
 proc addDocumentFactory*(self: DocumentEditorService, factory: DocumentFactory) = documentEditorAddDocumentFactory(self, factory)
 proc addDocumentEditorFactory*(self: DocumentEditorService, factory: DocumentEditorFactory) = documentEditorAddDocumentEditorFactory(self, factory)
-proc setDocument*(self: DocumentEditor, document: Document) = documentEditorSetDocument(self, document)
 proc getExistingEditor*(self: DocumentEditorService, path: string): Option[EditorId] = documentEditorGetExistingEditor(self, path)
 proc getAllEditors*(self: DocumentEditorService): seq[EditorId] = documentEditorGetAllEditors(self)
 proc openDocument*(self: DocumentEditorService, path: string, load = true, id = Id.none): Option[Document] = documentEditorOpenDocument(self, path, load, id)
 proc closeEditor*(self: DocumentEditorService, editor: DocumentEditor) = documentEditorCloseEditor(self, editor)
 proc tryCloseDocument*(self: DocumentEditorService, document: Document) = documentEditorTryCloseDocument(self, document)
 proc createEditorForDocument*(self: DocumentEditorService, document: Document, options: JsonNodeEx = nil): Option[DocumentEditor] = documentEditorCreateEditorForDocument(self, document, options)
+proc registerDocument*(self: DocumentEditorService, document: Document) = documentEditorRegisterDocument(self, document)
+proc unregisterDocument*(self: DocumentEditorService, document: Document) = documentEditorUnregisterDocument(self, document)
+proc registerEditor*(self: DocumentEditorService, editor: DocumentEditor) = documentEditorRegisterEditor(self, editor)
+proc unregisterEditor*(self: DocumentEditorService, editor: DocumentEditor) = documentEditorUnregisterEditor(self, editor)
 
 proc `active=`*(self: DocumentEditor, newActive: bool) = documentEditorSetActive(self, newActive)
 {.pop.}
+
+proc setDocument*(self: DocumentEditor, document: Document) =
+  if self.setDocumentImpl != nil:
+    self.setDocumentImpl(self, document)
 
 proc getStateJson*(self: DocumentEditor): JsonNode {.gcsafe, raises: [].} =
   if self.getStateImpl != nil:
@@ -153,6 +187,11 @@ proc restoreStateJson*(self: DocumentEditor, state: JsonNode) {.gcsafe, raises: 
 proc deinit*(self: DocumentEditor) {.gcsafe, raises: [].} =
   if self.deinitImpl != nil:
     self.deinitImpl(self)
+
+proc handleAction*(self: DocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
+  if self.handleActionImpl != nil:
+    return self.handleActionImpl(self, action, arg, record)
+  return JsonNode.none
 
 proc anyUnsavedChanges*(self: DocumentEditorService): bool =
   for editor in self.allEditors:
@@ -177,11 +216,6 @@ when implModule:
 
   method createUI*(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayFunction] {.base.} =
     discard
-
-  method handleActivate*(self: DocumentEditor) {.base, gcsafe, raises: [].} = discard
-  method handleDeactivate*(self: DocumentEditor) {.base, gcsafe, raises: [].} = discard
-
-  method getNamespace*(self: DocumentEditor): string {.base, gcsafe, raises: [].} = discard
 
   method init*(self: DocumentEditorService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"DocumentEditorService.init"
@@ -216,20 +250,7 @@ when implModule:
 
   proc getDocument*(self: DocumentEditor): Document {.gcsafe, raises: [].} = self.currentDocument
 
-  method setDocumentImpl*(self: DocumentEditor, document: Document) {.base, gcsafe, raises: [].} =
-    discard
-
-  proc documentEditorSetDocument(self: DocumentEditor, document: Document) = setDocumentImpl(self, document)
-
-  method handleAction*(self: DocumentEditor, action: string, arg: string, record: bool = true): Option[JsonNode] {.base, gcsafe, raises: [].} = discard
-
-  method getEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.base, gcsafe, raises: [].} =
-    return @[]
-
   method handleDocumentChanged*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
-    discard
-
-  method unregister*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
     discard
 
   method handleScroll*(self: DocumentEditor, scroll: Vec2, mousePosWindow: Vec2) {.base, gcsafe, raises: [].} =
@@ -245,9 +266,6 @@ when implModule:
     discard
 
   method getStatisticsString*(self: DocumentEditor): string {.base, gcsafe, raises: [].} = discard
-
-  proc documentEditorGetEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].} =
-    self.getEventHandlers(inject)
 
   proc documentEditorSetActive(self: DocumentEditor, newActive: bool) =
     let changed = if newActive != self.active:
@@ -271,6 +289,7 @@ when implModule:
     for factory in self.documentFactories:
       if factory.kind == kind and factory.canOpenFile(path):
         return factory.createDocument(self.services, path, load, options, id)
+    log lvlError, &"No document factory found for '{kind}'"
     return nil
 
   proc documentEditorAddDocumentFactory(self: DocumentEditorService, factory: DocumentFactory) =
@@ -281,21 +300,18 @@ when implModule:
     self.editorFactories.add(factory)
     self.editorFactories.sort(proc(a, b: DocumentEditorFactory): int = cmp(a.priority, b.priority), Descending)
 
-  proc registerDocument*(self: DocumentEditorService, document: Document) =
+  proc documentEditorRegisterDocument(self: DocumentEditorService, document: Document) =
     document.id = self.documents.add(document)
 
-  proc unregisterDocument*(self: DocumentEditorService, document: Document) =
+  proc documentEditorUnregisterDocument(self: DocumentEditorService, document: Document) =
     self.documents.del(document.id)
 
-  proc registerEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
+  proc documentEditorRegisterEditor(self: DocumentEditorService, editor: DocumentEditor) =
     editor.id = self.allEditors.add(editor)
-    # self.editors[editor.id] = editor
     self.onEditorRegistered.invoke editor
 
-  proc unregisterEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
+  proc documentEditorUnregisterEditor(self: DocumentEditorService, editor: DocumentEditor) =
     self.allEditors.del(editor.id)
-
-    # self.editors.del(editor.id)
     self.onEditorDeregistered.invoke editor
 
   proc getAllDocuments*(self: DocumentEditorService): seq[Document] =
@@ -426,6 +442,3 @@ when implModule:
       return id.EditorId.some
 
     return EditorId.none
-
-else:
-  proc getEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.inline.} = documentEditorGetEventHandlers(self, inject)

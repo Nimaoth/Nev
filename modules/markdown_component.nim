@@ -1,4 +1,4 @@
-#use command_component snippet_component
+#use command_component snippet_component text_editor_component
 const currentSourcePath2 = currentSourcePath()
 include module_base
 

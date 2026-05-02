@@ -160,14 +160,21 @@ proc extendJson*(a: var JsonNodeEx, b: JsonNodeEx) =
 proc configStoreGet(self: ConfigStore, key: string): JsonNodeEx
 proc configStoreSet(self: ConfigStore, key: string, jsonValue: JsonNodeEx)
 proc configStoreSetSettings(self: ConfigStore, settings: JsonNodeEx)
+proc configStoreSetParent(self: ConfigStore, parent: ConfigStore)
+proc configServiceGetLanguageStore(self: ConfigService, languageId: string): ConfigStore
+proc configServiceAddStore(self: ConfigService, name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore
+proc configServiceRemoveStore(self: ConfigService, store: ConfigStore)
 {.pop.}
 
 proc set*[T](self: ConfigStore, key: string, value: T) =
   let jsonValue = when T is JsonNodeEx: value else: value.toJsonEx(defaultToJsonOptions)
   configStoreSet(self, key, jsonValue)
 
-proc setSettings*(self: ConfigStore, settings: JsonNodeEx) =
-  configStoreSetSettings(self, settings)
+proc setSettings*(self: ConfigStore, settings: JsonNodeEx) = configStoreSetSettings(self, settings)
+proc setParent*(self: ConfigStore, parent: ConfigStore) = configStoreSetParent(self, parent)
+proc getLanguageStore*(self: ConfigService, languageId: string): ConfigStore = configServiceGetLanguageStore(self, languageId)
+proc addStore*(self: ConfigService, name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore = configServiceAddStore(self, name, filename, parent, settings)
+proc removeStore*(self: ConfigService, store: ConfigStore) = configServiceRemoveStore(self, store)
 
 proc getValue*(self: ConfigStore, key: string): JsonNodeEx =
   result = self.configStoreGet(key)
@@ -460,7 +467,6 @@ when implModule:
 
   proc setUserData(node: JsonNodeEx, userData: int)
   proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx)
-  proc setParent*(self: ConfigStore, parent: ConfigStore)
 
   addBuiltinService(ConfigService)
 
@@ -501,18 +507,18 @@ when implModule:
         return desc.some
     return SettingDescription.none
 
-  proc removeStore*(self: ConfigService, store: ConfigStore) =
+  proc configServiceRemoveStore(self: ConfigService, store: ConfigStore) =
     store.setParent(nil)
     self.stores.del(store.filename)
     self.storesByName.del(store.name)
 
-  proc addStore*(self: ConfigService, name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore =
+  proc configServiceAddStore(self: ConfigService, name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore =
     let parent = if parent != nil: parent else: self.runtime
     result = ConfigStore.new(name, filename, parent, settings)
     self.stores[filename] = result
     self.storesByName[name] = result
 
-  proc getLanguageStore*(self: ConfigService, languageId: string): ConfigStore =
+  proc configServiceGetLanguageStore(self: ConfigService, languageId: string): ConfigStore =
     let path = "languages/" & languageId
     if self.stores.contains(path):
       return self.stores[path]
@@ -681,7 +687,7 @@ when implModule:
     else:
       target = node
 
-  proc setParent*(self: ConfigStore, parent: ConfigStore) =
+  proc configStoreSetParent(self: ConfigStore, parent: ConfigStore) =
     if self.parent != parent:
       if self.parent != nil:
         self.parent.onConfigChanged.unsubscribe(self.parentChangedHandle)

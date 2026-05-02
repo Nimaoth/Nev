@@ -309,7 +309,6 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   log lvlInfo, fmt"newModelDocument {filename}"
 
   self.filename = filename
-  self.appFile = app
   self.workspace = workspaceFolder
 
   self.builder = newCellBuilder(idNone().LanguageId)
@@ -323,12 +322,7 @@ method save*(self: ModelDocument, filename: string = "", app: bool = false): Fut
   log lvlInfo, fmt"Saving model source file '{self.filename}'"
   let serialized = $self.model.toJson
 
-  if self.workspace.getSome(ws):
-    await ws.saveFile(self.filename, serialized)
-  elif self.appFile:
-    self.fs.saveApplicationFile(self.filename, serialized)
-  else:
-    self.fs.saveFile(self.filename, serialized)
+  self.fs.saveFile(self.filename, serialized)
 
 template cursor*(self: ModelDocumentEditor): CellCursor = self.mSelection.last
 template selection*(self: ModelDocumentEditor): CellSelection = self.mSelection
@@ -873,8 +867,6 @@ proc handleFinishedUndoTransaction*(self: ModelDocumentEditor, document: ModelDo
 proc handleFinishedRedoTransaction*(self: ModelDocumentEditor, document: ModelDocument, transaction: ModelTransaction) =
   self.transactionCursors[transaction.id] = self.mCursorBeforeTransaction
   self.mCursorBeforeTransaction = self.selection
-
-method getNamespace*(self: ModelDocumentEditor): string = "editor.model"
 
 method handleDocumentChanged*(self: ModelDocumentEditor) =
   log lvlInfo, fmt"Document changed"

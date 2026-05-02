@@ -3,30 +3,30 @@ import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables
 import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, generational_seq,
-  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex, render_command, case_swap]
+import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, generational_seq, render_command]
+import misc/[custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex, case_swap]
 import scripting/[expose]
 import platform/[platform]
-import language/[language_server_base]
-import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent,
-  text_document, snippet
-import completion, completion_provider_document, completion_provider_lsp,
-  completion_provider_snippet, selector_popup_builder, dispatch_tables, register
+import text/language/language_server_base, language_server_dynamic
+import document, document_editor, events, vmath, bumpy, input, text_document
+import selector_popup_builder, dispatch_tables, register
 import config_provider, service, layout/layout, platform_service, vfs, vfs_service, command_service, toast
-import diff, plugin_service, move_database, event_service
+import move_database, event_service
 import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs
-import overlay_map, tab_map, wrap_map, diff_map, display_map
+import text/[overlay_map, tab_map, wrap_map, diff_map, display_map, snippet, indent, custom_treesitter, diff]
+import text/[completion_provider_document, completion_provider_lsp, completion_provider_snippet, completion]
 import lisp
 import view
-import scroll_box, component, treesitter_component, text_editor_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, snippet_component, text_component, contextline_component
+import scroll_box, component, treesitter_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, snippet_component, text_component, contextline_component
 import move_component
+import text_editor_component
 import ui/node
 
-import "../../modules"/[workspace_edit, search_component]
+import workspace_edit, search_component
 
-from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
+from text/language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
   Command, WorkspaceEdit, asCommand, asCodeAction, asUriObject, WorkspaceSymbol
 
@@ -216,7 +216,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   services*: Services
   vcs: VCSService
   events: EventHandlerService
-  plugins: PluginService
   registers: Registers
   workspace: Workspace
   moveDatabase: MoveDatabase
@@ -224,12 +223,12 @@ type TextDocumentEditor* = ref object of DocumentEditor
   vfsService: VFSService
   vfs*: VFS
   vfs2*: Arc[VFS2]
-  commands*: CommandServiceImpl
+  commands*: CommandService
   configService*: ConfigService
   configChanged: bool = false
 
-  textEditorComponent*: TextEditorComponentImpl
-  decorations*: DecorationComponentImpl
+  textEditorComponent*: TextEditorComponent
+  decorations*: DecorationComponent
   inlayHints: InlayHintComponent
   hoverComponent*: HoverComponent
   contextLineComponent*: ContextLineComponent
@@ -350,7 +349,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   moveFallbacks: MoveFunction
 
 type
-  TextDocumentEditorService* = ref object of Service
   TextDocumentFactory* = ref object of DocumentFactory
   TextDocumentEditorFactory* = ref object of DocumentEditorFactory
 
@@ -359,33 +357,12 @@ proc textEditorGetStateJson*(self: DocumentEditor): JsonNode
 proc textEditorRestoreStateJson*(self: DocumentEditor, state: JsonNode) {.gcsafe, raises: [].}
 proc textEditorDeinit*(self: DocumentEditor) {.gcsafe, raises: [].}
 
-func serviceName*(_: typedesc[TextDocumentEditorService]): string = "TextDocumentEditorService"
+proc handleDocumentChanged*(self: TextDocumentEditor)
 
-addBuiltinService(TextDocumentEditorService, DocumentEditorService)
-
-proc canOpenFile(self: TextDocumentFactory, path: string): bool
-proc createDocument(self: TextDocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil, id = Id.none): Document
-proc canEditDocument*(self: TextDocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool
-proc createEditor*(self: TextDocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor
-
-method init*(self: TextDocumentEditorService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  log lvlInfo, &"TextDocumentEditorService.init"
-  let editors = self.services.getService(DocumentEditorService).get
-  editors.addDocumentFactory(TextDocumentFactory(
-    kind: "text",
-    canOpenFileImpl: proc(self: DocumentFactory, path: string): bool {.gcsafe, raises: [].} = canOpenFile(self.TextDocumentFactory, path),
-    createDocumentImpl: proc(self: DocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil, id = Id.none): Document {.gcsafe, raises: [].} = createDocument(self.TextDocumentFactory, services, path, load, options, id),
-  ))
-  editors.addDocumentEditorFactory(TextDocumentEditorFactory(
-    canEditDocumentImpl: proc(self: DocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool {.gcsafe, raises: [].} = canEditDocument(self.TextDocumentEditorFactory, document, options),
-    createEditorImpl: proc(self: DocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor {.gcsafe, raises: [].} = createEditor(self.TextDocumentEditorFactory, services, document, options),
-  ))
-  return ok()
-
-proc canOpenFile(self: TextDocumentFactory, path: string): bool =
+proc canOpenFile*(self: TextDocumentFactory, path: string): bool =
   return true
 
-proc createDocument(self: TextDocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil, id = Id.none): Document =
+proc createDocument*(self: TextDocumentFactory, services: Services, path: string, load: bool, options: JsonNodeEx = nil, id = Id.none): Document =
   var createLanguageServer = true
   var language = string.none
   var initialSettings: JsonNodeEx = newJexObject()
@@ -435,23 +412,30 @@ proc createEditor*(self: TextDocumentEditorFactory, services: Services, document
 
 var allTextEditors*: seq[TextDocumentEditor] = @[]
 
-method getStatisticsString*(self: TextDocumentEditor): string =
-  result.add &"Filename: {self.document.filename}\n"
-  result.add &"Selection History: {self.textEditorComponent.selectionHistory.len}\n"
-  result.add &"Search Query: {self.searchComponent.searchQuery}\n"
-  result.add &"Search Results: {self.searchComponent.searchResults.len}\n"
-  result.add &"Custom Highlights: {self.decorations.customHighlights.len}\n"
-  result.add &"Overlay map: {st.stats(self.displayMap.overlay.snapshot.map)}\n"
-  result.add &"Wrap map: {st.stats(self.displayMap.diffMap.snapshot.map)}\n"
-  result.add &"Diff map: {st.stats(self.displayMap.wrapMap.snapshot.map)}\n"
+proc textEditorGetMemoryStats(self: DocumentEditor): JsonNode {.gcsafe, raises: [].} =
+  let self = self.TextDocumentEditor
+  try:
+    var temp = 0
+    for s in self.completionMatchPositions.values:
+      temp += s.len
+    result = %*{
+      "Filename": self.document.filename,
+      "Search Query": self.searchComponent.searchQuery,
+      "Search Results": self.searchComponent.searchResults.len,
+      "Overlay map": st.stats(self.displayMap.overlay.snapshot.map),
+      "Wrap map": st.stats(self.displayMap.diffMap.snapshot.map),
+      "Diff map": st.stats(self.displayMap.wrapMap.snapshot.map),
 
-  var temp = 0
-  for s in self.completionMatchPositions.values:
-    temp += s.len
-  result.add &"Completion Match Positions: {self.completionMatchPositions.len}, {temp}\n"
-  result.add &"Completion Matches: {self.completionMatches.len}\n"
+      "Completion Match Positions": %*{
+        "num": self.completionMatchPositions.len,
+        "bytes": temp,
+      },
+      "Completion Matches": self.completionMatches.len,
 
-  result.add &"Completions: {self.completions.len}\n"
+      "Completions": self.completions.len,
+    }
+  except:
+    return newJObject()
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode]
 proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse
@@ -473,8 +457,8 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, w
 proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string)
 proc setDefaultMode*(self: TextDocumentEditor, forceNotify: bool = false)
 
-proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
-proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
+proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServerDynamic)
+proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServerDynamic)
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]])
 proc handleTextDocumentTextChanged(self: TextDocumentEditor)
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument)
@@ -503,8 +487,9 @@ proc clampSelection*(self: TextDocumentEditor, selection: Selection, includeAfte
 proc clampAndMergeSelections*(self: TextDocumentEditor, selections: openArray[Selection]): Selections =
   self.document.clampAndMergeSelections(selections)
 
-proc selectionsInternal(self: TextDocumentEditor): var Selections =
-  self.textEditorComponent.selectionsOld
+proc selectionsInternal(self: TextDocumentEditor): Selections =
+  # todo: remove this to avoid copies
+  self.textEditorComponent.selections.mapIt(it.toSelection)
 
 proc selections*(self: TextDocumentEditor): Selections =
   self.selectionsInternal
@@ -519,12 +504,12 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections, addToHisto
     log lvlWarn, "Trying to set empty selections, not allowed"
     return
 
-  self.textEditorComponent.setSelectionsOld(selections, addToHistory)
+  self.textEditorComponent.setSelections(selections.mapIt(it.toRange), addToHistory)
 
 proc scrollBox*(self: TextDocumentEditor): var ScrollBox =
   self.textEditorComponent.scrollBox
 
-proc handleSelectionsChanged(self: TextDocumentEditor, old: openArray[Selection]) =
+proc handleSelectionsChanged(self: TextDocumentEditor, old: openArray[Range[Point]]) =
   self.cursorVisible = true
 
   var changedLine = false
@@ -532,8 +517,8 @@ proc handleSelectionsChanged(self: TextDocumentEditor, old: openArray[Selection]
     changedLine = true
   else:
     for i in 0..<self.selectionsInternal.len:
-      if old[i].last.line != self.selectionsInternal[i].last.line or
-          old[i].first.line != self.selectionsInternal[i].first.line:
+      if old[i].b.row.int != self.selectionsInternal[i].last.line or
+          old[i].a.row.int != self.selectionsInternal[i].first.line:
         changedLine = true
 
   let snapshot {.cursor.} = self.document.buffer.snapshot
@@ -616,7 +601,7 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.document = nil
     self.currentDocument = nil
 
-    self.textEditorComponent.selectionHistory.clear()
+    self.textEditorComponent.setDocument(nil)
     self.decorations.clear()
     self.hoverComponent.clearOverlayViews()
     self.hoverComponent.clearHoverView()
@@ -627,7 +612,8 @@ proc clearDocument*(self: TextDocumentEditor) =
 
     self.editors.tryCloseDocument(document)
 
-method setDocumentImpl*(self: TextDocumentEditor, document: Document) {.gcsafe, raises: [].} =
+proc textEditorSetDocument(self: DocumentEditor, document: Document) {.gcsafe, raises: [].} =
+  let self = self.TextDocumentEditor
   assert document.isNotNil
   if not (document of TextDocument):
     return
@@ -682,11 +668,11 @@ method setDocumentImpl*(self: TextDocumentEditor, document: Document) {.gcsafe, 
     self.handleTextDocumentSaved()
 
   self.languageServerAttachedHandle = document.onLanguageServerAttached.subscribe (
-      arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
+      arg: tuple[document: TextDocument, languageServer: LanguageServerDynamic]) =>
     self.handleLanguageServerAttached(arg.document, arg.languageServer)
 
   self.onDiagnosticsHandle = document.onDiagnostics.subscribe (
-      arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
+      arg: tuple[document: TextDocument, languageServer: LanguageServerDynamic]) =>
     self.handleDiagnosticsChanged(arg.document, arg.languageServer)
 
   self.completionEngine = CompletionEngine()
@@ -711,7 +697,7 @@ method setDocumentImpl*(self: TextDocumentEditor, document: Document) {.gcsafe, 
 
 proc textEditorDeinit*(self: DocumentEditor) =
   let self = self.TextDocumentEditor
-  self.unregister()
+  self.editors.unregisterEditor(self)
   self.eventBus.emit(&"editor/{self.id}/destroy", $self.id)
 
   self.platform.onFocusChanged.unsubscribe self.onFocusChangedHandle
@@ -739,15 +725,6 @@ proc textEditorDeinit*(self: DocumentEditor) =
     allTextEditors.removeSwap(i)
 
   self[] = default(typeof(self[]))
-
-# proc `=destroy`[T: object](doc: var TextDocument) =
-#   doc.tsParser.tsParserDelete()
-
-method getNamespace*(self: TextDocumentEditor): string = "editor.text"
-
-method canEdit*(self: TextDocumentEditor, document: Document): bool =
-  if document of TextDocument: return true
-  else: return false
 
 proc createEventHandler(self: TextDocumentEditor, config: EventHandlerConfig): EventHandler =
   if self.eventHandlerOverrides.contains(config.context):
@@ -782,7 +759,8 @@ proc getConfigEventHandlers(self: TextDocumentEditor): seq[EventHandler] =
 
   return self.mEventHandlers
 
-method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] =
+proc textEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] =
+  let self = self.TextDocumentEditor
   result = self.getConfigEventHandlers()
 
   if inject.contains("above-mode"):
@@ -925,16 +903,18 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.showCompletions:
     self.updateCompletionsFromEngine()
 
-method handleDocumentChanged*(self: TextDocumentEditor) =
+proc handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
   self.cursorHistories.setLen(0)
   self.searchComponent.updateSearchResults()
   self.config.detail = self.document.filename
 
-method handleActivate*(self: TextDocumentEditor) =
+proc textEditorHandleActivate(self: DocumentEditor) =
+  let self = self.TextDocumentEditor
   self.startBlinkCursorTask()
 
-method handleDeactivate*(self: TextDocumentEditor) =
+proc textEditorHandleDeactivate(self: DocumentEditor) =
+  let self = self.TextDocumentEditor
   log lvlInfo, fmt"Deactivate '{self.document.filename}'"
   if self.blinkCursorTask.isNotNil:
     self.blinkCursorTask.pause()
@@ -1265,7 +1245,7 @@ proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): f
     return 0
 
 proc evaluateExpressionAsync(self: TextDocumentEditor, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) {.async.} =
-  let l = self.vfs.getTreesitterLanguage("javascript").await
+  let l = self.vfs2.getTreesitterLanguage("javascript").await
   if l.getSome(l):
     withParser(p):
       if not p.setLanguage(l):
@@ -1553,22 +1533,10 @@ proc edit*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[stri
   return self.document.edit(selections, self.selections, texts, notify, record, inclusiveEnd=inclusiveEnd)
 
 proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.textEditorComponent.selectionHistory.len > 0:
-    let selection = self.textEditorComponent.selectionHistory.popLast
-    assert selection.len > 0, "[selectPrev] Empty selection"
-    self.textEditorComponent.selectionHistory.addFirst self.selections
-    self.textEditorComponent.setSelectionsOld(selection, addToHistory = false.some)
-  self.updateTargetColumn(Last)
-  self.scrollToCursor(self.selection.last)
+  self.textEditorComponent.selectPrev()
 
 proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.textEditorComponent.selectionHistory.len > 0:
-    let selection = self.textEditorComponent.selectionHistory.popFirst
-    assert selection.len > 0, "[selectNext] Empty selection"
-    self.textEditorComponent.selectionHistory.addLast self.selections
-    self.textEditorComponent.setSelectionsOld(selection, addToHistory = false.some)
-  self.updateTargetColumn(Last)
-  self.scrollToCursor(self.selection.last)
+  self.textEditorComponent.selectNext()
 
 proc getParentNodeSelection(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Selection =
   if self.document.tsTree.isNil:
@@ -2812,9 +2780,9 @@ proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
   log(lvlInfo, "reloadTreesitter")
 
   unloadTreesitterLanguage(self.document.languageId)
-  for doc in self.editors.getAllDocuments():
-    if doc of TextDocument:
-      let doc = doc.TextDocument
+  for editor in self.editors.allEditors:
+    if editor.currentDocument of TextDocument:
+      let doc = editor.currentDocument.TextDocument
       if doc.languageId == self.document.languageId:
         doc.reloadTreesitterLanguage()
 
@@ -3473,7 +3441,7 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
 type
   LspWorkspaceSymbolsDataSource* = ref object of DataSource
     workspace: Workspace
-    languageServer: LanguageServer
+    languageServer: LanguageServerDynamic
     query: string
     delayedTask: DelayedTask
     filename: string
@@ -3516,19 +3484,13 @@ proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.as
   items.setLen(index)
   self.onItemsChanged.invoke items
 
-proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer, workspace: Workspace, filename: string):
-    LspWorkspaceSymbolsDataSource =
-
-  new result
-  result.languageServer = languageServer
-  result.workspace = workspace
-  result.filename = filename
-
-method close*(self: LspWorkspaceSymbolsDataSource) =
+proc lspWorkspaceSymbolsDataSourceClose(self: DataSource) =
+  let self = self.LspWorkspaceSymbolsDataSource
   self.delayedTask.deinit()
   self.delayedTask = nil
 
-method setQuery*(self: LspWorkspaceSymbolsDataSource, query: string) =
+proc lspWorkspaceSymbolsDataSourceSetQuery(self: DataSource, query: string) =
+  let self = self.LspWorkspaceSymbolsDataSource
   self.query = query
 
   if self.delayedTask.isNil:
@@ -3538,6 +3500,15 @@ method setQuery*(self: LspWorkspaceSymbolsDataSource, query: string) =
   else:
     if self.languageServer.refetchWorkspaceSymbolsOnQueryChange:
       self.delayedTask.reschedule()
+
+proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServerDynamic, workspace: Workspace, filename: string): LspWorkspaceSymbolsDataSource =
+
+  new result
+  result.languageServer = languageServer
+  result.workspace = workspace
+  result.filename = filename
+  result.closeImpl = lspWorkspaceSymbolsDataSourceClose
+  result.setQueryImpl = lspWorkspaceSymbolsDataSourceSetQuery
 
 proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Future[void] {.async.} =
   let languageServer = self.document.getLanguageServer()
@@ -4038,7 +4009,7 @@ proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
 
   self.markDirty()
 
-proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor, languageServer: LanguageServer): seq[lsp_types.Diagnostic] =
+proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor, languageServer: LanguageServerDynamic): seq[lsp_types.Diagnostic] =
   let codeActions = self.codeActions.mgetOrPut(languageServer.name).addr
   let visibleRange = self.visibleTextRange(0)
   for diagnosticsData in self.document.diagnosticsPerLS.mitems:
@@ -4093,7 +4064,7 @@ proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeA
         if res.isError:
           log lvlError, &"Failed to execute lsp command '{command.command}, {command.arguments}': {res.error}"
 
-proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection, versionId: BufferVersionId,
+proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServerDynamic, selection: Selection, versionId: BufferVersionId,
     diagnosticsVersion: int, addSign: bool): Future[void] {.async.} =
   # todo: correctly convert selection coordinate (line, bytes) to lsp (line, rune?)
   let codeActions = self.codeActions.mgetOrPut(ls.name).addr
@@ -4179,7 +4150,7 @@ proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
 proc selectCodeAction(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncSpawn self.selectCodeActionAsync()
 
-proc updateCodeActionsAsync*(self: TextDocumentEditor, languageServer: Option[LanguageServer]): Future[void] {.async.} =
+proc updateCodeActionsAsync*(self: TextDocumentEditor, languageServer: Option[LanguageServerDynamic]): Future[void] {.async.} =
   if self.document.isNil:
     return
 
@@ -4215,7 +4186,7 @@ proc updateInlayHints*(self: TextDocumentEditor) {.expose("editor.text").} =
 proc updateCodeActions*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.codeActionsTask.isNil:
     self.codeActionsTask = startDelayed(200, repeat=false):
-      asyncSpawn self.updateCodeActionsAsync(LanguageServer.none)
+      asyncSpawn self.updateCodeActionsAsync(LanguageServerDynamic.none)
   else:
     self.codeActionsTask.reschedule()
 
@@ -4468,23 +4439,13 @@ proc cycleSelectedCase*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.markDirty()
 
 genDispatcher("editor.text")
-addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
+# addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] =
   # debugf"[textedit] handleActionInternal {action}, '{args}'"
 
   var args = args.copy
   args.elems.insert api.TextDocumentEditor(id: self.id.EditorId).toJson, 0
-
-  if self.commands.activeCommands.contains(action):
-    try:
-      let res = self.commands.activeCommands[action].execute(args.elems.mapIt($it).join(" "))
-      if res == "":
-        return newJNull().some
-      return res.parseJson().some
-    except CatchableError as e:
-      log lvlError, &"Failed to execute command '{action} {args}': {e.msg}"
-      return newJNull().some
 
   try:
     # debugf"dispatch {action}, {args}"
@@ -4504,7 +4465,8 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
 
   return JsonNode.none
 
-method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
+proc textEditorHandleAction(self: DocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
+  let self = self.TextDocumentEditor
   # debugf "handleAction '{action}', '{arg}', record = {record}"
   if self.commandComponent.isNil:
     return
@@ -4578,7 +4540,7 @@ proc handleFocusChanged*(self: TextDocumentEditor, focused: bool) =
       self.blinkCursorTask.reschedule()
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument,
-    languageServer: LanguageServer) =
+    languageServer: LanguageServerDynamic) =
   # log lvlInfo, fmt"[handleLanguageServerAttached] '{self.document.filename}'"
   if languageServer.capabilities.completionProvider.isSome:
     self.completionEngine.addProvider newCompletionProviderLsp(document, languageServer)
@@ -4587,7 +4549,7 @@ proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocume
 
   self.inlayHints.updateInlayHints()
 
-proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer) =
+proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServerDynamic) =
   if document != self.document:
     return
 
@@ -4716,9 +4678,9 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
   if self.document.isNil:
     return
 
-  # debugf"DocumentLoaded {self.id}, {self.usage}, '{self.document.filename}': targetSelections: {self.textEditorComponent.mTargetSelections}"
+  # debugf"DocumentLoaded {self.id}, {self.usage}, '{self.document.filename}': targetSelections: {self.textEditorComponent.targetSelections}"
 
-  if self.textEditorComponent.mTargetSelections.getSome(s):
+  if self.textEditorComponent.targetSelections.getSome(s):
     self.textEditorComponent.selections = s
     self.centerCursor(snap=true)
 
@@ -4738,7 +4700,7 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
     self.scrollToCursor()
 
   self.cursorHistories.setLen(0)
-  self.textEditorComponent.mTargetSelections = seq[Range[Point]].none
+  self.textEditorComponent.clearTargetSelections()
   self.updateTargetColumn(Last)
 
   if self.diffDocument.isNotNil:
@@ -4814,6 +4776,7 @@ import ui/widget_builder_text_document
 
 proc newTextEditor*(document: TextDocument, services: Services, initialSettings: JsonNodeEx): TextDocumentEditor =
   var self = createTextEditorInstance()
+  self.namespace = "editor.text"
   self.services = services
   self.platform = self.services.getService(PlatformService).get.platform
   self.configService = services.getService(ConfigService).get
@@ -4821,19 +4784,23 @@ proc newTextEditor*(document: TextDocument, services: Services, initialSettings:
   self.layout = services.getService(LayoutService).get
   self.vcs = self.services.getService(VCSService).get
   self.events = self.services.getService(EventHandlerService).get
-  self.plugins = self.services.getService(PluginService).get
   self.registers = self.services.getService(Registers).get
   self.workspace = self.services.getService(Workspace).get
   self.moveDatabase = self.services.getService(MoveDatabase).get
   self.eventBus = self.services.getService(EventService).get
   self.vfs = self.services.getService(VFSService).get.vfs
   self.vfs2 = self.services.getService(VFSService).get.vfs2
-  self.commands = self.services.getService(CommandServiceImpl).get
+  self.commands = self.services.getService(CommandService).get
   self.displayMap = DisplayMap.new()
   self.diffDisplayMap = DisplayMap.new()
   self.getStateImpl = textEditorGetStateJson
   self.restoreStateImpl = textEditorRestoreStateJson
   self.deinitImpl = textEditorDeinit
+  self.handleActionImpl = textEditorHandleAction
+  self.setDocumentImpl = textEditorSetDocument
+  self.getEventHandlersImpl = textEditorGetEventHandlers
+  self.handleActivateImpl = textEditorHandleActivate
+  self.handleDeactivateImpl = textEditorHandleDeactivate
   discard self.displayMap.overlay.onUpdated.subscribe proc(args: (OverlayMap, OverlayMapSnapshot, Patch[OverlayPoint], seq[int])) =
     if not self.textEditorComponent.isNil:
       self.textEditorComponent.onOverlaysChanged.invoke((args[3],))
@@ -4865,7 +4832,7 @@ proc newTextEditor*(document: TextDocument, services: Services, initialSettings:
 
   self.textEditorComponent = newTextEditorComponent()
   self.textEditorComponent.displayMap = self.displayMap
-  discard self.textEditorComponent.onSelectionsChanged.subscribe proc(args: auto) =
+  discard self.textEditorComponent.onSelectionsChanged2.subscribe proc(args: auto) =
     self.handleSelectionsChanged(args.old)
   self.addComponent(self.textEditorComponent)
 
@@ -4903,16 +4870,14 @@ proc newTextEditor*(document: TextDocument, services: Services, initialSettings:
   self.setDefaultMode(forceNotify = true)
 
   self.renderImpl = proc(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayFunction] =
-    self.createUI(builder)
+    self.TextDocumentEditor.createUI(builder)
 
+  self.getMemoryStatsImpl = textEditorGetMemoryStats
   return self
-
-method unregister*(self: TextDocumentEditor) =
-  self.editors.unregisterEditor(self)
 
 proc textEditorGetStateJson*(self: DocumentEditor): JsonNode =
   let self = self.TextDocumentEditor
-  let selection = if self.textEditorComponent.mTargetSelections.getSome(s) and s.len > 0:
+  let selection = if self.textEditorComponent.targetSelections.getSome(s) and s.len > 0:
     s.last.toSelection
   else:
     self.selection
@@ -4932,3 +4897,119 @@ proc textEditorRestoreStateJson*(self: DocumentEditor, state: JsonNode) =
       self.markDirty()
   except:
     log lvlError, &"Failed to restore state from json: {getCurrentExceptionMsg()}\n{state}"
+
+# todo: this currently causes some memory corruption, figure out why
+proc registerTextEditorCommands*() =
+  discard
+  # let cmds = getServiceChecked(CommandService)
+  # let editors = getServiceChecked(DocumentEditorService)
+  # proc doGetEditor(id: EditorIdNew): TextDocumentEditor =
+  #   echo "doGetEditor ", id
+  #   assert editors != nil
+  #   result = editors.getEditor(id).mapIt(it.TextDocumentEditor).get(nil)
+  #   assert result != nil
+
+  # cmds.registerActiveCommand "enable-auto-reload", proc(editor: EditorIdNew, enabled: bool) = enableAutoReload(doGetEditor(editor), enabled)
+  # cmds.registerActiveCommand "set-language", proc(editor: EditorIdNew, language: string = "") = setLanguage(doGetEditor(editor), language)
+  # cmds.registerActiveCommand "evaluate-expressions", proc(editor: EditorIdNew, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) = evaluateExpressions(doGetEditor(editor), selections, inclusiveEnd, prefix, suffix, addSelectionIndex)
+  # cmds.registerActiveCommand "set-default-scroll-behaviour", proc(editor: EditorIdNew, scrollBehaviour: ScrollBehaviour) = setDefaultScrollBehaviour(doGetEditor(editor), scrollBehaviour)
+  # cmds.registerActiveCommand "toggle-flag", proc(editor: EditorIdNew, key: string) = toggleFlag(doGetEditor(editor), key)
+  # cmds.registerActiveCommand "set-config", proc(editor: EditorIdNew, key: string, value: JsonNode) = setConfig(doGetEditor(editor), key, value)
+  # cmds.registerActiveCommand "get-config", proc(editor: EditorIdNew, key: string): JsonNode = getConfig(doGetEditor(editor), key)
+  # cmds.registerActiveCommand "remove-mode", proc(editor: EditorIdNew, mode: string) = removeMode(doGetEditor(editor), mode)
+  # cmds.registerActiveCommand "set-mode", proc(editor: EditorIdNew, mode: string, exclusive: bool = true, forceNotify: bool = false) = setMode(doGetEditor(editor), mode, exclusive, forceNotify)
+  # cmds.registerActiveCommand "set-default-mode", proc(editor: EditorIdNew, forceNotify: bool = false) = setDefaultMode(doGetEditor(editor), forceNotify)
+  # cmds.registerActiveCommand "select-parent-current-ts", proc(editor: EditorIdNew, includeAfter: bool = true) = selectParentCurrentTs(doGetEditor(editor), includeAfter)
+  # cmds.registerActiveCommand "auto-show-signature-help", proc(editor: EditorIdNew, insertedText: string) = autoShowSignatureHelp(doGetEditor(editor), insertedText)
+  # cmds.registerActiveCommand "insert-text", proc(editor: EditorIdNew, text: string, autoIndent: bool = true, autoClose: Option[bool] = bool.none) = insertText(doGetEditor(editor), text, autoIndent, autoClose)
+  # cmds.registerActiveCommand "undo", proc(editor: EditorIdNew, checkpoint: string = "word") = undo(doGetEditor(editor), checkpoint)
+  # cmds.registerActiveCommand "redo", proc(editor: EditorIdNew, checkpoint: string = "word") = redo(doGetEditor(editor), checkpoint)
+  # cmds.registerActiveCommand "undo-to-previous-sibling", proc(editor: EditorIdNew, redoUntilBranch: bool = false) = undoToPreviousSibling(doGetEditor(editor), redoUntilBranch)
+  # cmds.registerActiveCommand "undo-to-next-sibling", proc(editor: EditorIdNew, redoUntilBranch: bool = false) = undoToNextSibling(doGetEditor(editor), redoUntilBranch)
+  # cmds.registerActiveCommand "switch-undo-branch", proc(editor: EditorIdNew, targetNode: int32) = switchUndoBranch(doGetEditor(editor), targetNode)
+  # cmds.registerActiveCommand "add-next-checkpoint", proc(editor: EditorIdNew, checkpoint: string) = addNextCheckpoint(doGetEditor(editor), checkpoint)
+  # cmds.registerActiveCommand "copy", proc(editor: EditorIdNew, register: string = "", inclusiveEnd: bool = false) = copy(doGetEditor(editor), register, inclusiveEnd)
+  # cmds.registerActiveCommand "paste", proc(editor: EditorIdNew, registerName: string = "", inclusiveEnd: bool = false) = paste(doGetEditor(editor), registerName, inclusiveEnd)
+  # cmds.registerActiveCommand "paste-at", proc(editor: EditorIdNew, selections: seq[Selection], registerName: string = "", inclusiveEnd: bool = false) = pasteAt(doGetEditor(editor), selections, registerName, inclusiveEnd)
+  # cmds.registerActiveCommand "scroll-text", proc(editor: EditorIdNew, amount: float32) = scrollText(doGetEditor(editor), amount)
+  # cmds.registerActiveCommand "scroll-text-horizontal", proc(editor: EditorIdNew, amount: float32) = scrollTextHorizontal(doGetEditor(editor), amount)
+  # cmds.registerActiveCommand "scroll-lines", proc(editor: EditorIdNew, amount: int) = scrollLines(doGetEditor(editor), amount)
+  # cmds.registerActiveCommand "clear-overlays", proc(editor: EditorIdNew, overlayId: int = -1) = clearOverlays(doGetEditor(editor), overlayId)
+  # cmds.registerActiveCommand "add-overlay", proc(editor: EditorIdNew, selection: Selection, text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: overlay_map.OverlayRenderLocation = overlay_map.OverlayRenderLocation.Inline) = addOverlay(doGetEditor(editor), selection, text, id, scope, bias, renderId, location)
+  # cmds.registerActiveCommand "start-diff", proc(editor: EditorIdNew, diffTarget: string = "", gotoFirstDiff: bool = false, staged: bool = false) = startDiff(doGetEditor(editor), diffTarget, gotoFirstDiff, staged)
+  # cmds.registerActiveCommand "update-diff", proc(editor: EditorIdNew, gotoFirstDiff: bool = false) = updateDiff(doGetEditor(editor), gotoFirstDiff)
+  # cmds.registerActiveCommand "revert-selected", proc(editor: EditorIdNew, inclusiveEnd: bool = false) = revertSelected(doGetEditor(editor), inclusiveEnd)
+  # cmds.registerActiveCommand "stage-selected", proc(editor: EditorIdNew, inclusiveEnd: bool = false) = stageSelected(doGetEditor(editor), inclusiveEnd)
+  # cmds.registerActiveCommand "checkout-file", proc(editor: EditorIdNew, saveAfterwards: bool = false) = checkoutFile(doGetEditor(editor), saveAfterwards)
+  # cmds.registerActiveCommand "add-next-find-result-to-selection", proc(editor: EditorIdNew, includeAfter: bool = true, wrap: bool = true) = addNextFindResultToSelection(doGetEditor(editor), includeAfter, wrap)
+  # cmds.registerActiveCommand "add-prev-find-result-to-selection", proc(editor: EditorIdNew, includeAfter: bool = true, wrap: bool = true) = addPrevFindResultToSelection(doGetEditor(editor), includeAfter, wrap)
+  # cmds.registerActiveCommand "move-cursor-visual-line", proc(editor: EditorIdNew, distance: int, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true, includeAfter: bool = true) = moveCursorVisualLine(doGetEditor(editor), distance, cursor, all, wrap, includeAfter)
+  # cmds.registerActiveCommand "move-cursor-visual-page", proc(editor: EditorIdNew, distance: float, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true, includeAfter: bool = true) = moveCursorVisualPage(doGetEditor(editor), distance, cursor, all, wrap, includeAfter)
+  # cmds.registerActiveCommand "move-cursor-line-center", proc(editor: EditorIdNew, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) = moveCursorLineCenter(doGetEditor(editor), cursor, all)
+  # cmds.registerActiveCommand "move-cursor-center", proc(editor: EditorIdNew, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) = moveCursorCenter(doGetEditor(editor), cursor, all)
+  # cmds.registerActiveCommand "set-default-snap-behaviour", proc(editor: EditorIdNew, snapBehaviour: ScrollSnapBehaviour) = setDefaultSnapBehaviour(doGetEditor(editor), snapBehaviour)
+  # cmds.registerActiveCommand "set-cursor-scroll-offset", proc(editor: EditorIdNew, offset: float, cursor: SelectionCursor = SelectionCursor.Config) = setCursorScrollOffset(doGetEditor(editor), offset, cursor)
+  # cmds.registerActiveCommand "center-cursor", proc(editor: EditorIdNew, cursor: SelectionCursor = SelectionCursor.Config, snap: bool = false) = centerCursor(doGetEditor(editor), cursor, snap)
+  # cmds.registerActiveCommand "delete-move", proc(editor: EditorIdNew, move: string, updateTargetColumn: bool = true, options: JsonNode = newJObject()) = deleteMove(doGetEditor(editor), move, updateTargetColumn, options)
+  # cmds.registerActiveCommand "extend-select-move", proc(editor: EditorIdNew, move: string, inside: bool = false, which: SelectionCursor = SelectionCursor.Config, all: bool = true) = extendSelectMove(doGetEditor(editor), move, inside, which, all)
+  # cmds.registerActiveCommand "move", proc(editor: EditorIdNew, move: string, updateTargetColumn: bool = true, options: JsonNode = newJObject()) = move(doGetEditor(editor), move, updateTargetColumn, options)
+  # cmds.registerActiveCommand "set-search-query", proc(editor: EditorIdNew, query: string, escapeRegex: bool = false, prefix: string = "", suffix: string = "", useMoveSearch: bool = false): bool = setSearchQuery(doGetEditor(editor), query, escapeRegex, prefix, suffix, useMoveSearch)
+  # cmds.registerActiveCommand "open-search-bar", proc(editor: EditorIdNew, query: string = "", scrollToPreview: bool = true, select: bool = true, useMoveSearch: bool = false) = openSearchBar(doGetEditor(editor), query, scrollToPreview, select, useMoveSearch)
+  # cmds.registerActiveCommand "fuzzy-search-lines", proc(editor: EditorIdNew, minScore: float = 0.2, sort: bool = true) = fuzzySearchLines(doGetEditor(editor), minScore, sort)
+  # cmds.registerActiveCommand "goto-workspace-symbol", proc(editor: EditorIdNew, query: string = "") = gotoWorkspaceSymbol(doGetEditor(editor), query)
+  # cmds.registerActiveCommand "create-completion-from-snippet", proc(editor: EditorIdNew, snippet: JsonNode): Completion = createCompletionFromSnippet(doGetEditor(editor), snippet)
+  # cmds.registerActiveCommand "apply-completion", proc(editor: EditorIdNew, completion: JsonNode) = applyCompletion(doGetEditor(editor), completion)
+  # cmds.registerActiveCommand "set-read-only", proc(editor: EditorIdNew, readOnly: bool) = setReadOnly(doGetEditor(editor), readOnly)
+  # cmds.registerActiveCommand "set-file-read-only", proc(editor: EditorIdNew, readOnly: bool) = setFileReadOnly(doGetEditor(editor), readOnly)
+  # cmds.registerActiveCommand "enter-choose-cursor-mode", proc(editor: EditorIdNew, action: string) = enterChooseCursorMode(doGetEditor(editor), action)
+  # cmds.registerActiveCommand "set-custom-header", proc(editor: EditorIdNew, text: string) = setCustomHeader(doGetEditor(editor), text)
+
+  # cmds.registerActiveCommand "change-language", proc(editor: EditorIdNew) = changeLanguage(doGetEditor(editor))
+  # cmds.registerActiveCommand "select-prev", proc(editor: EditorIdNew) = selectPrev(doGetEditor(editor))
+  # cmds.registerActiveCommand "select-next", proc(editor: EditorIdNew) = selectNext(doGetEditor(editor))
+  # cmds.registerActiveCommand "print-treesitter-memory-usage", proc(editor: EditorIdNew) = printTreesitterMemoryUsage(doGetEditor(editor))
+  # cmds.registerActiveCommand "print-treesitter-tree", proc(editor: EditorIdNew) = printTreesitterTree(doGetEditor(editor))
+  # cmds.registerActiveCommand "print-treesitter-tree-under-cursor", proc(editor: EditorIdNew) = printTreesitterTreeUnderCursor(doGetEditor(editor))
+  # cmds.registerActiveCommand "auto-show-completions", proc(editor: EditorIdNew) = autoShowCompletions(doGetEditor(editor))
+  # cmds.registerActiveCommand "insert-raw", proc(editor: EditorIdNew) = insertRaw(doGetEditor(editor))
+  # cmds.registerActiveCommand "indent", proc(editor: EditorIdNew) = indent(doGetEditor(editor))
+  # cmds.registerActiveCommand "unindent", proc(editor: EditorIdNew) = unindent(doGetEditor(editor))
+  # cmds.registerActiveCommand "insert-indent", proc(editor: EditorIdNew) = insertIndent(doGetEditor(editor))
+  # cmds.registerActiveCommand "start-transaction", proc(editor: EditorIdNew) = startTransaction(doGetEditor(editor))
+  # cmds.registerActiveCommand "end-transaction", proc(editor: EditorIdNew) = endTransaction(doGetEditor(editor))
+  # cmds.registerActiveCommand "add-cursor-below", proc(editor: EditorIdNew) = addCursorBelow(doGetEditor(editor))
+  # cmds.registerActiveCommand "add-cursor-above", proc(editor: EditorIdNew) = addCursorAbove(doGetEditor(editor))
+  # cmds.registerActiveCommand "close-diff", proc(editor: EditorIdNew) = closeDiff(doGetEditor(editor))
+  # cmds.registerActiveCommand "rerender", proc(editor: EditorIdNew) = rerender(doGetEditor(editor))
+  # cmds.registerActiveCommand "stage-file", proc(editor: EditorIdNew) = stageFile(doGetEditor(editor))
+  # cmds.registerActiveCommand "format", proc(editor: EditorIdNew) = format(doGetEditor(editor))
+  # cmds.registerActiveCommand "add-file-vcs", proc(editor: EditorIdNew) = addFileVcs(doGetEditor(editor))
+  # cmds.registerActiveCommand "set-all-find-result-to-selection", proc(editor: EditorIdNew) = setAllFindResultToSelection(doGetEditor(editor))
+  # cmds.registerActiveCommand "reload-treesitter", proc(editor: EditorIdNew) = reloadTreesitter(doGetEditor(editor))
+  # cmds.registerActiveCommand "toggle-debug-moves", proc(editor: EditorIdNew) = toggleDebugMoves(doGetEditor(editor))
+  # cmds.registerActiveCommand "toggle-line-comment", proc(editor: EditorIdNew) = toggleLineComment(doGetEditor(editor))
+  # cmds.registerActiveCommand "goto-definition", proc(editor: EditorIdNew) = gotoDefinition(doGetEditor(editor))
+  # cmds.registerActiveCommand "goto-declaration", proc(editor: EditorIdNew) = gotoDeclaration(doGetEditor(editor))
+  # cmds.registerActiveCommand "goto-type-definition", proc(editor: EditorIdNew) = gotoTypeDefinition(doGetEditor(editor))
+  # cmds.registerActiveCommand "goto-implementation", proc(editor: EditorIdNew) = gotoImplementation(doGetEditor(editor))
+  # cmds.registerActiveCommand "goto-references", proc(editor: EditorIdNew) = gotoReferences(doGetEditor(editor))
+  # cmds.registerActiveCommand "switch-source-header", proc(editor: EditorIdNew) = switchSourceHeader(doGetEditor(editor))
+  # cmds.registerActiveCommand "get-completions", proc(editor: EditorIdNew) = getCompletions(doGetEditor(editor))
+  # cmds.registerActiveCommand "goto-symbol", proc(editor: EditorIdNew) = gotoSymbol(doGetEditor(editor))
+  # cmds.registerActiveCommand "rename", proc(editor: EditorIdNew) = rename(doGetEditor(editor))
+  # cmds.registerActiveCommand "hide-completions", proc(editor: EditorIdNew) = hideCompletions(doGetEditor(editor))
+  # cmds.registerActiveCommand "select-prev-completion", proc(editor: EditorIdNew) = selectPrevCompletion(doGetEditor(editor))
+  # cmds.registerActiveCommand "select-next-completion", proc(editor: EditorIdNew) = selectNextCompletion(doGetEditor(editor))
+  # cmds.registerActiveCommand "select-prev-completion-visual", proc(editor: EditorIdNew) = selectPrevCompletionVisual(doGetEditor(editor))
+  # cmds.registerActiveCommand "select-next-completion-visual", proc(editor: EditorIdNew) = selectNextCompletionVisual(doGetEditor(editor))
+  # cmds.registerActiveCommand "clear-tab-stops", proc(editor: EditorIdNew) = clearTabStops(doGetEditor(editor))
+  # cmds.registerActiveCommand "apply-selected-completion", proc(editor: EditorIdNew) = applySelectedCompletion(doGetEditor(editor))
+  # cmds.registerActiveCommand "show-signature-help", proc(editor: EditorIdNew) = showSignatureHelp(doGetEditor(editor))
+  # cmds.registerActiveCommand "toggle-signature-help", proc(editor: EditorIdNew) = toggleSignatureHelp(doGetEditor(editor))
+  # cmds.registerActiveCommand "hide-signature-help", proc(editor: EditorIdNew) = hideSignatureHelp(doGetEditor(editor))
+  # cmds.registerActiveCommand "select-code-action", proc(editor: EditorIdNew) = selectCodeAction(doGetEditor(editor))
+  # cmds.registerActiveCommand "clear-diagnostics", proc(editor: EditorIdNew) = clearDiagnostics(doGetEditor(editor))
+  # cmds.registerActiveCommand "update-inlay-hints", proc(editor: EditorIdNew) = updateInlayHints(doGetEditor(editor))
+  # cmds.registerActiveCommand "update-code-actions", proc(editor: EditorIdNew) = updateCodeActions(doGetEditor(editor))
+  # cmds.registerActiveCommand "lsp-info", proc(editor: EditorIdNew) = lspInfo(doGetEditor(editor))
+  # cmds.registerActiveCommand "cycle-selected-case", proc(editor: EditorIdNew) = cycleSelectedCase(doGetEditor(editor))

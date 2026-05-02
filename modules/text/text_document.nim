@@ -1,25 +1,22 @@
 import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, algorithm]
+import pkg/[chroma, results]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, rope_utils, jsonex]
-import language/[languages, language_server_base]
 import workspaces/[workspace]
-import document, document_editor, custom_treesitter, indent, config_provider, service, vfs, vfs_service, language_server_list
-import syntax_map
-import pkg/[chroma, results]
+import text/language/[languages, language_server_base]
+import text/[syntax_map, display_map, diff, custom_treesitter, indent]
+import document, document_editor, config_provider, service, vfs, vfs_service, language_server_list
 import vcs/vcs, event_service, toast
 import language_server_component, config_component, move_database, move_component, text_component, treesitter_component,
   language_component, formatting_component
-import display_map
 
 include dynlib_export
-
-import diff
 
 import nimsumtree/[buffer, clock, static_array, rope, clone]
 import nimsumtree/sumtree except Cursor, mapIt
 
-from language/lsp_types as lsp_types import nil
+from text/language/lsp_types as lsp_types import nil
 export document, document_editor, id
 
 logCategory "text-document"
@@ -157,8 +154,8 @@ type
 
   TextDocument* = ref object of Document
     languageComponent*: LanguageComponent
-    textComponent*: TextComponentImpl
-    treesitterComponent*: TreesitterComponentImpl
+    textComponent*: TextComponent
+    treesitterComponent*: TreesitterComponent
     lsComponent*: LanguageServerComponent
     formattingComponent: FormattingComponent
     services: Services
@@ -181,9 +178,9 @@ type
     onEdit*: Event[tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]]
     onOperation*: Event[tuple[document: TextDocument, op: buffer.Operation]]
     onBufferChanged*: Event[tuple[document: TextDocument]]
-    onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
-    onLanguageServerDetached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
-    onDiagnostics*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
+    onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServerDynamic]]
+    onLanguageServerDetached*: Event[tuple[document: TextDocument, languageServer: LanguageServerDynamic]]
+    onDiagnostics*: Event[tuple[document: TextDocument, languageServer: LanguageServerDynamic]]
     onLanguageChanged*: Event[tuple[document: TextDocument]]
 
     undoSelections*: Table[TransactionId, Selections]
@@ -201,7 +198,7 @@ type
     diagnosticsPerLS*: seq[DiagnosticsData] ## Diagnostics per language server
     languageServerDiagnosticsIndex*: Table[string, int] ## Diagnostics per language server
     diagnosticEndPoints*: seq[DiagnosticEndPoint]
-    onDiagnosticsHandles: Table[string, (LanguageServer, Id)]
+    onDiagnosticsHandles: Table[string, (LanguageServerDynamic, Id)]
     diagnosticSnapshots: seq[BufferSnapshot] # todo: reset at appropriate times
 
     checkpoints: Table[TransactionId, seq[string]]
@@ -214,7 +211,7 @@ type
     currentDisplayMap: DisplayMap
 
   DiagnosticsData* = object
-    languageServer*: LanguageServer
+    languageServer*: LanguageServerDynamic
     currentDiagnostics*: seq[Diagnostic]
     currentDiagnosticsAnchors: seq[Range[Anchor]]
     diagnosticsPerLine*: Table[int, seq[int]]
@@ -234,31 +231,47 @@ proc recordSnapshotForDiagnostics(self: TextDocument)
 proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
 proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.}
 proc enableAutoReload*(self: TextDocument, enabled: bool)
-proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageServer)
-proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageServer)
+proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageServerDynamic)
+proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageServerDynamic)
 proc addNextCheckpoint*(self: TextDocument, checkpoint: string)
 proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, content: sink S)
+proc textDocumentDeinit(self: Document)
+proc textDocumentSave(self: Document, filename: string = ""): Future[void] {.async: (raises: []).}
+proc textDocumentLoad(self: Document, filename: string = "", temp: bool = false)
 
 func buffer*(self: TextDocument): var Buffer = self.textComponent.buffer
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
 
-method getStatisticsString*(self: TextDocument): string =
+proc textDocumentGetMemoryStats(self: Document): JsonNode {.gcsafe, raises: [].} =
+  let self = self.TextDocument
   try:
     let visibleTextStats = stats(self.buffer.snapshot.visibleText.tree)
     let deletedTextStats = stats(self.buffer.snapshot.deletedText.tree)
     let fragmentStats = stats(self.buffer.snapshot.fragments)
     let insertionStats = stats(self.buffer.snapshot.insertions)
     let undoStats = stats(self.buffer.snapshot.undoMap.tree)
+    var undoTreeLen = 0
+    var undoTreeSize = 0
+    for node in self.buffer.history.undoTree.nodes:
+      undoTreeSize += sizeof(UndoTreeNode)
+      undoTreeSize += sizeof(node.transaction.editIds.len * sizeof(Lamport))
+      undoTreeLen += 1
 
-    result.add &"Filename: {self.filename}\n"
-    result.add &"Lines: {self.numLines}\n"
-    result.add &"VisibleText: {visibleTextStats}\n"
-    result.add &"DeletedText: {deletedTextStats}\n"
-    result.add &"Fragment: {fragmentStats}\n"
-    result.add &"Insertion: {insertionStats}\n"
-    result.add &"Undo: {undoStats}\n"
+    result = %*{
+      "Filename": self.filename,
+      "Lines": self.numLines,
+      "VisibleText": visibleTextStats,
+      "DeletedText": deletedTextStats,
+      "Fragment": fragmentStats,
+      "Insertion": insertionStats,
+      "Undo": undoStats,
+      "Undo Tree": %*{
+        "nodes": undoTreeLen,
+        "bytes": undoTreeSize,
+      },
+    }
   except:
-    discard
+    return newJObject()
 
 proc tabWidth*(self: TextDocument): int
 
@@ -354,7 +367,7 @@ proc `content=`*(self: TextDocument, value: sink string) =
   let invalidUtf8Index = value.validateUtf8
   if invalidUtf8Index >= 0:
     log lvlWarn, &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
-    self.textComponent.initBuffer(content = &"Invalid utf-8 byte at {invalidUtf8Index}", remoteId = getNextBufferId())
+    self.textComponent.initBuffer(0.ReplicaId, content = Rope.new(&"Invalid utf-8 byte at {invalidUtf8Index}"), remoteId = getNextBufferId())
 
   else:
     var index = 0
@@ -363,7 +376,7 @@ proc `content=`*(self: TextDocument, value: sink string) =
       log lvlInfo, &"[content=] Skipping utf8 bom"
       index = 3
 
-    self.textComponent.initBuffer(content = value[index..^1], remoteId = getNextBufferId())
+    self.textComponent.initBuffer(0.ReplicaId, content = Rope.new(value[index..^1]), remoteId = getNextBufferId())
 
   self.treesitterComponent.syntaxMap.resetTree(self.rope)
 
@@ -501,7 +514,7 @@ proc replaceAll*(self: TextDocument, value: sink string) =
 
 proc rebuildBuffer*(self: TextDocument, replicaId: ReplicaId, bufferId: BufferId, content: string) =
   self.content = content
-  self.textComponent.initBuffer(replicaId, content, bufferId)
+  self.textComponent.initBuffer(replicaId, Rope.new(content), bufferId)
 
   self.notifyRequestRerender()
 
@@ -613,7 +626,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   let prevLanguageId = self.languageId
   let pathOverride = self.settings.treesitter.path.get()
   let treesitterLanguageName = self.settings.treesitter.language.get().get(self.languageId)
-  var language = await getTreesitterLanguage(self.vfs, treesitterLanguageName, pathOverride)
+  var language = await getTreesitterLanguage(self.vfs2, treesitterLanguageName, pathOverride)
   if not self.isInitialized:
     return
 
@@ -629,7 +642,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   # todo: this awaits, check if still current request afterwards
   # todo: allow specifying queries in home and workspace config
   let highlightQueryPath = &"app://languages/{treesitterLanguageName}/queries/highlights.scm"
-  let highlightQuery = language.get.queryFile(self.vfs, "highlights", highlightQueryPath).await
+  let highlightQuery = language.get.queryFile(self.vfs2, "highlights", highlightQueryPath).await
   if not self.isInitialized:
     return
   if highlightQuery.isSome:
@@ -639,7 +652,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     self.treesitterComponent.highlightQuery = highlightQuery.get
 
   let textObjectsQueryPath = &"app://languages/{treesitterLanguageName}/queries/textobjects.scm"
-  let textObjectsQuery = language.get.queryFile(self.vfs, "textobjects", textObjectsQueryPath).await
+  let textObjectsQuery = language.get.queryFile(self.vfs2, "textobjects", textObjectsQueryPath).await
   if not self.isInitialized:
     return
   if textObjectsQuery.isSome:
@@ -649,7 +662,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     self.treesitterComponent.textObjectsQuery = textObjectsQuery.get
 
   let tagsQueryPath = &"app://languages/{treesitterLanguageName}/queries/tags.scm"
-  let tagsQuery = language.get.queryFile(self.vfs, "tags", tagsQueryPath).await
+  let tagsQuery = language.get.queryFile(self.vfs2, "tags", tagsQueryPath).await
   if not self.isInitialized:
     return
   if tagsQuery.isSome:
@@ -662,7 +675,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     return
 
   let errorQueryPath = &"app://languages/{treesitterLanguageName}/queries/errors.scm"
-  var errorQuery = language.get.queryFile(self.vfs, "error", errorQueryPath, cacheOnFail = false).await
+  var errorQuery = language.get.queryFile(self.vfs2, "error", errorQueryPath, cacheOnFail = false).await
   if not self.isInitialized:
     return
   if errorQuery.isSome:
@@ -681,7 +694,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     return
 
   let injectionQueryPath = &"app://languages/{treesitterLanguageName}/queries/injections.scm"
-  let injectionQuery = language.get.queryFile(self.vfs, "injections", injectionQueryPath, cacheOnFail = false).await
+  let injectionQuery = language.get.queryFile(self.vfs2, "injections", injectionQueryPath, cacheOnFail = false).await
   if not self.isInitialized:
     return
   if prevLanguageId != self.languageId:
@@ -700,7 +713,7 @@ proc tsQuery*(self: TextDocument, name: string): Future[Option[TSQuery]] {.async
   let prevLanguageId = self.languageId
   let treesitterLanguageName = self.settings.treesitter.language.get().get(self.languageId)
   let path = &"app://languages/{treesitterLanguageName}/queries/{name}.scm"
-  let query = self.tsLanguage.queryFile(self.vfs, name, path).await
+  let query = self.tsLanguage.queryFile(self.vfs2, name, path).await
   if prevLanguageId != self.languageId:
     return TSQuery.none
 
@@ -787,7 +800,7 @@ proc newTextDocument*(
     content: string = "",
     app: bool = false,
     language: Option[string] = string.none,
-    languageServer: Option[LanguageServer] = LanguageServer.none,
+    languageServer: Option[LanguageServerDynamic] = LanguageServerDynamic.none,
     load: bool = false,
     createLanguageServer: bool = true,
     id = Id.none,
@@ -802,7 +815,6 @@ proc newTextDocument*(
   else:
     self.uniqueId = newId()
   self.isInitialized = true
-  self.appFile = app
   self.workspace = services.getService(Workspace).get
   self.services = services
   self.configService = services.getService(ConfigService).get
@@ -815,6 +827,10 @@ proc newTextDocument*(
   self.filename = self.vfs2.normalize(filename)
   self.isBackedByFile = load
   self.requiresLoad = load
+  self.deinitImpl = textDocumentDeinit
+  self.saveImpl = textDocumentSave
+  self.loadImpl = textDocumentLoad
+  self.getMemoryStatsImpl = textDocumentGetMemoryStats
 
   assert initialSettings != nil
   self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}", settings = initialSettings)
@@ -827,26 +843,26 @@ proc newTextDocument*(
     c.owner.TextDocument.handleLanguageChanged()
 
   self.textComponent = newTextComponent()
-  self.textComponent.editString = proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string],
-      notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].} =
+  self.textComponent.editString = proc(selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[string],
+      notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.gcsafe, raises: [].} =
     if checkpoint != "":
       self.addNextCheckpoint(checkpoint)
-    self.edit(selections, oldSelections, texts, notify, record, inclusiveEnd)
-  self.textComponent.editRope = proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[Rope],
-      notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].} =
+    self.edit(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd).mapIt(it.toRange)
+  self.textComponent.editRope = proc(selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[Rope],
+      notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.gcsafe, raises: [].} =
     if checkpoint != "":
       self.addNextCheckpoint(checkpoint)
-    self.edit(selections, oldSelections, texts, notify, record, inclusiveEnd)
-  self.textComponent.editRopeSlice = proc(selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[RopeSlice[int]],
-      notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Selection] {.gcsafe, raises: [].} =
+    self.edit(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd).mapIt(it.toRange)
+  self.textComponent.editRopeSlice = proc(selections: openArray[Range[Point]], oldSelections: openArray[Range[Point]], texts: openArray[RopeSlice[int]],
+      notify: bool = true, record: bool = true, inclusiveEnd: bool = false, checkpoint: string = ""): seq[Range[Point]] {.gcsafe, raises: [].} =
     if checkpoint != "":
       self.addNextCheckpoint(checkpoint)
-    self.edit(selections, oldSelections, texts, notify, record, inclusiveEnd)
+    self.edit(selections.mapIt(it.toSelection), oldSelections.mapIt(it.toSelection), texts, notify, record, inclusiveEnd).mapIt(it.toRange)
   self.textComponent.setFileAndContentImpl = proc(filename: string, content: sink Rope) =
     self.setFileAndContent(filename, content)
   self.addComponent(self.textComponent)
 
-  self.treesitterComponent = newTreesitterComponent(self.vfs)
+  self.treesitterComponent = newTreesitterComponent(self.vfs2)
   self.addComponent(self.treesitterComponent)
   discard self.treesitterComponent.syntaxMap.onParsed.subscribe(proc() =
     self.notifyRequestRerender()
@@ -869,9 +885,9 @@ proc newTextDocument*(
 
   self.lsComponent = newLanguageServerComponent(self.languageServerList)
   discard self.lsComponent.onLanguageServerAttached.subscribe proc(arg: auto) {.gcsafe, raises: [].} =
-    self.handleLanguageServerAttached(arg[1])
+    self.handleLanguageServerAttached(arg[1].LanguageServerDynamic)
   discard self.lsComponent.onLanguageServerDetached.subscribe proc(arg: auto) {.gcsafe, raises: [].} =
-    self.handleLanguageServerDetached(arg[1])
+    self.handleLanguageServerDetached(arg[1].LanguageServerDynamic)
   self.addComponent(self.lsComponent)
 
   self.content = content
@@ -882,7 +898,9 @@ proc newTextDocument*(
   self.editors.registerDocument(self)
   self.eventBus.emit(&"document/{self.id}/registered", $self.id)
 
-method deinit*(self: TextDocument) =
+proc textDocumentDeinit(self: Document) =
+  let self = self.TextDocument
+
   # debugf"[deinit] Destroying text document '{self.filename}'"
   if not self.isInitialized:
     return
@@ -900,9 +918,6 @@ method deinit*(self: TextDocument) =
     ls.onDiagnostics.unsubscribe(id)
 
   self[] = default(typeof(self[]))
-
-method `$`*(self: TextDocument): string =
-  return self.filename
 
 proc addFileVcsAsync*(self: TextDocument, prompt: bool = true) {.async.}
 
@@ -962,7 +977,8 @@ proc saveAsync*(self: TextDocument) {.async.} =
   except IOError as e:
     log lvlError, &"Failed to save file '{self.filename}': {e.msg}"
 
-method save*(self: TextDocument, filename: string = "", app: bool = false): Future[void] {.async: (raises: []).} =
+proc textDocumentSave(self: Document, filename: string = ""): Future[void] {.async: (raises: []).} =
+  let self = self.TextDocument
   self.filename = if filename.len > 0: self.vfs2.normalize(filename) else: self.filename
 
   if self.filename.len == 0:
@@ -971,8 +987,6 @@ method save*(self: TextDocument, filename: string = "", app: bool = false): Futu
 
   if self.staged:
     return
-
-  self.appFile = app
 
   try:
     await self.saveAsync()
@@ -1182,7 +1196,8 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
   self.onDocumentLoaded.invoke self
   self.eventBus.emit(&"document/{self.id}/loaded", $self.id)
 
-method load*(self: TextDocument, filename: string = "", temp: bool = false) =
+proc textDocumentLoad(self: Document, filename: string = "", temp: bool = false) =
+  let self = self.TextDocument
   let filename = if filename.len > 0: self.vfs2.normalize(filename) else: self.filename
   if filename.len == 0:
     log lvlError, &"save: Missing filename"
@@ -1244,7 +1259,7 @@ proc resolveDiagnosticAnchors*(self: TextDocument) =
     diagnostics.resolveDiagnosticAnchors(self.buffer.snapshot.clone())
   self.updateDiagnosticEndPoints()
 
-proc setCurrentDiagnostics(self: TextDocument, languageServer: LanguageServer, diagnostics: openArray[lsp_types.Diagnostic], snapshot: sink Option[BufferSnapshot]) =
+proc setCurrentDiagnostics(self: TextDocument, languageServer: LanguageServerDynamic, diagnostics: openArray[lsp_types.Diagnostic], snapshot: sink Option[BufferSnapshot]) =
 
   let snapshot = snapshot.take(self.buffer.snapshot.clone())
 
@@ -1318,7 +1333,7 @@ proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
   #   self.lastDiagnosticVersion = snapshot.version
   #   self.setCurrentDiagnostics(ls, diagnostics.result, snapshot.some)
 
-proc handleDiagnosticsReceived(self: TextDocument, languageServer: LanguageServer, diagnostics: lsp_types.PublicDiagnosticsParams) =
+proc handleDiagnosticsReceived(self: TextDocument, languageServer: LanguageServerDynamic, diagnostics: lsp_types.PublicDiagnosticsParams) =
   if not self.settings.diagnostics.enable.get():
     self.clearDiagnostics(languageServer.name)
     return
@@ -1352,13 +1367,13 @@ proc handleDiagnosticsReceived(self: TextDocument, languageServer: LanguageServe
 
   self.setCurrentDiagnostics(languageServer, diagnostics.diagnostics, snapshot)
 
-proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
+proc addLanguageServer*(self: TextDocument, languageServer: LanguageServerDynamic): bool =
   self.lsComponent.addLanguageServer(languageServer)
 
-proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
+proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServerDynamic): bool =
   self.lsComponent.removeLanguageServer(languageServer)
 
-proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageServer) =
+proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageServerDynamic) =
   languageServer.connect(self)
 
   # todo: only do that if language server supports sending diagnostics
@@ -1372,20 +1387,20 @@ proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageSe
     self.completionTriggerCharacters.incl ls.getCompletionTriggerChars()
   self.onLanguageServerAttached.invoke (self, languageServer)
 
-proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageServer) =
+proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageServerDynamic) =
   if languageServer.name in self.onDiagnosticsHandles:
     languageServer.onDiagnostics.unsubscribe(self.onDiagnosticsHandles[languageServer.name][1])
     self.onDiagnosticsHandles.del(languageServer.name)
 
   self.onLanguageServerDetached.invoke (self, languageServer)
 
-proc hasLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
+proc hasLanguageServer*(self: TextDocument, languageServer: LanguageServerDynamic): bool =
   self.languageServerList.languageServers.find(languageServer) != -1
 
-proc getLanguageServer*(self: TextDocument): Option[LanguageServer] =
+proc getLanguageServer*(self: TextDocument): Option[LanguageServerDynamic] =
   if self.languageServerList.languageServers.len > 0:
-    return self.languageServerList.LanguageServer.some
-  return LanguageServer.none
+    return self.languageServerList.LanguageServerDynamic.some
+  return LanguageServerDynamic.none
 
 proc clearDiagnostics*(self: TextDocument, languageServerName: string = "") =
   if languageServerName == "":

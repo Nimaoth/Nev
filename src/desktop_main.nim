@@ -238,7 +238,6 @@ when enableGui:
 # Do this after every import
 # Don't remove those imports, they are needed by generatePluginBindings
 {.push warning[UnusedImport]:off.}
-import text/text_editor
 import plugin_service
 import selector_popup, layout/layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, toast
 import language_server_dynamic
@@ -246,7 +245,7 @@ import scripting/expose
 import config_provider, event_service
 import vcs/vcs_api
 import collab
-import text/[text_editor, text_document]
+import inlay_hint_component, treesitter_component # todo: make these modules
 {.pop.}
 
 import "../modules/stats"

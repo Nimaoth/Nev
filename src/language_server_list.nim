@@ -5,6 +5,8 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 import text/language/[language_server_base, lsp_types]
 import document, config_provider, language_server_dynamic
 
+export language_server_dynamic
+
 logCategory "language-server-list"
 
 declareSettings LspMergeSettings, "lsp-merge":
@@ -17,7 +19,7 @@ type
   LanguageServerList* = ref object of LanguageServerDynamic
     config: ConfigStore
     mergeConfig: LspMergeSettings
-    languageServers*: seq[LanguageServer]
+    languageServers*: seq[LanguageServerDynamic]
     timeout: int
 
 proc updateRefetchWorkspaceSymbolsOnQueryChange*(self: LanguageServerList) =
@@ -28,6 +30,9 @@ proc updateRefetchWorkspaceSymbolsOnQueryChange*(self: LanguageServerList) =
       break
 
 proc addLanguageServer*(self: LanguageServerList, languageServer: LanguageServer): bool =
+  if not (languageServer of LanguageServerDynamic):
+    return false
+  let languageServer = languageServer.LanguageServerDynamic
   if languageServer in self.languageServers:
     return false
 
@@ -40,6 +45,9 @@ proc addLanguageServer*(self: LanguageServerList, languageServer: LanguageServer
   return true
 
 proc removeLanguageServer*(self: LanguageServerList, languageServer: LanguageServer): bool =
+  if not (languageServer of LanguageServerDynamic):
+    return false
+  let languageServer = languageServer.LanguageServerDynamic
   let index = self.languageServers.find(languageServer)
   if index != -1:
     self.languageServers.removeShift(index)

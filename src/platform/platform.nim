@@ -197,10 +197,10 @@ proc getClipboardText*(self: Platform): Future[Option[string]] {.async.} =
 
 include dynlib_export
 
-var texturesToUpload {.apprtl.}: seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.ColorRGBX], dynamic: bool]]
-var texturesToDelete {.apprtl.}: seq[TextureId]
-var texturesLock* {.apprtl.}: Lock
-var reserveTextureImpl* {.apprtl.}: proc(): TextureId {.gcsafe, raises: [].}
+var texturesToUpload {.apprtlvar.}: seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.ColorRGBX], dynamic: bool]]
+var texturesToDelete {.apprtlvar.}: seq[TextureId]
+var texturesLock* {.apprtlvar.}: Lock
+var reserveTextureImpl* {.apprtlvar.}: proc(): TextureId {.gcsafe, raises: [].}
 
 when implModule:
   texturesLock.initLock()

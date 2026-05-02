@@ -1,8 +1,10 @@
 import std/[options, tables]
+import nimsumtree/[arc]
 import misc/[custom_async]
 import component
 import text/treesitter_types
 import text/syntax_map
+import vfs
 
 export component
 export treesitter_types
@@ -21,31 +23,34 @@ type
     syntaxMap*: SyntaxMap
 
 # DLL API
-var TreesitterComponentId* {.apprtl.}: ComponentTypeId
 
-proc getTreesitterComponent*(self: ComponentOwner): Option[TreesitterComponent] {.apprtl, gcsafe, raises: [].}
-proc treesitterComponentQuery*(self: TreesitterComponent, name: string, language: string = ""): Future[Option[TSQuery]] {.apprtl, gcsafe, raises: [].}
+{.push apprtl, gcsafe, raises: [].}
+proc newTreesitterComponent*(vfs: Arc[VFS2]): TreesitterComponent
+proc getTreesitterComponent*(self: ComponentOwner): Option[TreesitterComponent]
+proc treesitterComponentQuery*(self: TreesitterComponent, name: string, language: string = ""): Future[Option[TSQuery]]
+proc treesitterComponentClear(self: TreeSitterComponent)
+{.pop.}
 
 # Nice wrappers
 proc query*(self: TreesitterComponent, name: string, language: string = ""): Future[Option[TSQuery]] = self.treesitterComponentQuery(name, language)
+proc clear*(self: TreeSitterComponent) = treesitterComponentClear(self)
 
 # Implementation
 when implModule:
   import std/[strformat]
   import misc/[util, custom_logger]
   import text/custom_treesitter
-  import vfs
 
   logCategory "treesitter-component"
 
-  TreesitterComponentId = componentGenerateTypeId()
+  let TreesitterComponentId = componentGenerateTypeId()
 
   type
     TreesitterComponentImpl* = ref object of TreesitterComponent
-      vfs: VFS
+      vfs: Arc[VFS2]
       requestedLanguages: seq[string]
 
-  proc clear*(self: TreeSitterComponent) =
+  proc treesitterComponentClear(self: TreeSitterComponent) =
     let self = self.TreesitterComponentImpl
     self.tsQueries.clear()
     self.highlightQuery = nil
@@ -76,7 +81,7 @@ when implModule:
     # Retrigger parsing now that the language (and its queries) are available
     self.syntaxMap.reparse()
 
-  proc newTreesitterComponent*(vfs: VFS): TreesitterComponentImpl =
+  proc newTreesitterComponent*(vfs: Arc[VFS2]): TreesitterComponent =
     let sm = newSyntaxMap()
     let comp = TreesitterComponentImpl(
       typeId: TreesitterComponentId,

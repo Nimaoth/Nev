@@ -10,11 +10,14 @@ type LanguageComponent* = ref object of Component
   mLanguageId: string
   onLanguageChanged*: Event[LanguageComponent]
 
-var LanguageComponentId* {.apprtl.}: ComponentTypeId
+var LanguageComponentId* {.apprtlvar.}: ComponentTypeId
 
 # DLL API
-proc languageComponentLanguageId*(self: LanguageComponent): string {.apprtl, gcsafe, raises: [].}
-proc languageComponentSetLanguageId*(self: LanguageComponent, languageId: string) {.apprtl, gcsafe, raises: [].}
+{.push apprtl, gcsafe, raises: [].}
+proc newLanguageComponent*(languageId: string = ""): LanguageComponent
+proc languageComponentLanguageId*(self: LanguageComponent): string
+proc languageComponentSetLanguageId*(self: LanguageComponent, languageId: string)
+{.pop.}
 
 # Nice wrappers
 proc languageId*(self: LanguageComponent): string {.inline.} = self.languageComponentLanguageId()

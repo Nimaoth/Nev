@@ -1,4 +1,5 @@
 import std/[options]
+import text/[display_map, overlay_map]
 import config_provider
 import component
 
@@ -14,14 +15,18 @@ type InlayHintComponent* = ref object of Component
   settings*: InlayHintSettings
 
 # DLL API
-var InlayHintComponentId* {.apprtl.}: ComponentTypeId
 
-proc inlayHintComponentUpdateInlayHints(self: InlayHintComponent, now: bool = false) {.apprtl, gcsafe, raises: [].}
+{.push apprtl, gcsafe, raises: [].}
+proc newInlayHintComponent*(settings: InlayHintSettings, displayMap: DisplayMap): InlayHintComponent
+proc inlayHintComponentUpdateInlayHints(self: InlayHintComponent, now: bool = false)
+proc inlayHintComponentPreRender(self: InlayHintComponent)
 
-proc getInlayHintComponent*(self: ComponentOwner): Option[InlayHintComponent] {.apprtl, gcsafe, raises: [].}
+proc getInlayHintComponent*(self: ComponentOwner): Option[InlayHintComponent]
+{.pop.}
 
 # Nice wrappers
 proc updateInlayHints*(self: InlayHintComponent, now: bool = false) {.inline.} = inlayHintComponentUpdateInlayHints(self, now)
+proc preRender*(self: InlayHintComponent) = inlayHintComponentPreRender(self)
 
 # Implementation
 when implModule:
@@ -30,12 +35,11 @@ when implModule:
   import misc/[util, custom_logger, rope_utils, delayed_task, id, event, custom_async, response]
   import document_editor, document
   import text/language/language_server_base
-  import text/[display_map, overlay_map]
   import language_server_component, text_editor_component, text_component
 
   logCategory "inlay-hint-component"
 
-  InlayHintComponentId = componentGenerateTypeId()
+  var InlayHintComponentId = componentGenerateTypeId()
 
   type InlayHintComponentImpl* = ref object of InlayHintComponent
     displayMap*: DisplayMap
@@ -47,7 +51,7 @@ when implModule:
     documentChangedHandle: Id
     overlayId: Option[int]
 
-  proc getInlayHintComponent*(self: ComponentOwner): Option[InlayHintComponent] {.gcsafe, raises: [].} =
+  proc getInlayHintComponent*(self: ComponentOwner): Option[InlayHintComponent] =
     return self.getComponent(InlayHintComponentId).mapIt(it.InlayHintComponent)
 
   proc handleDocumentChanged(self: InlayHintComponentImpl, old: Document) =
@@ -58,7 +62,7 @@ when implModule:
       return
     self.documentChangedHandle = self.owner.DocumentEditor.onDocumentChanged.subscribe proc(arg: auto) {.closure, gcsafe, raises: [].} = self.handleDocumentChanged(arg.old)
 
-  proc newInlayHintComponent*(settings: InlayHintSettings, displayMap: DisplayMap): InlayHintComponentImpl =
+  proc newInlayHintComponent*(settings: InlayHintSettings, displayMap: DisplayMap): InlayHintComponent =
     return InlayHintComponentImpl(
       typeId: InlayHintComponentId,
       settings: settings,
@@ -161,7 +165,7 @@ when implModule:
       else:
         self.inlayHintsTask.schedule()
 
-  proc preRender*(self: InlayHintComponent) =
+  proc inlayHintComponentPreRender(self: InlayHintComponent) =
     let self = self.InlayHintComponentImpl
     let editor = self.owner.DocumentEditor
     let document = editor.currentDocument

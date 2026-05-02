@@ -1,4 +1,4 @@
-#use status_line
+#use status_line text_editor_component
 import std/[options, json]
 import misc/[custom_async, id]
 import service, view, popup, selector_popup_builder, dynamic_view
@@ -910,7 +910,7 @@ when implModule:
 
     return EditorId.none
 
-  proc tryOpenExisting*(self: LayoutService, path: string, appFile: bool = false, slot: string = ""): Option[DocumentEditor] =
+  proc tryOpenExisting*(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] =
     let self = self.LayoutServiceImpl
     # debugf"tryOpenExisting '{path}'"
     for i, view in self.mAllViews:
@@ -940,7 +940,7 @@ when implModule:
     let path = self.vfs2.normalize(path)
 
     log lvlInfo, fmt"[openFile] Open file '{path}'"
-    if self.tryOpenExisting(path, false, slot = slot).getSome(ed):
+    if self.tryOpenExisting(path, slot = slot).getSome(ed):
       log lvlInfo, fmt"[openFile] found existing editor"
       return ed.some
 
