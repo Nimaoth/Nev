@@ -1,6 +1,6 @@
 import std/[strformat, strutils, os]
 import misc/[custom_unicode, custom_logger]
-import document, ui/node, view, theme, config_provider, layout/layout
+import document, ui/node, view, theme, config_provider
 import chroma
 import service
 
@@ -321,6 +321,8 @@ proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: 
     else:
       builder.panel(textFlags, text = text, textColor = color, fontScale = fontScale):
         result = currentNode
+
+import layout/layout
 
 proc renderView*(self: View, builder: UINodeBuilder,
     body: proc(): seq[OverlayFunction] {.gcsafe, raises: [].},
