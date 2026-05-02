@@ -68,13 +68,13 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
 proc exitCommandLine*(self: CommandService) {.expose("commands").} =
   let self = self.CommandServiceImpl
   let editor = self.commandLineEditor
+  if editor.currentDocument.getTextComponent().getSome(text):
+    text.content = ""
   if editor.getDecorationComponent().getSome(decos):
     if self.prefixOverlayId.isSome:
       decos.clearOverlays(self.prefixOverlayId.get)
       decos.releaseOverlayId(self.prefixOverlayId.get)
       self.prefixOverlayId = int.none
-  if editor.currentDocument.getTextComponent().getSome(text):
-    text.content = ""
   editor.getCommandComponent().get.executeCommand("hide-completions")
   editor.config.set("text.disable-scrolling", true)
   editor.config.set("ui.line-numbers", "none")
