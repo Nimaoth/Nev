@@ -250,7 +250,8 @@ import inlay_hint_component, treesitter_component # todo: make these modules
 
 import "../modules/stats"
 
-defineSetAllDefaultSettings()
+when not defined(useDynlib):
+  defineSetAllDefaultSettings()
 
 # Initialize renderer
 var plat: Platform = nil
