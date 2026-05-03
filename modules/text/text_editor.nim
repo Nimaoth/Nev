@@ -4439,7 +4439,7 @@ proc cycleSelectedCase*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.markDirty()
 
 genDispatcher("editor.text")
-# addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
+addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] =
   # debugf"[textedit] handleActionInternal {action}, '{args}'"

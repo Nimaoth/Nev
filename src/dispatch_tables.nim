@@ -1,6 +1,8 @@
 import std/[json, tables]
 import misc/[wrap]
 
+include dynlib_export
+
 export JsonCallError
 
 type
@@ -17,8 +19,8 @@ type
     functions*: Table[string, ExposedFunction]
     global*: bool
 
-var globalDispatchTables*: seq[DispatchTable] = @[]
-var activeDispatchTables*: seq[DispatchTable] = @[]
+var globalDispatchTables* {.apprtlvar.}: seq[DispatchTable] = @[]
+var activeDispatchTables* {.apprtlvar.}: seq[DispatchTable] = @[]
 
 proc addGlobalDispatchTable*(namespace: string, functions: openArray[ExposedFunction]) =
   var table = DispatchTable(namespace: namespace)
