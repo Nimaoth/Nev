@@ -624,7 +624,6 @@ proc textEditorSetDocument(self: DocumentEditor, document: Document) {.gcsafe, r
     return
 
   let oldDocument = self.document
-  self.textEditorComponent.setDocument(document)
   # logScope lvlInfo, &"[setDocument] ({self.id}): '{document.filename}'"
 
   if self.completionEngine.isNotNil:
@@ -633,6 +632,7 @@ proc textEditorSetDocument(self: DocumentEditor, document: Document) {.gcsafe, r
   self.clearDocument()
   self.document = document
   self.currentDocument = document
+  self.textEditorComponent.setDocument(document)
   self.snapshot = document.buffer.snapshot.clone()
   self.displayMap.setBuffer(self.snapshot.clone())
   self.config.setParent(self.document.config)
