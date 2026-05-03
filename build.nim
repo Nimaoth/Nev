@@ -188,6 +188,7 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
   var numSkipped = 0
   var failedModules: seq[string] = @[]
   var cmds: seq[tuple[fv: FlowVar[tuple[output: string, exitCode: int]], module: string]] = @[]
+  var outputs = initTable[string, string]()
   for (name, m) in modules.pairs:
     if modulesToBuild.len > 0 and name notin modulesToBuild:
       inc numSkipped
@@ -225,8 +226,7 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
               else:
                 inc numFailed
                 failedModules.add(cmds[i].module)
-              echo &"=========================================== Build output for {cmds[i].module} ================================"
-              echo output
+              outputs[cmds[i].module] = output
               cmds.del(i)
               break
           sleep(10)
@@ -254,13 +254,21 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
         else:
           inc numFailed
           failedModules.add(cmds[i].module)
-        echo &"=========================================== Build output for {cmds[i].module} ================================"
-        echo output
+        outputs[cmds[i].module] = output
         cmds.del(i)
 
     sleep(10)
 
+
   try:
+    if numFailed > 0:
+      for module in failedModules:
+        echo &"=========================================== Build output for {module} ================================"
+        echo outputs[module]
+    else:
+      for module, output in outputs:
+        echo &"=========================================== Build output for {module} ================================"
+        echo outputs[module]
     echo &"==========================================================================="
     echo &"Skipped: {numSkipped}, Built: {numBuilt}, Failed: {numFailed}"
     for module in failedModules:
