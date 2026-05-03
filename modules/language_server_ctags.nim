@@ -1,3 +1,4 @@
+#use treesitter_component
 import std/[strformat, strutils, os, sets, tables, options, json]
 import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_process, event, response,
   rope_utils, arena, array_view, array_set]

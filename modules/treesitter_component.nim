@@ -10,7 +10,8 @@ export component
 export treesitter_types
 export syntax_map
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type
   TreesitterComponent* = ref object of Component
@@ -24,7 +25,7 @@ type
 
 # DLL API
 
-{.push apprtl, gcsafe, raises: [].}
+{.push rtl, gcsafe, raises: [].}
 proc newTreesitterComponent*(vfs: Arc[VFS2]): TreesitterComponent
 proc getTreesitterComponent*(self: ComponentOwner): Option[TreesitterComponent]
 proc treesitterComponentQuery*(self: TreesitterComponent, name: string, language: string = ""): Future[Option[TSQuery]]

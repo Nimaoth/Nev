@@ -1,4 +1,4 @@
-#use text_editor_component
+#use text_editor_component treesitter_component
 import std/[options]
 import misc/[delayed_task, id, myjsonutils, jsonex]
 import nimsumtree/[rope]
