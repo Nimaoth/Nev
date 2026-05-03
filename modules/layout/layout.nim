@@ -1,4 +1,5 @@
 #use status_line text_editor_component
+# text_editor_component is needed for OpenEditorPreviewer. todo: OpenEditorPreviewer shouldn't care about text editors
 import std/[options, json]
 import misc/[custom_async, id]
 import service, view, popup, selector_popup_builder, dynamic_view
