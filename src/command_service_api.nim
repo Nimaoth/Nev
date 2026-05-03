@@ -70,11 +70,10 @@ proc exitCommandLine*(self: CommandService) {.expose("commands").} =
   let editor = self.commandLineEditor
   if editor.currentDocument.getTextComponent().getSome(text):
     text.content = ""
-  if editor.getDecorationComponent().getSome(decos):
-    if self.prefixOverlayId.isSome:
-      decos.clearOverlays(self.prefixOverlayId.get)
-      decos.releaseOverlayId(self.prefixOverlayId.get)
-      self.prefixOverlayId = int.none
+  if self.prefixOverlayId.isSome and editor.getDecorationComponent().getSome(decos):
+    decos.clearOverlays(self.prefixOverlayId.get)
+    decos.releaseOverlayId(self.prefixOverlayId.get)
+    self.prefixOverlayId = int.none
   editor.getCommandComponent().get.executeCommand("hide-completions")
   editor.config.set("text.disable-scrolling", true)
   editor.config.set("ui.line-numbers", "none")
@@ -157,8 +156,6 @@ proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
     return false
 
   let commands = input.split("\n")
-  if editor.currentDocument.getTextComponent().getSome(text):
-    text.content = ""
 
   for command in commands:
     if (let i = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.find(command); i >= 0):
@@ -181,6 +178,14 @@ proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
       if allResults.len > 0:
         allResults.add "\n"
       allResults.add res
+
+  if editor.currentDocument.getTextComponent().getSome(text):
+    text.content = ""
+
+  if self.prefixOverlayId.isSome and editor.getDecorationComponent().getSome(decos):
+    decos.clearOverlays(self.prefixOverlayId.get)
+    decos.releaseOverlayId(self.prefixOverlayId.get)
+    self.prefixOverlayId = int.none
 
   if allResults.len > 0:
     self.commandLineResult(allResults, showInCommandLine = true, appendAndShowInFile = false)

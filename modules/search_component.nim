@@ -322,7 +322,16 @@ when implModule:
 
     let prevSearchQuery = self.searchQuery
     let prevUseMoveSearch = self.useMoveSearch
+    let document = commandLineEditor.currentDocument
+    let commandEdit = commandLineEditor.getTextEditorComponent().get
+    let commandText = document.getTextComponent().get
+
+    var onEditHandle = Id.new
+    var onActiveHandle = Id.new
+    var onSearchHandle = Id.new
+
     commands.openCommandLine "", "/", proc(command: Option[string]): Option[string] =
+      commandText.onEdit.unsubscribe(onEditHandle[])
       if command.getSome(command):
         discard self.setSearchQuery(command, useMoveSearch = useMoveSearch)
         if select:
@@ -333,18 +342,9 @@ when implModule:
         if scrollToPreview:
           edit.scrollToCursor(edit.selection.b)
 
-    let document = commandLineEditor.currentDocument
-    let commandEdit = commandLineEditor.getTextEditorComponent().get
-
     commandLineEditor.getConfigComponent().get.set("text.disable-completions", true)
     commandEdit.selection = commandLineEditor.getMoveComponent().get.applyMove(point(0, 0).toRange, "(file) (end)")
     commandEdit.updateTargetColumn(commandEdit.selection.b)
-
-    var onEditHandle = Id.new
-    var onActiveHandle = Id.new
-    var onSearchHandle = Id.new
-
-    let commandText = document.getTextComponent().get
 
     onEditHandle[] = commandText.onEdit.subscribe proc(arg: tuple[oldText: Rope, patch: Patch[Point]]) =
       discard self.setSearchQuery(($commandText.content).replace(r".set-search-query \"), useMoveSearch = useMoveSearch)
