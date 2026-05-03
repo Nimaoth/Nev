@@ -1,17 +1,17 @@
-import std/[options, tables, strutils]
+import std/[options, tables, strutils, json]
 import nimsumtree/rope
-import misc/[custom_logger, custom_async, util, response, rope_utils, event]
+import misc/[custom_logger, custom_async, util, response, rope_utils, event, myjsonutils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types], language_server_dynamic
 import dispatch_tables, document_editor, service, layout/layout, events, config_provider, command_service
-import document, text_component, move_component, language_component, language_server_component
+import document, text_component, move_component, language_component, language_server_component, session
 
 logCategory "language-server-command-line"
 
 type
   LanguageServerCommandLine* = ref object of LanguageServerDynamic
     services: Services
-    commands: CommandServiceImpl
+    commands: CommandService
     documents: DocumentEditorService
     events: EventHandlerService
     files: Table[string, string]
@@ -23,7 +23,7 @@ type
 
 func serviceName*(_: typedesc[LanguageServerCommandLineService]): string = "LanguageServerCommandLineService"
 
-addBuiltinService(LanguageServerCommandLineService, DocumentEditorService, EventHandlerService, CommandService)
+addBuiltinService(LanguageServerCommandLineService, DocumentEditorService, EventHandlerService, CommandService, SessionService)
 
 proc newLanguageServerCommandLine(services: Services): LanguageServerCommandLine {.gcsafe, raises: [].}
 
@@ -39,6 +39,18 @@ method init*(self: LanguageServerCommandLineService): Future[Result[void, ref Ca
     let languages = self.config.get("lsp.command-line.languages", newSeq[string]())
     if language.languageId in languages and not lsps.hasLanguageServer(self.languageServer):
       discard lsps.addLanguageServer(self.languageServer)
+
+  let session = getServiceChecked(SessionService)
+  proc save(): JsonNode =
+    return self.languageServer.commandHistory.toJson()
+
+  proc load(data: JsonNode) =
+    try:
+      self.languageServer.commandHistory = data.jsonTo(seq[string])
+    except Exception as e:
+      log lvlError, &"Failed to restore command line history: {e.msg}"
+
+  session.addSaveHandler "command-line-history", save, load
   return ok()
 
 proc lspCommandLineGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
@@ -148,7 +160,7 @@ proc newLanguageServerCommandLine(services: Services): LanguageServerCommandLine
   var server = new LanguageServerCommandLine
   server.name = "command-line"
   server.services = services
-  server.commands = services.getService(CommandServiceImpl).get
+  server.commands = services.getService(CommandService).get
   server.events = services.getService(EventHandlerService).get
   server.documents = services.getService(DocumentEditorService).get
   server.capabilities.completionProvider = lsp_types.CompletionOptions().some

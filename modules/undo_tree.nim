@@ -1,4 +1,4 @@
-#use command_component layout
+#use command_component layout command_service
 import std/[options, algorithm, strutils, times, tables, json]
 import service, dynamic_view
 import component

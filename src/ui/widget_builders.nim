@@ -4,7 +4,7 @@ import misc/[custom_logger, rect_utils, jsonex]
 import ui/node
 import platform/platform, platform_service
 import ui/[widget_builder_selector_popup, widget_library]
-import document_editor, theme, view, layout/layout, config_provider, command_service, toast, document_editor_render
+import document_editor, theme, view, layout/layout, config_provider, command_line, toast, document_editor_render
 import popup
 import render_view, dynamic_view, status_line
 from scripting_api import nil
@@ -67,7 +67,7 @@ import app
 proc updateWidgetTree*(self: App, builder: UINodeBuilder, frameIndex: int) =
   let themes = getServiceChecked(ThemeService)
   let platform = getServiceChecked(PlatformService).platform
-  let commands = getServiceChecked(CommandService)
+  let commands = getServiceChecked(CommandLineService)
   let layout = getServiceChecked(LayoutService)
   let toasts = getServiceChecked(ToastService)
 

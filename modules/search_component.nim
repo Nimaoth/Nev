@@ -1,4 +1,4 @@
-#use text_editor_component
+#use text_editor_component command_service
 import std/[options]
 import nimsumtree/[buffer, clock, rope]
 import misc/[custom_async, delayed_task, event]
@@ -59,6 +59,7 @@ when implModule:
   import std/[sequtils]
   import misc/[util, custom_logger, id, rope_regex, regex, rope_utils]
   import document_editor, text_component, move_component, decoration_component, text_editor_component, command_service, config_component, service
+  import command_line
 
   logCategory "search-component"
 
@@ -316,8 +317,7 @@ when implModule:
     let commandLineEditor = editors.commandLineEditor
     if commandLineEditor == editor:
       return
-    let commands = getServiceChecked(CommandService)
-
+    let commandLine = getServiceChecked(CommandLineService)
     let edit = editor.getTextEditorComponent().get
 
     let prevSearchQuery = self.searchQuery
@@ -330,7 +330,7 @@ when implModule:
     var onActiveHandle = Id.new
     var onSearchHandle = Id.new
 
-    commands.openCommandLine "", "/", proc(command: Option[string]): Option[string] =
+    commandLine.openCommandLine "", "/", proc(command: Option[string]): Option[string] =
       commandText.onEdit.unsubscribe(onEditHandle[])
       if command.getSome(command):
         discard self.setSearchQuery(command, useMoveSearch = useMoveSearch)

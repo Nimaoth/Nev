@@ -1,4 +1,4 @@
-#use layout text_editor_component register
+#use layout text_editor_component register command_service
 import nimsumtree/[arc]
 import misc/[id]
 import channel, view

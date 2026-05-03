@@ -130,7 +130,7 @@ method setPermissions*(self: PluginInstanceBase, permissions: PluginPermissions)
 
 func serviceName*(_: typedesc[PluginService]): string = "PluginService"
 
-addBuiltinService(PluginService, EventHandlerService, VFSService, ConfigService)
+addBuiltinService(PluginService, EventHandlerService, VFSService, ConfigService, CommandService)
 
 proc addPluginFolder(self: PluginService, path: string) {.async.}
 proc registerPluginCommands(self: PluginService, plugin: Plugin)

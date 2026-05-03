@@ -1,4 +1,4 @@
-#use stats layout
+#use stats layout command_service
 const currentSourcePath2 = currentSourcePath()
 include module_base
 

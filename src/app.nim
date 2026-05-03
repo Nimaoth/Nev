@@ -13,7 +13,7 @@ import text_component, text_editor_component
 import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
-import service, layout/layout, session, command_service, toast, plugin_service
+import service, layout/layout, session, command_service, command_line, toast, plugin_service
 import event_service, vcs/vcs
 import search_component, decoration_component, move_component, command_component
 import nimsumtree/[rope]
@@ -61,7 +61,6 @@ type EditorState = object
   fontBoldItalic: string
   fallbackFonts: seq[string]
   workspaceFolder: OpenWorkspace
-  commandHistory: seq[string]
 
   astProjectWorkspaceId: string
   astProjectPath: Option[string]
@@ -96,7 +95,8 @@ type
     plugins*: PluginService
     registers: Registers
     vfsService*: VFSService
-    commands*: CommandServiceImpl
+    commands*: CommandService
+    commandLine*: CommandLineServiceImpl
     toast*: ToastService
     themes*: ThemeService
 
@@ -320,8 +320,6 @@ proc loadSession*(self: App) {.async: (raises: []).} =
     if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
     if state.fallbackFonts.len > 0: self.fallbackFonts = state.fallbackFonts
     self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic, self.fallbackFonts)
-
-    self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory = state.commandHistory
 
     log(lvlInfo, fmt"Restoring workspace")
     if state.workspaceFolder.settings != nil:
@@ -747,7 +745,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.registers = services.getService(Registers).get
   self.vfsService = services.getService(VFSService).get
   self.workspace = services.getService(Workspace).get
-  self.commands = services.getService(CommandServiceImpl).get
+  self.commands = services.getService(CommandService).get
+  self.commandLine = services.getService(CommandLineServiceImpl).get
   self.toast = services.getService(ToastService).get
   self.themes = services.getService(ThemeService).get
   self.vfs = self.vfsService.vfs
@@ -776,11 +775,9 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.applyFontSettings()
   asyncSpawn self.setTheme(self.uiSettings.theme.get())
 
-  self.commands.languageServerCommandLine = self.services.getService(LanguageServerCommandLineService).get.languageServer
-
   let commandLineDocument = self.editors.createDocument("text", "ed://.command-line", load = false, %%*{})
   assert commandLineDocument != nil
-  self.commands.mCommandLineEditor = self.editors.createEditorForDocument(commandLineDocument, %%*{
+  self.commandLine.mCommandLineEditor = self.editors.createEditorForDocument(commandLineDocument, %%*{
     "usage": "command-line",
     "settings": {
       "text.disable-completions": true,
@@ -792,9 +789,9 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       "text.highlight-matches.enable": false,
     },
   }).get(nil)
-  self.commands.commandLineEditor.renderHeader = false
-  discard self.commands.commandLineEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
-  self.editors.commandLineEditor = self.commands.commandLineEditor
+  self.commandLine.commandLineEditor.renderHeader = false
+  discard self.commandLine.commandLineEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
+  self.editors.commandLineEditor = self.commandLine.commandLineEditor
   self.commands.defaultCommandHandler = proc(command: Option[string]): Option[string] =
     if command.isSome:
       self.defaultHandleCommand(command.get)
@@ -1062,7 +1059,6 @@ proc saveAppState*(self: App) {.expose("editor").} =
   state.fontBoldItalic = self.fontBoldItalic
   state.fallbackFonts = self.fallbackFonts
 
-  state.commandHistory = self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory
   state.sessionData = self.session.saveSession()
 
   # Save open workspace folders
@@ -1794,7 +1790,7 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     let item = popup.getSelectedItem().getOr:
       return true
 
-    self.commands.openCommandLine "", "slot: ", proc(path: Option[string]): Option[string] =
+    self.commandLine.openCommandLine "", "slot: ", proc(path: Option[string]): Option[string] =
       if path.getSome(path):
         discard self.layout.openFile(item.data, path)
     return true
@@ -1808,7 +1804,7 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
     for document in self.editors.documents:
-      if document == self.commands.commandLineEditor.getDocument():
+      if document == self.commandLine.commandLineEditor.getDocument():
         continue
 
       let path = document.filename
@@ -2464,7 +2460,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
   popup.addCustomCommand "create-file", proc(popup: SelectorPopup, args: JsonNode): bool =
     let dir = currentDirectory[]
-    self.commands.openCommandLine "", "new file: ", proc(command: Option[string]): Option[string] =
+    self.commandLine.openCommandLine "", "new file: ", proc(command: Option[string]): Option[string] =
       if command.getSome(path):
         if path.isAbsolute:
           self.createFile(path)
@@ -2474,7 +2470,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
   popup.addCustomCommand "create-directory", proc(popup: SelectorPopup, args: JsonNode): bool =
     let dir = currentDirectory[]
-    self.commands.openCommandLine "", "new directory: ", proc(command: Option[string]): Option[string] =
+    self.commandLine.openCommandLine "", "new directory: ", proc(command: Option[string]): Option[string] =
       if command.getSome(path):
         let pathAbs = if path.isAbsolute: path else: dir // path
         vfs.createDir(pathAbs).thenItOrElse:
@@ -2686,13 +2682,13 @@ proc currentEventHandlers*(self: App): seq[EventHandler] =
   if not self.modeEventHandler.isNil and not modeOnTop:
     result.add self.modeEventHandler
 
-  if self.commands.commandLineInputMode:
+  if self.commandLine.commandLineInputMode:
     let commandLineEventHandlerLow = self.getEventHandler(self.generalSettings.commandLineModeLow.get())
-    result.add self.commands.commandLineEditor.getEventHandlers({"above-mode": commandLineEventHandlerLow}.toTable)
+    result.add self.commandLine.commandLineEditor.getEventHandlers({"above-mode": commandLineEventHandlerLow}.toTable)
     result.add self.getEventHandler(self.generalSettings.commandLineModeHigh.get())
-  elif self.commands.commandLineResultMode:
+  elif self.commandLine.commandLineResultMode:
     let commandLineResultEventHandlerLow = self.getEventHandler(self.generalSettings.commandLineResultModeLow.get())
-    result.add self.commands.commandLineEditor.getEventHandlers({"above-mode": commandLineResultEventHandlerLow}.toTable)
+    result.add self.commandLine.commandLineEditor.getEventHandlers({"above-mode": commandLineResultEventHandlerLow}.toTable)
     result.add self.getEventHandler(self.generalSettings.commandLineResultModeHigh.get())
   elif self.layout.popups.len > 0:
     result.add self.layout.popups[self.layout.popups.high].getEventHandlers()
@@ -2959,8 +2955,8 @@ proc removeCommandScript*(self: App, context: string, keys: string) =
 
 # todo: move to layout
 proc getActiveEditor*(self: App): Option[DocumentEditor] =
-  if self.commands.commandLineMode:
-    return self.commands.commandLineEditor.some
+  if self.commandLine.commandLineMode:
+    return self.commandLine.commandLineEditor.some
 
   if self.layout.popups.len > 0 and self.layout.popups[self.layout.popups.high].getActiveEditor().getSome(editor):
     return editor.some
@@ -3044,10 +3040,6 @@ proc printStatistics*(self: App) {.expose("editor").} =
 
       result.add &"Input History: {self.inputHistory}\n"
       # result.add &"Editor History: {self.layout.editorHistory}\n"
-
-      result.add &"Command History: {self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len}\n"
-      # for command in self.commandHistory:
-      #   result.add &"    {command}\n"
 
       result.add &"Text editors: {self.editors.allEditors.len}\n"
       for editor in self.editors.allEditors:

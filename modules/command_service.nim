@@ -1,8 +1,10 @@
-import std/[options, strutils, sequtils, strformat, json, streams]
+#use register
+import std/[options, strutils, sequtils, strformat, json, streams, tables]
 import misc/[jsonex, myjsonutils]
-import service, lisp, document_editor, log
+import service, lisp, log
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 logCategory "commands"
 
@@ -28,37 +30,33 @@ type
     allow*: seq[string]
     disallow*: seq[string]
 
-  CommandService* = ref object of Service
+  CommandService* = ref object of DynamicService
     logCommands*: bool = false
     dontRecord*: bool = false
+    commands*: Table[string, Command]
+    defaultCommandHandler*: CommandHandler
 
 func serviceName*(_: typedesc[CommandService]): string = "CommandService"
 
 # DLL API
-proc commandServiceRegisterCommand(self: CommandService, command: sink Command, override: bool = false): CommandId {.apprtl, gcsafe, raises: [].}
-proc commandServiceHandleCommand(self: CommandService, command: string): Option[string] {.apprtl, gcsafe, raises: [].}
-proc commandServiceExecuteCommand(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil): Option[string] {.apprtl, gcsafe, raises: [].}
-proc commandServiceUnregisterCommandByName(self: CommandService, command: string) {.apprtl, gcsafe, raises: [].}
-proc commandServiceUnregisterCommandById(self: CommandService, id: CommandId) {.apprtl, gcsafe, raises: [].}
-proc commandServiceAddPrefixCommandHandler(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) {.apprtl, gcsafe, raises: [].}
-proc commandServiceAddScopedCommandHandler(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) {.apprtl, gcsafe, raises: [].}
-proc commandServiceCommandLineMode(self: CommandService): bool {.apprtl, gcsafe, raises: [].}
-proc commandServiceCommandLineEditor(self: CommandService): DocumentEditor {.apprtl, gcsafe, raises: [].}
-proc commandServiceCheckPermissions(self: CommandService, command: string, permissions: CommandPermissions): bool {.apprtl, gcsafe, raises: [].}
-proc commandServiceOpenCommandLine(self: CommandService, initialValue: string = "", prefix: string = "", handler: CommandHandler = nil) {.apprtl, gcsafe, raises: [].}
+{.push rtl, gcsafe, raises: [].}
+proc commandServiceRegisterCommand(self: CommandService, command: sink Command, override: bool = false): CommandId
+proc commandServiceExecuteCommand(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil): Option[string]
+proc commandServiceUnregisterCommandByName(self: CommandService, command: string)
+proc commandServiceUnregisterCommandById(self: CommandService, id: CommandId)
+proc commandServiceAddPrefixCommandHandler(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].})
+proc commandServiceAddScopedCommandHandler(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].})
+proc commandServiceCheckPermissions(self: CommandService, command: string, permissions: CommandPermissions): bool
+{.pop.}
 
 # Nice wrappers
 proc registerCommand*(self: CommandService, command: sink Command, override: bool = false): CommandId {.inline.} = commandServiceRegisterCommand(self, command, override)
-proc handleCommand*(self: CommandService, command: string): Option[string] {.inline.} = commandServiceHandleCommand(self, command)
 proc executeCommand*(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil): Option[string] {.inline.} = commandServiceExecuteCommand(self, command, record, context)
 proc unregisterCommand*(self: CommandService, command: string) {.inline.} = commandServiceUnregisterCommandByName(self, command)
 proc unregisterCommand*(self: CommandService, id: CommandId) {.inline.} = commandServiceUnregisterCommandById(self, id)
 proc addPrefixCommandHandler*(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) {.inline.} = commandServiceAddPrefixCommandHandler(self, prefix, handler)
 proc addScopedCommandHandler*(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) {.inline.} = commandServiceAddScopedCommandHandler(self, prefix, handler)
-proc commandLineMode*(self: CommandService): bool {.inline.} = commandServiceCommandLineMode(self)
-proc commandLineEditor*(self: CommandService): DocumentEditor {.inline.} = commandServiceCommandLineEditor(self)
 proc checkPermissions*(self: CommandService, command: string, permissions: CommandPermissions): bool {.inline.} = commandServiceCheckPermissions(self, command, permissions)
-proc openCommandLine*(self: CommandService, initialValue: string = "", prefix: string = "", handler: CommandHandler = nil) {.inline.} = commandServiceOpenCommandLine(self, initialValue, prefix, handler)
 
 import std/[macros, genasts]
 
@@ -163,39 +161,20 @@ proc parseCommand*(json: JsonNodeEx): tuple[command: string, args: string, ok: b
 
 # Implementation
 when implModule:
-  import std/[strformat, tables, sugar, json, streams, hashes]
+  import std/[strformat, sugar, json, streams, hashes]
   import misc/[util, custom_async, custom_unicode, myjsonutils, parsejsonex, timer]
-  import text/language/[language_server_base]
-  import events
-  import config_provider, dispatch_tables, input_api
-  import nimsumtree/rope, register
+  import config_provider, input_api, register, dispatch_tables
 
   {.push gcsafe.}
   {.push raises: [].}
 
   type
     CommandServiceImpl* = ref object of CommandService
-      fallbackConfig: ConfigStore
-
-      commandLineInputMode*: bool
-      commandLineResultMode*: bool
-      mCommandLineEditor*: DocumentEditor
-      languageServerCommandLine*: LanguageServer
-      defaultCommandHandler*: CommandHandler
-      commandHandler*: CommandHandler
       mRegisters*: Registers
-
-      currentHistoryEntry*: int = 0
-      eventHandler*: EventHandler
-
-      shellCommandOutput*: Rope
-      prefix*: string
-      prefixOverlayId*: Option[int]
 
       scopedCommandHandlers: Table[string, proc(command: string): Option[string] {.gcsafe, raises: [].}]
       prefixCommandHandlers: seq[tuple[prefix: string, execute: proc(command: string): Option[string] {.gcsafe, raises: [].}]]
       commandIdCounter: int = 1
-      commands*: Table[string, Command]
       idToCommand*: Table[CommandId, string]
 
       commandsThisFrame: int
@@ -204,8 +183,6 @@ when implModule:
   proc none*(_: typedesc[CommandPermissions]) = CommandPermissions(allowAll: some(false), disallowAll: some(none))
 
   func serviceName*(_: typedesc[CommandServiceImpl]): string = "CommandService"
-
-  addBuiltinService(CommandServiceImpl)
 
   proc `==`(a, b: CommandId): bool {.borrow.}
   proc hash(a: CommandId): Hash {.borrow.}
@@ -221,10 +198,9 @@ when implModule:
       self.mRegisters = getService(Registers).get(nil)
     return self.mRegisters
 
-  method init*(self: CommandServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-    log lvlInfo, &"CommandServiceImpl.init"
-    self.fallbackConfig = ConfigStore.new("CommandServiceImpl", "settings://CommandServiceImpl")
-    self.shellCommandOutput = Rope.new("")
+  proc newCommandService(): CommandServiceImpl =
+    log lvlInfo, &"newCommandService"
+    let self = CommandServiceImpl()
 
     {.gcsafe.}:
       for table in globalDispatchTables.mitems:
@@ -251,15 +227,16 @@ when implModule:
               )
             ))
 
-    return ok()
+    return self
 
-  method tick*(self: CommandServiceImpl) =
-    self.commandsThisFrame = 0
+  # todo
+  # method tick*(self: CommandServiceImpl) =
+  #   self.commandsThisFrame = 0
 
-  proc config*(self: CommandServiceImpl): ConfigStore =
+  proc config(self: CommandServiceImpl): ConfigStore =
     if self.services.getService(ConfigService).getSome(configs):
       return configs.runtime
-    return self.fallbackConfig
+    return nil
 
   proc commandServiceUnregisterCommandByName(self: CommandService, command: string) =
     let self = self.CommandServiceImpl
@@ -420,9 +397,10 @@ when implModule:
     if not self.registers.bIsReplayingCommands and doRecord:
       self.registers.recordCommand(command)
 
-    if self.commandsThisFrame > self.config.get("max-commands-per-frame", 1000):
-      log lvlError, &""
-      return string.none
+    # todo
+    # if self.commandsThisFrame > self.config.get("max-commands-per-frame", 1000):
+    #   log lvlError, &""
+    #   return string.none
 
     self.commandsThisFrame.inc()
     for handler in self.prefixCommandHandlers:
@@ -443,7 +421,7 @@ when implModule:
     if arg.startsWith("\\"):
       arg = $newJString(arg[1..^1])
 
-    let alias = self.config.get("alias." & action, newJNull())
+    let alias = if self.config != nil: self.config.get("alias." & action, newJNull()) else: nil
     if alias != nil and alias.kind != JNull:
       return self.handleAlias(action, arg, alias)
 
@@ -474,28 +452,5 @@ when implModule:
       return true
     return false
 
-  proc commandServiceHandleCommand(self: CommandService, command: string): Option[string] =
-    let self = self.CommandServiceImpl
-    try:
-      if self.commandHandler.isNotNil:
-        return self.commandHandler(command.some)
-      return self.executeCommand(command)
-    except Exception as e:
-      log lvlError, &"Failed to run command '{command}': {e.msg}"
-      return string.none
-
-  # todo: add prefix parameter
-  var commandLineImpl*: proc(self: CommandService, initialValue: string, prefix: string) {.gcsafe, raises: [].}
-  proc commandServiceOpenCommandLine(self: CommandService, initialValue: string = "", prefix: string = "", handler: CommandHandler = nil) =
-    let self = self.CommandServiceImpl
-    {.gcsafe.}:
-      commandLineImpl(self, initialValue, prefix)
-      self.commandHandler = handler
-
-  proc commandServiceCommandLineMode(self: CommandService): bool =
-    let self = self.CommandServiceImpl
-    self.commandLineInputMode or self.commandLineResultMode
-
-  proc commandServiceCommandLineEditor(self: CommandService): DocumentEditor =
-    let self = self.CommandServiceImpl
-    self.mCommandLineEditor
+  proc init_module_command_service*() {.cdecl, exportc, dynlib.} =
+    getServices().addService(newCommandService())

@@ -1,4 +1,4 @@
-#use status_line text_editor_component
+#use status_line text_editor_component command_service
 # text_editor_component is needed for OpenEditorPreviewer. todo: OpenEditorPreviewer shouldn't care about text editors
 import std/[options, json]
 import misc/[custom_async, id]
@@ -168,7 +168,7 @@ when implModule:
   import workspaces/workspace
   import finder/[finder, previewer]
   import platform_service, events, config_provider, vfs, vfs_service, session, layouts, command_service, status_line, theme
-  import nimsumtree/arc
+  import nimsumtree/arc, command_line
 
   export layouts
 
@@ -189,6 +189,7 @@ when implModule:
       editors: DocumentEditorService
       session: SessionService
       commands: CommandService
+      commandLine: CommandLineService
       vfs: VFS
       vfs2: Arc[VFS2]
       mPopups: seq[Popup]
@@ -327,6 +328,7 @@ when implModule:
     self.workspace = self.services.getService(Workspace).get
     self.session = self.services.getService(SessionService).get
     self.commands = self.services.getService(CommandService).get
+    self.commandLine = self.services.getService(CommandLineService).get
     self.uiSettings = UiSettings.new(self.config.runtime)
 
     discard self.platform.onPreRender.subscribe (_: Platform) => self.preRender()
@@ -564,8 +566,8 @@ when implModule:
 
   proc layoutServiceGetActiveEditor(self: LayoutService, includeCommandLine: bool = true, includePopups: bool = true): Option[DocumentEditor] =
     let self = self.LayoutServiceImpl
-    if includeCommandLine and self.commands.commandLineMode:
-      return self.commands.commandLineEditor.some
+    if includeCommandLine and self.commandLine.commandLineMode:
+      return self.commandLine.commandLineEditor.some
 
     if includePopups and self.mPopups.len > 0 and self.mPopups[self.mPopups.high].getActiveEditor().getSome(editor):
       return editor.some

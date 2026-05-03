@@ -23,6 +23,7 @@ import scroll_box, component, treesitter_component, config_component, decoration
 import move_component
 import text_editor_component
 import ui/node
+import command_line
 
 import workspace_edit, search_component
 
@@ -3617,7 +3618,7 @@ proc renameAsync(self: TextDocumentEditor) {.async.} =
   let s = self.getSelectionForMove(self.selection.last, "word")
   let text = self.document.contentString(s)
 
-  self.commands.openCommandLine text, "new name: ", proc(newName: Option[string]): Option[string] =
+  getServiceChecked(CommandLineService).openCommandLine text, "new name: ", proc(newName: Option[string]): Option[string] =
     if newName.getSome(newName):
       let name = newName
       languageServer.get.rename(self.document.filename, self.selection.last, name).thenIt:

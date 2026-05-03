@@ -7,7 +7,7 @@ import text/[overlay_map]
 import view
 import render_view as rv
 import platform/platform, platform_service
-import config_provider, command_service, command_service_api, compilation_config
+import config_provider, command_service, command_line, compilation_config
 import plugin_service, document_editor, vfs, vfs_service, channel, register, move_database, popup, event_service, session
 import "../../modules/terminal"/terminal
 import document, decoration_component, command_component, text_editor_component, text_component
@@ -52,7 +52,8 @@ type
   HostContext* = ref object
     services: Services
     platform: Platform
-    commands*: CommandServiceImpl
+    commands*: CommandService
+    commandLine*: CommandLineService
     registers*: Registers
     mTerminals*: TerminalService
     editors*: DocumentEditorService
@@ -214,7 +215,8 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
   self.host.services = services
   self.host.platform = services.getService(PlatformService).get.platform
-  self.host.commands = services.getService(CommandServiceImpl).get
+  self.host.commands = services.getService(CommandService).get
+  self.host.commandLine = services.getService(CommandLineService).get
   self.host.registers = services.getService(Registers).get
   self.host.editors = services.getService(DocumentEditorService).get
   self.host.layout = services.getService(LayoutService).get
@@ -1245,7 +1247,7 @@ proc registersStopRecordingCommands*(instance: ptr InstanceData; register: sink 
 proc registersReplayCommands*(instance: ptr InstanceData; register: sink string): void =
   if instance.host == nil:
     return
-  instance.host.commands.replayCommands(register)
+  instance.host.commandLine.replayCommands(register)
 
 proc commandsDefineCommand*(instance: ptr InstanceData, name: sink string, active: bool, docs: sink string,
                        params: sink seq[(string, string)], returnType: sink string, context: sink string; fun: uint32; data: uint32): void =
@@ -1273,14 +1275,14 @@ proc commandsRunCommand*(instance: ptr InstanceData, name: sink string, argument
   if not instance.host.commands.checkPermissions(name, instance.permissions.commands):
     result.err(CommandError.NotAllowed)
     return
-  if instance.host.commands.handleCommand(name & " " & arguments).getSome(res):
+  if instance.host.commandLine.handleCommand(name & " " & arguments).getSome(res):
     return results.ok(res)
   result.err(CommandError.NotFound)
 
 proc commandsExitCommandLine*(instance: ptr InstanceData) =
   if instance.host == nil:
     return
-  instance.host.commands.exitCommandLine()
+  instance.host.commandLine.exitCommandLine()
 
 proc settingsGetSettingRaw*(instance: ptr InstanceData, name: sink string): string =
   if instance.host == nil:
