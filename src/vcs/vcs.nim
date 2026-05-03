@@ -13,11 +13,12 @@ include dynlib_export
 logCategory "vcs"
 
 type
-  VCSFileStatus* = enum None = ".", Modified = "M", Added = "A", Deleted = "D", Conflict = "U", Untracked = "?"
+  VCSFileStatus* = enum None = ".", Modified = "M", Added = "A", Deleted = "D", Conflict = "U", Untracked = "?", Renamed = "R"
   VCSFileInfo* = object
     stagedStatus*: VCSFileStatus
     unstagedStatus*: VCSFileStatus
     path*: string
+    oldPath*: string
 
   VCSChangelist* = object
     id*: string

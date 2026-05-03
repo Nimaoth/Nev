@@ -229,6 +229,7 @@ when implModule:
     of 'D': Deleted
     of 'U': Conflict
     of '?': Untracked
+    of 'R': Renamed
     else: None
 
   proc parseGitRange(s: string): Result[(int, int), ref CatchableError] =
@@ -263,15 +264,23 @@ when implModule:
         let stagedStatus = parseFileStatusGit(line[0])
         let unstagedStatus = parseFileStatusGit(line[1])
 
-        let filePath = line[3..^1]
+        var filePath = line[3..^1]
+        var oldPath = ""
+        if stagedStatus == Renamed and filePath.contains(" -> "):
+          let parts = filePath.split(" -> ")
+          oldPath = parts[0]
+          filePath = parts[1]
+
         let fullPath = self.root // filePath
+        let oldFullPath = if oldPath != "": self.root // oldPath else: ""
 
         # Add to staged changelist if file has staged changes
         if stagedStatus != None and stagedStatus != Untracked:
           stagedFiles.add VCSFileInfo(
             stagedStatus: stagedStatus,
             unstagedStatus: None,
-            path: fullPath
+            path: fullPath,
+            oldPath: oldFullPath,
           )
 
         # Add to working changelist if file has unstaged changes
@@ -279,7 +288,8 @@ when implModule:
           workingFiles.add VCSFileInfo(
             stagedStatus: None,
             unstagedStatus: unstagedStatus,
-            path: fullPath
+            path: fullPath,
+            oldPath: oldFullPath,
           )
 
       var changelists = newSeq[VCSChangelist]()
