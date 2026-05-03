@@ -23,7 +23,6 @@ type TextEditorComponent* = ref object of Component
   onEdit*: Event[tuple[oldText: Rope, patch: Patch[Point]]]
 
 # DLL API
-var TextEditorComponentId* {.rtl.}: ComponentTypeId
 
 {.push rtl, gcsafe, raises: [].}
 proc newTextEditorComponent*(document: Document = nil): TextEditorComponent
@@ -102,7 +101,7 @@ when implModule:
 
   logCategory "text-editor-component"
 
-  TextEditorComponentId = componentGenerateTypeId()
+  let TextEditorComponentId = componentGenerateTypeId()
 
   type TextEditorComponentImpl* = ref object of TextEditorComponent
     document: Document

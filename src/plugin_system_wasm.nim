@@ -96,14 +96,16 @@ proc newPluginSystemWasm*(services: Services): PluginSystemWasm =
     return nil
   )
 
-  self.services.getService(CommandService).get.addPrefixCommandHandler "(", proc(command: string): Option[string] =
+  self.services.getService(CommandService).get.addPrefixCommandHandler "(", proc(command: Option[string]): Option[string] =
     try:
-      var expr = command.parseLisp()
+      if command.isNone:
+        return
+      var expr = command.get.parseLisp()
       let res = expr.eval(self.env)
       if res != nil:
         return some($res)
     except CatchableError as e:
-      log lvlError, &"Failed to dispatch API command '{command}': {e.msg}"
+      log lvlError, &"Failed to dispatch API command '{command.get}': {e.msg}"
     return string.none
 
   return self

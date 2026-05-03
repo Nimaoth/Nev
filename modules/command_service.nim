@@ -9,7 +9,7 @@ include module_base
 logCategory "commands"
 
 type
-  CommandHandler* = proc(command: Option[string]): Option[string] {.gcsafe.}
+  CommandHandler* = proc(command: Option[string]): Option[string] {.gcsafe, raises: [].}
 
   CommandId* = distinct int
 
@@ -44,8 +44,8 @@ proc commandServiceRegisterCommand(self: CommandService, command: sink Command, 
 proc commandServiceExecuteCommand(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil): Option[string]
 proc commandServiceUnregisterCommandByName(self: CommandService, command: string)
 proc commandServiceUnregisterCommandById(self: CommandService, id: CommandId)
-proc commandServiceAddPrefixCommandHandler(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].})
-proc commandServiceAddScopedCommandHandler(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].})
+proc commandServiceAddPrefixCommandHandler(self: CommandService, prefix: string, handler: CommandHandler)
+proc commandServiceAddScopedCommandHandler(self: CommandService, prefix: string, handler: CommandHandler)
 proc commandServiceCheckPermissions(self: CommandService, command: string, permissions: CommandPermissions): bool
 {.pop.}
 
@@ -54,8 +54,8 @@ proc registerCommand*(self: CommandService, command: sink Command, override: boo
 proc executeCommand*(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil): Option[string] {.inline.} = commandServiceExecuteCommand(self, command, record, context)
 proc unregisterCommand*(self: CommandService, command: string) {.inline.} = commandServiceUnregisterCommandByName(self, command)
 proc unregisterCommand*(self: CommandService, id: CommandId) {.inline.} = commandServiceUnregisterCommandById(self, id)
-proc addPrefixCommandHandler*(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) {.inline.} = commandServiceAddPrefixCommandHandler(self, prefix, handler)
-proc addScopedCommandHandler*(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) {.inline.} = commandServiceAddScopedCommandHandler(self, prefix, handler)
+proc addPrefixCommandHandler*(self: CommandService, prefix: string, handler: CommandHandler) {.inline.} = commandServiceAddPrefixCommandHandler(self, prefix, handler)
+proc addScopedCommandHandler*(self: CommandService, prefix: string, handler: CommandHandler) {.inline.} = commandServiceAddScopedCommandHandler(self, prefix, handler)
 proc checkPermissions*(self: CommandService, command: string, permissions: CommandPermissions): bool {.inline.} = commandServiceCheckPermissions(self, command, permissions)
 
 import std/[macros, genasts]
@@ -172,8 +172,8 @@ when implModule:
     CommandServiceImpl* = ref object of CommandService
       mRegisters*: Registers
 
-      scopedCommandHandlers: Table[string, proc(command: string): Option[string] {.gcsafe, raises: [].}]
-      prefixCommandHandlers: seq[tuple[prefix: string, execute: proc(command: string): Option[string] {.gcsafe, raises: [].}]]
+      scopedCommandHandlers: Table[string, CommandHandler]
+      prefixCommandHandlers: seq[tuple[prefix: string, execute: CommandHandler]]
       commandIdCounter: int = 1
       idToCommand*: Table[CommandId, string]
 
@@ -278,11 +278,11 @@ when implModule:
 
     return id
 
-  proc commandServiceAddPrefixCommandHandler(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) =
+  proc commandServiceAddPrefixCommandHandler(self: CommandService, prefix: string, handler: CommandHandler) =
     let self = self.CommandServiceImpl
     self.prefixCommandHandlers.add((prefix, handler))
 
-  proc commandServiceAddScopedCommandHandler(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) =
+  proc commandServiceAddScopedCommandHandler(self: CommandService, prefix: string, handler: CommandHandler) =
     let self = self.CommandServiceImpl
     self.scopedCommandHandlers[prefix] = handler
 
@@ -405,7 +405,7 @@ when implModule:
     self.commandsThisFrame.inc()
     for handler in self.prefixCommandHandlers:
       if command.startsWith(handler.prefix):
-        return handler.execute(command)
+        return handler.execute(command.some)
 
     let i = command.find('.')
     let (prefix, rawCommand) = if i <= 0:
@@ -415,7 +415,7 @@ when implModule:
 
     if prefix in self.scopedCommandHandlers:
       let handler = self.scopedCommandHandlers[prefix]
-      return handler(rawCommand)
+      return handler(rawCommand.some)
 
     var (action, arg) = command.parseAction
     if arg.startsWith("\\"):

@@ -25,8 +25,8 @@ type
 func serviceName*(_: typedesc[LayoutService]): string = "LayoutService"
 
 # DLL API
-{.push rtl, gcsafe, raises: [].}
-proc layoutServicePopups(self: LayoutService): lent seq[Popup]
+{.push modrtl, gcsafe, raises: [].}
+proc layoutServicePopups*(self: LayoutService): seq[Popup]
 proc layoutServiceAllViews(self: LayoutService): lent seq[View]
 proc layoutServiceAddView(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true)
 proc layoutServiceAddViewRegisterView(self: LayoutService, view: View, last: bool = true)
@@ -79,14 +79,14 @@ proc layoutServiceRender(self: LayoutService, builder: UINodeBuilder): seq[Overl
 proc setSelectorPopupBuilderImpl*(impl: PushSelectorPopupImpl)
 {.pop.}
 
-{.push rtl, gcsafe.}
+{.push modrtl, gcsafe.}
 proc layoutServicePromptString(self: LayoutService, title: string = ""): Future[Option[string]] {.async: (raises: []).}
 proc layoutServicePrompt(self: LayoutService, choices: seq[string], title: string = ""): Future[Option[string]] {.async: (raises: []).}
 {.pop.}
 
 # Nice wrappers
 {.push inline}
-proc popups*(self: LayoutService): lent seq[Popup] = self.layoutServicePopups()
+proc popups*(self: LayoutService): seq[Popup] = self.layoutServicePopups()
 proc allViews*(self: LayoutService): lent seq[View] = self.layoutServiceAllViews()
 proc addView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) = layoutServiceAddView(self, view, slot, focus, addToHistory)
 proc registerView*(self: LayoutService, view: View, last = true) = layoutServiceAddViewRegisterView(self, view, last)
@@ -219,7 +219,7 @@ when implModule:
 
   proc preRender*(self: LayoutService)
 
-  proc layoutServicePopups(self: LayoutService): lent seq[Popup] =
+  proc layoutServicePopups*(self: LayoutService): seq[Popup] =
     let self = self.LayoutServiceImpl
     self.mPopups
 
