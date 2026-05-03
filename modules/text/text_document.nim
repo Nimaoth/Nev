@@ -1077,6 +1077,7 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]
 
     except AsyncTimeoutError:
       log lvlDebug, &"Timeout after {t.elapsed.ms} ms"
+      returnIfInvalid()
       self.replaceAll(rope.move)
 
   else:
