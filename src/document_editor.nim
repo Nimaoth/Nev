@@ -74,7 +74,7 @@ type
     documentFactories: seq[DocumentFactory]
     editorFactories: seq[DocumentEditorFactory]
 
-    commandLineEditor*: DocumentEditor
+    commandLineEditor*: DocumentEditor # todo: remove this
 
 proc `==`*(a, b: EditorIdNew): bool {.borrow.}
 proc hash*(vr: EditorIdNew): Hash {.borrow.}

@@ -8,9 +8,11 @@ include dynlib_export
 logCategory "command-line"
 
 type
-  CommandLineService* = ref object of Service
+  CommandLineService* = ref object of DynamicService
     logCommands*: bool = false
     dontRecord*: bool = false
+    commandLineInputMode*: bool
+    commandLineResultMode*: bool
 
 func serviceName*(_: typedesc[CommandLineService]): string = "CommandLineService"
 
@@ -32,7 +34,7 @@ proc handleCommand*(self: CommandLineService, command: string): Option[string] {
 # Implementation
 when implModule:
   import std/[strformat, tables, sugar, json, streams, hashes]
-  import misc/[util, custom_async, custom_unicode, myjsonutils, parsejsonex, timer, rope_utils, async_process, delayed_task]
+  import misc/[util, custom_async, custom_unicode, myjsonutils, parsejsonex, timer, rope_utils, async_process, delayed_task, jsonex]
   import nimsumtree/[rope, sumtree]
   import scripting/[expose]
   import platform/[platform], platform_service
@@ -41,7 +43,7 @@ when implModule:
   import text/[display_map, overlay_map]
   import config_provider, dispatch_tables, input_api, language_server_command_line, events
   import decoration_component, document, vfs_service, vfs, register
-  import language_server_command_line, command_component, text_editor_component, text_component
+  import language_server_command_line, command_component, text_editor_component, text_component, document_editor
   import scripting_api
 
   {.push gcsafe.}
@@ -52,8 +54,6 @@ when implModule:
       mCommands: CommandService
       mRegisters*: Registers
       commandHandler*: command_service.CommandHandler
-      commandLineInputMode*: bool
-      commandLineResultMode*: bool
       mCommandLineEditor*: DocumentEditor
       mLanguageServerCommandLine: LanguageServer
 
@@ -68,17 +68,33 @@ when implModule:
 
   proc commandLine(self: CommandLineService, initialValue: string = "", prefix: string = "")
 
-  addBuiltinService(CommandLineServiceImpl)
-
-  method init*(self: CommandLineServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-    return ok()
-
-  proc newCommandLineService(): CommandLineServiceImpl =
-    result = CommandLineServiceImpl()
+  addBuiltinService(CommandLineServiceImpl, DocumentEditorService)
 
   proc requestRender(self: CommandLineService) =
     if self.services.getService(PlatformService).getSome(platform):
       platform.platform.requestRender()
+
+  proc newCommandLineService(): CommandLineServiceImpl =
+    let self = CommandLineServiceImpl()
+    let editors = getServiceChecked(DocumentEditorService)
+    let commandLineDocument = editors.createDocument("text", "ed://.command-line", load = false, %%*{})
+    assert commandLineDocument != nil
+    self.mCommandLineEditor = editors.createEditorForDocument(commandLineDocument, %%*{
+      "usage": "command-line",
+      "settings": {
+        "text.disable-completions": true,
+        "ui.line-numbers": "none",
+        "ui.whitespace-char": " ",
+        "text.cursor-margin": 0,
+        "text.disable-scrolling": true,
+        "text.default-mode": "vim.insert",
+        "text.highlight-matches.enable": false,
+      },
+    }).get(nil)
+    self.mCommandLineEditor.renderHeader = false
+    discard self.mCommandLineEditor.onMarkedDirty.subscribe () => self.requestRender()
+    editors.commandLineEditor = self.mCommandLineEditor
+    return self
 
   proc languageServerCommandLine*(self: CommandLineServiceImpl): LanguageServer =
     if self.mLanguageServerCommandLine == nil:

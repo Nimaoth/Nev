@@ -96,7 +96,7 @@ type
     registers: Registers
     vfsService*: VFSService
     commands*: CommandService
-    commandLine*: CommandLineServiceImpl
+    commandLine*: CommandLineService
     toast*: ToastService
     themes*: ThemeService
 
@@ -746,7 +746,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.vfsService = services.getService(VFSService).get
   self.workspace = services.getService(Workspace).get
   self.commands = services.getService(CommandService).get
-  self.commandLine = services.getService(CommandLineServiceImpl).get
+  self.commandLine = services.getService(CommandLineService).get
   self.toast = services.getService(ToastService).get
   self.themes = services.getService(ThemeService).get
   self.vfs = self.vfsService.vfs
@@ -775,23 +775,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.applyFontSettings()
   asyncSpawn self.setTheme(self.uiSettings.theme.get())
 
-  let commandLineDocument = self.editors.createDocument("text", "ed://.command-line", load = false, %%*{})
-  assert commandLineDocument != nil
-  self.commandLine.mCommandLineEditor = self.editors.createEditorForDocument(commandLineDocument, %%*{
-    "usage": "command-line",
-    "settings": {
-      "text.disable-completions": true,
-      "ui.line-numbers": "none",
-      "ui.whitespace-char": " ",
-      "text.cursor-margin": 0,
-      "text.disable-scrolling": true,
-      "text.default-mode": "vim.insert",
-      "text.highlight-matches.enable": false,
-    },
-  }).get(nil)
-  self.commandLine.commandLineEditor.renderHeader = false
-  discard self.commandLine.commandLineEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
-  self.editors.commandLineEditor = self.commandLine.commandLineEditor
   self.commands.defaultCommandHandler = proc(command: Option[string]): Option[string] =
     if command.isSome:
       self.defaultHandleCommand(command.get)
