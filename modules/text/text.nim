@@ -1,4 +1,4 @@
-#use text_editor_component formatting_component layout stats hover_component command_component snippet_component contextline_component workspace_edit search_component treesitter_component
+#use text_editor_component formatting_component layout stats hover_component command_component snippet_component contextline_component workspace_edit search_component treesitter_component register
 
 const currentSourcePath2 = currentSourcePath()
 include module_base

@@ -3,7 +3,8 @@ import nimsumtree/rope
 import misc/custom_async
 import service
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -37,7 +38,7 @@ proc numLines*(register: Register): int =
     return register.rope.lines
 
 type
-  Registers* = ref object of Service
+  Registers* = ref object of DynamicService
     registers*: Table[string, Register]
     recordingKeys*: seq[string]
     recordingCommands*: seq[string]
@@ -47,7 +48,7 @@ type
 func serviceName*(_: typedesc[Registers]): string = "Registers"
 
 # DLL API
-{.push apprtl, gcsafe, raises: [].}
+{.push rtl, gcsafe, raises: [].}
 proc registersSetRegisterText*(self: Registers, text: string, register: string = "")
 proc registersSetRegisterAsync*(self: Registers, register: string, value: sink Register): Future[void]
 proc registersGetRegisterText*(self: Registers, register: string): string
@@ -75,11 +76,6 @@ when implModule:
   import clipboard, dispatch_tables
 
   logCategory "register"
-  addBuiltinService(Registers)
-
-  method init*(self: Registers): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-    self.registers = initTable[string, Register]()
-    return ok()
 
   proc setRegisterTextAsync*(self: Registers, text: string, register: string = ""): Future[void] {.async.} =
     self.registers[register] = Register(kind: RegisterKind.Text, text: text)
@@ -193,3 +189,6 @@ when implModule:
     self.recordingCommands.contains(registry)
 
   addGlobalDispatchTable "registers", genDispatchTable("registers")
+
+  proc init_module_register*() {.cdecl, exportc, dynlib.} =
+    getServices().addService(Registers())

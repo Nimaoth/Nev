@@ -1,4 +1,4 @@
-#use command_component snippet_component search_component layout text_editor_component
+#use command_component snippet_component search_component layout text_editor_component register
 import platform/platform
 
 const currentSourcePath2 = currentSourcePath()

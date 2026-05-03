@@ -183,7 +183,7 @@ when implModule:
       languageServerCommandLine*: LanguageServer
       defaultCommandHandler*: CommandHandler
       commandHandler*: CommandHandler
-      registers*: Registers
+      mRegisters*: Registers
 
       currentHistoryEntry*: int = 0
       eventHandler*: EventHandler
@@ -205,7 +205,7 @@ when implModule:
 
   func serviceName*(_: typedesc[CommandServiceImpl]): string = "CommandService"
 
-  addBuiltinService(CommandServiceImpl, Registers)
+  addBuiltinService(CommandServiceImpl)
 
   proc `==`(a, b: CommandId): bool {.borrow.}
   proc hash(a: CommandId): Hash {.borrow.}
@@ -216,9 +216,13 @@ when implModule:
         return $node
     return ""
 
+  proc registers*(self: CommandServiceImpl): Registers =
+    if self.mRegisters == nil:
+      self.mRegisters = getService(Registers).get(nil)
+    return self.mRegisters
+
   method init*(self: CommandServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"CommandServiceImpl.init"
-    self.registers = self.services.getService(Registers).get
     self.fallbackConfig = ConfigStore.new("CommandServiceImpl", "settings://CommandServiceImpl")
     self.shellCommandOutput = Rope.new("")
 
