@@ -161,10 +161,10 @@ when implModule:
 
     if location.getSome(location):
       te.targetSelection = location.toSelection.toRange
-      te.centerCursor(location.toPoint)
+      te.centerCursor(location.toPoint, snap = true)
     else:
       te.targetSelection = point(0, 0).toRange
-      te.scrollToCursor(point(0, 0))
+      te.centerCursor(point(0, 0), snap = true)
 
     if self.currentDiff:
       self.editor.getCommandComponent().get.executeCommand(&"""start-diff "" true {self.currentStaged}""")
@@ -222,10 +222,10 @@ when implModule:
     if self.editor.currentDocument.filename == path and self.editor.currentDocument.staged == self.currentStaged:
       if location.getSome(location):
         te.targetSelection = location.toSelection.toRange
-        te.centerCursor(location.toPoint)
+        te.centerCursor(location.toPoint, snap = true)
       else:
         te.targetSelection = point(0, 0).toRange
-        te.scrollToCursor(point(0, 0))
+        te.centerCursor(point(0, 0), snap = true)
 
       if self.currentDiff:
         self.editor.getCommandComponent().get.executeCommand(&"""start-diff "" true {self.currentStaged}""")
