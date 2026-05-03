@@ -1,4 +1,4 @@
-#use text_editor_component command_service
+#use text_editor_component command_service command_line
 import std/[options]
 import nimsumtree/[buffer, clock, rope]
 import misc/[custom_async, delayed_task, event]

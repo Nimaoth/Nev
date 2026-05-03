@@ -17,17 +17,17 @@ type
     files: Table[string, string]
     commandHistory*: seq[string]
 
-  LanguageServerCommandLineService* = ref object of Service
+  LanguageServerCommandLineService* = ref object of DynamicService
     languageServer*: LanguageServerCommandLine
     config: ConfigStore
 
 func serviceName*(_: typedesc[LanguageServerCommandLineService]): string = "LanguageServerCommandLineService"
 
-addBuiltinService(LanguageServerCommandLineService, DocumentEditorService, EventHandlerService, CommandService, SessionService)
-
 proc newLanguageServerCommandLine(services: Services): LanguageServerCommandLine {.gcsafe, raises: [].}
 
-method init*(self: LanguageServerCommandLineService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+proc newLanguageServerCommandLineService*(): LanguageServerCommandLineService =
+  let self = LanguageServerCommandLineService()
+  self.services = getServices()
   self.languageServer = newLanguageServerCommandLine(self.services)
   self.config = self.services.getService(ConfigService).get.runtime
   discard self.languageServer.documents.onEditorRegistered.subscribe proc(editor: DocumentEditor) =
@@ -36,7 +36,7 @@ method init*(self: LanguageServerCommandLineService): Future[Result[void, ref Ca
       return
     let lsps = doc.getLanguageServerComponent().getOr:
       return
-    let languages = self.config.get("lsp.command-line.languages", newSeq[string]())
+    let languages = self.config.get("lsp.command-line.languages", @["command-line"])
     if language.languageId in languages and not lsps.hasLanguageServer(self.languageServer):
       discard lsps.addLanguageServer(self.languageServer)
 
@@ -51,7 +51,7 @@ method init*(self: LanguageServerCommandLineService): Future[Result[void, ref Ca
       log lvlError, &"Failed to restore command line history: {e.msg}"
 
   session.addSaveHandler "command-line-history", save, load
-  return ok()
+  return self
 
 proc lspCommandLineGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   let self = self.LanguageServerCommandLine
@@ -64,7 +64,7 @@ proc lspCommandLineGetCompletions*(self: LanguageServerDynamic, filename: string
   var completions = newSeq[CompletionItem]()
 
   var useActive = false
-  if self.documents.getDocument(filename).getSome(document):
+  if self.documents.getDocumentByPath(filename).getSome(document):
     let text = document.getTextComponent().getOr:
       return CompletionList(items: completions).success
 

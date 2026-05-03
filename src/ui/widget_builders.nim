@@ -154,15 +154,18 @@ proc updateWidgetTree*(self: App, builder: UINodeBuilder, frameIndex: int) =
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = self.inputHistory, textColor = textColor, pivot = vec2(1, 0))
 
         builder.panel(&{FillX, SizeToContentY}, pivot = vec2(1, 0)):
-          let wasActive = commands.commandLineEditor.active
-          commands.commandLineEditor.active = commands.commandLineMode
-          if commands.commandLineEditor.active != wasActive:
-            commands.commandLineEditor.markDirty(notify=false)
+          if commands.commandLineEditor != nil:
+            let wasActive = commands.commandLineEditor.active
+            commands.commandLineEditor.active = commands.commandLineMode
+            if commands.commandLineEditor.active != wasActive:
+              commands.commandLineEditor.markDirty(notify=false)
 
-          builder.pushMaxBounds(rootBounds.wh * vec2(0.75, 0.5))
-          defer:
-            builder.popMaxBounds()
-          commandLineOverlays.add commands.commandLineEditor.render(builder)
+            builder.pushMaxBounds(rootBounds.wh * vec2(0.75, 0.5))
+            defer:
+              builder.popMaxBounds()
+            commandLineOverlays.add commands.commandLineEditor.render(builder)
+          else:
+            log lvlWarn, &"No command line editor"
 
       builder.panel(&{FlushBorders})
 

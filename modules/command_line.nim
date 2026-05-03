@@ -1,9 +1,10 @@
-#use command_service layout text text_editor_component
+#use command_service layout text_editor_component register command_component
 import std/[options, strutils, sequtils, strformat, json, streams]
 import misc/[jsonex, myjsonutils]
 import service, lisp, document_editor, log, command_service
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 logCategory "command-line"
 
@@ -17,12 +18,13 @@ type
 func serviceName*(_: typedesc[CommandLineService]): string = "CommandLineService"
 
 # DLL API
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc commandServiceCommandLineMode(self: CommandLineService): bool
 proc commandServiceCommandLineEditor(self: CommandLineService): DocumentEditor
 proc commandServiceOpenCommandLine(self: CommandLineService, initialValue: string = "", prefix: string = "", handler: CommandHandler = nil)
 proc commandServiceHandleCommand(self: CommandLineService, command: string): Option[string]
 proc commandLineReplayCommands(self: CommandLineService, register: string)
+proc commandLineExitCommandLine(self: CommandLineService)
 {.pop.}
 
 # Nice wrappers
@@ -41,10 +43,10 @@ when implModule:
   import layout/layout
   import text/language/[language_server_base]
   import text/[display_map, overlay_map]
-  import config_provider, dispatch_tables, input_api, language_server_command_line, events
+  import config_provider, dispatch_tables, input_api, events
   import decoration_component, document, vfs_service, vfs, register
   import language_server_command_line, command_component, text_editor_component, text_component, document_editor
-  import scripting_api
+  import scripting_api, event_service
 
   {.push gcsafe.}
   {.push raises: [].}
@@ -68,32 +70,38 @@ when implModule:
 
   proc commandLine(self: CommandLineService, initialValue: string = "", prefix: string = "")
 
-  addBuiltinService(CommandLineServiceImpl, DocumentEditorService)
-
   proc requestRender(self: CommandLineService) =
     if self.services.getService(PlatformService).getSome(platform):
       platform.platform.requestRender()
 
   proc newCommandLineService(): CommandLineServiceImpl =
     let self = CommandLineServiceImpl()
-    let editors = getServiceChecked(DocumentEditorService)
-    let commandLineDocument = editors.createDocument("text", "ed://.command-line", load = false, %%*{})
-    assert commandLineDocument != nil
-    self.mCommandLineEditor = editors.createEditorForDocument(commandLineDocument, %%*{
-      "usage": "command-line",
-      "settings": {
-        "text.disable-completions": true,
-        "ui.line-numbers": "none",
-        "ui.whitespace-char": " ",
-        "text.cursor-margin": 0,
-        "text.disable-scrolling": true,
-        "text.default-mode": "vim.insert",
-        "text.highlight-matches.enable": false,
-      },
-    }).get(nil)
-    self.mCommandLineEditor.renderHeader = false
-    discard self.mCommandLineEditor.onMarkedDirty.subscribe () => self.requestRender()
-    editors.commandLineEditor = self.mCommandLineEditor
+    let eventService = getServiceChecked(EventService)
+    eventService.listen(newId(), "text-factory/registered"):
+      proc(event, payload: string) =
+        log lvlInfo, "Create command line text editor"
+        let editors = getServiceChecked(DocumentEditorService)
+        let commandLineDocument = editors.createDocument("text", "ed://.command-line", load = false, %%*{
+          "language": "command-line",
+        })
+        assert commandLineDocument != nil
+        self.mCommandLineEditor = editors.createEditorForDocument(commandLineDocument, %%*{
+          "usage": "command-line",
+          "settings": {
+            "text.disable-completions": true,
+            "ui.line-numbers": "none",
+            "ui.whitespace-char": " ",
+            "text.cursor-margin": 0,
+            "text.disable-scrolling": true,
+            "text.default-mode": "vim.insert",
+            "text.highlight-matches.enable": false,
+          },
+        }).get(nil)
+        self.mCommandLineEditor.renderHeader = false
+        discard self.mCommandLineEditor.onMarkedDirty.subscribe () => self.requestRender()
+        editors.commandLineEditor = self.mCommandLineEditor
+        getServiceChecked(LayoutService).commandLineEditor = self.mCommandLineEditor
+
     return self
 
   proc languageServerCommandLine*(self: CommandLineServiceImpl): LanguageServer =
@@ -144,6 +152,7 @@ when implModule:
       self.currentHistoryEntry = 0
       self.commandLineInputMode = true
       self.commandLineResultMode = false
+      editor.active = true
       self.commandHandler = nil
       self.prefix = prefix
       editor.config.set("text.disable-completions", false)
@@ -176,7 +185,7 @@ when implModule:
   proc commandLine(self: CommandLineService, initialValue: string = "", prefix: string = "") {.expose("commands").} =
     self.commandServiceOpenCommandLine(initialValue, prefix)
 
-  proc exitCommandLine*(self: CommandLineService) {.expose("commands").} =
+  proc commandLineExitCommandLine(self: CommandLineService) =
     let self = self.CommandLineServiceImpl
     let editor = self.commandLineEditor
     if editor.currentDocument.getTextComponent().getSome(text):
@@ -191,6 +200,7 @@ when implModule:
     editor.currentDocument.setReadOnly(false)
     self.commandLineInputMode = false
     self.commandLineResultMode = false
+    editor.active = false
     try:
       if self.commandHandler.isNotNil:
         discard self.commandHandler(string.none)
@@ -200,6 +210,9 @@ when implModule:
       log lvlError, &"exitCommandLine: {e.msg}"
     self.commandHandler = nil
     self.requestRender()
+
+  proc exitCommandLine*(self: CommandLineService) {.expose("commands").} =
+    commandLineExitCommandLine(self)
 
   proc commandLineResult*(self: CommandLineService, value: string, showInCommandLine: bool = false,
       appendAndShowInFile: bool = false, filename: string = "ed://.shell-command-results") {.expose("commands").} =
@@ -214,6 +227,7 @@ when implModule:
       self.currentHistoryEntry = 0
       self.commandLineInputMode = false
       self.commandLineResultMode = true
+      editor.active = true
       self.commandHandler = nil
     editor.config.set("text.disable-completions", false)
     editor.config.set("text.disable-scrolling", false)
@@ -252,6 +266,7 @@ when implModule:
     let editor = self.commandLineEditor
     self.commandLineInputMode = false
     self.commandLineResultMode = false
+    editor.active = false
 
     var input = ""
     if editor.currentDocument.getTextComponent().getSome(text):
@@ -442,9 +457,41 @@ when implModule:
 
   addGlobalDispatchTable "commands", genDispatchTable("commands")
 
-  proc init_module_command_line_service*() {.cdecl, exportc, dynlib.} =
+  proc toStringResult(node: JsonNode): string =
+    if node != nil and node.kind != JNull:
+        return $node
+    return ""
+
+  proc init_module_command_line*() {.cdecl, exportc, dynlib.} =
+    getServices().addService(newLanguageServerCommandLineService())
     getServices().addService(newCommandLineService())
+    let commands = getServiceChecked(CommandService)
+    let table = genDispatchTable("commands")
+    for value in table:
+      capture value:
+        discard commands.registerCommand(command_service.Command(
+          name: value.name,
+          parameters: value.params.mapIt((it.name, it.typ)),
+          description: value.docs,
+          returnType: value.returnType,
+          execute: (proc(args: string): string =
+            try:
+              var argsJson = newJArray()
+              try:
+                for a in newStringStream(args).parseJsonFragments():
+                  argsJson.add a
+              except CatchableError as e:
+                log(lvlError, fmt"Failed to parse arguments '{args}': {e.msg}")
+
+              return value.dispatch(argsJson).toStringResult()
+            except CatchableError as e:
+              log lvlError, &"Failed to execute command '{value.name}': {e.msg}"
+              return ""
+          )
+        ), override = true)
 
 else:
   proc replayCommands*(self: CommandLineService, register: string) =
     commandLineReplayCommands(self, register)
+  proc exitCommandLine*(self: CommandLineService) =
+    commandLineExitCommandLine(self)

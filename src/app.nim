@@ -7,7 +7,6 @@ import scripting/[expose]
 import platform/[platform]
 import workspaces/[workspace]
 import config_provider, app_interface
-import language_server_command_line
 import input, events, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
 import text_component, text_editor_component
 import text/[custom_treesitter]
@@ -737,18 +736,18 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.generalSettings = GeneralSettings.new(self.config.runtime)
   self.debugSettings = DebugSettings.new(self.config.runtime)
 
-  self.layout = services.getService(LayoutService).get
-  self.editors = services.getService(DocumentEditorService).get
-  self.session = services.getService(SessionService).get
-  self.events = services.getService(EventHandlerService).get
-  self.plugins = services.getService(PluginService).get
-  self.registers = services.getService(Registers).get
-  self.vfsService = services.getService(VFSService).get
-  self.workspace = services.getService(Workspace).get
-  self.commands = services.getService(CommandService).get
-  self.commandLine = services.getService(CommandLineService).get
-  self.toast = services.getService(ToastService).get
-  self.themes = services.getService(ThemeService).get
+  self.layout = services.getServiceChecked(LayoutService)
+  self.editors = services.getServiceChecked(DocumentEditorService)
+  self.session = services.getServiceChecked(SessionService)
+  self.events = services.getServiceChecked(EventHandlerService)
+  self.plugins = services.getServiceChecked(PluginService)
+  self.registers = services.getServiceChecked(Registers)
+  self.vfsService = services.getServiceChecked(VFSService)
+  self.workspace = services.getServiceChecked(Workspace)
+  self.commands = services.getServiceChecked(CommandService)
+  self.commandLine = services.getServiceChecked(CommandLineService)
+  self.toast = services.getServiceChecked(ToastService)
+  self.themes = services.getServiceChecked(ThemeService)
   self.vfs = self.vfsService.vfs
 
   self.platform.fontSize = 14

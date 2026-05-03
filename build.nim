@@ -303,8 +303,18 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
           if inDegree[neighbor] == 0:
             queue.add(neighbor)
 
+
     var sortedNames = topoSort(modules)
-    assert sortedNames.toSet().len == modules.len
+    if sortedNames.toSet().len != modules.len:
+      proc printCycles(modules: Table[string, ModuleInfo], path: seq[string]) =
+        for dep in modules[path[^1]].dependencies:
+          if dep.module in path:
+            echo &"Cycle ", path & dep.module
+            continue
+          printCycles(modules, path & dep.module)
+
+      for module in modules.keys:
+        printCycles(modules, @[module])
 
     var imports = "when not defined(useDynlib):\n"
     var inits = "proc initModules*() =\n"
