@@ -213,8 +213,8 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
           for f in dep.features:
             &"-d:feat{f}"
       let allFeatures = features.join(" ")
-      let opt = if debug: "none" else: "speed"
-      let cmd = &"nim c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependencies} {allFeatures} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:{opt} --lineDir:off -d:mallocImport {m.path}"
+      let opt = if not debug or name == "text": "speed" else: "none"
+      let cmd = &"nim c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependencies} {allFeatures} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:{opt} --lineDir:off -d:mallocImport -d:exposeScriptingApi=true {m.path}"
       if parallel:
         while cmds.len >= 10:
           for i in countdown(cmds.high, 0):
