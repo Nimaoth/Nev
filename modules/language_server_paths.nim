@@ -1,4 +1,4 @@
-#use event_service
+#use event_service language_server_component
 import std/[options, tables, strutils, os, strformat]
 import misc/[custom_logger, custom_async, util, response, rope_utils, event, regex, rope_regex, myjsonutils]
 import text/language/[language_server_base, lsp_types]

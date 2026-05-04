@@ -1,4 +1,4 @@
-#use workspace_edit log layout text_editor_component treesitter_component command_service event_service
+#use workspace_edit log layout text_editor_component treesitter_component command_service event_service language_server_component
 import std/[strformat, strutils, os, sets, tables, options, json, sequtils, uri]
 import misc/[id, custom_logger, util, custom_async, async_process, event, response, rope_utils, array_view, jsonex, myjsonutils]
 import text/language/[language_server_base, lsp_types]

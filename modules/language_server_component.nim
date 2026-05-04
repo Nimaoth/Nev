@@ -6,7 +6,8 @@ import language_server_list
 export component
 from scripting_api import Cursor, Selection
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type LanguageServerComponent* = ref object of Component
   onLanguageServerAttached*: Event[tuple[component: LanguageServerComponent, languageServer: LanguageServerDynamic]]
@@ -15,29 +16,29 @@ type LanguageServerComponent* = ref object of Component
 
 # DLL API
 
-proc newLanguageServerComponent*(languageServer: LanguageServerList): LanguageServerComponent {.apprtl, gcsafe, raises: [].}
-proc languageServerComponentAddLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool {.apprtl, gcsafe, raises: [].}
-proc languageServerComponentRemoveLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool {.apprtl, gcsafe, raises: [].}
-proc languageServerComponentHasLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool {.apprtl, gcsafe, raises: [].}
-proc getLanguageServerComponent*(self: ComponentOwner): Option[LanguageServerComponent] {.apprtl, gcsafe, raises: [].}
+proc newLanguageServerComponent*(languageServer: LanguageServerList): LanguageServerComponent {.modrtl, gcsafe, raises: [].}
+proc languageServerComponentAddLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool {.modrtl, gcsafe, raises: [].}
+proc languageServerComponentRemoveLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool {.modrtl, gcsafe, raises: [].}
+proc languageServerComponentHasLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool {.modrtl, gcsafe, raises: [].}
+proc getLanguageServerComponent*(self: ComponentOwner): Option[LanguageServerComponent] {.modrtl, gcsafe, raises: [].}
 
-proc languageServerComponentGetDefinition(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetDeclaration(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetImplementation(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetTypeDefinition(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetReferences(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentSwitchSourceHeader(self: LanguageServerComponent, filename: string): Future[Option[string]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetCompletions(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetSymbols(self: LanguageServerComponent, filename: string): Future[seq[Symbol]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetWorkspaceSymbols(self: LanguageServerComponent, filename: string, query: string): Future[seq[Symbol]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetHover(self: LanguageServerComponent, filename: string, location: Cursor): Future[Option[string]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetSignatureHelp(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetInlayHints(self: LanguageServerComponent, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetDiagnostics(self: LanguageServerComponent, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetCompletionTriggerChars(self: LanguageServerComponent): set[char] {.apprtl, gcsafe, raises: [].}
-proc languageServerComponentGetCodeActions(self: LanguageServerComponent, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentRename(self: LanguageServerComponent, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.apprtl, async: (raises: []), gcsafe.}
-proc languageServerComponentExecuteCommand(self: LanguageServerComponent, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.apprtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetDefinition(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetDeclaration(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetImplementation(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetTypeDefinition(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetReferences(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentSwitchSourceHeader(self: LanguageServerComponent, filename: string): Future[Option[string]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetCompletions(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetSymbols(self: LanguageServerComponent, filename: string): Future[seq[Symbol]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetWorkspaceSymbols(self: LanguageServerComponent, filename: string, query: string): Future[seq[Symbol]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetHover(self: LanguageServerComponent, filename: string, location: Cursor): Future[Option[string]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetSignatureHelp(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetInlayHints(self: LanguageServerComponent, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetDiagnostics(self: LanguageServerComponent, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetCompletionTriggerChars(self: LanguageServerComponent): set[char] {.modrtl, gcsafe, raises: [].}
+proc languageServerComponentGetCodeActions(self: LanguageServerComponent, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentRename(self: LanguageServerComponent, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentExecuteCommand(self: LanguageServerComponent, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.modrtl, async: (raises: []), gcsafe.}
 
 # Nice wrappers
 proc addLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool = languageServerComponentAddLanguageServer(self, languageServer)

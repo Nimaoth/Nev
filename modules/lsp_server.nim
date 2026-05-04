@@ -1,4 +1,4 @@
-#use language_server_lsp terminal workspace_edit language_server_ue_as language_server_ue_cpp language_server_regex layout
+#use language_server_lsp terminal workspace_edit language_server_ue_as language_server_ue_cpp language_server_regex layout language_server_component
 
 const currentSourcePath2 = currentSourcePath()
 include module_base

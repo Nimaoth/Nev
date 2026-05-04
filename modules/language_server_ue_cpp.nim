@@ -1,4 +1,4 @@
-#use language_server_lsp language_server_regex event_service
+#use language_server_lsp language_server_regex event_service language_server_component
 
 # language_server_ue_cpp: Unreal Engine C++ language server module.
 #

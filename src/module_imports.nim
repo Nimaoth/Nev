@@ -13,6 +13,7 @@ when not defined(useDynlib):
   import "../modules/terminal/terminal.nim"
   import "../modules/formatting_component.nim"
   import "../modules/command_component.nim"
+  import "../modules/language_server_component.nim"
   import "../modules/hover_component.nim"
   import "../modules/snippet_component.nim"
   import "../modules/treesitter_component.nim"
@@ -62,6 +63,7 @@ proc initModules*() =
   when declared(init_module_terminal): init_module_terminal()
   when declared(init_module_formatting_component): init_module_formatting_component()
   when declared(init_module_command_component): init_module_command_component()
+  when declared(init_module_language_server_component): init_module_language_server_component()
   when declared(init_module_hover_component): init_module_hover_component()
   when declared(init_module_snippet_component): init_module_snippet_component()
   when declared(init_module_treesitter_component): init_module_treesitter_component()
@@ -130,6 +132,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_treesitter_component): shutdown_module_treesitter_component()
   when declared(shutdown_module_snippet_component): shutdown_module_snippet_component()
   when declared(shutdown_module_hover_component): shutdown_module_hover_component()
+  when declared(shutdown_module_language_server_component): shutdown_module_language_server_component()
   when declared(shutdown_module_command_component): shutdown_module_command_component()
   when declared(shutdown_module_formatting_component): shutdown_module_formatting_component()
   when declared(shutdown_module_terminal): shutdown_module_terminal()
@@ -160,6 +163,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("terminal")
   loadModule("formatting_component")
   loadModule("command_component")
+  loadModule("language_server_component")
   loadModule("hover_component")
   loadModule("snippet_component")
   loadModule("treesitter_component")

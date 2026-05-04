@@ -1,4 +1,4 @@
-#use command_component text_editor_component command_service
+#use command_component text_editor_component command_service language_server_component
 import std/[options]
 import nimsumtree/[rope]
 import misc/[event, custom_async, delayed_task, jsonex]
