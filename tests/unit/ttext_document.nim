@@ -10,7 +10,7 @@ import std/[unittest, options, json, sequtils]
 import misc/[util, traits, custom_logger]
 import text/text_document
 import config_provider, scripting_api, service
-import platform/platform, platform_service
+import platform/platform, platform_service, event_service, move_database
 
 defineSetAllDefaultSettings()
 
@@ -20,6 +20,9 @@ type
 gServices = Services()
 gServices.addBuiltinServices()
 gServices.getService(PlatformService).get.setPlatform(NilPlatform())
+
+init_module_event_service()
+init_module_move_database()
 gServices.waitForServices()
 
 suite "Text Document":

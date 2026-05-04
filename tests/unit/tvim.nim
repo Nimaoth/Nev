@@ -11,7 +11,7 @@ import misc/[util, custom_logger, jsonex]
 import config_provider, service, document, document_editor, text_component, text_editor_component
 import text/[text, text_editor, text_document]
 import platform/platform, platform_service, events, input_api, command_service, layout/layout, input
-import vim, register
+import vim, register, event_service, move_database
 import scripting_api except TextDocumentEditor
 
 defineSetAllDefaultSettings()
@@ -25,6 +25,8 @@ gServices = Services()
 gServices.addBuiltinServices()
 gServices.getService(PlatformService).get.setPlatform(NilPlatform())
 
+init_module_event_service()
+init_module_move_database()
 init_module_register()
 init_module_command_service()
 init_module_layout()
@@ -34,7 +36,7 @@ init_module_vim()
 gServices.waitForServices()
 
 getServiceChecked(CommandService).logCommands = true
-let eventService = getServiceChecked(EventHandlerService)
+let es = getServiceChecked(EventHandlerService)
 
 proc removeCommandScript(context: string, keys: string) =
   let context = if context.endsWith("."):
@@ -47,11 +49,11 @@ proc removeCommandScript(context: string, keys: string) =
   else:
     (context, "")
 
-  let config = eventService.getEventHandlerConfig(baseContext)
-  eventService.commandDescriptions.del(baseContext & subContext & keys)
+  let config = es.getEventHandlerConfig(baseContext)
+  es.commandDescriptions.del(baseContext & subContext & keys)
   config.removeCommandDescription(keys)
   config.removeCommand(subContext, keys)
-  eventService.invalidateCommandToKeysMap()
+  es.invalidateCommandToKeysMap()
 
 proc addCommandScript*(context: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) =
   let command = if arg.len == 0: action else: action & " " & arg
@@ -67,13 +69,13 @@ proc addCommandScript*(context: string, keys: string, action: string, arg: strin
     (context, "")
 
   if description.len > 0:
-    eventService.commandDescriptions[baseContext & subContext & keys] = description
-    eventService.getEventHandlerConfig(baseContext).addCommandDescription(keys, description)
+    es.commandDescriptions[baseContext & subContext & keys] = description
+    es.getEventHandlerConfig(baseContext).addCommandDescription(keys, description)
 
   var source = source
 
-  eventService.getEventHandlerConfig(baseContext).addCommand(subContext, keys, command, source)
-  eventService.invalidateCommandToKeysMap()
+  es.getEventHandlerConfig(baseContext).addCommand(subContext, keys, command, source)
+  es.invalidateCommandToKeysMap()
 
 proc loadKeybindingsFromJson*(json: JsonNodeEx, filename: string) =
   try:
@@ -94,9 +96,9 @@ proc loadKeybindingsFromJson*(json: JsonNodeEx, filename: string) =
               continue
 
           if addLeaders:
-            eventService.addKeyDefinitions(name, keys)
+            es.addKeyDefinitions(name, keys)
           else:
-            eventService.setKeyDefinitions(name, keys)
+            es.setKeyDefinitions(name, keys)
           continue
 
         elif context.startsWith("-"):
@@ -138,7 +140,7 @@ proc loadKeybindingsFromJson*(json: JsonNodeEx, filename: string) =
                 addCommandScript(context, keys, name, args, description, source = loc)
             else:
               let description = command.fields.getOrDefault("description", newJexString("")).getStr
-              eventService.addCommandDescription(context, keys, description)
+              es.addCommandDescription(context, keys, description)
 
           else:
             let (name, args, ok) = command.parseCommand()
