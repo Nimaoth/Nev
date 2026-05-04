@@ -77,7 +77,7 @@ when implModule:
   proc newCommandLineService(): CommandLineServiceImpl =
     let self = CommandLineServiceImpl()
     let eventService = getServiceChecked(EventService)
-    eventService.listen(newId(), "text-factory/registered"):
+    eventService.listen(newId(), "app/initialized"):
       proc(event, payload: string) =
         log lvlInfo, "Create command line text editor"
         let editors = getServiceChecked(DocumentEditorService)
