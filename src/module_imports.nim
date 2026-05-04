@@ -22,6 +22,7 @@ when not defined(useDynlib):
   import "../modules/workspace_edit.nim"
   import "../modules/command_line.nim"
   import "../modules/search_component.nim"
+  import "../modules/move_database.nim"
   import "../modules/text/text.nim"
   import "../modules/vim.nim"
   import "../modules/language_server_ctags.nim"
@@ -66,6 +67,7 @@ proc initModules*() =
   when declared(init_module_workspace_edit): init_module_workspace_edit()
   when declared(init_module_command_line): init_module_command_line()
   when declared(init_module_search_component): init_module_search_component()
+  when declared(init_module_move_database): init_module_move_database()
   when declared(init_module_text): init_module_text()
   when declared(init_module_vim): init_module_vim()
   when declared(init_module_language_server_ctags): init_module_language_server_ctags()
@@ -106,6 +108,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_language_server_ctags): shutdown_module_language_server_ctags()
   when declared(shutdown_module_vim): shutdown_module_vim()
   when declared(shutdown_module_text): shutdown_module_text()
+  when declared(shutdown_module_move_database): shutdown_module_move_database()
   when declared(shutdown_module_search_component): shutdown_module_search_component()
   when declared(shutdown_module_command_line): shutdown_module_command_line()
   when declared(shutdown_module_workspace_edit): shutdown_module_workspace_edit()
@@ -154,6 +157,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("workspace_edit")
   loadModule("command_line")
   loadModule("search_component")
+  loadModule("move_database")
   loadModule("text")
   loadModule("vim")
   loadModule("language_server_ctags")

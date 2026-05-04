@@ -431,3 +431,60 @@ proc `==`*(a, b: Rope): bool =
       return false
 
   return true
+
+proc findSurroundStart*(rope: Rope, cursor: api.Cursor, c0: char, c1: char, depth: int = 1): Option[api.Cursor] =
+  var depth = depth
+  var res = cursor
+
+  # todo: use RopeCursor
+  while res.line >= 0:
+    let line = rope.getLine(res.line)
+    res.column = min(res.column, line.len - 1)
+    while line.len > 0 and res.column >= 0:
+      let c = line.charAt(res.column)
+      # debugf"findSurroundStart: {res} -> {depth}, '{c}'"
+      if c == c1 and (depth < 1 or c0 != c1):
+        inc depth
+        if depth == 0:
+          return res.some
+      elif c == c0:
+        dec depth
+        if depth == 0:
+          return res.some
+      dec res.column
+
+    if res.line == 0:
+      return api.Cursor.none
+
+    res = (res.line - 1, rope.lineLen(res.line - 1) - 1)
+
+  return api.Cursor.none
+
+proc findSurroundEnd*(rope: Rope, cursor: api.Cursor, c0: char, c1: char, depth: int = 1): Option[api.Cursor] =
+  let lineCount = rope.lines
+  var depth = depth
+  var res = cursor
+
+  # todo: use RopeCursor
+  while res.line < lineCount:
+    let line = rope.getLine(res.line)
+    res.column = min(res.column, line.len - 1)
+    while line.len > 0 and res.column < line.len:
+      let c = line.charAt(res.column)
+      # echo &"findSurroundEnd: {res} -> {depth}, '{c}'"
+      if c == c0 and (depth < 1 or c0 != c1):
+        inc depth
+        if depth == 0:
+          return res.some
+      elif c == c1:
+        dec depth
+        if depth == 0:
+          return res.some
+      inc res.column
+
+    if res.line == lineCount - 1:
+      return api.Cursor.none
+
+    res = (res.line + 1, 0)
+
+  return api.Cursor.none

@@ -1,3 +1,4 @@
+#use
 import std/[strutils, sequtils, sugar, strformat, tables, json]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as sca import nil
@@ -11,948 +12,910 @@ import lisp
 
 logCategory "moves"
 
+const currentSourcePath2 = currentSourcePath()
+include module_base
+
 type
+  MoveFunction* = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] {.gcsafe, raises: [].}
+
   MoveImpl* = proc(rope: Rope, move: string, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.gcsafe, raises: [].}
-  MoveDatabase* = ref object of Service
+  MoveDatabase* = ref object of DynamicService
     moves: Table[string, MoveImpl]
     env: Env
     debugMoves*: bool
 
 func serviceName*(_: typedesc[MoveDatabase]): string = "MoveDatabase"
 
-addBuiltinService(MoveDatabase)
+# DLL API
+{.push modrtl, gcsafe, raises: [].}
+proc movesApplyMove2(self: MoveDatabase, displayMap: DisplayMap, move: LispVal, originalSelections: openArray[Selection], baseEnv: Env, fallback: MoveFunction): seq[Selection]
+proc movesApplyMove(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], fallback: MoveFunction = nil, env: Env = Env()): seq[Selection]
+proc movesRegisterMove(self: MoveDatabase, move: string, impl: MoveImpl)
+{.pop.}
 
-method init*(self: MoveDatabase): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  self.env = baseEnv()
-  return ok()
+# Nice wrappers
+proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: LispVal, originalSelections: openArray[Selection], baseEnv: Env, fallback: MoveFunction): seq[Selection] = movesApplyMove2(self, displayMap, move, originalSelections, baseEnv, fallback)
+proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], fallback: MoveFunction = nil, env: Env = Env()): seq[Selection] = movesApplyMove(self, displayMap, move, selections, fallback, env)
+proc registerMove*(self: MoveDatabase, move: string, impl: MoveImpl) = movesRegisterMove(self, move, impl)
 
 proc toggleDebugMoves*(self: MoveDatabase) =
   self.debugMoves = not self.debugMoves
 
-type Selector = enum OriginalStart, OriginalEnd, LastStart, LastEnd, CurrentStart, CurrentEnd
-proc parseSelector(val: LispVal, default: Selector): Selector =
-  if val.kind == Symbol:
-    case val.sym
-    of "orig-start": OriginalStart
-    of "orig-end": OriginalEnd
-    of "last-start": LastStart
-    of "last-end": LastEnd
-    of "curr-start": CurrentStart
-    of "curr-end": CurrentEnd
-    of ".": default
+# Implementation
+when implModule:
+  proc newMoveDatabase(): MoveDatabase =
+    let self = MoveDatabase()
+    self.env = baseEnv()
+    return self
+
+  type Selector = enum OriginalStart, OriginalEnd, LastStart, LastEnd, CurrentStart, CurrentEnd
+  proc parseSelector(val: LispVal, default: Selector): Selector =
+    if val.kind == Symbol:
+      case val.sym
+      of "orig-start": OriginalStart
+      of "orig-end": OriginalEnd
+      of "last-start": LastStart
+      of "last-end": LastEnd
+      of "curr-start": CurrentStart
+      of "curr-end": CurrentEnd
+      of ".": default
+      else:
+        log lvlWarn, &"Unknown cursor selector '{val.sym}'"
+        default
     else:
-      log lvlWarn, &"Unknown cursor selector '{val.sym}'"
+      log lvlWarn, &"Failed to parse cursor selector '{val}'. Expected Symbol, got {val.kind}"
       default
-  else:
-    log lvlWarn, &"Failed to parse cursor selector '{val}'. Expected Symbol, got {val.kind}"
-    default
 
-proc selectCursor(selector: Selector, i: int, default: Cursor, selections, lastSelections, originalSelections: openArray[Selection]): Cursor =
-  case selector
-  of OriginalStart:
-    if i in 0..<originalSelections.len: originalSelections[i].first else: default
-  of OriginalEnd:
-    if i in 0..<originalSelections.len: originalSelections[i].last else: default
-  of LastStart:
-    if i in 0..<lastSelections.len: lastSelections[i].first else: default
-  of LastEnd:
-    if i in 0..<lastSelections.len: lastSelections[i].last else: default
-  of CurrentStart:
-    if i in 0..<selections.len: selections[i].first else: default
-  of CurrentEnd:
-    if i in 0..<selections.len: selections[i].last else: default
+  proc selectCursor(selector: Selector, i: int, default: Cursor, selections, lastSelections, originalSelections: openArray[Selection]): Cursor =
+    case selector
+    of OriginalStart:
+      if i in 0..<originalSelections.len: originalSelections[i].first else: default
+    of OriginalEnd:
+      if i in 0..<originalSelections.len: originalSelections[i].last else: default
+    of LastStart:
+      if i in 0..<lastSelections.len: lastSelections[i].first else: default
+    of LastEnd:
+      if i in 0..<lastSelections.len: lastSelections[i].last else: default
+    of CurrentStart:
+      if i in 0..<selections.len: selections[i].first else: default
+    of CurrentEnd:
+      if i in 0..<selections.len: selections[i].last else: default
 
-proc vimMotionWord*(text: Rope, cursor: Cursor, inclusive: bool): Selection =
-  const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
-
-  var line = text.getLine(cursor.line)
-  if line.len == 0:
-    return (cursor.line, 0).toSelection
-
-  let c = line.charAt(cursor.column.clamp(0, line.len - 1))
-  if c in Whitespace:
-    let (startColumn, endColumn) = line.getEnclosing(cursor.column, inclusive, (c) => c in Whitespace)
-    return ((cursor.line, startColumn), (cursor.line, endColumn))
-
-  elif c in AlphaNumeric:
-    let (startColumn, endColumn) = line.getEnclosing(cursor.column, inclusive, (c) => c in AlphaNumeric)
-    return ((cursor.line, startColumn), (cursor.line, endColumn))
-
-  else:
-    let (startColumn, endColumn) = line.getEnclosing(cursor.column, inclusive, (c) => c notin Whitespace and c notin AlphaNumeric)
-    return ((cursor.line, startColumn), (cursor.line, endColumn))
-
-type VimWordCharCategory {.pure.} = enum Word, Whitespace, Other
-
-proc vimWordCharCategory*(c: Rune): VimWordCharCategory =
-  if c.int < 128:
+  proc vimMotionWord*(text: Rope, cursor: Cursor, inclusive: bool): Selection =
     const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
-    if c.char in Whitespace:
+
+    var line = text.getLine(cursor.line)
+    if line.len == 0:
+      return (cursor.line, 0).toSelection
+
+    let c = line.charAt(cursor.column.clamp(0, line.len - 1))
+    if c in Whitespace:
+      let (startColumn, endColumn) = line.getEnclosing(cursor.column, inclusive, (c) => c in Whitespace)
+      return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+    elif c in AlphaNumeric:
+      let (startColumn, endColumn) = line.getEnclosing(cursor.column, inclusive, (c) => c in AlphaNumeric)
+      return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+    else:
+      let (startColumn, endColumn) = line.getEnclosing(cursor.column, inclusive, (c) => c notin Whitespace and c notin AlphaNumeric)
+      return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+  type VimWordCharCategory {.pure.} = enum Word, Whitespace, Other
+
+  proc vimWordCharCategory*(c: Rune): VimWordCharCategory =
+    if c.int < 128:
+      const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
+      if c.char in Whitespace:
+        return VimWordCharCategory.Whitespace
+      if c.char in AlphaNumeric:
+        return VimWordCharCategory.Word
+      return VimWordCharCategory.Other
+    if c.isWhitespace:
       return VimWordCharCategory.Whitespace
-    if c.char in AlphaNumeric:
+    if c.isAlpha:
       return VimWordCharCategory.Word
     return VimWordCharCategory.Other
-  if c.isWhitespace:
-    return VimWordCharCategory.Whitespace
-  if c.isAlpha:
-    return VimWordCharCategory.Word
-  return VimWordCharCategory.Other
 
-proc vimMotionWordBack*(text: Rope, cursor: Cursor, inclusive: bool): Selection =
-  if cursor.column == 0:
-    return cursor.toSelection
+  proc vimMotionWordBack*(text: Rope, cursor: Cursor, inclusive: bool): Selection =
+    if cursor.column == 0:
+      return cursor.toSelection
 
-  let prevCursor = text.clipPoint(point(cursor.line, cursor.column - 1), Left).toCursor
-  let current = text.runeAt(cursor.toPoint)
-  let prev = text.runeAt(prevCursor.toPoint)
-  if current.vimWordCharCategory == prev.vimWordCharCategory:
-    return vimMotionWord(text, cursor, inclusive)
-  return vimMotionWord(text, prevCursor, inclusive)
+    let prevCursor = text.clipPoint(point(cursor.line, cursor.column - 1), Left).toCursor
+    let current = text.runeAt(cursor.toPoint)
+    let prev = text.runeAt(prevCursor.toPoint)
+    if current.vimWordCharCategory == prev.vimWordCharCategory:
+      return vimMotionWord(text, cursor, inclusive)
+    return vimMotionWord(text, prevCursor, inclusive)
 
-proc vimMotionWordBig*(text: Rope, cursor: Cursor, inclusive: bool): Selection =
-  var line = text.getLine(cursor.line)
-  if line.len == 0:
-    return (cursor.line, 0).toSelection
+  proc vimMotionWordBig*(text: Rope, cursor: Cursor, inclusive: bool): Selection =
+    var line = text.getLine(cursor.line)
+    if line.len == 0:
+      return (cursor.line, 0).toSelection
 
-  let c = line.charAt(cursor.column.clamp(0, line.len - 1))
-  if c in Whitespace:
-    let (startColumn, endColumn) = line.getEnclosing(cursor.column, inclusive, (c) => c in Whitespace)
-    return ((cursor.line, startColumn), (cursor.line, endColumn))
+    let c = line.charAt(cursor.column.clamp(0, line.len - 1))
+    if c in Whitespace:
+      let (startColumn, endColumn) = line.getEnclosing(cursor.column, inclusive, (c) => c in Whitespace)
+      return ((cursor.line, startColumn), (cursor.line, endColumn))
 
-  else:
-    let (startColumn, endColumn) = line.getEnclosing(cursor.column, inclusive, (c) => c notin Whitespace)
-    return ((cursor.line, startColumn), (cursor.line, endColumn))
+    else:
+      let (startColumn, endColumn) = line.getEnclosing(cursor.column, inclusive, (c) => c notin Whitespace)
+      return ((cursor.line, startColumn), (cursor.line, endColumn))
 
-proc vimMotionParagraphInner*(text: Rope, cursor: Cursor): Selection =
-  # debugf"vimMotionParagraphInner {data}, {selections}"
-  let isEmpty = text.lineLen(cursor.line) == 0
-  var res: Selection = ((cursor.line.int, 0), cursor)
-  while res.first.line - 1 >= 0 and (text.lineLen(res.first.line - 1) == 0) == isEmpty:
-    dec res.first.line
-  while res.last.line + 1 < text.lines and (text.lineLen(res.last.line + 1) == 0) == isEmpty:
-    inc res.last.line
+  proc vimMotionParagraphInner*(text: Rope, cursor: Cursor): Selection =
+    # debugf"vimMotionParagraphInner {data}, {selections}"
+    let isEmpty = text.lineLen(cursor.line) == 0
+    var res: Selection = ((cursor.line.int, 0), cursor)
+    while res.first.line - 1 >= 0 and (text.lineLen(res.first.line - 1) == 0) == isEmpty:
+      dec res.first.line
+    while res.last.line + 1 < text.lines and (text.lineLen(res.last.line + 1) == 0) == isEmpty:
+      inc res.last.line
 
-  res.last.column = text.lineLen(res.last.line).int32
-  res
+    res.last.column = text.lineLen(res.last.line).int32
+    res
 
-proc vimMotionParagraphOuter*(text: Rope, cursor: Cursor): Selection =
-  result = vimMotionParagraphInner(text, cursor)
-  # todo
-  # if result.last.line + 1 < editor.lineCount:
-  #   result = result or vimMotionParagraphInner(data, text, (result.last.line.int + 1, 0).toCursor, 1, includeEol)
+  proc vimMotionParagraphOuter*(text: Rope, cursor: Cursor): Selection =
+    result = vimMotionParagraphInner(text, cursor)
+    # todo
+    # if result.last.line + 1 < editor.lineCount:
+    #   result = result or vimMotionParagraphInner(data, text, (result.last.line.int + 1, 0).toCursor, 1, includeEol)
 
-proc findNext*(text: Rope, cursor: Cursor, target: Rune): Cursor =
-  var c = text.cursorT(cursor.toPoint)
-  c.seekNextRune()
-  while not c.atEnd and c.currentRune != target:
+  proc findNext*(text: Rope, cursor: Cursor, target: Rune): Cursor =
+    var c = text.cursorT(cursor.toPoint)
     c.seekNextRune()
-  return c.position.toCursor
-
-proc clampCursor*(text: Rope, cursor: Cursor, includeAfter: bool = true): Cursor =
-  var cursor = cursor
-  cursor.line = clamp(cursor.line, 0, text.lines - 1)
-
-  var res = text.clipPoint(cursor.toPoint, Bias.Left).toCursor
-  var c = text.cursorT(res.toPoint)
-  if not includeAfter and c.currentRune == '\n'.Rune and res.column > 0:
-    c.seekPrevRune()
-    res = c.position.toCursor
-  return res
-
-proc moveCursorColumn(text: Rope, cursor: Cursor, offset: int, wrap: bool = true, includeEol: bool = true): Cursor =
-  var cursor = cursor
-
-  if cursor.line notin 0..<text.lines:
-    return cursor
-
-  var c = text.cursorT(cursor.toPoint)
-  var lastIndex = text.lastValidIndex(cursor.line, includeEol)
-
-  if offset > 0:
-    for i in 0..<offset:
-      if cursor.column >= lastIndex:
-        if not wrap:
-          break
-        if cursor.line < text.lines - 1:
-          cursor.line = cursor.line + 1
-          cursor.column = 0
-          lastIndex = text.lastValidIndex(cursor.line, includeEol)
-          c.seekForward(point(cursor.line, 0))
-          continue
-        else:
-          cursor.column = lastIndex
-          break
-
+    while not c.atEnd and c.currentRune != target:
       c.seekNextRune()
-      cursor = c.position.toCursor
+    return c.position.toCursor
 
-  elif offset < 0:
-    for i in 0..<(-offset):
-      if cursor.column == 0:
-        if not wrap:
-          break
-        if cursor.line > 0:
-          cursor.line = cursor.line - 1
-          lastIndex = text.lastValidIndex(cursor.line, includeEol)
-          c.seekPrevRune()
-          if not includeEol:
-            c.seekPrevRune()
-          cursor.column = lastIndex
-          continue
-        else:
-          cursor.column = 0
-          break
+  proc clampCursor*(text: Rope, cursor: Cursor, includeAfter: bool = true): Cursor =
+    var cursor = cursor
+    cursor.line = clamp(cursor.line, 0, text.lines - 1)
 
+    var res = text.clipPoint(cursor.toPoint, Bias.Left).toCursor
+    var c = text.cursorT(res.toPoint)
+    if not includeAfter and c.currentRune == '\n'.Rune and res.column > 0:
       c.seekPrevRune()
-      cursor = c.position.toCursor
+      res = c.position.toCursor
+    return res
 
-  return text.clampCursor(cursor, includeEol)
+  proc moveCursorColumn(text: Rope, cursor: Cursor, offset: int, wrap: bool = true, includeEol: bool = true): Cursor =
+    var cursor = cursor
 
-proc findSurroundStart*(rope: Rope, cursor: Cursor, c0: char, c1: char, depth: int = 1): Option[Cursor] =
-  var depth = depth
-  var res = cursor
+    if cursor.line notin 0..<text.lines:
+      return cursor
 
-  # todo: use RopeCursor
-  while res.line >= 0:
-    let line = rope.getLine(res.line)
-    res.column = min(res.column, line.len - 1)
-    while line.len > 0 and res.column >= 0:
-      let c = line.charAt(res.column)
-      # debugf"findSurroundStart: {res} -> {depth}, '{c}'"
-      if c == c1 and (depth < 1 or c0 != c1):
-        inc depth
-        if depth == 0:
-          return res.some
-      elif c == c0:
-        dec depth
-        if depth == 0:
-          return res.some
-      dec res.column
+    var c = text.cursorT(cursor.toPoint)
+    var lastIndex = text.lastValidIndex(cursor.line, includeEol)
 
-    if res.line == 0:
-      return Cursor.none
+    if offset > 0:
+      for i in 0..<offset:
+        if cursor.column >= lastIndex:
+          if not wrap:
+            break
+          if cursor.line < text.lines - 1:
+            cursor.line = cursor.line + 1
+            cursor.column = 0
+            lastIndex = text.lastValidIndex(cursor.line, includeEol)
+            c.seekForward(point(cursor.line, 0))
+            continue
+          else:
+            cursor.column = lastIndex
+            break
 
-    res = (res.line - 1, rope.lineLen(res.line - 1) - 1)
+        c.seekNextRune()
+        cursor = c.position.toCursor
 
-  return Cursor.none
+    elif offset < 0:
+      for i in 0..<(-offset):
+        if cursor.column == 0:
+          if not wrap:
+            break
+          if cursor.line > 0:
+            cursor.line = cursor.line - 1
+            lastIndex = text.lastValidIndex(cursor.line, includeEol)
+            c.seekPrevRune()
+            if not includeEol:
+              c.seekPrevRune()
+            cursor.column = lastIndex
+            continue
+          else:
+            cursor.column = 0
+            break
 
-proc findSurroundEnd*(rope: Rope, cursor: Cursor, c0: char, c1: char, depth: int = 1): Option[Cursor] =
-  let lineCount = rope.lines
-  var depth = depth
-  var res = cursor
+        c.seekPrevRune()
+        cursor = c.position.toCursor
 
-  # todo: use RopeCursor
-  while res.line < lineCount:
-    let line = rope.getLine(res.line)
-    res.column = min(res.column, line.len - 1)
-    while line.len > 0 and res.column < line.len:
-      let c = line.charAt(res.column)
-      # echo &"findSurroundEnd: {res} -> {depth}, '{c}'"
-      if c == c0 and (depth < 1 or c0 != c1):
-        inc depth
-        if depth == 0:
-          return res.some
-      elif c == c1:
-        dec depth
-        if depth == 0:
-          return res.some
-      inc res.column
+    return text.clampCursor(cursor, includeEol)
 
-    if res.line == lineCount - 1:
-      return Cursor.none
+  proc getSurrounding*(rope: Rope, selection: Selection, c0: char, c1: char, inside: bool): Selection =
+    if selection.isBackwards:
+      return rope.getSurrounding(selection.reverse, c0, c1, inside).reverse
+    result = selection
+    while true:
+      let lastChar = rope.charAt(result.last.toPoint)
+      let (startDepth, endDepth) = if lastChar == c0:
+        (1, 0)
+      elif lastChar == c1:
+        (0, 1)
+      else:
+        (1, 1)
 
-    res = (res.line + 1, 0)
+      if rope.findSurroundStart(result.first, c0, c1, startDepth).getSome(opening) and rope.findSurroundEnd(result.last, c0, c1, endDepth).getSome(closing):
+        result = (opening, closing)
+        if inside:
+          result.first = rope.moveCursorColumn(result.first, 1)
+          result.last = rope.moveCursorColumn(result.last, -1)
+        return
 
-  return Cursor.none
+      if rope.findSurroundEnd(result.first, c0, c1, -1).getSome(opening) and rope.findSurroundEnd(opening, c0, c1, 0).getSome(closing):
+        result = (opening, closing)
+        if inside:
+          result.first = rope.moveCursorColumn(result.first, 1)
+          result.last = rope.moveCursorColumn(result.last, -1)
+        return
+      else:
+        return
 
-proc getSurrounding*(rope: Rope, selection: Selection, c0: char, c1: char, inside: bool): Selection =
-  if selection.isBackwards:
-    return rope.getSurrounding(selection.reverse, c0, c1, inside).reverse
-  result = selection
-  while true:
-    let lastChar = rope.charAt(result.last.toPoint)
-    let (startDepth, endDepth) = if lastChar == c0:
-      (1, 0)
-    elif lastChar == c1:
-      (0, 1)
+  proc visualLineRange*(displayMap: DisplayMap, cursor: Cursor, bias: Bias, includeEol: bool = false): Selection =
+    let rope {.cursor.} = displayMap.buffer.visibleText
+    let lineLen = rope.lineLen(cursor.line)
+    let wrapPoint = displayMap.toWrapPoint(point(cursor.line, cursor.column), bias)
+    let displayLineStart = wrapPoint(wrapPoint.row)
+    let displayLineEnd = wrapPoint(wrapPoint.row + 1)
+    var res: Selection = (
+      displayMap.toPoint(displayLineStart, Right).toCursor,
+      displayMap.toPoint(displayLineEnd, Left).toCursor,
+    )
+    if res[1].column == 0:
+      res[1].line -= 1
+      res[1].column = rope.lineLen(res[1].line)
+
+    if not includeEol:
+      if res.last.column == lineLen:
+        res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
+      elif res.last.column < rope.lineLen(cursor.line): # This is the case if we're not in the last visual sub line
+        res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
+
+    res
+
+  proc visualLineRange*(displayMap: DisplayMap, point: WrapPoint, bias: Bias, includeEol: bool = false): Range[WrapPoint] =
+    let displayLineStart = wrapPoint(point.row)
+    let displayLineEnd = wrapPoint(point.row + 1)
+    let startBytes = displayMap.toWrapBytes(displayLineStart)
+    let endBytes = displayMap.toWrapBytes(displayLineEnd)
+    var endColumn = endBytes - startBytes
+    if not includeEol:
+      # todo: handle multi byte char
+      endColumn -= 1
+    displayLineStart...wrapPoint(displayLineStart.row.int, max(endColumn, 0))
+
+  proc getInlayRangeAt(displayMap: DisplayMap, point: Point): Range[WrapPoint] =
+    let left = displayMap.toWrapPoint(point, Bias.Left)
+    let right = displayMap.toWrapPoint(point, Bias.Right)
+    return left...right
+
+  proc moveCursorLine(text: Rope, displayMap: DisplayMap, cursor: Cursor, offset: int, targetColumn: int, wrap: bool, includeEol: bool): Cursor =
+    var cursor = cursor
+    let line = cursor.line + offset
+    if line < 0:
+      cursor = (0, cursor.column)
+    elif line >= text.lines:
+      cursor = (text.lines - 1, cursor.column)
     else:
-      (1, 1)
+      cursor.line = line
+      let wrapPoint = displayMap.toWrapPoint(Point.init(line, 0))
+      cursor.column = displayMap.toPoint(wrapPoint(wrapPoint.row.int, targetColumn)).column.int
+    return text.clampCursor(cursor, includeEol)
 
-    if rope.findSurroundStart(result.first, c0, c1, startDepth).getSome(opening) and rope.findSurroundEnd(result.last, c0, c1, endDepth).getSome(closing):
-      result = (opening, closing)
-      if inside:
-        result.first = rope.moveCursorColumn(result.first, 1)
-        result.last = rope.moveCursorColumn(result.last, -1)
-      return
+  proc moveCursorVisualLine(displayMap: DisplayMap, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false, targetColumn: int): Cursor =
+    let rope {.cursor.} = displayMap.buffer.visibleText
+    let bias = if offset < 0: Bias.Left else: Bias.Right
+    let wrapPointOld = displayMap.toWrapPoint(cursor.toPoint, Bias.Right)
+    let endWrapPoint = displayMap.wrapMap.endWrapPoint
+    var wrapPoint = wrapPoint(max(wrapPointOld.row.int + offset, 0), targetColumn).clamp(wrapPoint()...endWrapPoint)
 
-    if rope.findSurroundEnd(result.first, c0, c1, -1).getSome(opening) and rope.findSurroundEnd(opening, c0, c1, 0).getSome(closing):
-      result = (opening, closing)
-      if inside:
-        result.first = rope.moveCursorColumn(result.first, 1)
-        result.last = rope.moveCursorColumn(result.last, -1)
-      return
-    else:
-      return
+    let newWrapPointLine = displayMap.visualLineRange(wrapPoint, bias, includeEol = includeAfter)
+    let newWrapPointClamped = wrapPoint(wrapPoint.row.int, wrapPoint.column.int.clamp(0, newWrapPointLine.b.column.int))
+    wrapPoint = newWrapPointClamped
 
-proc visualLineRange*(displayMap: DisplayMap, cursor: Cursor, bias: Bias, includeEol: bool = false): Selection =
-  let rope {.cursor.} = displayMap.buffer.visibleText
-  let lineLen = rope.lineLen(cursor.line)
-  let wrapPoint = displayMap.toWrapPoint(point(cursor.line, cursor.column), bias)
-  let displayLineStart = wrapPoint(wrapPoint.row)
-  let displayLineEnd = wrapPoint(wrapPoint.row + 1)
-  var res: Selection = (
-    displayMap.toPoint(displayLineStart, Right).toCursor,
-    displayMap.toPoint(displayLineEnd, Left).toCursor,
-  )
-  if res[1].column == 0:
-    res[1].line -= 1
-    res[1].column = rope.lineLen(res[1].line)
+    let newPointLeft = displayMap.toWrapPoint(displayMap.toPoint(wrapPoint, Bias.Left), Bias.Left)
+    let newPointRight = displayMap.toWrapPoint(displayMap.toPoint(wrapPoint, Bias.Right), Bias.Right)
+    let newCursor = displayMap.toPoint(wrapPoint, if offset < 0: Bias.Left else: Bias.Right).toCursor
+    let r2 = displayMap.visualLineRange(newPointLeft, bias, includeEol = includeAfter)
+    let r2Len = r2.b.column.int - r2.a.column.int
 
-  if not includeEol:
-    if res.last.column == lineLen:
-      res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
-    elif res.last.column < rope.lineLen(cursor.line): # This is the case if we're not in the last visual sub line
-      res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
+    if newPointLeft == newPointRight:
+      # We didn't land inside overlayed text, so the new position is fine
+      # debugf"not inside overlay, take cursor {newCursor}"
+      return rope.clampCursor(newCursor, includeAfter)
 
-  res
+    # We landed inside overlayed text. Decide wether to go to the left/right side of the overlay
+    # Overlayed text in this case also means e.g. indents from the wrap map
+    if offset < 0: # Moving up
+      if newPointRight.row == wrapPoint.row:
+        if newCursor.column < rope.lineLen(newCursor.line):
+          return rope.clampCursor(newCursor, includeAfter)
+      elif newPointLeft.column.int <= targetColumn:
+        var clippedPoint = displayMap.toPoint(newPointLeft, Bias.Left)
+        if clippedPoint.column > 0:
+          clippedPoint = rope.clipPoint(point(clippedPoint.row, clippedPoint.column - 1), Bias.Left)
+          return rope.clampCursor(clippedPoint.toCursor, includeAfter)
 
-proc visualLineRange*(displayMap: DisplayMap, point: WrapPoint, bias: Bias, includeEol: bool = false): Range[WrapPoint] =
-  let displayLineStart = wrapPoint(point.row)
-  let displayLineEnd = wrapPoint(point.row + 1)
-  let startBytes = displayMap.toWrapBytes(displayLineStart)
-  let endBytes = displayMap.toWrapBytes(displayLineEnd)
-  var endColumn = endBytes - startBytes
-  if not includeEol:
-    # todo: handle multi byte char
-    endColumn -= 1
-  displayLineStart...wrapPoint(displayLineStart.row.int, max(endColumn, 0))
+        # Inside inlay which starts at beginning of line, move to previous actual line
+        # todo: if the previous line is wrapped or has inlays this might be incorrect
+        return moveCursorLine(rope, displayMap, cursor, offset, targetColumn, wrap, includeAfter)
 
-proc getInlayRangeAt(displayMap: DisplayMap, point: Point): Range[WrapPoint] =
-  let left = displayMap.toWrapPoint(point, Bias.Left)
-  let right = displayMap.toWrapPoint(point, Bias.Right)
-  return left...right
+      # go to wrap point and back to point one more time because if we land inside of e.g an overlay then the position will
+      # be clamped which can screw up the target column we set before, so we need to calculate the target column again.
+      let wrapPoint2 = wrapPoint(newPointLeft.row, targetColumn.clamp(0, r2Len)).clamp(wrapPoint()...endWrapPoint)
+      let newCursor2 = displayMap.toPoint(wrapPoint2, Bias.Right).toCursor
 
-proc moveCursorLine(text: Rope, displayMap: DisplayMap, cursor: Cursor, offset: int, targetColumn: int, wrap: bool, includeEol: bool): Cursor =
-  var cursor = cursor
-  let line = cursor.line + offset
-  if line < 0:
-    cursor = (0, cursor.column)
-  elif line >= text.lines:
-    cursor = (text.lines - 1, cursor.column)
-  else:
-    cursor.line = line
-    let wrapPoint = displayMap.toWrapPoint(Point.init(line, 0))
-    cursor.column = displayMap.toPoint(wrapPoint(wrapPoint.row.int, targetColumn)).column.int
-  return text.clampCursor(cursor, includeEol)
+      if newCursor2.line >= rope.lines:
+        return cursor
+      return rope.clampCursor(newCursor2, includeAfter)
 
-proc moveCursorVisualLine(displayMap: DisplayMap, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false, targetColumn: int): Cursor =
-  let rope {.cursor.} = displayMap.buffer.visibleText
-  let bias = if offset < 0: Bias.Left else: Bias.Right
-  let wrapPointOld = displayMap.toWrapPoint(cursor.toPoint, Bias.Right)
-  let endWrapPoint = displayMap.wrapMap.endWrapPoint
-  var wrapPoint = wrapPoint(max(wrapPointOld.row.int + offset, 0), targetColumn).clamp(wrapPoint()...endWrapPoint)
-
-  let newWrapPointLine = displayMap.visualLineRange(wrapPoint, bias, includeEol = includeAfter)
-  let newWrapPointClamped = wrapPoint(wrapPoint.row.int, wrapPoint.column.int.clamp(0, newWrapPointLine.b.column.int))
-  wrapPoint = newWrapPointClamped
-
-  let newPointLeft = displayMap.toWrapPoint(displayMap.toPoint(wrapPoint, Bias.Left), Bias.Left)
-  let newPointRight = displayMap.toWrapPoint(displayMap.toPoint(wrapPoint, Bias.Right), Bias.Right)
-  let newCursor = displayMap.toPoint(wrapPoint, if offset < 0: Bias.Left else: Bias.Right).toCursor
-  let r2 = displayMap.visualLineRange(newPointLeft, bias, includeEol = includeAfter)
-  let r2Len = r2.b.column.int - r2.a.column.int
-
-  if newPointLeft == newPointRight:
-    # We didn't land inside overlayed text, so the new position is fine
-    # debugf"not inside overlay, take cursor {newCursor}"
-    return rope.clampCursor(newCursor, includeAfter)
-
-  # We landed inside overlayed text. Decide wether to go to the left/right side of the overlay
-  # Overlayed text in this case also means e.g. indents from the wrap map
-  if offset < 0: # Moving up
-    if newPointRight.row == wrapPoint.row:
-      if newCursor.column < rope.lineLen(newCursor.line):
-        return rope.clampCursor(newCursor, includeAfter)
-    elif newPointLeft.column.int <= targetColumn:
-      var clippedPoint = displayMap.toPoint(newPointLeft, Bias.Left)
-      if clippedPoint.column > 0:
-        clippedPoint = rope.clipPoint(point(clippedPoint.row, clippedPoint.column - 1), Bias.Left)
+    elif offset > 0: # Moving down
+      if newPointLeft.row == wrapPoint.row:
+        # if newPointRight.row == wrapPoint.row: # todo
+        #   return rope.clampCursor(newCursor, includeAfter)
+        var clippedPoint = displayMap.toPoint(newPointLeft, Bias.Left)
+        if clippedPoint.column > 0:
+          # New point landed inside of inlayed text, move it one to the left
+          clippedPoint = rope.clipPoint(point(clippedPoint.row, clippedPoint.column - 1), Bias.Left)
+        return rope.clampCursor(clippedPoint.toCursor, includeAfter)
+      elif newPointRight.column.int >= targetColumn:
+        var clippedPoint = displayMap.toPoint(newPointRight, Bias.Right)
+        if clippedPoint.row.int == cursor.line and clippedPoint.column.int == rope.lineLen(clippedPoint.row.int):
+          return moveCursorLine(rope, displayMap, cursor, offset, targetColumn, wrap, includeAfter)
         return rope.clampCursor(clippedPoint.toCursor, includeAfter)
 
-      # Inside inlay which starts at beginning of line, move to previous actual line
-      # todo: if the previous line is wrapped or has inlays this might be incorrect
-      return moveCursorLine(rope, displayMap, cursor, offset, targetColumn, wrap, includeAfter)
-
-    # go to wrap point and back to point one more time because if we land inside of e.g an overlay then the position will
-    # be clamped which can screw up the target column we set before, so we need to calculate the target column again.
-    let wrapPoint2 = wrapPoint(newPointLeft.row, targetColumn.clamp(0, r2Len)).clamp(wrapPoint()...endWrapPoint)
-    let newCursor2 = displayMap.toPoint(wrapPoint2, Bias.Right).toCursor
-
-    if newCursor2.line >= rope.lines:
-      return cursor
-    return rope.clampCursor(newCursor2, includeAfter)
-
-  elif offset > 0: # Moving down
-    if newPointLeft.row == wrapPoint.row:
-      # if newPointRight.row == wrapPoint.row: # todo
-      #   return rope.clampCursor(newCursor, includeAfter)
-      var clippedPoint = displayMap.toPoint(newPointLeft, Bias.Left)
-      if clippedPoint.column > 0:
+      # go to wrap point and back to point one more time because if we land inside of e.g an overlay then the position will
+      # be clamped which can screw up the target column we set before, so we need to calculate the target column again.
+      let wrapPoint2 = wrapPoint(newPointRight.row, targetColumn.clamp(0, r2Len)).clamp(wrapPoint()...endWrapPoint)
+      var clippedPoint = displayMap.toPoint(wrapPoint2, Bias.Left)
+      let newPointInlayRange = displayMap.getInlayRangeAt(clippedPoint)
+      if newPointInlayRange.a != newPointInlayRange.b and clippedPoint.column > 0:
         # New point landed inside of inlayed text, move it one to the left
         clippedPoint = rope.clipPoint(point(clippedPoint.row, clippedPoint.column - 1), Bias.Left)
-      return rope.clampCursor(clippedPoint.toCursor, includeAfter)
-    elif newPointRight.column.int >= targetColumn:
-      var clippedPoint = displayMap.toPoint(newPointRight, Bias.Right)
+
       if clippedPoint.row.int == cursor.line and clippedPoint.column.int == rope.lineLen(clippedPoint.row.int):
         return moveCursorLine(rope, displayMap, cursor, offset, targetColumn, wrap, includeAfter)
-      return rope.clampCursor(clippedPoint.toCursor, includeAfter)
 
-    # go to wrap point and back to point one more time because if we land inside of e.g an overlay then the position will
-    # be clamped which can screw up the target column we set before, so we need to calculate the target column again.
-    let wrapPoint2 = wrapPoint(newPointRight.row, targetColumn.clamp(0, r2Len)).clamp(wrapPoint()...endWrapPoint)
-    var clippedPoint = displayMap.toPoint(wrapPoint2, Bias.Left)
-    let newPointInlayRange = displayMap.getInlayRangeAt(clippedPoint)
-    if newPointInlayRange.a != newPointInlayRange.b and clippedPoint.column > 0:
-      # New point landed inside of inlayed text, move it one to the left
-      clippedPoint = rope.clipPoint(point(clippedPoint.row, clippedPoint.column - 1), Bias.Left)
+      let newCursor2 = clippedPoint.toCursor
+      if newCursor2.line >= rope.lines:
+        return cursor
+      return rope.clampCursor(newCursor2, includeAfter)
 
-    if clippedPoint.row.int == cursor.line and clippedPoint.column.int == rope.lineLen(clippedPoint.row.int):
-      return moveCursorLine(rope, displayMap, cursor, offset, targetColumn, wrap, includeAfter)
-
-    let newCursor2 = clippedPoint.toCursor
-    if newCursor2.line >= rope.lines:
+    if newCursor.line >= rope.lines:
       return cursor
-    return rope.clampCursor(newCursor2, includeAfter)
+    return rope.clampCursor(newCursor, includeAfter)
 
-  if newCursor.line >= rope.lines:
-    return cursor
-  return rope.clampCursor(newCursor, includeAfter)
-
-type MoveFunction* = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] {.gcsafe, raises: [].}
-
-proc getCount(env: Env): int =
-  let val = env["count"]
-  if val != nil:
-    case val.kind
-    of Number:
-      if val.num.int == 0:
-        return 1
+  proc getCount(env: Env): int =
+    let val = env["count"]
+    if val != nil:
+      case val.kind
+      of Number:
+        if val.num.int == 0:
+          return 1
+        else:
+          return val.num.int
       else:
-        return val.num.int
-    else:
-      log lvlWarn, "Can't convert env.count (" & $val & ") to type int"
+        log lvlWarn, "Can't convert env.count (" & $val & ") to type int"
 
-  return 1
+    return 1
 
-proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], originalSelections: openArray[Selection], fallback: MoveFunction, args: openArray[LispVal], env: Env): seq[Selection] =
-  if self.debugMoves:
-    debugf"applyMoveImpl '{move}' {args}, {env.env}"
+  proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], originalSelections: openArray[Selection], fallback: MoveFunction, args: openArray[LispVal], env: Env): seq[Selection] =
+    if self.debugMoves:
+      debugf"applyMoveImpl '{move}' {args}, {env.env}"
 
-  template getEnv(name: string, typ: untyped, default: untyped): untyped =
-    block:
-      let val = env[name]
-      if val != nil:
-        try:
-          val.toJson().to(typ)
-        except CatchableError as e:
-          log lvlWarn, "In move '" & move & "': Failed to convert env." & name & " (" & $val & ") to typ " & $typ & ": " & e.msg
+    template getEnv(name: string, typ: untyped, default: untyped): untyped =
+      block:
+        let val = env[name]
+        if val != nil:
+          try:
+            val.toJson().to(typ)
+          except CatchableError as e:
+            log lvlWarn, "In move '" & move & "': Failed to convert env." & name & " (" & $val & ") to typ " & $typ & ": " & e.msg
+            default
+        else:
           default
-      else:
-        default
 
-  template getArg(index: int, typ: untyped, default: untyped): untyped =
-    block:
-      if index < args.len:
-        try:
-          args[index].toJson().to(typ)
-        except CatchableError as e:
-          log lvlWarn, "In move '" & move & "': Failed to convert argument " & $index & " to typ " & $typ & ": " & e.msg
+    template getArg(index: int, typ: untyped, default: untyped): untyped =
+      block:
+        if index < args.len:
+          try:
+            args[index].toJson().to(typ)
+          except CatchableError as e:
+            log lvlWarn, "In move '" & move & "': Failed to convert argument " & $index & " to typ " & $typ & ": " & e.msg
+            default
+        else:
           default
+
+    var count = env.getCount()
+    assert count != 0
+
+    let targetColumn = getEnv("target-column", int, 0)
+    let includeEol = getEnv("include-eol", bool, true)
+    let wrap = getEnv("wrap", bool, true)
+
+    let rope {.cursor.} = displayMap.buffer.visibleText
+
+    if move in self.moves:
+      let impl = self.moves[move]
+      return impl(rope, move, selections, count, includeEol)
+
+    case move
+    of "vim.word":
+      result = selections.mapIt(vimMotionWord(rope, it.last, false))
+      for _ in 1..<count:
+        for s in result.mitems:
+          s = s or vimMotionWord(rope, s.last, false) or vimMotionWord(rope, s.first, false)
+
+    of "vim.word-back":
+      result = selections.mapIt(vimMotionWordBack(rope, it.last, false))
+      for _ in 1..<count:
+        for s in result.mitems:
+          s = s or vimMotionWordBack(rope, s.first, false)
+
+    of "vim.WORD":
+      result = selections.mapIt(vimMotionWordBig(rope, it.last, false))
+      for _ in 1..<count:
+        for s in result.mitems:
+          s = s or vimMotionWordBig(rope, s.last, false) or vimMotionWordBig(rope, s.first, false)
+
+    of "vim.word-inner":
+      result = selections.mapIt(vimMotionWord(rope, it.last, false))
+      for _ in 1..<count:
+        for s in result.mitems:
+          s = s or vimMotionWord(rope, s.last, false) or vimMotionWord(rope, s.first, false)
+
+    of "vim.WORD-inner":
+      result = selections.mapIt(vimMotionWordBig(rope, it.last, false))
+      for _ in 1..<count:
+        for s in result.mitems:
+          s = s or vimMotionWordBig(rope, s.last, false) or vimMotionWordBig(rope, s.first, false)
+
+    of "vim.paragraph-inner":
+      result = selections.mapIt(vimMotionParagraphInner(rope, it.last))
+      for _ in 1..<count:
+        for s in result.mitems:
+          s = s or vimMotionParagraphInner(rope, s.last) or vimMotionParagraphInner(rope, s.first)
+
+    of "vim.paragraph-outer":
+      result = selections.mapIt(vimMotionParagraphOuter(rope, it.last))
+      for _ in 1..<count:
+        for s in result.mitems:
+          s = s or vimMotionParagraphOuter(rope, s.last) or vimMotionParagraphOuter(rope, s.first)
+
+    of "reverse":
+      return selections.mapIt(it.reverse)
+
+    of "norm":
+      return selections.mapIt(it.normalized)
+
+    of "combine":
+      if selections.len > 0:
+        var res = selections[0]
+        for s in selections:
+          res = res or s
+        return @[res]
       else:
-        default
+        return @selections
 
-  var count = env.getCount()
-  assert count != 0
-
-  let targetColumn = getEnv("target-column", int, 0)
-  let includeEol = getEnv("include-eol", bool, true)
-  let wrap = getEnv("wrap", bool, true)
-
-  let rope {.cursor.} = displayMap.buffer.visibleText
-
-  if move in self.moves:
-    let impl = self.moves[move]
-    return impl(rope, move, selections, count, includeEol)
-
-  case move
-  of "vim.word":
-    result = selections.mapIt(vimMotionWord(rope, it.last, false))
-    for _ in 1..<count:
-      for s in result.mitems:
-        s = s or vimMotionWord(rope, s.last, false) or vimMotionWord(rope, s.first, false)
-
-  of "vim.word-back":
-    result = selections.mapIt(vimMotionWordBack(rope, it.last, false))
-    for _ in 1..<count:
-      for s in result.mitems:
-        s = s or vimMotionWordBack(rope, s.first, false)
-
-  of "vim.WORD":
-    result = selections.mapIt(vimMotionWordBig(rope, it.last, false))
-    for _ in 1..<count:
-      for s in result.mitems:
-        s = s or vimMotionWordBig(rope, s.last, false) or vimMotionWordBig(rope, s.first, false)
-
-  of "vim.word-inner":
-    result = selections.mapIt(vimMotionWord(rope, it.last, false))
-    for _ in 1..<count:
-      for s in result.mitems:
-        s = s or vimMotionWord(rope, s.last, false) or vimMotionWord(rope, s.first, false)
-
-  of "vim.WORD-inner":
-    result = selections.mapIt(vimMotionWordBig(rope, it.last, false))
-    for _ in 1..<count:
-      for s in result.mitems:
-        s = s or vimMotionWordBig(rope, s.last, false) or vimMotionWordBig(rope, s.first, false)
-
-  of "vim.paragraph-inner":
-    result = selections.mapIt(vimMotionParagraphInner(rope, it.last))
-    for _ in 1..<count:
-      for s in result.mitems:
-        s = s or vimMotionParagraphInner(rope, s.last) or vimMotionParagraphInner(rope, s.first)
-
-  of "vim.paragraph-outer":
-    result = selections.mapIt(vimMotionParagraphOuter(rope, it.last))
-    for _ in 1..<count:
-      for s in result.mitems:
-        s = s or vimMotionParagraphOuter(rope, s.last) or vimMotionParagraphOuter(rope, s.first)
-
-  of "reverse":
-    return selections.mapIt(it.reverse)
-
-  of "norm":
-    return selections.mapIt(it.normalized)
-
-  of "combine":
-    if selections.len > 0:
-      var res = selections[0]
+    of "overlapping":
+      let c = originalSelections.last.last
       for s in selections:
-        res = res or s
-      return @[res]
-    else:
+        if s.contains(c):
+          result.add s
+
+    of "non-overlapping":
+      let c = originalSelections.last.last
+      for s in selections:
+        if not s.contains(c):
+          result.add s
+
+    of "word-line":
+      return selections.mapIt:
+        let cursor = it.last
+        let line = rope.getLine cursor.line
+        var res = vimMotionWord(rope, cursor, false)
+        if cursor.column == 0 and cursor.line > 0:
+          res.first = (cursor.line - 1, rope.lineLen(cursor.line - 1))
+        if cursor.column == line.len and cursor.line < rope.lines - 1:
+          res.last = (cursor.line + 1, 0)
+        res
+
+    of "word-line-back":
+      return selections.mapIt:
+        let cursor = it.last
+        let line = rope.getLine cursor.line
+        var res = vimMotionWordBack(rope, cursor, false)
+        if cursor.column == 0 and cursor.line > 0:
+          res.first = (cursor.line - 1, rope.lineLen(cursor.line - 1))
+        if cursor.column == line.len and cursor.line < rope.lines - 1:
+          res.last = (cursor.line + 1, 0)
+        res
+
+    # of "line-back":
+    #   let first = if cursor.line > 0 and cursor.column == 0:
+    #     (cursor.line - 1, self.document.lineLength(cursor.line - 1))
+    #   else:
+    #     (cursor.line, 0)
+    #   result = (first, (cursor.line, self.document.lineLength(cursor.line)))
+
+    of "line-num":
+      return @[(getArg(0, int, 0), 0).toSelection]
+
+    of "remove-empty":
+      result = newSeqOfCap[Selection](selections.len)
+      for s in selections:
+        if not s.isEmpty:
+          result.add s
+
+    of "align", "align-right":
+      var maxColumn = 0
+      for s in selections:
+        maxColumn = max(maxColumn, s.last.column)
+      return selections.mapIt((it.last.line, min(rope.lineRange(it.last.line, includeEol).len, maxColumn)).toSelection)
+
+    of "align-left":
+      var minColumn = int.high
+      for s in selections:
+        minColumn = min(minColumn, s.last.column)
+      return selections.mapIt((it.last.line, minColumn).toSelection)
+
+    of "split":
+      var total = 0
+      for s in selections:
+        total += (s.last.line - s.first.line).abs + 1
+      result = newSeqOfCap[Selection](total)
+      for s in selections:
+        if s.first.line == s.last.line:
+          result.add s
+        elif s.isBackwards:
+          result.add ((s.first.line, 0), s.first)
+          for line in countdown(s.first.line - 1, s.last.line + 1):
+            result.add ((line, 0), (line, rope.lineLen(line)))
+          result.add (s.last, (s.last.line, rope.lineLen(s.last.line)))
+        else:
+          result.add (s.first, (s.first.line, rope.lineLen(s.first.line)))
+          for line in (s.first.line + 1)..(s.last.line - 1):
+            result.add ((line, 0), (line, rope.lineLen(line)))
+          result.add ((s.last.line, 0), s.last)
+
+    of "line-start":
+      return selections.mapIt((it.last.line, 0).toSelection)
+
+    of "line":
+      return selections.mapIt(block:
+        let lineLen = rope.lineLen(it.last.line)
+        var res: Selection = ((it.last.line, 0), (it.last.line, lineLen))
+        if not includeEol and res.last.column == lineLen:
+          res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
+        res
+      )
+
+    of "visual-line":
+      return selections.mapIt(block:
+        let lineLen = rope.lineLen(it.last.line)
+        let wrapPoint = displayMap.toWrapPoint(it.last.toPoint)
+        let displayLineStart = wrapPoint(wrapPoint.row)
+        let displayLineEnd = wrapPoint(wrapPoint.row + 1)
+        var res: Selection = (
+          displayMap.toPoint(displayLineStart, Right).toCursor,
+          displayMap.toPoint(displayLineEnd, Right).toCursor,
+        )
+        if res[1].column == 0:
+          res[1].line -= 1
+          res[1].column = rope.lineLen(res[1].line)
+
+        if not includeEol:
+          if res.last.column == lineLen:
+            res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
+          elif res.last.column < rope.lineLen(it.last.line): # This is the case if we're not in the last visual sub line
+            res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
+
+        res
+      )
+
+    of "visual-line-up", "visual-line-down", "visual-page":
+      var minLine = int.high
+      var maxLine = int.low
+      for s in selections:
+        minLine = min(minLine, s.last.line)
+        maxLine = max(maxLine, s.last.line)
+
+      let direction = if move == "visual-line-down":
+        count
+      elif move == "visual-line-up":
+        -count
+      else:
+        ((count * getEnv("screen-lines", int, 55)) div 100)
+
+      proc doMoveCursor(numSelections: int, cursor: Cursor, offset: int, includeAfter: bool): Cursor =
+        let targetColumn = if maxLine - minLine + 1 < numSelections:
+          displayMap.toDisplayPoint(cursor.toPoint).column.int
+        else:
+          targetColumn
+        moveCursorVisualLine(displayMap, cursor, offset, false, includeAfter, targetColumn)
+      return selections.mapIt(doMoveCursor(selections.len, it.last, direction, includeEol).toSelection)
+
+    # of "line-next":
+    #   result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
+    #   if result.last.line + 1 < self.document.numLines:
+    #     result.last = (result.last.line + 1, 0)
+    #   for _ in 1..<count:
+    #     result = result or (
+    #       (result.last.line, 0),
+    #       (result.last.line, self.document.lineLength(result.last.line))
+    #     )
+    #     if result.last.line + 1 < self.document.numLines:
+    #       result.last = (result.last.line + 1, 0)
+
+    # of "line-prev":
+    #   result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
+    #   if result.first.line > 0:
+    #     result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
+    #   for _ in 1..<count:
+    #     result = result or (Cursor (result.first.line, 0), result.first)
+    #     if result.first.line > 0:
+    #       result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
+
+    of "line-no-indent":
+      result = selections.mapIt ((it.last.line, rope.indentBytes(it.last.line)), (it.last.line, rope.lineLen(it.last.line)))
+
+    of "file":
+      result = @[((0, 0), (rope.lines - 1, rope.lineLen(rope.lines - 1)))]
+
+    of "column":
+      let dir = getArg(0, int, 1)
+      return selections.mapIt(rope.moveCursorColumn(it.last, count * dir, wrap, includeEol).toSelection)
+
+    of "inclusive":
+      return selections.mapIt(if it.isEmpty: it else: (it.first, rope.moveCursorColumn(it.last, -1, false, true)))
+
+    of "line-up", "line-down":
+      let direction = if move == "line-down": 1 else: -1
+      # return selections.mapIt((it.last, moveCursorLine(rope, displayMap, it.last, direction * count, targetColumn, false, includeEol)))
+      return selections.mapIt(moveCursorLine(rope, displayMap, it.last, direction * count, targetColumn, false, includeEol).toSelection)
+
+    of "grow":
+      let dir = getArg(0, int, 1) * count
+      return selections.mapIt:
+        if dir < 0 and it.first.line == it.last.line and abs(it.first.column - it.last.column) < 2:
+          it
+        else:
+          (rope.moveCursorColumn(it.first, -dir, wrap, includeEol), rope.moveCursorColumn(it.last, dir, wrap, includeEol))
+
+    of "number":
+      result = selections.mapIt:
+        var r = it.last.toPoint...it.last.toPoint
+        var c = rope.cursorT(it.last.toPoint)
+        while c.currentChar in {'0'..'9'}:
+          c.seekNextRune()
+          r.b = c.position
+
+        if r.a.column > 0:
+          c = rope.cursorT(it.last.toPoint)
+          while c.position.column > 0:
+            c.seekPrevRune()
+            if c.currentChar == '-':
+              r.a = c.position
+              break
+
+            if c.currentChar notin {'0'..'9'}:
+              c.seekNextRune()
+              break
+            r.a = c.position
+
+        r.toSelection
+
+    of "target-column":
+      return selections.mapIt(rope.clampCursor((it.last.line, targetColumn)).toSelection)
+
+    of "surround":
+      var c0 = getArg(0, string, "")
+      var c1 = getArg(1, string, "")
+      let inside = getArg(2, bool, false)
+      if c0.len > 0 and c1.len > 0:
+        result = selections.mapIt(rope.getSurrounding(it, c0[0], c1[0], inside))
+      elif c0.len > 0:
+        result = selections.mapIt(rope.getSurrounding(it, c0[0], c0[0], inside))
+      else:
+        result = selections.mapIt:
+          let c = rope.charAt(it.last.toPoint)
+          let (open, close, isOpen) = case c
+            of '(': ('(', ')', true)
+            of '{': ('{', '}', true)
+            of '[': ('[', ']', true)
+            of '<': ('<', '>', true)
+            of ')': ('(', ')', false)
+            of '}': ('{', '}', false)
+            of ']': ('[', ']', false)
+            of '>': ('<', '>', false)
+            of '"': ('"', '"', true)
+            of '\'': ('\'', '\'', true)
+            else: return
+          let selection = rope.getSurrounding(it, open, close, inside)
+          if isOpen:
+            selection
+          else:
+            selection.reverse
+
+    of "move-to":
+      let c = getArg(0, string, "")
+      if c.len > 0:
+        let r = c.runeAt(0)
+        return selections.mapIt((it.first, rope.findNext(it.last, r)))
       return @selections
 
-  of "overlapping":
-    let c = originalSelections.last.last
-    for s in selections:
-      if s.contains(c):
-        result.add s
-
-  of "non-overlapping":
-    let c = originalSelections.last.last
-    for s in selections:
-      if not s.contains(c):
-        result.add s
-
-  of "word-line":
-    return selections.mapIt:
-      let cursor = it.last
-      let line = rope.getLine cursor.line
-      var res = vimMotionWord(rope, cursor, false)
-      if cursor.column == 0 and cursor.line > 0:
-        res.first = (cursor.line - 1, rope.lineLen(cursor.line - 1))
-      if cursor.column == line.len and cursor.line < rope.lines - 1:
-        res.last = (cursor.line + 1, 0)
-      res
-
-  of "word-line-back":
-    return selections.mapIt:
-      let cursor = it.last
-      let line = rope.getLine cursor.line
-      var res = vimMotionWordBack(rope, cursor, false)
-      if cursor.column == 0 and cursor.line > 0:
-        res.first = (cursor.line - 1, rope.lineLen(cursor.line - 1))
-      if cursor.column == line.len and cursor.line < rope.lines - 1:
-        res.last = (cursor.line + 1, 0)
-      res
-
-  # of "line-back":
-  #   let first = if cursor.line > 0 and cursor.column == 0:
-  #     (cursor.line - 1, self.document.lineLength(cursor.line - 1))
-  #   else:
-  #     (cursor.line, 0)
-  #   result = (first, (cursor.line, self.document.lineLength(cursor.line)))
-
-  of "line-num":
-    return @[(getArg(0, int, 0), 0).toSelection]
-
-  of "remove-empty":
-    result = newSeqOfCap[Selection](selections.len)
-    for s in selections:
-      if not s.isEmpty:
-        result.add s
-
-  of "align", "align-right":
-    var maxColumn = 0
-    for s in selections:
-      maxColumn = max(maxColumn, s.last.column)
-    return selections.mapIt((it.last.line, min(rope.lineRange(it.last.line, includeEol).len, maxColumn)).toSelection)
-
-  of "align-left":
-    var minColumn = int.high
-    for s in selections:
-      minColumn = min(minColumn, s.last.column)
-    return selections.mapIt((it.last.line, minColumn).toSelection)
-
-  of "split":
-    var total = 0
-    for s in selections:
-      total += (s.last.line - s.first.line).abs + 1
-    result = newSeqOfCap[Selection](total)
-    for s in selections:
-      if s.first.line == s.last.line:
-        result.add s
-      elif s.isBackwards:
-        result.add ((s.first.line, 0), s.first)
-        for line in countdown(s.first.line - 1, s.last.line + 1):
-          result.add ((line, 0), (line, rope.lineLen(line)))
-        result.add (s.last, (s.last.line, rope.lineLen(s.last.line)))
-      else:
-        result.add (s.first, (s.first.line, rope.lineLen(s.first.line)))
-        for line in (s.first.line + 1)..(s.last.line - 1):
-          result.add ((line, 0), (line, rope.lineLen(line)))
-        result.add ((s.last.line, 0), s.last)
-
-  of "line-start":
-    return selections.mapIt((it.last.line, 0).toSelection)
-
-  of "line":
-    return selections.mapIt(block:
-      let lineLen = rope.lineLen(it.last.line)
-      var res: Selection = ((it.last.line, 0), (it.last.line, lineLen))
-      if not includeEol and res.last.column == lineLen:
-        res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
-      res
-    )
-
-  of "visual-line":
-    return selections.mapIt(block:
-      let lineLen = rope.lineLen(it.last.line)
-      let wrapPoint = displayMap.toWrapPoint(it.last.toPoint)
-      let displayLineStart = wrapPoint(wrapPoint.row)
-      let displayLineEnd = wrapPoint(wrapPoint.row + 1)
-      var res: Selection = (
-        displayMap.toPoint(displayLineStart, Right).toCursor,
-        displayMap.toPoint(displayLineEnd, Right).toCursor,
-      )
-      if res[1].column == 0:
-        res[1].line -= 1
-        res[1].column = rope.lineLen(res[1].line)
-
-      if not includeEol:
-        if res.last.column == lineLen:
-          res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
-        elif res.last.column < rope.lineLen(it.last.line): # This is the case if we're not in the last visual sub line
-          res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
-
-      res
-    )
-
-  of "visual-line-up", "visual-line-down", "visual-page":
-    var minLine = int.high
-    var maxLine = int.low
-    for s in selections:
-      minLine = min(minLine, s.last.line)
-      maxLine = max(maxLine, s.last.line)
-
-    let direction = if move == "visual-line-down":
-      count
-    elif move == "visual-line-up":
-      -count
     else:
-      ((count * getEnv("screen-lines", int, 55)) div 100)
+      if fallback != nil:
+        return fallback(move, selections, count, args, env)
+      log lvlWarn, &"Unknown move '{move}'"
+      return @selections
 
-    proc doMoveCursor(numSelections: int, cursor: Cursor, offset: int, includeAfter: bool): Cursor =
-      let targetColumn = if maxLine - minLine + 1 < numSelections:
-        displayMap.toDisplayPoint(cursor.toPoint).column.int
-      else:
-        targetColumn
-      moveCursorVisualLine(displayMap, cursor, offset, false, includeAfter, targetColumn)
-    return selections.mapIt(doMoveCursor(selections.len, it.last, direction, includeEol).toSelection)
-
-  # of "line-next":
-  #   result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
-  #   if result.last.line + 1 < self.document.numLines:
-  #     result.last = (result.last.line + 1, 0)
-  #   for _ in 1..<count:
-  #     result = result or (
-  #       (result.last.line, 0),
-  #       (result.last.line, self.document.lineLength(result.last.line))
-  #     )
-  #     if result.last.line + 1 < self.document.numLines:
-  #       result.last = (result.last.line + 1, 0)
-
-  # of "line-prev":
-  #   result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
-  #   if result.first.line > 0:
-  #     result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
-  #   for _ in 1..<count:
-  #     result = result or (Cursor (result.first.line, 0), result.first)
-  #     if result.first.line > 0:
-  #       result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
-
-  of "line-no-indent":
-    result = selections.mapIt ((it.last.line, rope.indentBytes(it.last.line)), (it.last.line, rope.lineLen(it.last.line)))
-
-  of "file":
-    result = @[((0, 0), (rope.lines - 1, rope.lineLen(rope.lines - 1)))]
-
-  of "column":
-    let dir = getArg(0, int, 1)
-    return selections.mapIt(rope.moveCursorColumn(it.last, count * dir, wrap, includeEol).toSelection)
-
-  of "inclusive":
-    return selections.mapIt(if it.isEmpty: it else: (it.first, rope.moveCursorColumn(it.last, -1, false, true)))
-
-  of "line-up", "line-down":
-    let direction = if move == "line-down": 1 else: -1
-    # return selections.mapIt((it.last, moveCursorLine(rope, displayMap, it.last, direction * count, targetColumn, false, includeEol)))
-    return selections.mapIt(moveCursorLine(rope, displayMap, it.last, direction * count, targetColumn, false, includeEol).toSelection)
-
-  of "grow":
-    let dir = getArg(0, int, 1) * count
-    return selections.mapIt:
-      if dir < 0 and it.first.line == it.last.line and abs(it.first.column - it.last.column) < 2:
-        it
-      else:
-        (rope.moveCursorColumn(it.first, -dir, wrap, includeEol), rope.moveCursorColumn(it.last, dir, wrap, includeEol))
-
-  of "number":
-    result = selections.mapIt:
-      var r = it.last.toPoint...it.last.toPoint
-      var c = rope.cursorT(it.last.toPoint)
-      while c.currentChar in {'0'..'9'}:
-        c.seekNextRune()
-        r.b = c.position
-
-      if r.a.column > 0:
-        c = rope.cursorT(it.last.toPoint)
-        while c.position.column > 0:
-          c.seekPrevRune()
-          if c.currentChar == '-':
-            r.a = c.position
-            break
-
-          if c.currentChar notin {'0'..'9'}:
-            c.seekNextRune()
-            break
-          r.a = c.position
-
-      r.toSelection
-
-  of "target-column":
-    return selections.mapIt(rope.clampCursor((it.last.line, targetColumn)).toSelection)
-
-  of "surround":
-    var c0 = getArg(0, string, "")
-    var c1 = getArg(1, string, "")
-    let inside = getArg(2, bool, false)
-    if c0.len > 0 and c1.len > 0:
-      result = selections.mapIt(rope.getSurrounding(it, c0[0], c1[0], inside))
-    elif c0.len > 0:
-      result = selections.mapIt(rope.getSurrounding(it, c0[0], c0[0], inside))
-    else:
-      result = selections.mapIt:
-        let c = rope.charAt(it.last.toPoint)
-        let (open, close, isOpen) = case c
-          of '(': ('(', ')', true)
-          of '{': ('{', '}', true)
-          of '[': ('[', ']', true)
-          of '<': ('<', '>', true)
-          of ')': ('(', ')', false)
-          of '}': ('{', '}', false)
-          of ']': ('[', ']', false)
-          of '>': ('<', '>', false)
-          of '"': ('"', '"', true)
-          of '\'': ('\'', '\'', true)
-          else: return
-        let selection = rope.getSurrounding(it, open, close, inside)
-        if isOpen:
-          selection
-        else:
-          selection.reverse
-
-  of "move-to":
-    let c = getArg(0, string, "")
-    if c.len > 0:
-      let r = c.runeAt(0)
-      return selections.mapIt((it.first, rope.findNext(it.last, r)))
-    return @selections
-
-  else:
-    if fallback != nil:
-      return fallback(move, selections, count, args, env)
-    log lvlWarn, &"Unknown move '{move}'"
-    return @selections
-
-proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: LispVal, originalSelections: openArray[Selection], baseEnv: Env, fallback: MoveFunction): seq[Selection] =
-  if self.debugMoves:
-    log lvlDebug, &"applyMove '{move}', {baseEnv.env}, {originalSelections}"
-
-  var env = baseEnv.createChild()
-  env.parents.add(self.env)
-
-  let originalSelections = @originalSelections
-  var lastSelections = originalSelections
-  var selections = originalSelections
-
-  var stack = newSeq[seq[Selection]]()
-
-  env.onUndefinedSymbol = proc(_: Env, name: string): LispVal =
-    template impl(body: untyped): untyped =
-      newFunc(name, proc(args {.inject.}: seq[LispVal]): LispVal =
-        lastSelections = selections
-        body
-        if self.debugMoves:
-          log lvlDebug, "move '", name, "' ", $lastSelections, " -> ", selections
-      )
-
-    case name
-    of "num-lines":
-      newNumber(displayMap.buffer.visibleText.lines)
-    of "num-bytes":
-      newNumber(displayMap.buffer.visibleText.bytes)
-    of "same?":
-      newBool(selections == originalSelections)
-    of "original":
-      impl:
-        selections = originalSelections
-    of "push":
-      newFunc(name, proc(args {.inject.}: seq[LispVal]): LispVal =
-        stack.add selections
-      )
-    of "pop":
-      impl:
-        if stack.len > 0:
-          selections = stack.pop()
-    of "pop-append":
-      impl:
-        if stack.len > 0:
-          selections.add stack.pop()
-    of "discard":
-      impl:
-        if stack.len > 0:
-          discard stack.pop()
-    of "first":
-      impl:
-        if selections.len > 0:
-          selections = @[selections[0]]
-    of "last":
-      impl:
-        if selections.len > 0:
-          selections = @[selections[^1]]
-    of "nth":
-      impl:
-        if selections.len > 0:
-          var n = if args.len > 0 and args[0].kind == Number:
-            args[0].num.int
-          else:
-            0
-          if n < 0:
-            n = selections.len + n
-          n = n.clamp(0, selections.high)
-          selections = @[selections[n]]
-    of "start":
-      impl:
-        selections = selections.mapIt(it.first.toSelection)
-    of "end":
-      impl:
-        selections = selections.mapIt(it.last.toSelection)
-    of "count*":
-      newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
-        if args.len == 0 or args[0].kind != Number:
-          return newNil()
-        var count = env.getCount()
-        assert count != 0
-        env["count"] = newNumber(count.float * max(args[0].num, 1))
-        return newNil()
-      )
-    of "count=":
-      newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
-        if args.len == 0 or args[0].kind != Number:
-          return newNil()
-        env["count"] = newNumber(args[0].num)
-        return newNil()
-      )
-    of "merge":
-      newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
-        if selections.len > 0:
-          for i in 0..<min(originalSelections.len, selections.len):
-            if originalSelections[i].isBackwards:
-              if selections[i].isBackwards:
-                let start = max(originalSelections[i].first, selections[i].first)
-                let endd = min(originalSelections[i].last, selections[i].last)
-                selections[i] = (start, endd)
-              else:
-                let start = max(originalSelections[i].first, selections[i].last)
-                let endd = min(originalSelections[i].last, selections[i].first)
-                selections[i] = (start, endd)
-            else:
-              if selections[i].isBackwards:
-                let start = min(originalSelections[i].first, selections[i].last)
-                let endd = max(originalSelections[i].last, selections[i].first)
-                selections[i] = (start, endd)
-              else:
-                let start = min(originalSelections[i].first, selections[i].first)
-                let endd = max(originalSelections[i].last, selections[i].last)
-                selections[i] = (start, endd)
-      )
-    of "join":
-      newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
-        let startSelector = if args.len > 0:
-          parseSelector(args[0], OriginalStart)
-        else:
-          OriginalStart
-        let endSelector = if args.len > 1:
-          parseSelector(args[1], CurrentEnd)
-        else:
-          CurrentEnd
-
-        if selections.len > 0:
-          for i in 0..<selections.len:
-            let start = selectCursor(startSelector, i, selections[i].last, selections, lastSelections, originalSelections)
-            let endd = selectCursor(endSelector, i, selections[i].last, selections, lastSelections, originalSelections)
-            selections[i] = (start, endd)
-      )
-    else:
-      impl:
-        selections = self.applyMoveImpl(displayMap, name, selections, originalSelections, fallback, args, env)
-
-  try:
-    discard move.eval(env)
-    return selections
-  except CatchableError as e:
-    log lvlWarn, &"Failed to apply move '{move}': {e.msg}"
-    return @originalSelections
-  finally:
-    env.clear()
-
-proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, originalSelections: openArray[Selection], env: Env, fallback: MoveFunction): seq[Selection] =
-  try:
+  proc movesApplyMove2(self: MoveDatabase, displayMap: DisplayMap, move: LispVal, originalSelections: openArray[Selection], baseEnv: Env, fallback: MoveFunction): seq[Selection] =
     if self.debugMoves:
-      log lvlDebug, &"applyMoveLisp '{move}', {env.env}, {originalSelections}"
+      log lvlDebug, &"applyMove '{move}', {baseEnv.env}, {originalSelections}"
 
-    var expr = move.parseLisp()
-    self.applyMove(displayMap, expr, originalSelections, env, fallback)
-  except CatchableError as e:
-    log lvlWarn, &"Failed to apply move '{move}': {e.msg}"
-    return @originalSelections
+    var env = baseEnv.createChild()
+    env.parents.add(self.env)
 
-proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], fallback: MoveFunction = nil, env: Env = Env()): seq[Selection] =
-  if move.startsWith("("):
-    return self.applyMoveLisp(displayMap, move, selections, env, fallback)
-  return self.applyMoveLisp(displayMap, "(" & move & ")", selections, env, fallback)
+    let originalSelections = @originalSelections
+    var lastSelections = originalSelections
+    var selections = originalSelections
 
-proc registerMove*(self: MoveDatabase, move: string, impl: MoveImpl) =
-  log lvlInfo, &"Register custom move '{move}'"
-  self.moves[move] = impl
+    var stack = newSeq[seq[Selection]]()
+
+    env.onUndefinedSymbol = proc(_: Env, name: string): LispVal =
+      template impl(body: untyped): untyped =
+        newFunc(name, proc(args {.inject.}: seq[LispVal]): LispVal =
+          lastSelections = selections
+          body
+          if self.debugMoves:
+            log lvlDebug, "move '", name, "' ", $lastSelections, " -> ", selections
+        )
+
+      case name
+      of "num-lines":
+        newNumber(displayMap.buffer.visibleText.lines)
+      of "num-bytes":
+        newNumber(displayMap.buffer.visibleText.bytes)
+      of "same?":
+        newBool(selections == originalSelections)
+      of "original":
+        impl:
+          selections = originalSelections
+      of "push":
+        newFunc(name, proc(args {.inject.}: seq[LispVal]): LispVal =
+          stack.add selections
+        )
+      of "pop":
+        impl:
+          if stack.len > 0:
+            selections = stack.pop()
+      of "pop-append":
+        impl:
+          if stack.len > 0:
+            selections.add stack.pop()
+      of "discard":
+        impl:
+          if stack.len > 0:
+            discard stack.pop()
+      of "first":
+        impl:
+          if selections.len > 0:
+            selections = @[selections[0]]
+      of "last":
+        impl:
+          if selections.len > 0:
+            selections = @[selections[^1]]
+      of "nth":
+        impl:
+          if selections.len > 0:
+            var n = if args.len > 0 and args[0].kind == Number:
+              args[0].num.int
+            else:
+              0
+            if n < 0:
+              n = selections.len + n
+            n = n.clamp(0, selections.high)
+            selections = @[selections[n]]
+      of "start":
+        impl:
+          selections = selections.mapIt(it.first.toSelection)
+      of "end":
+        impl:
+          selections = selections.mapIt(it.last.toSelection)
+      of "count*":
+        newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
+          if args.len == 0 or args[0].kind != Number:
+            return newNil()
+          var count = env.getCount()
+          assert count != 0
+          env["count"] = newNumber(count.float * max(args[0].num, 1))
+          return newNil()
+        )
+      of "count=":
+        newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
+          if args.len == 0 or args[0].kind != Number:
+            return newNil()
+          env["count"] = newNumber(args[0].num)
+          return newNil()
+        )
+      of "merge":
+        newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
+          if selections.len > 0:
+            for i in 0..<min(originalSelections.len, selections.len):
+              if originalSelections[i].isBackwards:
+                if selections[i].isBackwards:
+                  let start = max(originalSelections[i].first, selections[i].first)
+                  let endd = min(originalSelections[i].last, selections[i].last)
+                  selections[i] = (start, endd)
+                else:
+                  let start = max(originalSelections[i].first, selections[i].last)
+                  let endd = min(originalSelections[i].last, selections[i].first)
+                  selections[i] = (start, endd)
+              else:
+                if selections[i].isBackwards:
+                  let start = min(originalSelections[i].first, selections[i].last)
+                  let endd = max(originalSelections[i].last, selections[i].first)
+                  selections[i] = (start, endd)
+                else:
+                  let start = min(originalSelections[i].first, selections[i].first)
+                  let endd = max(originalSelections[i].last, selections[i].last)
+                  selections[i] = (start, endd)
+        )
+      of "join":
+        newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
+          let startSelector = if args.len > 0:
+            parseSelector(args[0], OriginalStart)
+          else:
+            OriginalStart
+          let endSelector = if args.len > 1:
+            parseSelector(args[1], CurrentEnd)
+          else:
+            CurrentEnd
+
+          if selections.len > 0:
+            for i in 0..<selections.len:
+              let start = selectCursor(startSelector, i, selections[i].last, selections, lastSelections, originalSelections)
+              let endd = selectCursor(endSelector, i, selections[i].last, selections, lastSelections, originalSelections)
+              selections[i] = (start, endd)
+        )
+      else:
+        impl:
+          selections = self.applyMoveImpl(displayMap, name, selections, originalSelections, fallback, args, env)
+
+    try:
+      discard move.eval(env)
+      return selections
+    except CatchableError as e:
+      log lvlWarn, &"Failed to apply move '{move}': {e.msg}"
+      return @originalSelections
+    finally:
+      env.clear()
+
+  proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, originalSelections: openArray[Selection], env: Env, fallback: MoveFunction): seq[Selection] =
+    try:
+      if self.debugMoves:
+        log lvlDebug, &"applyMoveLisp '{move}', {env.env}, {originalSelections}"
+
+      var expr = move.parseLisp()
+      self.applyMove(displayMap, expr, originalSelections, env, fallback)
+    except CatchableError as e:
+      log lvlWarn, &"Failed to apply move '{move}': {e.msg}"
+      return @originalSelections
+
+  proc movesApplyMove(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], fallback: MoveFunction = nil, env: Env = Env()): seq[Selection] =
+    if move.startsWith("("):
+      return self.applyMoveLisp(displayMap, move, selections, env, fallback)
+    return self.applyMoveLisp(displayMap, "(" & move & ")", selections, env, fallback)
+
+  proc movesRegisterMove(self: MoveDatabase, move: string, impl: MoveImpl) =
+    log lvlInfo, &"Register custom move '{move}'"
+    self.moves[move] = impl
+
+  proc init_module_move_database*() {.cdecl, exportc, dynlib.} =
+    getServices().addService(newMoveDatabase())
