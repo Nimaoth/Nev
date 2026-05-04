@@ -19,11 +19,17 @@ func serviceName*(_: typedesc[SessionService]): string = "SessionService"
 
 # DLL API
 proc sessionServiceAddSaveHandler(self: SessionService, key: string, save: proc(): JsonNode {.gcsafe, raises: [].}, load: proc(data: JsonNode) {.gcsafe, raises: [].}) {.apprtl, gcsafe, raises: [].}
-proc sessionServiceGetRecentSessions(self: SessionService): Future[seq[string]] {.apprtl, gcsafe, async: (raises: []).}
+{.push apprtl, gcsafe, raises: [].}
+proc sessionServiceGetRecentSessions(self: SessionService): Future[seq[string]] {.async: (raises: []).}
+proc sessionSetSessionData(self: SessionService, path: string, value: JsonNode, override: bool = true)
+proc sessionGetSessionData(self: SessionService, path: string, default: JsonNode): JsonNode
+{.pop.}
 
 # Nice wrappers
 proc addSaveHandler*(self: SessionService, key: string, save: proc(): JsonNode {.gcsafe, raises: [].}, load: proc(data: JsonNode) {.gcsafe, raises: [].}) {.inline.} = sessionServiceAddSaveHandler(self, key, save, load)
 proc getRecentSessions*(self: SessionService): Future[seq[string]] {.inline, async: (raises: []).} = await sessionServiceGetRecentSessions(self)
+proc setSessionData*(self: SessionService, path: string, value: JsonNode, override: bool = true) = sessionSetSessionData(self, path, value, override)
+proc getSessionData*(self: SessionService, path: string, default: JsonNode): JsonNode = sessionGetSessionData(self, path, default)
 
 # Implementation
 when implModule:
@@ -139,5 +145,11 @@ when implModule:
     if node.isNil:
       return default
     return node
+
+  proc sessionGetSessionData(self: SessionService, path: string, default: JsonNode): JsonNode =
+    self.getSessionDataJson(path, default)
+
+  proc sessionSetSessionData(self: SessionService, path: string, value: JsonNode, override: bool = true) =
+    self.setSessionDataJson(path, value, override)
 
   addGlobalDispatchTable "session", genDispatchTable("session")

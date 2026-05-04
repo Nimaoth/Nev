@@ -19,8 +19,6 @@ import nimsumtree/[rope]
 
 import misc/async_process
 
-import plugin_system_wasm
-
 import scripting_api as api except DocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
 

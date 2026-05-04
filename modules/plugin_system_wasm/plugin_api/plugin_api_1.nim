@@ -9,7 +9,7 @@ import render_view as rv
 import platform/platform, platform_service
 import config_provider, command_service, command_line, compilation_config
 import plugin_service, document_editor, vfs, vfs_service, channel, register, move_database, popup, event_service, session
-import "../../modules/terminal"/terminal
+import terminal/terminal
 import document, decoration_component, command_component, text_editor_component, text_component
 import snippet_component, move_component, config_component, search_component
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
@@ -170,9 +170,9 @@ proc `=destroy`*(self: WriteChannelResource) =
 
 when defined(witRebuild):
   static: hint("Rebuilding plugin_api.wit")
-  importWit "../../wit/v0/api.wit", InstanceData:
+  importWit "../../../wit/v1/api.wit", InstanceData:
     world = "plugin"
-    cacheFile = "../generated/plugin_api_host.nim"
+    cacheFile = "generated/plugin_api_host_1.nim"
     mapName "rope", RopeResource
     mapName "render-view", RenderViewResource
     mapName "read-channel", ReadChannelResource
@@ -181,7 +181,7 @@ when defined(witRebuild):
     mapName "shared-buffer", SharedBufferResource
 
 else:
-  static: hint("Using cached plugin_api.wit (plugin_api_host.nim)")
+  static: hint("Using cached plugin_api.wit (plugin_api_host_1.nim)")
 
 {.push hint[XDeclaredButNotUsed]:off.}
 include generated/plugin_api_host
@@ -505,7 +505,7 @@ proc editorGetDocument*(instance: ptr InstanceData; editor: Editor): Option[Docu
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor):
-    let document = editor.getDocument()
+    let document = editor.currentDocument
     if document != nil:
       return Document(id: document.id.uint64).some
   return Document.none
@@ -524,7 +524,7 @@ proc textEditorGetDocument*(instance: ptr InstanceData; editor: TextEditor): Opt
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor):
-    let document = editor.getDocument()
+    let document = editor.currentDocument
     if document != nil and document.getTextComponent().isSome:
       return TextDocument(id: document.id.uint64).some
   return TextDocument.none
@@ -1301,13 +1301,13 @@ proc settingsSetSettingRaw*(instance: ptr InstanceData, name: sink string, value
 proc sessionGetSessionData*(instance: ptr InstanceData; name: sink string): string =
   if instance.host == nil:
     return ""
-  return $instance.host.sessions.getSessionDataJson("plugins." & instance.namespace & "." & name, newJNull())
+  return $instance.host.sessions.getSessionData("plugins." & instance.namespace & "." & name, newJNull())
 
 proc sessionSetSessionData*(instance: ptr InstanceData; name: sink string; value: sink string): void =
   if instance.host == nil:
     return
   try:
-    instance.host.sessions.setSessionDataJson("plugins." & instance.namespace & "." & name, value.parseJson())
+    instance.host.sessions.setSessionData("plugins." & instance.namespace & "." & name, value.parseJson())
   except CatchableError as e:
     log lvlError, &"Failed to set session data '{name}': {e.msg}"
 

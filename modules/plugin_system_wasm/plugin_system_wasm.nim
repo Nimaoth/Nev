@@ -1,6 +1,7 @@
-#use plugin_service command_service layout
+#use plugin_service command_service layout stats command_line register move_database event_service terminal decoration_component text text_editor_component command_component snippet_component search_component
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 when implModule:
   import std/[macros, genasts, strutils, strformat, os, tables, sequtils]
