@@ -1,4 +1,4 @@
-#use command_component layout text_editor_component command_service
+#use command_component layout text_editor_component command_service event_service
 import std/[options, algorithm, strutils, times, tables, json]
 import service
 import component

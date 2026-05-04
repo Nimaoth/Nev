@@ -2,11 +2,12 @@ import std/[tables]
 import misc/[id]
 import service
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type
   EventListener* = proc(event: string, data: string) {.gcsafe, raises: [].}
-  EventService* = ref object of Service
+  EventService* = ref object of DynamicService
     cachedListeners: Table[string, seq[EventListener]]
     registeredListeners: seq[tuple[id: Id, pattern: string, cb: EventListener]]
     pendingListeners: seq[tuple[id: Id, pattern: string, cb: EventListener]]
@@ -15,9 +16,11 @@ type
 
 func serviceName*(_: typedesc[EventService]): string = "EventService"
 
-proc eventServiceListen*(self: EventService, id: Id, pattern: string, cb: EventListener) {.apprtl, gcsafe, raises: [].}
-proc eventServiceStopListen*(self: EventService, id: Id, pattern: string = "") {.apprtl, gcsafe, raises: [].}
-proc eventServiceEmit*(self: EventService, event: string, data: string) {.apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
+proc eventServiceListen*(self: EventService, id: Id, pattern: string, cb: EventListener)
+proc eventServiceStopListen*(self: EventService, id: Id, pattern: string = "")
+proc eventServiceEmit*(self: EventService, event: string, data: string)
+{.pop.}
 
 proc listen*(self: EventService, id: Id, pattern: string, cb: EventListener) {.inline.} = eventServiceListen(self, id, pattern, cb)
 proc stopListen*(self: EventService, id: Id, pattern: string = "") {.inline.} = eventServiceStopListen(self, id, pattern)
@@ -27,10 +30,6 @@ when implModule:
   import misc/[custom_logger, custom_async, util, regex]
 
   logCategory "ebus"
-  addBuiltinService(EventService)
-
-  method init*(self: EventService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-    return ok()
 
   proc clearCache(self: EventService) =
     self.cachedListeners.clear()
@@ -102,3 +101,6 @@ when implModule:
     #   debugf"emit '{event}' ({cbs.len}) '{data}'"
     for cb in cbs:
       cb(event, data)
+
+  proc init_module_event_service*() {.cdecl, exportc, dynlib.} =
+    getServices().addService(EventService())
