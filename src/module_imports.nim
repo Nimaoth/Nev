@@ -4,6 +4,7 @@ when not defined(useDynlib):
   import "../modules/text_editor_component.nim"
   import "../modules/register.nim"
   import "../modules/command_service.nim"
+  import "../modules/event_service.nim"
   import "../modules/session.nim"
   import "../modules/layout/layout.nim"
   import "../modules/command_server.nim"
@@ -18,7 +19,6 @@ when not defined(useDynlib):
   import "../modules/contextline_component.nim"
   import "../modules/workspace_edit.nim"
   import "../modules/decoration_component.nim"
-  import "../modules/event_service.nim"
   import "../modules/command_line.nim"
   import "../modules/search_component.nim"
   import "../modules/move_database.nim"
@@ -53,6 +53,7 @@ proc initModules*() =
   when declared(init_module_text_editor_component): init_module_text_editor_component()
   when declared(init_module_register): init_module_register()
   when declared(init_module_command_service): init_module_command_service()
+  when declared(init_module_event_service): init_module_event_service()
   when declared(init_module_session): init_module_session()
   when declared(init_module_layout): init_module_layout()
   when declared(init_module_command_server): init_module_command_server()
@@ -67,7 +68,6 @@ proc initModules*() =
   when declared(init_module_contextline_component): init_module_contextline_component()
   when declared(init_module_workspace_edit): init_module_workspace_edit()
   when declared(init_module_decoration_component): init_module_decoration_component()
-  when declared(init_module_event_service): init_module_event_service()
   when declared(init_module_command_line): init_module_command_line()
   when declared(init_module_search_component): init_module_search_component()
   when declared(init_module_move_database): init_module_move_database()
@@ -124,7 +124,6 @@ proc shutdownModules*() =
   when declared(shutdown_module_move_database): shutdown_module_move_database()
   when declared(shutdown_module_search_component): shutdown_module_search_component()
   when declared(shutdown_module_command_line): shutdown_module_command_line()
-  when declared(shutdown_module_event_service): shutdown_module_event_service()
   when declared(shutdown_module_decoration_component): shutdown_module_decoration_component()
   when declared(shutdown_module_workspace_edit): shutdown_module_workspace_edit()
   when declared(shutdown_module_contextline_component): shutdown_module_contextline_component()
@@ -139,6 +138,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_command_server): shutdown_module_command_server()
   when declared(shutdown_module_layout): shutdown_module_layout()
   when declared(shutdown_module_session): shutdown_module_session()
+  when declared(shutdown_module_event_service): shutdown_module_event_service()
   when declared(shutdown_module_command_service): shutdown_module_command_service()
   when declared(shutdown_module_register): shutdown_module_register()
   when declared(shutdown_module_text_editor_component): shutdown_module_text_editor_component()
@@ -151,6 +151,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("text_editor_component")
   loadModule("register")
   loadModule("command_service")
+  loadModule("event_service")
   loadModule("session")
   loadModule("layout")
   loadModule("command_server")
@@ -165,7 +166,6 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("contextline_component")
   loadModule("workspace_edit")
   loadModule("decoration_component")
-  loadModule("event_service")
   loadModule("command_line")
   loadModule("search_component")
   loadModule("move_database")
