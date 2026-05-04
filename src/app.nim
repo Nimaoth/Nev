@@ -106,7 +106,6 @@ type
     disableLogFrameTime*: bool = true
     logBuffer = ""
 
-    pluginSystemWasm*: PluginSystemWasm
     initializeCalled: bool
 
     statusBarOnTop*: bool
@@ -779,9 +778,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       self.defaultHandleCommand(command.get)
     else:
       string.none
-
-  self.pluginSystemWasm = newPluginSystemWasm(self.services)
-  self.plugins.addPluginSystem self.pluginSystemWasm
 
   let closeUnusedDocumentsTimerS = self.generalSettings.closeUnusedDocumentsTimer.get()
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):

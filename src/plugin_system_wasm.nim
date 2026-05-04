@@ -1,252 +1,260 @@
-import std/[macros, genasts, strutils, strformat, os, tables, sequtils]
-import misc/[custom_logger, custom_async, util, binary_encoder]
-import document_editor, vfs, vfs_service, service
-import nimsumtree/[rope, sumtree, arc]
-import layout/layout
-import config_provider, compilation_config, command_service
-import plugin_service, wasm_engine
-import lisp
+#use plugin_service command_service layout
 
-import wasmtime
-import plugin_api/plugin_api_base
+include dynlib_export
 
-from plugin_api/plugin_api as v0 import nil
-from plugin_api/plugin_api_dynamic import nil
-when enableOldPluginVersions:
-  from plugin_api/plugin_api_1 as v1 import nil
+when implModule:
+  import std/[macros, genasts, strutils, strformat, os, tables, sequtils]
+  import misc/[custom_logger, custom_async, util, binary_encoder]
+  import document_editor, vfs, vfs_service, service
+  import nimsumtree/[rope, sumtree, arc]
+  import layout/layout
+  import config_provider, compilation_config, command_service
+  import plugin_service, wasm_engine
+  import lisp
 
-logCategory "plugins-v2"
+  import wasmtime
+  import plugin_api/plugin_api_base
 
-{.push gcsafe, raises: [].}
-
-type
-  PluginSystemWasm* = ref object of PluginSystem
-    engine: ptr WasmEngineT
-    vfs*: VFS
-    services*: Services
-
-    v0: PluginApiBase
-    when enableOldPluginVersions:
-      v1: PluginApiBase
-
-    env: Env
-    currentNamedArgs: LispVal
-
-  WasmPluginInstance* = ref object of PluginInstanceBase
-    moduleInstance: WasmModuleInstance
-    api: PluginApiBase
-
-proc wasmPluginSetPermissions(self: PluginInstanceBase, permissions: PluginPermissions) =
-  self.WasmPluginInstance.moduleInstance.setPermissions(permissions)
-
-proc initPluginApi[T](self: PluginSystemWasm, api: var PluginApiBase) =
-  var newApi: T
-  new(newApi)
-  api = newApi
-  api.init(self.services, self.engine)
-
-proc initWasm(self: PluginSystemWasm) =
-  self.engine = getGlobalWasmEngine()
-
-  if self.services.getService(ConfigService).get.runtime.get("plugins.debug", false):
-    log lvlError, &"Enable debug info for wasm plugins"
-    let config = newConfig()
-    config.debugInfoSet(true)
-    config.craneliftOptLevelSet(OptLevelNone.OptLevelT)
-    self.engine = newEngine(config)
-
-  self.initPluginApi[:v0.PluginApi](self.v0)
+  from plugin_api/plugin_api as v0 import nil
+  from plugin_api/plugin_api_dynamic import nil
   when enableOldPluginVersions:
-    self.initPluginApi[:v1.PluginApi](self.v1)
+    from plugin_api/plugin_api_1 as v1 import nil
 
-proc wasmSavePluginState(self: PluginSystem, plugin: Plugin): seq[uint8]
-proc wasmTryLoadPlugin(self: PluginSystem, plugin: Plugin, state: seq[uint8] = @[]): Future[bool] {.async: (raises: [IOError]).}
-proc wasmUnloadPlugin(self: PluginSystem, plugin: Plugin): Future[void] {.async: (raises: []).}
-proc wasmDispatchDynamic(self: PluginSystem, name: string, args: LispVal, namedArgs: LispVal): LispVal
+  logCategory "plugins-v2"
 
-proc newPluginSystemWasm*(services: Services): PluginSystemWasm =
-  let self = new PluginSystemWasm
-  self.savePluginStateImpl = wasmSavePluginState
-  self.tryLoadPluginImpl = wasmTryLoadPlugin
-  self.unloadPluginImpl = wasmUnloadPlugin
-  self.dispatchDynamicImpl = wasmDispatchDynamic
+  {.push gcsafe, raises: [].}
 
-  self.services = services
-  self.vfs = services.getService(VFSService).get.vfs
+  type
+    PluginSystemWasm* = ref object of PluginSystem
+      engine: ptr WasmEngineT
+      vfs*: VFS
+      services*: Services
 
-  self.initWasm()
+      v0: PluginApiBase
+      when enableOldPluginVersions:
+        v1: PluginApiBase
 
-  self.env = baseEnv()
-  self.env.onUndefinedSymbol = proc(_: Env, name: string): LispVal =
-    self.currentNamedArgs = newMap()
-    newFunc(name, proc(args: seq[LispVal]): LispVal =
-      try:
-        if name.startsWith("!"):
-          let args = args.mapIt($it).join(" ")
-          let command = name[1..^1] & " " & args
-          if self.services.getService(CommandService).get.executeCommand(command).getSome(res):
-            return newString(res)
-          return newNil()
-        if self.currentNamedArgs == nil:
-          self.currentNamedArgs = newMap()
-        debugf"[lisp-command] execute plugin api {name} {args}"
-        return self.dispatchDynamic(name, newList(args), self.currentNamedArgs)
-      finally:
-        self.currentNamedArgs = nil
-    )
-  self.env["with"] = newFunc("with", false, proc(args: seq[LispVal]): LispVal {.raises: [LispError].} =
-    if self.currentNamedArgs == nil:
-      log lvlError, &"Lisp error: 'with' only valid as argument to plugin api"
-      return nil
-    if args.len != 2 or args[0].kind != Symbol:
-      log lvlError, &"Lisp error: 'with' expects two arguments, the first must be a symbol"
-      return nil
-    debugf"add named arg '{args[0].sym}' = {args[1]}"
-    self.currentNamedArgs.fields[args[0].sym] = args[1].eval(self.env)
-    return nil
-  )
+      env: Env
+      currentNamedArgs: LispVal
 
-  self.services.getService(CommandService).get.addPrefixCommandHandler "(", proc(command: Option[string]): Option[string] =
-    try:
-      if command.isNone:
-        return
-      var expr = command.get.parseLisp()
-      let res = expr.eval(self.env)
-      if res != nil:
-        return some($res)
-    except CatchableError as e:
-      log lvlError, &"Failed to dispatch API command '{command.get}': {e.msg}"
-    return string.none
+    WasmPluginInstance* = ref object of PluginInstanceBase
+      moduleInstance: WasmModuleInstance
+      api: PluginApiBase
 
-  return self
+  proc wasmPluginSetPermissions(self: PluginInstanceBase, permissions: PluginPermissions) =
+    self.WasmPluginInstance.moduleInstance.setPermissions(permissions)
 
-proc wasmSavePluginState(self: PluginSystem, plugin: Plugin): seq[uint8] =
-  let self = self.PluginSystemWasm
-  let instance = plugin.instance.WasmPluginInstance
-  return instance.api.savePluginState(instance.moduleInstance)
+  proc initPluginApi[T](self: PluginSystemWasm, api: var PluginApiBase) =
+    var newApi: T
+    new(newApi)
+    api = newApi
+    api.init(self.services, self.engine)
 
-proc wasmTryLoadPlugin(self: PluginSystem, plugin: Plugin, state: seq[uint8] = @[]): Future[bool] {.async: (raises: [IOError]).} =
-  let self = self.PluginSystemWasm
-  log lvlInfo, &"tryLoadPlugin {plugin.desc}"
-  if not plugin.manifest.wasm.endsWith(".m.wasm") and not plugin.manifest.wasm.endsWith(".wat"):
-    log lvlInfo, &"Don't load plugin {plugin.desc}, no wasm file specified"
-    return false
+  proc initWasm(self: PluginSystemWasm) =
+    self.engine = getGlobalWasmEngine()
 
-  let version = if plugin.manifest.apiVersion >= 0:
-    plugin.manifest.apiVersion
-  else:
-    var filenameWithoutExtension = plugin.manifest.wasm.splitPath.tail
-    filenameWithoutExtension.removeSuffix(".m.wasm")
-    let lastPeriod = filenameWithoutExtension.rfind(".")
-    if lastPeriod != -1:
-      try:
-        filenameWithoutExtension[(lastPeriod + 1)..^1].parseInt
-      except:
-        0
-    else:
-      0
+    if self.services.getService(ConfigService).get.runtime.get("plugins.debug", false):
+      log lvlError, &"Enable debug info for wasm plugins"
+      let config = newConfig()
+      config.debugInfoSet(true)
+      config.craneliftOptLevelSet(OptLevelNone.OptLevelT)
+      self.engine = newEngine(config)
 
-  plugin.state = PluginState.Loading
-  let module = if plugin.manifest.wasm.endsWith(".wasm"):
-    let wasmBytes = self.vfs.read(plugin.manifest.wasm, {Binary}).await
-    self.engine.newModule(wasmBytes).okOr(err):
-      log lvlError, &"[host] Failed to create wasm module: {err.msg}"
-      plugin.state = PluginState.Failed
-      return
-  else:
-    let wat = self.vfs.read(plugin.manifest.wasm).await
-    var wasmBytes: WasmByteVecT
-    let err = wat2wasm(cast[ptr UncheckedArray[char]](wat[0].addr), wat.len.csize_t, wasmBytes.addr)
-    if err != nil:
-      log lvlError, &"[host] Failed to convert wat to wasm module: {err.msg}"
-      return
-
-    self.engine.newModule(cast[ptr UncheckedArray[uint8]](wasmBytes.data).toOpenArray(0, wasmBytes.size.int - 1)).okOr(err):
-      log lvlError, &"[host] Failed to create wasm module: {err.msg}"
-      plugin.state = PluginState.Failed
-      return
-
-  log lvlInfo, &"Load plugin '{plugin.manifest.wasm}' using version {version}"
-  var api: PluginApiBase = nil
-  if version == 0:
-    api = self.v0
-  else:
+    self.initPluginApi[:v0.PluginApi](self.v0)
     when enableOldPluginVersions:
-      case version
-      of 1: api = self.v1
+      self.initPluginApi[:v1.PluginApi](self.v1)
+
+  proc wasmSavePluginState(self: PluginSystem, plugin: Plugin): seq[uint8]
+  proc wasmTryLoadPlugin(self: PluginSystem, plugin: Plugin, state: seq[uint8] = @[]): Future[bool] {.async: (raises: [IOError]).}
+  proc wasmUnloadPlugin(self: PluginSystem, plugin: Plugin): Future[void] {.async: (raises: []).}
+  proc wasmDispatchDynamic(self: PluginSystem, name: string, args: LispVal, namedArgs: LispVal): LispVal
+
+  proc newPluginSystemWasm*(services: Services): PluginSystemWasm =
+    let self = new PluginSystemWasm
+    self.savePluginStateImpl = wasmSavePluginState
+    self.tryLoadPluginImpl = wasmTryLoadPlugin
+    self.unloadPluginImpl = wasmUnloadPlugin
+    self.dispatchDynamicImpl = wasmDispatchDynamic
+
+    self.services = services
+    self.vfs = services.getService(VFSService).get.vfs
+
+    self.initWasm()
+
+    self.env = baseEnv()
+    self.env.onUndefinedSymbol = proc(_: Env, name: string): LispVal =
+      self.currentNamedArgs = newMap()
+      newFunc(name, proc(args: seq[LispVal]): LispVal =
+        try:
+          if name.startsWith("!"):
+            let args = args.mapIt($it).join(" ")
+            let command = name[1..^1] & " " & args
+            if self.services.getService(CommandService).get.executeCommand(command).getSome(res):
+              return newString(res)
+            return newNil()
+          if self.currentNamedArgs == nil:
+            self.currentNamedArgs = newMap()
+          debugf"[lisp-command] execute plugin api {name} {args}"
+          return self.dispatchDynamic(name, newList(args), self.currentNamedArgs)
+        finally:
+          self.currentNamedArgs = nil
+      )
+    self.env["with"] = newFunc("with", false, proc(args: seq[LispVal]): LispVal {.raises: [LispError].} =
+      if self.currentNamedArgs == nil:
+        log lvlError, &"Lisp error: 'with' only valid as argument to plugin api"
+        return nil
+      if args.len != 2 or args[0].kind != Symbol:
+        log lvlError, &"Lisp error: 'with' expects two arguments, the first must be a symbol"
+        return nil
+      debugf"add named arg '{args[0].sym}' = {args[1]}"
+      self.currentNamedArgs.fields[args[0].sym] = args[1].eval(self.env)
+      return nil
+    )
+
+    self.services.getService(CommandService).get.addPrefixCommandHandler "(", proc(command: Option[string]): Option[string] =
+      try:
+        if command.isNone:
+          return
+        var expr = command.get.parseLisp()
+        let res = expr.eval(self.env)
+        if res != nil:
+          return some($res)
+      except CatchableError as e:
+        log lvlError, &"Failed to dispatch API command '{command.get}': {e.msg}"
+      return string.none
+
+    return self
+
+  proc wasmSavePluginState(self: PluginSystem, plugin: Plugin): seq[uint8] =
+    let self = self.PluginSystemWasm
+    let instance = plugin.instance.WasmPluginInstance
+    return instance.api.savePluginState(instance.moduleInstance)
+
+  proc wasmTryLoadPlugin(self: PluginSystem, plugin: Plugin, state: seq[uint8] = @[]): Future[bool] {.async: (raises: [IOError]).} =
+    let self = self.PluginSystemWasm
+    log lvlInfo, &"tryLoadPlugin {plugin.desc}"
+    if not plugin.manifest.wasm.endsWith(".m.wasm") and not plugin.manifest.wasm.endsWith(".wat"):
+      log lvlInfo, &"Don't load plugin {plugin.desc}, no wasm file specified"
+      return false
+
+    let version = if plugin.manifest.apiVersion >= 0:
+      plugin.manifest.apiVersion
+    else:
+      var filenameWithoutExtension = plugin.manifest.wasm.splitPath.tail
+      filenameWithoutExtension.removeSuffix(".m.wasm")
+      let lastPeriod = filenameWithoutExtension.rfind(".")
+      if lastPeriod != -1:
+        try:
+          filenameWithoutExtension[(lastPeriod + 1)..^1].parseInt
+        except:
+          0
+      else:
+        0
+
+    plugin.state = PluginState.Loading
+    let module = if plugin.manifest.wasm.endsWith(".wasm"):
+      let wasmBytes = self.vfs.read(plugin.manifest.wasm, {Binary}).await
+      self.engine.newModule(wasmBytes).okOr(err):
+        log lvlError, &"[host] Failed to create wasm module: {err.msg}"
+        plugin.state = PluginState.Failed
+        return
+    else:
+      let wat = self.vfs.read(plugin.manifest.wasm).await
+      var wasmBytes: WasmByteVecT
+      let err = wat2wasm(cast[ptr UncheckedArray[char]](wat[0].addr), wat.len.csize_t, wasmBytes.addr)
+      if err != nil:
+        log lvlError, &"[host] Failed to convert wat to wasm module: {err.msg}"
+        return
+
+      self.engine.newModule(cast[ptr UncheckedArray[uint8]](wasmBytes.data).toOpenArray(0, wasmBytes.size.int - 1)).okOr(err):
+        log lvlError, &"[host] Failed to create wasm module: {err.msg}"
+        plugin.state = PluginState.Failed
+        return
+
+    log lvlInfo, &"Load plugin '{plugin.manifest.wasm}' using version {version}"
+    var api: PluginApiBase = nil
+    if version == 0:
+      api = self.v0
+    else:
+      when enableOldPluginVersions:
+        case version
+        of 1: api = self.v1
+        else:
+          log lvlError, &"Unsupported version {version} for plugin '{plugin.manifest.wasm}'"
+          plugin.state = PluginState.Failed
+          return false
       else:
         log lvlError, &"Unsupported version {version} for plugin '{plugin.manifest.wasm}'"
         plugin.state = PluginState.Failed
         return false
-    else:
-      log lvlError, &"Unsupported version {version} for plugin '{plugin.manifest.wasm}'"
+
+    let moduleInstance = api.createModule(module, plugin, state)
+    if moduleInstance == nil:
+      log lvlError, &"Failed to instantiate wasm module"
       plugin.state = PluginState.Failed
       return false
 
-  let moduleInstance = api.createModule(module, plugin, state)
-  if moduleInstance == nil:
-    log lvlError, &"Failed to instantiate wasm module"
-    plugin.state = PluginState.Failed
-    return false
+    plugin.state = PluginState.Loaded
+    plugin.instance = WasmPluginInstance(
+      moduleInstance: moduleInstance,
+      api: api,
+      setPermissionsImpl: wasmPluginSetPermissions,
+    )
+    plugin.pluginSystem = self
 
-  plugin.state = PluginState.Loaded
-  plugin.instance = WasmPluginInstance(
-    moduleInstance: moduleInstance,
-    api: api,
-    setPermissionsImpl: wasmPluginSetPermissions,
-  )
-  plugin.pluginSystem = self
+    return true
 
-  return true
+  proc wasmUnloadPlugin(self: PluginSystem, plugin: Plugin): Future[void] {.async: (raises: []).} =
+    let self = self.PluginSystemWasm
+    let instance = plugin.instance.WasmPluginInstance
+    instance.api.destroyInstance(instance.moduleInstance)
+    plugin.state = Unloaded
+    plugin.instance = nil
+    plugin.pluginSystem = nil
 
-proc wasmUnloadPlugin(self: PluginSystem, plugin: Plugin): Future[void] {.async: (raises: []).} =
-  let self = self.PluginSystemWasm
-  let instance = plugin.instance.WasmPluginInstance
-  instance.api.destroyInstance(instance.moduleInstance)
-  plugin.state = Unloaded
-  plugin.instance = nil
-  plugin.pluginSystem = nil
+  proc wasmDispatchDynamic(self: PluginSystem, name: string, args: LispVal, namedArgs: LispVal): LispVal =
+    let self = self.PluginSystemWasm
+    self.v0.dispatchDynamic(name, args, namedArgs)
 
-proc wasmDispatchDynamic(self: PluginSystem, name: string, args: LispVal, namedArgs: LispVal): LispVal =
-  let self = self.PluginSystemWasm
-  self.v0.dispatchDynamic(name, args, namedArgs)
+  # call function using function table
+      # let functionTableExport = wasmModule.get.instance.getExport(ctx, "__indirect_function_table")
+      # var functionTable = functionTableExport.get.of_field.table
+      # echo &"function table {ctx.size(functionTable.addr)}"
 
-# call function using function table
-    # let functionTableExport = wasmModule.get.instance.getExport(ctx, "__indirect_function_table")
-    # var functionTable = functionTableExport.get.of_field.table
-    # echo &"function table {ctx.size(functionTable.addr)}"
+      # for cb in self.context.callbacks:
+      #   echo &"[host] ============== call callback {cb}"
+      #   let fun = functionTable.get(ctx, cb)
+      #   if fun.isNone:
+      #     echo &"[host] Failed to find callback {cb}"
+      #     continue
 
-    # for cb in self.context.callbacks:
-    #   echo &"[host] ============== call callback {cb}"
-    #   let fun = functionTable.get(ctx, cb)
-    #   if fun.isNone:
-    #     echo &"[host] Failed to find callback {cb}"
-    #     continue
+      #   var results: array[1, ValT]
+      #   fun.get.of_field.funcref.addr.call(ctx, [38.int32.toWasmVal], results, trap.addr).toResult(void).okOr(err):
+      #     echo &"[host] Failed to call callback {cb}: ", err.msg
+      #     continue
 
-    #   var results: array[1, ValT]
-    #   fun.get.of_field.funcref.addr.call(ctx, [38.int32.toWasmVal], results, trap.addr).toResult(void).okOr(err):
-    #     echo &"[host] Failed to call callback {cb}: ", err.msg
-    #     continue
+      #   echo &"[host] callback {cb} -> {results[0].of_field.i32}"
 
-    #   echo &"[host] callback {cb} -> {results[0].of_field.i32}"
+  # proc call[T](instance: InstanceT, context: ptr ContextT, name: string, parameters: openArray[ValT], nresults: static[int]): T =
 
-# proc call[T](instance: InstanceT, context: ptr ContextT, name: string, parameters: openArray[ValT], nresults: static[int]): T =
+  #   echo &"[host] ------------------------------- call {name}, {parameters} -------------------------------------"
 
-#   echo &"[host] ------------------------------- call {name}, {parameters} -------------------------------------"
+  #   let fun = instance.getExport(context, name)
+  #   if fun.isNone:
+  #     echo &"Failed to find export '{name}'"
+  #     return
 
-#   let fun = instance.getExport(context, name)
-#   if fun.isNone:
-#     echo &"Failed to find export '{name}'"
-#     return
+  #   var trap: ptr WasmTrapT = nil
+  #   var res: array[max(nresults, 1), ValT]
+  #   fun.get.of_field.func_field.addr.call(context, parameters, res.toOpenArray(0, nresults - 1), trap.addr).toResult(void).okOr(err):
+  #     log lvlError, &"[host] Failed to call func '{name}': {err.msg}"
+  #     return
 
-#   var trap: ptr WasmTrapT = nil
-#   var res: array[max(nresults, 1), ValT]
-#   fun.get.of_field.func_field.addr.call(context, parameters, res.toOpenArray(0, nresults - 1), trap.addr).toResult(void).okOr(err):
-#     log lvlError, &"[host] Failed to call func '{name}': {err.msg}"
-#     return
+  #   if nresults > 0:
+  #     echo &"[host] call func {name} -> {res}"
 
-#   if nresults > 0:
-#     echo &"[host] call func {name} -> {res}"
+  #   when T isnot void:
+  #     res[0].to(T)
 
-#   when T isnot void:
-#     res[0].to(T)
+  proc init_module_plugin_system_wasm*() {.cdecl, exportc, dynlib.} =
+    getServices().getServiceChecked(PluginService).addPluginSystem(newPluginSystemWasm(getServices()))
