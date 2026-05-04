@@ -168,7 +168,7 @@ proc `=destroy`*(self: WriteChannelResource) =
       echo "=destroy WriteChannelResource ", self.channel.count
     `=destroy`(self.channel)
 
-when defined(witRebuild) or true:
+when defined(witRebuild):
   static: hint("Rebuilding plugin_api.wit")
   importWit "../../../wit/v0/api.wit", InstanceData:
     world = "plugin"
