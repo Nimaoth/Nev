@@ -1,4 +1,4 @@
-#use hover_component layout text_editor_component treesitter_component command_service
+#use hover_component layout text_editor_component treesitter_component command_service decoration_component
 import platform/[tui]
 import nimsumtree/[arc]
 import service, command_service, channel, view

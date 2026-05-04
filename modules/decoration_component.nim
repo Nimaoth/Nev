@@ -9,7 +9,8 @@ import component
 
 export component
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type
   CustomOverlayRenderer* = proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 {.gcsafe, raises: [].}
@@ -46,7 +47,7 @@ type
 
 # DLL API
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newDecorationComponent*(settings: SignColumnSettings, displayMap: DisplayMap): DecorationComponent
 proc decorationComponentClearSigns(self: DecorationComponent, group: string = "")
 proc decorationComponentAddSign(self: DecorationComponent, id: Id, line: int, text: string, group: string = "", tint: Color = color(1, 1, 1), color: string = "", width: int = 1): Id

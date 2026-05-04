@@ -7,6 +7,7 @@ when not defined(useDynlib):
   import "../modules/status_line.nim"
   import "../modules/layout/layout.nim"
   import "../modules/treesitter_component.nim"
+  import "../modules/decoration_component.nim"
   import "../modules/debugger/debugger.nim"
   import "../modules/terminal_platform/terminal_platform.nim"
   import "../modules/stats.nim"
@@ -49,6 +50,7 @@ proc initModules*() =
   when declared(init_module_status_line): init_module_status_line()
   when declared(init_module_layout): init_module_layout()
   when declared(init_module_treesitter_component): init_module_treesitter_component()
+  when declared(init_module_decoration_component): init_module_decoration_component()
   when declared(init_module_debugger): init_module_debugger()
   when declared(init_module_terminal_platform): init_module_terminal_platform()
   when declared(init_module_stats): init_module_stats()
@@ -115,6 +117,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_stats): shutdown_module_stats()
   when declared(shutdown_module_terminal_platform): shutdown_module_terminal_platform()
   when declared(shutdown_module_debugger): shutdown_module_debugger()
+  when declared(shutdown_module_decoration_component): shutdown_module_decoration_component()
   when declared(shutdown_module_treesitter_component): shutdown_module_treesitter_component()
   when declared(shutdown_module_layout): shutdown_module_layout()
   when declared(shutdown_module_status_line): shutdown_module_status_line()
@@ -133,6 +136,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("status_line")
   loadModule("layout")
   loadModule("treesitter_component")
+  loadModule("decoration_component")
   loadModule("debugger")
   loadModule("terminal_platform")
   loadModule("stats")
