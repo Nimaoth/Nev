@@ -36,8 +36,8 @@ type
     moduleInstance: WasmModuleInstance
     api: PluginApiBase
 
-method setPermissions*(self: WasmPluginInstance, permissions: PluginPermissions) =
-  self.moduleInstance.setPermissions(permissions)
+proc wasmPluginSetPermissions(self: PluginInstanceBase, permissions: PluginPermissions) =
+  self.WasmPluginInstance.moduleInstance.setPermissions(permissions)
 
 proc initPluginApi[T](self: PluginSystemWasm, api: var PluginApiBase) =
   var newApi: T
@@ -59,8 +59,18 @@ proc initWasm(self: PluginSystemWasm) =
   when enableOldPluginVersions:
     self.initPluginApi[:v1.PluginApi](self.v1)
 
+proc wasmSavePluginState(self: PluginSystem, plugin: Plugin): seq[uint8]
+proc wasmTryLoadPlugin(self: PluginSystem, plugin: Plugin, state: seq[uint8] = @[]): Future[bool] {.async: (raises: [IOError]).}
+proc wasmUnloadPlugin(self: PluginSystem, plugin: Plugin): Future[void] {.async: (raises: []).}
+proc wasmDispatchDynamic(self: PluginSystem, name: string, args: LispVal, namedArgs: LispVal): LispVal
+
 proc newPluginSystemWasm*(services: Services): PluginSystemWasm =
   let self = new PluginSystemWasm
+  self.savePluginStateImpl = wasmSavePluginState
+  self.tryLoadPluginImpl = wasmTryLoadPlugin
+  self.unloadPluginImpl = wasmUnloadPlugin
+  self.dispatchDynamicImpl = wasmDispatchDynamic
+
   self.services = services
   self.vfs = services.getService(VFSService).get.vfs
 
@@ -110,13 +120,13 @@ proc newPluginSystemWasm*(services: Services): PluginSystemWasm =
 
   return self
 
-method deinit*(self: PluginSystemWasm) = discard
-
-method savePluginState*(self: PluginSystemWasm, plugin: Plugin): seq[uint8] =
+proc wasmSavePluginState(self: PluginSystem, plugin: Plugin): seq[uint8] =
+  let self = self.PluginSystemWasm
   let instance = plugin.instance.WasmPluginInstance
   return instance.api.savePluginState(instance.moduleInstance)
 
-method tryLoadPlugin*(self: PluginSystemWasm, plugin: Plugin, state: seq[uint8] = @[]): Future[bool] {.async: (raises: [IOError]).} =
+proc wasmTryLoadPlugin(self: PluginSystem, plugin: Plugin, state: seq[uint8] = @[]): Future[bool] {.async: (raises: [IOError]).} =
+  let self = self.PluginSystemWasm
   log lvlInfo, &"tryLoadPlugin {plugin.desc}"
   if not plugin.manifest.wasm.endsWith(".m.wasm") and not plugin.manifest.wasm.endsWith(".wat"):
     log lvlInfo, &"Don't load plugin {plugin.desc}, no wasm file specified"
@@ -180,19 +190,25 @@ method tryLoadPlugin*(self: PluginSystemWasm, plugin: Plugin, state: seq[uint8] 
     return false
 
   plugin.state = PluginState.Loaded
-  plugin.instance = WasmPluginInstance(moduleInstance: moduleInstance, api: api)
+  plugin.instance = WasmPluginInstance(
+    moduleInstance: moduleInstance,
+    api: api,
+    setPermissionsImpl: wasmPluginSetPermissions,
+  )
   plugin.pluginSystem = self
 
   return true
 
-method unloadPlugin*(self: PluginSystemWasm, plugin: Plugin): Future[void] {.async: (raises: []).} =
+proc wasmUnloadPlugin(self: PluginSystem, plugin: Plugin): Future[void] {.async: (raises: []).} =
+  let self = self.PluginSystemWasm
   let instance = plugin.instance.WasmPluginInstance
   instance.api.destroyInstance(instance.moduleInstance)
   plugin.state = Unloaded
   plugin.instance = nil
   plugin.pluginSystem = nil
 
-method dispatchDynamic*(self: PluginSystemWasm, name: string, args: LispVal, namedArgs: LispVal): LispVal =
+proc wasmDispatchDynamic(self: PluginSystem, name: string, args: LispVal, namedArgs: LispVal): LispVal =
+  let self = self.PluginSystemWasm
   self.v0.dispatchDynamic(name, args, namedArgs)
 
 # call function using function table

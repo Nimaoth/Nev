@@ -781,7 +781,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       string.none
 
   self.pluginSystemWasm = newPluginSystemWasm(self.services)
-  self.plugins.pluginSystems.add self.pluginSystemWasm
+  self.plugins.addPluginSystem self.pluginSystemWasm
 
   let closeUnusedDocumentsTimerS = self.generalSettings.closeUnusedDocumentsTimer.get()
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
