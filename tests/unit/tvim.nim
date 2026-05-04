@@ -11,7 +11,7 @@ import misc/[util, custom_logger, jsonex]
 import config_provider, service, document, document_editor, text_component, text_editor_component
 import text/[text, text_editor, text_document]
 import platform/platform, platform_service, events, input_api, command_service, layout/layout, input
-import vim, register, event_service, move_database
+import vim, register, event_service, move_database, session
 import scripting_api except TextDocumentEditor
 
 defineSetAllDefaultSettings()
@@ -25,6 +25,7 @@ gServices = Services()
 gServices.addBuiltinServices()
 gServices.getService(PlatformService).get.setPlatform(NilPlatform())
 
+init_module_session()
 init_module_event_service()
 init_module_move_database()
 init_module_register()
