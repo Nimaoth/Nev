@@ -10,8 +10,9 @@ when not defined(useDynlib):
   import "../modules/decoration_component.nim"
   import "../modules/event_service.nim"
   import "../modules/debugger/debugger.nim"
-  import "../modules/terminal_platform/terminal_platform.nim"
   import "../modules/stats.nim"
+  import "../modules/plugin_service.nim"
+  import "../modules/terminal_platform/terminal_platform.nim"
   import "../modules/dashboard.nim"
   import "../modules/vcs_git.nim"
   import "../modules/command_server.nim"
@@ -55,8 +56,9 @@ proc initModules*() =
   when declared(init_module_decoration_component): init_module_decoration_component()
   when declared(init_module_event_service): init_module_event_service()
   when declared(init_module_debugger): init_module_debugger()
-  when declared(init_module_terminal_platform): init_module_terminal_platform()
   when declared(init_module_stats): init_module_stats()
+  when declared(init_module_plugin_service): init_module_plugin_service()
+  when declared(init_module_terminal_platform): init_module_terminal_platform()
   when declared(init_module_dashboard): init_module_dashboard()
   when declared(init_module_vcs_git): init_module_vcs_git()
   when declared(init_module_command_server): init_module_command_server()
@@ -119,8 +121,9 @@ proc shutdownModules*() =
   when declared(shutdown_module_command_server): shutdown_module_command_server()
   when declared(shutdown_module_vcs_git): shutdown_module_vcs_git()
   when declared(shutdown_module_dashboard): shutdown_module_dashboard()
-  when declared(shutdown_module_stats): shutdown_module_stats()
   when declared(shutdown_module_terminal_platform): shutdown_module_terminal_platform()
+  when declared(shutdown_module_plugin_service): shutdown_module_plugin_service()
+  when declared(shutdown_module_stats): shutdown_module_stats()
   when declared(shutdown_module_debugger): shutdown_module_debugger()
   when declared(shutdown_module_event_service): shutdown_module_event_service()
   when declared(shutdown_module_decoration_component): shutdown_module_decoration_component()
@@ -145,8 +148,9 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("decoration_component")
   loadModule("event_service")
   loadModule("debugger")
-  loadModule("terminal_platform")
   loadModule("stats")
+  loadModule("plugin_service")
+  loadModule("terminal_platform")
   loadModule("dashboard")
   loadModule("vcs_git")
   loadModule("command_server")

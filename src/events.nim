@@ -62,6 +62,7 @@ func serviceName*(_: typedesc[EventHandlerService]): string = "EventHandlerServi
 proc eventsGetEventHandlerConfig(self: EventHandlerService, context: string): EventHandlerConfig
 proc eventsBuildDFA(config: EventHandlerConfig): CommandDFA
 proc commandInfosGetInfos(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]]
+proc commandInfosInvalidateCommandToKeysMap(self: EventHandlerService)
 proc commandInfosRebuildCommandToKeysMap(self: EventHandlerService)
 proc eventsAddCommand(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default)
 {.pop.}
@@ -70,6 +71,7 @@ proc eventsAddCommand(config: EventHandlerConfig, context: string, keys: string,
 proc getEventHandlerConfig*(self: EventHandlerService, context: string): EventHandlerConfig {.inline.} = eventsGetEventHandlerConfig(self, context)
 proc buildDFA*(config: EventHandlerConfig): CommandDFA {.inline.} = eventsBuildDFA(config)
 proc getInfos*(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] {.inline.} = commandInfosGetInfos(self, command)
+proc invalidateCommandToKeysMap*(self: EventHandlerService) = commandInfosInvalidateCommandToKeysMap(self)
 proc rebuildCommandToKeysMap*(self: EventHandlerService) {.inline.} = commandInfosRebuildCommandToKeysMap(self)
 proc addCommand*(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default) = eventsAddCommand(config, context, keys, action, source)
 
@@ -480,7 +482,7 @@ when implModule:
 
     return self.eventHandlerConfigs[context].catch(EventHandlerConfig())
 
-  proc invalidateCommandToKeysMap*(self: EventHandlerService) =
+  proc commandInfosInvalidateCommandToKeysMap(self: EventHandlerService) =
     self.commandInfos.invalidate()
 
   proc commandInfosRebuildCommandToKeysMap(self: EventHandlerService) =

@@ -1,17 +1,14 @@
-import std/[macros, json, strutils, tables, options, os, sugar]
-import misc/[custom_logger, custom_async, util, myjsonutils, event]
-import scripting/expose
-import service, vfs_service, vfs, vfs_local, dispatch_tables, events, config_provider, command_service
+#use command_service stats
+import std/[json, tables, options, strformat]
+import misc/[custom_async, event]
 import lisp
+import service, config_provider, stats, command_service
 
-import "../modules/stats"
-
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 {.push gcsafe.}
 {.push raises: [].}
-
-logCategory "plugins"
 
 type PluginCommandLoadBehaviour* = enum
   DontRun = "dont-run"
@@ -103,7 +100,7 @@ type
 
 func serviceName*(_: typedesc[PluginService]): string = "PluginService"
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc pluginsAddPluginSystem(self: PluginService, pluginSystem: PluginSystem)
 proc pluginsLoadPlugins(self: PluginService)
 proc pluginsUnloadPlugin(self: PluginService, path: string) {.async.}
@@ -158,7 +155,16 @@ proc setPermissions*(self: PluginInstanceBase, permissions: PluginPermissions) =
   if self.setPermissionsImpl != nil:
     self.setPermissionsImpl(self, permissions)
 
+proc desc*(self: Plugin): string = &"'{self.manifest.name}' ({self.manifest.path})"
+
 when implModule:
+  import std/[macros, os, sugar, strutils]
+  import misc/[custom_logger, util, myjsonutils]
+  import scripting/expose
+  import vfs_service, vfs, vfs_local, dispatch_tables, events
+
+  logCategory "plugins"
+
   type
 
     PluginDirectory* = ref object
@@ -193,8 +199,6 @@ when implModule:
 
   proc addPluginFolder(self: PluginServiceImpl, path: string) {.async.}
   proc registerPluginCommands(self: PluginServiceImpl, plugin: Plugin)
-
-  proc desc*(self: Plugin): string = &"'{self.manifest.name}' ({self.manifest.path})"
 
   proc initPluginService(self: PluginServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     self.events = self.services.getService(EventHandlerService).get
