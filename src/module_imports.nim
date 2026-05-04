@@ -22,6 +22,7 @@ when not defined(useDynlib):
   import "../modules/search_component.nim"
   import "../modules/move_database.nim"
   import "../modules/text/text.nim"
+  import "../modules/wasm_engine.nim"
   import "../modules/plugin_system_wasm/plugin_system_wasm.nim"
   import "../modules/unsaved_saver.nim"
   import "../modules/language_server_document_completion.nim"
@@ -69,6 +70,7 @@ proc initModules*() =
   when declared(init_module_search_component): init_module_search_component()
   when declared(init_module_move_database): init_module_move_database()
   when declared(init_module_text): init_module_text()
+  when declared(init_module_wasm_engine): init_module_wasm_engine()
   when declared(init_module_plugin_system_wasm): init_module_plugin_system_wasm()
   when declared(init_module_unsaved_saver): init_module_unsaved_saver()
   when declared(init_module_language_server_document_completion): init_module_language_server_document_completion()
@@ -115,6 +117,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_language_server_document_completion): shutdown_module_language_server_document_completion()
   when declared(shutdown_module_unsaved_saver): shutdown_module_unsaved_saver()
   when declared(shutdown_module_plugin_system_wasm): shutdown_module_plugin_system_wasm()
+  when declared(shutdown_module_wasm_engine): shutdown_module_wasm_engine()
   when declared(shutdown_module_text): shutdown_module_text()
   when declared(shutdown_module_move_database): shutdown_module_move_database()
   when declared(shutdown_module_search_component): shutdown_module_search_component()
@@ -163,6 +166,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("search_component")
   loadModule("move_database")
   loadModule("text")
+  loadModule("wasm_engine")
   loadModule("plugin_system_wasm")
   loadModule("unsaved_saver")
   loadModule("language_server_document_completion")

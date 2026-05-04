@@ -525,6 +525,7 @@ when enableGui:
   if backend.get == Gui:
     myDisableTrueColors()
 
+# todo: this should be part of the build system
 when defined(windows) and copyWasmtimeDll:
   import std/[compilesettings]
   import wasmtime

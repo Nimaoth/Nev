@@ -1,8 +1,9 @@
 import wasmtime
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
-proc getGlobalWasmEngine*(): ptr WasmEngineT {.apprtl, gcsafe, raises: [].}
+proc getGlobalWasmEngine*(): ptr WasmEngineT {.modrtl, gcsafe, raises: [].}
 
 when implModule:
   let config = newConfig()
