@@ -1,10 +1,13 @@
+#use event_service
 import std/[json]
 import misc/[event, id, custom_async]
 import service
-include dynlib_export
+
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type
-  SessionService* = ref object of Service
+  SessionService* = ref object of DynamicService
     sessionData*: JsonNode
     onSessionRestored*: Event[SessionService]
     hasSession*: bool
@@ -18,11 +21,13 @@ type
 func serviceName*(_: typedesc[SessionService]): string = "SessionService"
 
 # DLL API
-proc sessionServiceAddSaveHandler(self: SessionService, key: string, save: proc(): JsonNode {.gcsafe, raises: [].}, load: proc(data: JsonNode) {.gcsafe, raises: [].}) {.apprtl, gcsafe, raises: [].}
-{.push apprtl, gcsafe, raises: [].}
+proc sessionServiceAddSaveHandler(self: SessionService, key: string, save: proc(): JsonNode {.gcsafe, raises: [].}, load: proc(data: JsonNode) {.gcsafe, raises: [].}) {.modrtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc sessionServiceGetRecentSessions(self: SessionService): Future[seq[string]] {.async: (raises: []).}
 proc sessionSetSessionData(self: SessionService, path: string, value: JsonNode, override: bool = true)
 proc sessionGetSessionData(self: SessionService, path: string, default: JsonNode): JsonNode
+proc sessionRestoreSession(self: SessionService, sessionData: JsonNode)
+proc sessionSaveSession(self: SessionService): JsonNode
 {.pop.}
 
 # Nice wrappers
@@ -30,6 +35,8 @@ proc addSaveHandler*(self: SessionService, key: string, save: proc(): JsonNode {
 proc getRecentSessions*(self: SessionService): Future[seq[string]] {.inline, async: (raises: []).} = await sessionServiceGetRecentSessions(self)
 proc setSessionData*(self: SessionService, path: string, value: JsonNode, override: bool = true) = sessionSetSessionData(self, path, value, override)
 proc getSessionData*(self: SessionService, path: string, default: JsonNode): JsonNode = sessionGetSessionData(self, path, default)
+proc restoreSession*(self: SessionService, sessionData: JsonNode) = sessionRestoreSession(self, sessionData)
+proc saveSession*(self: SessionService): JsonNode = sessionSaveSession(self)
 
 # Implementation
 when implModule:
@@ -43,13 +50,6 @@ when implModule:
   {.push raises: [].}
 
   logCategory "session"
-
-  addBuiltinService(SessionService)
-
-  method init*(self: SessionService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-    log lvlInfo, &"SessionService.init"
-    self.sessionData = newJObject()
-    return ok()
 
   proc sessionServiceGetRecentSessions(self: SessionService): Future[seq[string]] {.async: (raises: []).} =
     let vfsService = self.services.getService(VFSService).getOr: return @[]
@@ -68,7 +68,7 @@ when implModule:
       log lvlError, &"Failed to read sessions.json: {getCurrentExceptionMsg()}"
       return @[]
 
-  proc restoreSession*(self: SessionService, sessionData: JsonNode) =
+  proc sessionRestoreSession(self: SessionService, sessionData: JsonNode) =
     log lvlInfo, &"SessionService.restoreSession"
     self.sessionData = sessionData
     if self.sessionData.hasKey("dynamic"):
@@ -90,7 +90,7 @@ when implModule:
       load: proc(data: JsonNode) {.gcsafe, raises: [].}) =
     self.sessionSaveHandlers.add (newId(), key, save, load)
 
-  proc saveSession*(self: SessionService): JsonNode =
+  proc sessionSaveSession(self: SessionService): JsonNode =
     log lvlInfo, &"SessionService.saveSession"
     let events = self.services.getService(EventService).get
     events.emit("session/save", "")
@@ -153,3 +153,6 @@ when implModule:
     self.setSessionDataJson(path, value, override)
 
   addGlobalDispatchTable "session", genDispatchTable("session")
+
+  proc init_module_session*() {.cdecl, exportc, dynlib.} =
+    getServices().addService(SessionService(sessionData: newJObject()))

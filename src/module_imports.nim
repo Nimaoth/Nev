@@ -4,6 +4,7 @@ when not defined(useDynlib):
   import "../modules/text_editor_component.nim"
   import "../modules/register.nim"
   import "../modules/command_service.nim"
+  import "../modules/session.nim"
   import "../modules/layout/layout.nim"
   import "../modules/command_server.nim"
   import "../modules/stats.nim"
@@ -52,6 +53,7 @@ proc initModules*() =
   when declared(init_module_text_editor_component): init_module_text_editor_component()
   when declared(init_module_register): init_module_register()
   when declared(init_module_command_service): init_module_command_service()
+  when declared(init_module_session): init_module_session()
   when declared(init_module_layout): init_module_layout()
   when declared(init_module_command_server): init_module_command_server()
   when declared(init_module_stats): init_module_stats()
@@ -136,6 +138,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_stats): shutdown_module_stats()
   when declared(shutdown_module_command_server): shutdown_module_command_server()
   when declared(shutdown_module_layout): shutdown_module_layout()
+  when declared(shutdown_module_session): shutdown_module_session()
   when declared(shutdown_module_command_service): shutdown_module_command_service()
   when declared(shutdown_module_register): shutdown_module_register()
   when declared(shutdown_module_text_editor_component): shutdown_module_text_editor_component()
@@ -148,6 +151,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("text_editor_component")
   loadModule("register")
   loadModule("command_service")
+  loadModule("session")
   loadModule("layout")
   loadModule("command_server")
   loadModule("stats")

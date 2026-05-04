@@ -31,6 +31,9 @@ when defined(useDynlib):
     else:
       import std/[strformat]
       {.error: &"{currentModuleName} is not defined as dependency for {nevModuleName}".}
+      {.pragma: rtl, importc, dynlib: "native_plugins/" & currentModuleName & ".dll", cdecl.}
+      {.pragma: modrtl, importc, dynlib: "native_plugins/" & currentModuleName & ".dll", cdecl.}
+      {.pragma: rtlvar, importc, dynlib: "native_plugins/" & currentModuleName & ".dll".}
 else:
   # We are linking statically
   {.pragma: rtl, exportc, dynlib, cdecl.}

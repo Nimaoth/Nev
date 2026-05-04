@@ -1,4 +1,4 @@
-#use status_line text_editor_component command_service
+#use status_line text_editor_component command_service session
 # text_editor_component is needed for OpenEditorPreviewer. todo: OpenEditorPreviewer shouldn't care about text editors
 import std/[options, json]
 import misc/[custom_async, id]
