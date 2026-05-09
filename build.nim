@@ -1,5 +1,5 @@
 import std/[parseopt, options, strutils, os, strformat, dirs, sequtils, unicode, osproc, times, tables, json, jsonutils, threadpool, sets, sugar, algorithm]
-import src/misc/timer
+import src/misc/[timer, array_set]
 
 var optParser = initOptParser("")
 
@@ -82,7 +82,7 @@ proc toCamelCase(str: string): string =
 proc toPascalCase(str: string): string =
   return str.splitCase.parts.joinCase(Pascal)
 
-proc readDependencies(str: string): seq[tuple[module: string, features: seq[string]]] =
+proc readDependencies(str: string, modules: Table[string, ModuleInfo]): seq[tuple[module: string, features: seq[string]]] =
   try:
     let f = readFile(str)
     for l in f.splitLines:
@@ -91,7 +91,18 @@ proc readDependencies(str: string): seq[tuple[module: string, features: seq[stri
           let parts = dep.split(":")
           let name = parts[0]
           let features = parts[1..^1]
-          result.add (name, features)
+          if not modules.contains(name):
+            echo &"Unknown module dependency '{name}' for module '{str}'"
+          result.incl (name, features)
+      if l.startsWith("import ") or l.startsWith("  import "):
+        let i = l.find("import")
+        if l.contains("std/"):
+          continue
+        for dep in l[(i + 6)..^1].split({',', '[', ']'}):
+          let name = dep.strip
+          if name != "" and modules.contains(name):
+            result.incl (name, @[])
+
   except CatchableError as e:
     echo &"Failed to read file dependencies from '{str}': {e.msg}"
     return @[]
@@ -108,8 +119,7 @@ proc gatherModules(): Table[string, ModuleInfo] =
           continue
         var files = initTable[string, FileInfo]()
         files[path] = FileInfo(modificationTime: getLastModificationTime(path).toUnix)
-        let dependencies = readDependencies(path)
-        result[name] = ModuleInfo(path: path, dirty: true, files: files, dependencies: dependencies)
+        result[name] = ModuleInfo(path: path, dirty: true, files: files)
       of pcDir:
         let name = path.splitPath.tail
         if name == "module_base":
@@ -124,14 +134,17 @@ proc gatherModules(): Table[string, ModuleInfo] =
         if mainFile == "":
           echo &"Skip module {name}, no main file {name}.nim"
           continue
-        let dependencies = readDependencies(path / name & ".nim")
-        result[name] = ModuleInfo(path: path / name & ".nim", dirty: true, files: files, dependencies: dependencies)
+        result[name] = ModuleInfo(path: path / name & ".nim", dirty: true, files: files)
 
 
       of pcLinkToFile:
         discard
       of pcLinkToDir:
         discard
+
+    for module in result.keys:
+      let dependencies = readDependencies(result[module].path, result)
+      result[module].dependencies = dependencies
 
   except OSError as e:
     echo &"Failed to gather modules: {e.msg}"

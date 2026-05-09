@@ -14,7 +14,7 @@ when implModule:
   import misc/[custom_logger, rect_utils, event, timer, custom_unicode, custom_async]
   import platform/tui, ui/node
   import app_options, terminal_input, input_api, input_handler/input_handler
-  import vterm
+  import terminal/vterm
 
   when defined(windows):
     import winlean

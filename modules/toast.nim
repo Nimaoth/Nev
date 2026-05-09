@@ -2,12 +2,11 @@ import platform/platform
 import misc/[custom_async, custom_logger, util, timer]
 import service, platform_service, config_provider
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 {.push gcsafe.}
 {.push raises: [].}
-
-logCategory "toast"
 
 type
   Toast* = object
@@ -17,7 +16,7 @@ type
     color*: string
     progress*: float
 
-  ToastService* = ref object of Service
+  ToastService* = ref object of DynamicService
     platform: Platform
     config: ConfigService
     uiSettings: UiSettings
@@ -28,7 +27,7 @@ type
 func serviceName*(_: typedesc[ToastService]): string = "ToastService"
 
 # DLL API
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc showToast*(self: ToastService, title: string, message: string, color: string)
 {.pop.}
 
@@ -40,15 +39,14 @@ when implModule:
   import misc/[myjsonutils]
   import dispatch_tables
 
-  addBuiltinService(ToastService, ConfigService, PlatformService)
+  logCategory "toast"
 
-  method init*(self: ToastService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  proc initToastService(self: ToastService) =
     log lvlInfo, &"ToastService.init"
     self.platform = self.services.getService(PlatformService).get.platform
     assert self.platform != nil
     self.config = self.services.getService(ConfigService).get
     self.uiSettings = UiSettings.new(self.config.runtime)
-    return ok()
 
   proc updateToasts(self: ToastService) {.async.} =
     boolLock(self.isUpdating)
@@ -86,3 +84,11 @@ when implModule:
     self.platform.requestRender()
 
   addGlobalDispatchTable "toast", genDispatchTable("toast")
+
+  proc init_module_angelscript_formatter*() {.cdecl, exportc, dynlib.} =
+    getServices().addService(ToastService(
+      initImpl: proc(self: Service): Future[Result[void, ref CatchableError]] {.gcsafe, async: (raises: []).} =
+        initToastService(self.ToastService)
+    ))
+
+  # addBuiltinService(ToastService, ConfigService, PlatformService)

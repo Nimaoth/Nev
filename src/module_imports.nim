@@ -6,6 +6,7 @@ when not defined(useDynlib):
   import "../modules/move_component.nim"
   import "../modules/text_editor_component.nim"
   import "../modules/register.nim"
+  import "../modules/log.nim"
   import "../modules/command_service.nim"
   import "../modules/event_service.nim"
   import "../modules/session.nim"
@@ -26,6 +27,7 @@ when not defined(useDynlib):
   import "../modules/treesitter_component.nim"
   import "../modules/contextline_component.nim"
   import "../modules/workspace_edit.nim"
+  import "../modules/toast.nim"
   import "../modules/text/text.nim"
   import "../modules/wasm_engine.nim"
   import "../modules/plugin_system_wasm/plugin_system_wasm.nim"
@@ -40,7 +42,6 @@ when not defined(useDynlib):
   import "../modules/vcs_perforce.nim"
   import "../modules/vim.nim"
   import "../modules/language_server_ctags.nim"
-  import "../modules/log.nim"
   import "../modules/language_server_lsp/language_server_lsp.nim"
   import "../modules/language_server_regex.nim"
   import "../modules/language_server_ue_as.nim"
@@ -59,6 +60,7 @@ proc initModules*() =
   when declared(init_module_move_component): init_module_move_component()
   when declared(init_module_text_editor_component): init_module_text_editor_component()
   when declared(init_module_register): init_module_register()
+  when declared(init_module_log): init_module_log()
   when declared(init_module_command_service): init_module_command_service()
   when declared(init_module_event_service): init_module_event_service()
   when declared(init_module_session): init_module_session()
@@ -79,6 +81,7 @@ proc initModules*() =
   when declared(init_module_treesitter_component): init_module_treesitter_component()
   when declared(init_module_contextline_component): init_module_contextline_component()
   when declared(init_module_workspace_edit): init_module_workspace_edit()
+  when declared(init_module_toast): init_module_toast()
   when declared(init_module_text): init_module_text()
   when declared(init_module_wasm_engine): init_module_wasm_engine()
   when declared(init_module_plugin_system_wasm): init_module_plugin_system_wasm()
@@ -93,7 +96,6 @@ proc initModules*() =
   when declared(init_module_vcs_perforce): init_module_vcs_perforce()
   when declared(init_module_vim): init_module_vim()
   when declared(init_module_language_server_ctags): init_module_language_server_ctags()
-  when declared(init_module_log): init_module_log()
   when declared(init_module_language_server_lsp): init_module_language_server_lsp()
   when declared(init_module_language_server_regex): init_module_language_server_regex()
   when declared(init_module_language_server_ue_as): init_module_language_server_ue_as()
@@ -114,7 +116,6 @@ proc shutdownModules*() =
   when declared(shutdown_module_language_server_ue_as): shutdown_module_language_server_ue_as()
   when declared(shutdown_module_language_server_regex): shutdown_module_language_server_regex()
   when declared(shutdown_module_language_server_lsp): shutdown_module_language_server_lsp()
-  when declared(shutdown_module_log): shutdown_module_log()
   when declared(shutdown_module_language_server_ctags): shutdown_module_language_server_ctags()
   when declared(shutdown_module_vim): shutdown_module_vim()
   when declared(shutdown_module_vcs_perforce): shutdown_module_vcs_perforce()
@@ -129,6 +130,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_plugin_system_wasm): shutdown_module_plugin_system_wasm()
   when declared(shutdown_module_wasm_engine): shutdown_module_wasm_engine()
   when declared(shutdown_module_text): shutdown_module_text()
+  when declared(shutdown_module_toast): shutdown_module_toast()
   when declared(shutdown_module_workspace_edit): shutdown_module_workspace_edit()
   when declared(shutdown_module_contextline_component): shutdown_module_contextline_component()
   when declared(shutdown_module_treesitter_component): shutdown_module_treesitter_component()
@@ -149,6 +151,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_session): shutdown_module_session()
   when declared(shutdown_module_event_service): shutdown_module_event_service()
   when declared(shutdown_module_command_service): shutdown_module_command_service()
+  when declared(shutdown_module_log): shutdown_module_log()
   when declared(shutdown_module_register): shutdown_module_register()
   when declared(shutdown_module_text_editor_component): shutdown_module_text_editor_component()
   when declared(shutdown_module_move_component): shutdown_module_move_component()
@@ -165,6 +168,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("move_component")
   loadModule("text_editor_component")
   loadModule("register")
+  loadModule("log")
   loadModule("command_service")
   loadModule("event_service")
   loadModule("session")
@@ -185,6 +189,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("treesitter_component")
   loadModule("contextline_component")
   loadModule("workspace_edit")
+  loadModule("toast")
   loadModule("text")
   loadModule("wasm_engine")
   loadModule("plugin_system_wasm")
@@ -199,7 +204,6 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("vcs_perforce")
   loadModule("vim")
   loadModule("language_server_ctags")
-  loadModule("log")
   loadModule("language_server_lsp")
   loadModule("language_server_regex")
   loadModule("language_server_ue_as")
