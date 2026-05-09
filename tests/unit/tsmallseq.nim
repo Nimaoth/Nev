@@ -7,7 +7,6 @@ discard """
 """
 
 import std/[tables, unittest, strformat]
-import input
 
 import misc/smallseq
 

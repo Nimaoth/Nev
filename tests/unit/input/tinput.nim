@@ -7,7 +7,7 @@ discard """
 """
 
 import std/[tables, unittest, strformat]
-import input
+import input_handler/input, input_api
 
 suite "Input DFA":
 
