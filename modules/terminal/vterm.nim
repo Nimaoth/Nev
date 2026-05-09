@@ -10,7 +10,7 @@ import misc/[custom_unicode]
 {.compile: "./libvterm/unicode.c".}
 {.compile: "./libvterm/vterm.c".}
 
-{.passC: "-Isrc/libvterm".}
+{.passC: "-Imodules/terminal/libvterm".}
 {.push header: "vterm.h".}
 
 # {.compile: "./vterm/encoding.c".}
