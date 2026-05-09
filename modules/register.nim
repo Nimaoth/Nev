@@ -73,9 +73,17 @@ proc recordCommand*(self: Registers, command: string, registers: openArray[strin
 when implModule:
   import scripting/[expose]
   import misc/[custom_logger, util, rope_utils, array_set]
-  import clipboard, dispatch_tables
+  import dispatch_tables
+  import platform_service
 
   logCategory "register"
+
+  proc setSystemClipboardText*(str: string) =
+    getServiceChecked(PlatformService).platform.setClipboardText(str)
+
+  proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
+    getServiceChecked(PlatformService).platform.getClipboardText().await
+
 
   proc setRegisterTextAsync*(self: Registers, text: string, register: string = ""): Future[void] {.async.} =
     self.registers[register] = Register(kind: RegisterKind.Text, text: text)

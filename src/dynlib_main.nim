@@ -57,7 +57,6 @@ import text/language/debugger
 import collab
 import wasm3, wasm3/[wasm3c, wasmconversions]
 import ui/node
-import clipboard
 import plugin_service
 
 generatePluginBindings()
