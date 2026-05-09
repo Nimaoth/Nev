@@ -4,9 +4,10 @@ import misc/[util, custom_logger, disposable_ref]
 import ui/node
 import platform/platform
 import ui/[widget_library]
-import app, selector_popup, theme, document_editor
+import selector_popup, theme, document_editor
 import finder/[finder, previewer, file_previewer, open_editor_previewer, data_previewer]
 import config_provider, events, view
+import service
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
@@ -16,10 +17,8 @@ import config_provider, events, view
 
 logCategory "selector-popup-ui"
 
-proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBuilder, app: App):
-    seq[OverlayFunction] =
-
-  let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+proc createUI*(self: SelectorPopupImpl, i: int, item: FinderItem, builder: UINodeBuilder): seq[OverlayFunction] =
+  let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let name = item.displayName
   let matchIndices = self.getCompletionMatches(i, self.getSearchString(), name, finderFuzzyMatchConfig)
 
@@ -31,22 +30,11 @@ proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBui
       builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextItalic}, text = $item.details,
         textColor = textColor.darken(0.2))
 
-method createUI*(self: FilePreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
-  if self.editor.isNotNil:
-    result.add self.editor.render(builder)
-
-method createUI*(self: OpenEditorPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
-  if self.editor.isNotNil:
-    result.add self.editor.render(builder)
-
-method createUI*(self: DataPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
-  if self.editor.isNotNil:
-    result.add self.editor.render(builder)
-
-proc selectorPopupCreateUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFunction] =
-  let app = ({.gcsafe.}: gEditor)
+proc selectorPopupCreateUI*(self: SelectorPopupImpl, builder: UINodeBuilder): seq[OverlayFunction] =
   # let dirty = self.dirty
   self.resetDirty()
+
+  let config = getServiceChecked(ConfigService)
 
   defer:
     self.scrollToSelected = false
@@ -70,28 +58,28 @@ proc selectorPopupCreateUI*(self: SelectorPopup, builder: UINodeBuilder): seq[Ov
   bounds.w = ((bounds.w / builder.charWidth).ceil() * builder.charWidth).round() + 2
   bounds.h = ((bounds.h / builder.textHeight).ceil() * builder.textHeight).round() + 2
 
-  let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  let backgroundColor = app.themes.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
-  let borderColor = app.themes.theme.color("panel.border", backgroundColor.lighten(0.2))
-  let selectionColor = app.themes.theme.color("list.activeSelectionBackground",
+  let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  let backgroundColor = builder.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
+  let borderColor = builder.theme.color("panel.border", backgroundColor.lighten(0.2))
+  let selectionColor = builder.theme.color("list.activeSelectionBackground",
     color(0.8, 0.8, 0.8)).withAlpha(1)
-  let titleBackgroundColor = app.themes.theme.color(@["selector.title.background", "panel.background"], color(0.1, 0.1, 0.1)).withAlpha(1)
-  let titleForegroundColor = app.themes.theme.color(@["selector.title.foreground", "editor.foreground"], color(0.1, 0.1, 0.1)).withAlpha(1)
+  let titleBackgroundColor = builder.theme.color(@["selector.title.background", "panel.background"], color(0.1, 0.1, 0.1)).withAlpha(1)
+  let titleForegroundColor = builder.theme.color(@["selector.title.foreground", "editor.foreground"], color(0.1, 0.1, 0.1)).withAlpha(1)
 
   let excluded = ["prev", "next", "accept", "close"]
   proc filterCommand(s: string): bool =
     return not excluded.anyIt(s.toLowerAscii.startsWith(it))
-  let nextPossibleInputs = app.getNextPossibleInputs(false, (handler) => handler.config.context.startsWith("popup.selector")).filterIt(filterCommand(it.description))
-  let uiSettings = UiSettings.new(app.config.runtime)
+  # let nextPossibleInputs = app.getNextPossibleInputs(false, (handler) => handler.config.context.startsWith("popup.selector")).filterIt(filterCommand(it.description))
+  let uiSettings = UiSettings.new(config.runtime)
   var whichKeyHeightLines = uiSettings.popupWhichKeyHeight.get()
-  whichKeyHeightLines = (nextPossibleInputs.len + 1) div 2
+  # whichKeyHeightLines = (nextPossibleInputs.len + 1) div 2
   let whichKeyHeightPx = builder.renderCommandKeysHeight(whichKeyHeightLines, padding = 0)
 
   builder.panel(&{FillBackground, DrawBorder, DrawBorderTerminal}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, border = border(1),
       backgroundColor = backgroundColor, borderColor = borderColor, userId = self.userId.newPrimaryId):
 
     builder.panel(&{FillX, MaskContent, OverlappingChildren} + yFlag): #, userId = id):
-      let totalLineHeight = app.platform.totalLineHeight
+      let totalLineHeight = builder.textHeight
 
       block:
         builder.panel(&{FillX, LayoutVertical} + yFlag, w = bounds.w * (1 - previewScale)):
@@ -119,9 +107,9 @@ proc selectorPopupCreateUI*(self: SelectorPopup, builder: UINodeBuilder): seq[Ov
           builder.updateSizeToContent(currentNode)
 
           if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.filteredLen > 0:
-            let highlightColor = app.themes.theme.color("editor.foreground.highlight", textColor.lighten(0.18))
+            let highlightColor = builder.theme.color("editor.foreground.highlight", textColor.lighten(0.18))
             let detailColor = textColor.darken(0.2)
-            let detailsFontScale = app.config.runtime.get("ui.selector.details-font-scale", 0.85)
+            let detailsFontScale = config.runtime.get("ui.selector.details-font-scale", 0.85)
 
             var rows: seq[seq[UINode]] = @[]
             var rowsNode: UINode
@@ -186,7 +174,7 @@ proc selectorPopupCreateUI*(self: SelectorPopup, builder: UINodeBuilder): seq[Ov
                   var row: seq[UINode] = @[]
 
                   builder.panel(&{FillX, SizeToContentY}):
-                    if app.config.runtime.get("ui.selector.show-score", false):
+                    if config.runtime.get("ui.selector.show-score", false):
                       row.add builder.createTextWithMaxWidth($(item.score * 100), maxColumnWidth, "...", detailColor, &{TextItalic}, fontScale = detailsFontScale)
 
                     row.add builder.highlightedText(name, matchIndices, textColor, highlightColor, maxDisplayNameWidth)
@@ -234,23 +222,23 @@ proc selectorPopupCreateUI*(self: SelectorPopup, builder: UINodeBuilder): seq[Ov
                 let w = ceil(builder.charWidth * 0.5)
                 fillRect(rect(rowsNode.bounds.w - w, floor(thumbY), w, ceil(thumbHeight)), scrollBarColor)
 
-          builder.updateSizeToContent(currentNode)
-          if SizeToContentY in yFlag:
-            let textColor = app.themes.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
-            let continuesTextColor = app.themes.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
-            let keysTextColor = app.themes.theme.tokenColor("number", color(0.882, 0.784, 0.784))
-            var headerColor = app.themes.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
-            builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeightLines, currentNode.bounds, padding = 0)
+          # builder.updateSizeToContent(currentNode)
+          # if SizeToContentY in yFlag:
+          #   let textColor = builder.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
+          #   let continuesTextColor = builder.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
+          #   let keysTextColor = builder.theme.tokenColor("number", color(0.882, 0.784, 0.784))
+          #   var headerColor = builder.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
+          #   builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeightLines, currentNode.bounds, padding = 0)
 
-        if SizeToContentY notin yFlag:
-          let textColor = app.themes.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
-          let continuesTextColor = app.themes.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
-          let keysTextColor = app.themes.theme.tokenColor("number", color(0.882, 0.784, 0.784))
-          var headerColor = app.themes.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
-          builder.panel(&{FillX, FillY, LayoutVerticalReverse}):
-            builder.panel(&{FillX, SizeToContentY}, pivot = vec2(0, 1)):
-              builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeightLines, currentNode.bounds, padding = 0)
-              builder.updateSizeToContent(currentNode)
+        # if SizeToContentY notin yFlag:
+        #   let textColor = builder.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
+        #   let continuesTextColor = builder.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
+        #   let keysTextColor = builder.theme.tokenColor("number", color(0.882, 0.784, 0.784))
+        #   var headerColor = builder.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
+        #   builder.panel(&{FillX, FillY, LayoutVerticalReverse}):
+        #     builder.panel(&{FillX, SizeToContentY}, pivot = vec2(0, 1)):
+        #       builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeightLines, currentNode.bounds, padding = 0)
+        #       builder.updateSizeToContent(currentNode)
 
         if showPreview:
           builder.panel(0.UINodeFlags, x = bounds.w * (1 - previewScale),
@@ -259,11 +247,9 @@ proc selectorPopupCreateUI*(self: SelectorPopup, builder: UINodeBuilder): seq[Ov
             self.previewEditor.active = self.focusPreview
 
             if self.previewView != nil:
-              result.add self.previewView.createUI(builder)
+              result.add self.previewView.render(builder)
             elif self.previewer.isSome:
-              result.add self.previewer.get.get.createUI(builder)
+              result.add self.previewer.get.render(builder)
 
     if sizeToContentY:
       currentNode.h = currentNode.last.h + currentNode.border.top + currentNode.border.bottom
-
-createUIImpl = selectorPopupCreateUI

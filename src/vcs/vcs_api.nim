@@ -6,7 +6,7 @@ import workspaces/workspace
 import finder/[finder, previewer, file_previewer]
 import platform/[platform]
 import service, dispatch_tables, platform_service
-import selector_popup_builder, vcs, layout/layout, vfs, config_provider
+import selector_popup/builder, vcs, layout/layout, vfs, config_provider
 from scripting_api import SelectionCursor, ScrollSnapBehaviour, toSelection
 import document_editor, text_editor_component, move_component, command_component
 

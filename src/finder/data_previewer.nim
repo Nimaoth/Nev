@@ -4,6 +4,7 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 import finder, previewer
 import service, document_editor, document, text_component, text_editor_component, language_component
 import nimsumtree/rope
+import ui/node
 
 export previewer
 
@@ -72,3 +73,8 @@ proc newDataPreviewer*(services: Services, language = string.none,
     document.getLanguageComponent().get.setLanguageId(language.get)
   result.tempDocument = document
   result.getPreviewTextImpl = getPreviewTextImpl
+  result.renderImpl = proc(self: DynamicPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
+    let self = self.DataPreviewer
+    if self.editor.isNotNil:
+      result.add self.editor.render(builder)
+

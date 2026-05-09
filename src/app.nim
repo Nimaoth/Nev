@@ -16,6 +16,7 @@ import service, layout/layout, session, command_service, command_line, toast, pl
 import event_service, vcs/vcs
 import search_component, decoration_component, move_component, command_component
 import nimsumtree/[rope]
+import selector_popup/selector_popup
 
 import misc/async_process
 
@@ -126,7 +127,7 @@ type
 
     currentLocationListIndex: int
     finderItems: seq[FinderItem]
-    previewer: Option[DisposableRef[Previewer]]
+    previewer: Option[Previewer]
 
     closeUnusedDocumentsTask: DelayedTask
 
@@ -172,14 +173,13 @@ proc handleModsChanged*(self: App, old: Modifiers, new: Modifiers)
 proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
 
-import selector_popup
 import finder/[file_previewer]
 
 # todo: remove this function
 proc setLocationList(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none) =
   self.currentLocationListIndex = 0
   self.finderItems = list
-  self.previewer = previewer.toDisposableRef
+  self.previewer = previewer
 
 proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: []).} =
   if not force and self.themes.theme.isNotNil and self.themes.theme.path == path:
@@ -1073,7 +1073,7 @@ proc prompt(self: App, choices: seq[string], title: string = ""): Future[Option[
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.services, "prompt".some, finder.some, DisposableRef[Previewer].none)
+  var popup = newSelectorPopup("prompt".some, finder.some, Previewer.none)
   popup.title = title
   popup.scale.x = 0.5
   popup.scale.y = 0.5
@@ -1256,11 +1256,11 @@ proc openSession*(self: App, newWindow: bool = false, root: string = "home://", 
   finder.filterThreshold = float.low
 
   let previewer = if preview:
-    newFilePreviewer(self.vfsService.vfs2, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+    newFilePreviewer(self.vfsService.vfs2, self.services, reuseExistingDocuments = false).Previewer.some
   else:
-    DisposableRef[Previewer].none
+    Previewer.none
 
-  var popup = newSelectorPopup(self.services, "sessions".some, finder.some, previewer)
+  var popup = newSelectorPopup("sessions".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -1294,11 +1294,11 @@ proc openRecentSession*(self: App, preview: bool = true, scaleX: float = 0.9, sc
   finder.filterThreshold = float.low
 
   let previewer = if preview:
-    newFilePreviewer(self.vfsService.vfs2, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+    newFilePreviewer(self.vfsService.vfs2, self.services, reuseExistingDocuments = false).Previewer.some
   else:
-    DisposableRef[Previewer].none
+    Previewer.none
 
-  var popup = newSelectorPopup(self.services, "recent-sessions".some, finder.some, previewer)
+  var popup = newSelectorPopup("recent-sessions".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -1343,7 +1343,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.services, "theme".some, finder.some)
+  var popup = newSelectorPopup("theme".some, finder.some)
   popup.scale.x = 0.35
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
@@ -1395,20 +1395,18 @@ type
     workspace: Workspace
     onWorkspaceFileCacheUpdatedHandle: Option[Id]
 
-proc newWorkspaceFilesDataSource(workspace: Workspace): WorkspaceFilesDataSource =
-  new result
-  result.workspace = workspace
-
 proc handleCachedFilesUpdated(self: WorkspaceFilesDataSource) =
   if self.workspace.cachedFiles.isSome:
     self.onItemsChanged.invoke(self.workspace.cachedFiles.get)
 
-method close*(self: WorkspaceFilesDataSource) =
+proc workspaceFilesDataSourceClose(self: DataSource) =
+  let self = self.WorkspaceFilesDataSource
   if self.onWorkspaceFileCacheUpdatedHandle.getSome(handle):
     self.workspace.onCachedFilesUpdated.unsubscribe(handle)
   self.onWorkspaceFileCacheUpdatedHandle = Id.none
 
-method setQuery*(self: WorkspaceFilesDataSource, query: string) =
+proc workspaceFilesDataSourceSetQuery(self: DataSource, query: string) =
+  let self = self.WorkspaceFilesDataSource
   if self.onWorkspaceFileCacheUpdatedHandle.isSome:
     return
 
@@ -1416,6 +1414,12 @@ method setQuery*(self: WorkspaceFilesDataSource, query: string) =
   self.workspace.recomputeFileCache()
 
   self.onWorkspaceFileCacheUpdatedHandle = some(self.workspace.onCachedFilesUpdated.subscribe () => self.handleCachedFilesUpdated())
+
+proc newWorkspaceFilesDataSource(workspace: Workspace): WorkspaceFilesDataSource =
+  new result
+  result.workspace = workspace
+  result.closeImpl = workspaceFilesDataSourceClose
+  result.setQueryImpl = workspaceFilesDataSourceSetQuery
 
 proc recomputeWorkspaceCache*(self: App) {.expose("editor").} =
   self.workspace.recomputeFileCache()
@@ -1454,13 +1458,13 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
     return items
 
   let previewer = if preview:
-    newFilePreviewer(self.vfsService.vfs2, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+    newFilePreviewer(self.vfsService.vfs2, self.services, reuseExistingDocuments = false).Previewer.some
   else:
-    DisposableRef[Previewer].none
+    Previewer.none
 
   let source = newSyncDataSource(getItems)
   let finder = newFinder(source, filterAndSort=true)
-  var popup = newSelectorPopup(self.services, "file".some, finder.some, previewer)
+  var popup = newSelectorPopup("file".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -1488,7 +1492,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
     self.platform.requestRender()
 
   let dataPreviewer = newDataPreviewer(self.services, language="javascript".some)
-  let previewer = dataPreviewer.Previewer.toDisposableRef.some
+  let previewer = dataPreviewer.Previewer.some
 
   var state: ref tuple[
     index: int,
@@ -1564,7 +1568,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
 
   let source = newSyncDataSource(getItems)
   let finder = newFinder(source, filterAndSort=true)
-  var popup = newSelectorPopup(self.services, "settings".some, finder.some, previewer)
+  var popup = newSelectorPopup("settings".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -1748,12 +1752,12 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     self.platform.requestRender()
 
   let previewer = if preview:
-    newFilePreviewer(self.vfsService.vfs2, self.services).Previewer.toDisposableRef.some
+    newFilePreviewer(self.vfsService.vfs2, self.services).Previewer.some
   else:
-    DisposableRef[Previewer].none
+    Previewer.none
 
   let finder = newFinder(newWorkspaceFilesDataSource(self.workspace), filterAndSort=true)
-  var popup = newSelectorPopup(self.services, "file".some, finder.some, previewer)
+  var popup = newSelectorPopup("file".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -1802,7 +1806,7 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.services, "open".some, finder.some)
+  var popup = newSelectorPopup("open".some, finder.some)
   popup.scale.x = 0.35
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
@@ -1852,7 +1856,7 @@ proc showPlugins*(self: App, scaleX: float = 0.9, scaleY: float = 0.9, previewSc
   finder.filterThreshold = float.low
 
   let previewer = newDataPreviewer(self.services, language="javascript".some)
-  var popup = newSelectorPopup(self.services, "plugins".some, finder.some, previewer.Previewer.toDisposableRef.some)
+  var popup = newSelectorPopup("plugins".some, finder.some, previewer.Previewer.some)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -1967,7 +1971,7 @@ proc chooseLocation*(self: App) {.expose("editor").} =
   let source = newSyncDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
 
-  var popup = newSelectorPopup(self.services, "open".some, finder.some, self.previewer.clone())
+  var popup = newSelectorPopup("open".some, finder.some, self.previewer)
 
   popup.scale.x = if self.previewer.isSome: 0.8 else: 0.4
 
@@ -2034,18 +2038,13 @@ proc getWorkspaceSearchResults(self: WorkspaceSearchDataSource): Future[void] {.
   debugf"[searchWorkspace] {t.elapsed.ms}ms"
   self.onItemsChanged.invoke list
 
-proc newWorkspaceSearchDataSource(workspace: Workspace, maxResults: int, path: string): WorkspaceSearchDataSource =
-  new result
-  result.workspace = workspace
-  result.maxResults = maxResults
-  if path.len > 0:
-    result.paths = @[path]
-
-method close*(self: WorkspaceSearchDataSource) =
+proc workspaceSearchDataSourceClose(self: DataSource) =
+  let self = self.WorkspaceSearchDataSource
   self.delayedTask.deinit()
   self.delayedTask = nil
 
-method setQuery*(self: WorkspaceSearchDataSource, query: string) =
+proc workspaceSearchDataSourceSetQuery(self: DataSource, query: string) =
+  let self = self.WorkspaceSearchDataSource
   if not self.delayedTask.isNil and self.query == query:
     return
   self.query = query
@@ -2055,6 +2054,15 @@ method setQuery*(self: WorkspaceSearchDataSource, query: string) =
       asyncSpawn self.getWorkspaceSearchResults()
   else:
     self.delayedTask.reschedule()
+
+proc newWorkspaceSearchDataSource(workspace: Workspace, maxResults: int, path: string): WorkspaceSearchDataSource =
+  new result
+  result.workspace = workspace
+  result.maxResults = maxResults
+  if path.len > 0:
+    result.paths = @[path]
+  result.closeImpl = workspaceSearchDataSourceClose
+  result.setQueryImpl = workspaceSearchDataSourceSetQuery
 
 proc searchGlobalInteractive*(self: App, path: string = "") {.expose("editor").} =
   defer:
@@ -2066,8 +2074,8 @@ proc searchGlobalInteractive*(self: App, path: string = "") {.expose("editor").}
   let source = newWorkspaceSearchDataSource(workspace, maxResults, self.vfs.localize(path))
   var finder = newFinder(source, filterAndSort=true, skipFirstQuery=true)
 
-  var popup = newSelectorPopup(self.services, "search".some, finder.some,
-    newFilePreviewer(self.vfsService.vfs2, self.services).Previewer.toDisposableRef.some)
+  var popup = newSelectorPopup("search".some, finder.some,
+    newFilePreviewer(self.vfsService.vfs2, self.services).Previewer.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2101,8 +2109,8 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   let source = newAsyncCallbackDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
 
-  var popup = newSelectorPopup(self.services, "search".some, finder.some,
-    newFilePreviewer(self.vfsService.vfs2, self.services).Previewer.toDisposableRef.some)
+  var popup = newSelectorPopup("search".some, finder.some,
+    newFilePreviewer(self.vfsService.vfs2, self.services).Previewer.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2347,8 +2355,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
   finder.filterThreshold = float.low
 
   let filePreviewer = newFilePreviewer(vfs, self.services)
-  var popup = newSelectorPopup(self.services, "file-explorer".some, finder.some,
-    filePreviewer.Previewer.toDisposableRef.some)
+  var popup = newSelectorPopup("file-explorer".some, finder.some, filePreviewer.Previewer.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
   popup.previewScale = previewScale

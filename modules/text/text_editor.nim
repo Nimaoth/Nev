@@ -9,7 +9,7 @@ import scripting/[expose]
 import platform/[platform]
 import text/language/language_server_base, language_server_dynamic
 import document, document_editor, events, vmath, bumpy, input, text_document
-import selector_popup_builder, dispatch_tables, register
+import selector_popup/builder, dispatch_tables, register
 import config_provider, service, layout/layout, platform_service, vfs, vfs_service, command_service, toast
 import move_database, event_service
 import workspaces/workspace

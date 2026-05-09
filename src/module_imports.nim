@@ -10,18 +10,19 @@ when not defined(useDynlib):
   import "../modules/command_server.nim"
   import "../modules/stats.nim"
   import "../modules/plugin_service.nim"
+  import "../modules/command_component.nim"
+  import "../modules/decoration_component.nim"
+  import "../modules/language_server_component.nim"
+  import "../modules/command_line.nim"
+  import "../modules/search_component.nim"
+  import "../modules/selector_popup/selector_popup.nim"
   import "../modules/terminal/terminal.nim"
   import "../modules/formatting_component.nim"
-  import "../modules/command_component.nim"
-  import "../modules/language_server_component.nim"
   import "../modules/hover_component.nim"
   import "../modules/snippet_component.nim"
   import "../modules/treesitter_component.nim"
   import "../modules/contextline_component.nim"
   import "../modules/workspace_edit.nim"
-  import "../modules/decoration_component.nim"
-  import "../modules/command_line.nim"
-  import "../modules/search_component.nim"
   import "../modules/move_database.nim"
   import "../modules/text/text.nim"
   import "../modules/wasm_engine.nim"
@@ -60,18 +61,19 @@ proc initModules*() =
   when declared(init_module_command_server): init_module_command_server()
   when declared(init_module_stats): init_module_stats()
   when declared(init_module_plugin_service): init_module_plugin_service()
+  when declared(init_module_command_component): init_module_command_component()
+  when declared(init_module_decoration_component): init_module_decoration_component()
+  when declared(init_module_language_server_component): init_module_language_server_component()
+  when declared(init_module_command_line): init_module_command_line()
+  when declared(init_module_search_component): init_module_search_component()
+  when declared(init_module_selector_popup): init_module_selector_popup()
   when declared(init_module_terminal): init_module_terminal()
   when declared(init_module_formatting_component): init_module_formatting_component()
-  when declared(init_module_command_component): init_module_command_component()
-  when declared(init_module_language_server_component): init_module_language_server_component()
   when declared(init_module_hover_component): init_module_hover_component()
   when declared(init_module_snippet_component): init_module_snippet_component()
   when declared(init_module_treesitter_component): init_module_treesitter_component()
   when declared(init_module_contextline_component): init_module_contextline_component()
   when declared(init_module_workspace_edit): init_module_workspace_edit()
-  when declared(init_module_decoration_component): init_module_decoration_component()
-  when declared(init_module_command_line): init_module_command_line()
-  when declared(init_module_search_component): init_module_search_component()
   when declared(init_module_move_database): init_module_move_database()
   when declared(init_module_text): init_module_text()
   when declared(init_module_wasm_engine): init_module_wasm_engine()
@@ -124,18 +126,19 @@ proc shutdownModules*() =
   when declared(shutdown_module_wasm_engine): shutdown_module_wasm_engine()
   when declared(shutdown_module_text): shutdown_module_text()
   when declared(shutdown_module_move_database): shutdown_module_move_database()
-  when declared(shutdown_module_search_component): shutdown_module_search_component()
-  when declared(shutdown_module_command_line): shutdown_module_command_line()
-  when declared(shutdown_module_decoration_component): shutdown_module_decoration_component()
   when declared(shutdown_module_workspace_edit): shutdown_module_workspace_edit()
   when declared(shutdown_module_contextline_component): shutdown_module_contextline_component()
   when declared(shutdown_module_treesitter_component): shutdown_module_treesitter_component()
   when declared(shutdown_module_snippet_component): shutdown_module_snippet_component()
   when declared(shutdown_module_hover_component): shutdown_module_hover_component()
-  when declared(shutdown_module_language_server_component): shutdown_module_language_server_component()
-  when declared(shutdown_module_command_component): shutdown_module_command_component()
   when declared(shutdown_module_formatting_component): shutdown_module_formatting_component()
   when declared(shutdown_module_terminal): shutdown_module_terminal()
+  when declared(shutdown_module_selector_popup): shutdown_module_selector_popup()
+  when declared(shutdown_module_search_component): shutdown_module_search_component()
+  when declared(shutdown_module_command_line): shutdown_module_command_line()
+  when declared(shutdown_module_language_server_component): shutdown_module_language_server_component()
+  when declared(shutdown_module_decoration_component): shutdown_module_decoration_component()
+  when declared(shutdown_module_command_component): shutdown_module_command_component()
   when declared(shutdown_module_plugin_service): shutdown_module_plugin_service()
   when declared(shutdown_module_stats): shutdown_module_stats()
   when declared(shutdown_module_command_server): shutdown_module_command_server()
@@ -160,18 +163,19 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("command_server")
   loadModule("stats")
   loadModule("plugin_service")
+  loadModule("command_component")
+  loadModule("decoration_component")
+  loadModule("language_server_component")
+  loadModule("command_line")
+  loadModule("search_component")
+  loadModule("selector_popup")
   loadModule("terminal")
   loadModule("formatting_component")
-  loadModule("command_component")
-  loadModule("language_server_component")
   loadModule("hover_component")
   loadModule("snippet_component")
   loadModule("treesitter_component")
   loadModule("contextline_component")
   loadModule("workspace_edit")
-  loadModule("decoration_component")
-  loadModule("command_line")
-  loadModule("search_component")
   loadModule("move_database")
   loadModule("text")
   loadModule("wasm_engine")

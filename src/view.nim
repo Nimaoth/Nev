@@ -223,3 +223,8 @@ else:
   proc copy*(view: View): View = viewCopy(view)
 
   proc createUI*(view: View, builder: UINodeBuilder): seq[OverlayFunction] = viewCreateUI(view, builder)
+
+proc render*(self: View, builder: UINodeBuilder): seq[OverlayFunction] =
+  if self.renderImpl != nil:
+    return self.renderImpl(self, builder)
+  return @[]

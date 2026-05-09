@@ -2,7 +2,7 @@
 # text_editor_component is needed for OpenEditorPreviewer. todo: OpenEditorPreviewer shouldn't care about text editors
 import std/[options, json]
 import misc/[custom_async, id]
-import service, view, popup, selector_popup_builder, dynamic_view
+import service, view, popup, selector_popup/builder, dynamic_view
 import document, document_editor
 import ui/node
 from scripting_api import EditorId
@@ -15,6 +15,7 @@ type
   LayoutService* = ref object of DynamicService
     fallbackView*: View
     commandLineEditor*: DocumentEditor
+    pushSelectorPopupImpl*: PushSelectorPopupImpl
 
   EditorView* = ref object of DynamicView
     path: string
@@ -77,7 +78,6 @@ proc layoutServiceWrapLayout(self: LayoutService, layout: JsonNode, slot: string
 proc layoutServiceOpen(self: LayoutService, path: string, slot: string = "")
 proc layoutServiceLayout(self: LayoutService): View
 proc layoutServiceRender(self: LayoutService, builder: UINodeBuilder): seq[OverlayFunction]
-proc setSelectorPopupBuilderImpl*(impl: PushSelectorPopupImpl)
 {.pop.}
 
 {.push modrtl, gcsafe.}
@@ -204,18 +204,10 @@ when implModule:
       onEditorRegistered*: Event[DocumentEditor]
       onEditorDeregistered*: Event[DocumentEditor]
 
-      pushSelectorPopupImpl: PushSelectorPopupImpl
       activeView*: View
       mAllViews*: seq[View]
 
       viewFactories: Table[string, CreateView]
-
-  var gPushSelectorPopupImpl: PushSelectorPopupImpl
-
-  # todo: the selector popup builder stuff should be in a separate module
-  proc setSelectorPopupBuilderImpl*(impl: PushSelectorPopupImpl) =
-    {.gcsafe.}:
-      gPushSelectorPopupImpl = impl
 
   proc preRender*(self: LayoutService)
 
@@ -324,7 +316,6 @@ when implModule:
     self.vfs2 = self.services.getService(VFSService).get.vfs2
     self.layout = HorizontalLayout()
     self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
-    self.pushSelectorPopupImpl = ({.gcsafe.}: gPushSelectorPopupImpl)
     self.workspace = self.services.getService(Workspace).get
     self.session = self.services.getService(SessionService).get
     self.commands = self.services.getService(CommandService).get

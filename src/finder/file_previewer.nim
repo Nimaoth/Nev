@@ -19,6 +19,7 @@ when implModule:
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import vcs/vcs, finder
   import document, text_component, move_component, text_editor_component, command_component
+  import ui/node
 
   logCategory "file-previewer"
 
@@ -65,6 +66,11 @@ when implModule:
     res.previewItemImpl = filePreviewerPreviewItem
     res.delayPreviewImpl = filePreviewerDelayPreview
     res.deinitImpl = filePreviewerDeinit
+    res.renderImpl = proc(self: DynamicPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
+      let self = self.FilePreviewer
+      if self.editor.isNotNil:
+        result.add self.editor.render(builder)
+
     return res
 
   proc filePreviewerDeinit*(self: DynamicPreviewer) =

@@ -238,19 +238,16 @@ when enableGui:
 # Do this after every import
 # Don't remove those imports, they are needed by generatePluginBindings
 {.push warning[UnusedImport]:off.}
-import plugin_service
-import selector_popup, layout/layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, toast
+import service
+import document_editor, events, vfs_service, toast
 import language_server_dynamic
 import scripting/expose
-import config_provider, event_service
+import config_provider
 import vcs/vcs_api
-import collab
-import inlay_hint_component, treesitter_component # todo: make these modules
+import inlay_hint_component, config_component # todo: make these modules
 {.pop.}
 
-import "../modules/stats"
-
-defineSetAllDefaultSettings()
+import stats, event_service
 
 # Initialize renderer
 var plat: Platform = nil
@@ -418,6 +415,8 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, fra
 
     {.gcsafe.}:
       logger().flush()
+
+defineSetAllDefaultSettings()
 
 import service
 gServices.addBuiltinServices()

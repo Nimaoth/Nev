@@ -4,6 +4,7 @@ import misc/[util, custom_logger]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer, service, document_editor
 import text_editor_component
+import ui/node
 
 logCategory "open-editor-previewer"
 
@@ -45,3 +46,7 @@ proc newOpenEditorPreviewer*(services: Services): OpenEditorPreviewer =
   result.editors = services.getService(DocumentEditorService).get
   result.previewItemImpl = proc(self: DynamicPreviewer, item: FinderItem, editor: DocumentEditor) = previewItemImpl(self.OpenEditorPreviewer, item, editor)
   result.deinitImpl = proc(self: DynamicPreviewer) = deinitImpl(self.OpenEditorPreviewer)
+  result.renderImpl = proc(self: DynamicPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
+    let self = self.OpenEditorPreviewer
+    if self.editor.isNotNil:
+      result.add self.editor.render(builder)

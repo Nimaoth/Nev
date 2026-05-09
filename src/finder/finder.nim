@@ -53,10 +53,10 @@ type
     onItemsChangedHandle: Id
     onItemsChanged*: Event[void]
 
-method close*(self: DataSource) {.base, gcsafe, raises: [].} =
+proc close*(self: DataSource) {.gcsafe, raises: [].} =
   if self.closeImpl != nil:
     self.closeImpl(self)
-method setQuery*(self: DataSource, query: string) {.base, gcsafe, raises: [].} =
+proc setQuery*(self: DataSource, query: string) {.gcsafe, raises: [].} =
   if self.setQueryImpl != nil:
     self.setQueryImpl(self, query)
 
@@ -305,11 +305,8 @@ type
     wasQueried: bool = false
     items: seq[FinderItem]
 
-proc newStaticDataSource*(items: sink seq[FinderItem]): StaticDataSource =
-  new result
-  result.items = items
-
-method setQuery*(self: StaticDataSource, query: string) =
+proc staticDataSourceSetQuery*(self: DataSource, query: string) =
+  let self = self.StaticDataSource
   if self.wasQueried:
     return
   self.wasQueried = true
@@ -342,33 +339,20 @@ proc getDataAsync(self: AsyncCallbackDataSource): Future[void] {.async.} =
   let list = self.callback().await
   self.onItemsChanged.invoke list
 
-proc newAsyncFutureDataSource*(future: Future[ItemList]): AsyncFutureDataSource =
-  new result
-  result.future = future
-
-proc newAsyncCallbackDataSource*(callback: proc(): Future[ItemList] {.gcsafe, async: (raises: []).}): AsyncCallbackDataSource =
-  new result
-  result.callback = callback
-
-proc newSyncDataSource*(callback: proc(): seq[FinderItem] {.gcsafe, raises: [].}): SyncDataSource =
-  new result
-  result.callbackSeq = callback
-
-proc newSyncDataSource*(callback: proc(): ItemList {.gcsafe, raises: [].}): SyncDataSource =
-  new result
-  result.callbackList = callback
-
-method setQuery*(self: AsyncFutureDataSource, query: string) {.gcsafe, raises: [].} =
+proc asyncFutureDataSourceSetQuery*(self: DataSource, query: string) {.gcsafe, raises: [].} =
+  let self = self.AsyncFutureDataSource
   if not self.wasQueried:
     self.wasQueried = true
     asyncSpawn self.getDataAsync()
 
-method setQuery*(self: AsyncCallbackDataSource, query: string) {.gcsafe, raises: [].} =
+proc asyncCallbackDataSourceSetQuery*(self: DataSource, query: string) {.gcsafe, raises: [].} =
+  let self = self.AsyncCallbackDataSource
   if not self.wasQueried:
     self.wasQueried = true
     asyncSpawn self.getDataAsync()
 
-method setQuery*(self: SyncDataSource, query: string) {.gcsafe, raises: [].} =
+proc syncDataSourceSetQuery*(self: DataSource, query: string) {.gcsafe, raises: [].} =
+  let self = self.SyncDataSource
   if not self.wasQueried:
     self.wasQueried = true
 
@@ -436,3 +420,28 @@ proc parsePathAndLocationFromItemData*(item: FinderItem):
 
   except:
     return
+
+proc newStaticDataSource*(items: sink seq[FinderItem]): StaticDataSource =
+  new result
+  result.items = items
+  result.setQueryImpl = staticDataSourceSetQuery
+
+proc newAsyncFutureDataSource*(future: Future[ItemList]): AsyncFutureDataSource =
+  new result
+  result.future = future
+  result.setQueryImpl = asyncFutureDataSourceSetQuery
+
+proc newAsyncCallbackDataSource*(callback: proc(): Future[ItemList] {.gcsafe, async: (raises: []).}): AsyncCallbackDataSource =
+  new result
+  result.callback = callback
+  result.setQueryImpl = asyncCallbackDataSourceSetQuery
+
+proc newSyncDataSource*(callback: proc(): seq[FinderItem] {.gcsafe, raises: [].}): SyncDataSource =
+  new result
+  result.callbackSeq = callback
+  result.setQueryImpl = syncDataSourceSetQuery
+
+proc newSyncDataSource*(callback: proc(): ItemList {.gcsafe, raises: [].}): SyncDataSource =
+  new result
+  result.callbackList = callback
+  result.setQueryImpl = syncDataSourceSetQuery

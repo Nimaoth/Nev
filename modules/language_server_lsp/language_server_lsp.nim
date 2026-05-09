@@ -1,4 +1,4 @@
-#use workspace_edit log layout text_editor_component treesitter_component command_service event_service language_server_component
+#use workspace_edit log layout text_editor_component treesitter_component command_service event_service language_server_component selector_popup
 import std/[strformat, strutils, os, sets, tables, options, json, sequtils, uri]
 import misc/[id, custom_logger, util, custom_async, async_process, event, response, rope_utils, array_view, jsonex, myjsonutils]
 import text/language/[language_server_base, lsp_types]
@@ -19,7 +19,7 @@ when implModule:
   import lsp_client
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import text/[treesitter_type_conv]
-  import service, event_service, document_editor, document, config_provider, vfs, vfs_service, selector_popup_builder
+  import service, event_service, document_editor, document, config_provider, vfs, vfs_service, selector_popup/builder
   import nimsumtree/[arc, rope, buffer]
   import layout/layout, command_service, toast
   import finder/[finder, data_previewer]

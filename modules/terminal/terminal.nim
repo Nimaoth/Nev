@@ -1,4 +1,4 @@
-#use layout text_editor_component register command_service
+#use layout text_editor_component register command_service selector_popup
 import nimsumtree/[arc]
 import misc/[id]
 import channel, view
@@ -34,7 +34,7 @@ when implModule:
   import ui/node
   import platform/platform
   import finder/[finder, previewer]
-  import dynamic_view, events, config_provider, layout/layout, theme, vterm, input, input_api, selector_popup_builder, vfs, vfs_service
+  import dynamic_view, events, config_provider, layout/layout, theme, vterm, input, input_api, selector_popup/builder, vfs, vfs_service
   import text_editor_component, config_component, register, service, command_service
   import types_impl
   import render
