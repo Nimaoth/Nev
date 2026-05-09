@@ -168,7 +168,7 @@ when implModule:
   import misc/[custom_logger, rect_utils, myjsonutils, util, jsonex]
   import workspaces/workspace
   import finder/[finder, previewer]
-  import platform_service, input_handler, config_provider, vfs, vfs_service, session, layouts, command_service, status_line, theme
+  import platform_service, input_handler/input_handler, config_provider, vfs, vfs_service, session, layouts, command_service, status_line, theme
   import nimsumtree/arc
 
   export layouts

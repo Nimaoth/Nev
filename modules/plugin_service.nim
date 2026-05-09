@@ -161,7 +161,7 @@ when implModule:
   import std/[macros, os, sugar, strutils]
   import misc/[custom_logger, util, myjsonutils]
   import scripting/expose
-  import vfs_service, vfs, vfs_local, dispatch_tables, input_handler
+  import vfs_service, vfs, vfs_local, dispatch_tables, input_handler/input_handler
 
   logCategory "plugins"
 

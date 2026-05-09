@@ -68,7 +68,7 @@ when implModule:
   import bumpy
   import misc/[util, rect_utils, event, fuzzy_matching, custom_logger, rope_utils, jsonex]
   import nimsumtree/[rope, buffer]
-  import popup, input_handler, selector_popup/builder, layout/layout, service, command_service
+  import popup, input_handler/input_handler, selector_popup/builder, layout/layout, service, command_service
   import search_component, document_editor, text_component, text_editor_component, config_component
   import ui/node
 

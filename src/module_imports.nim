@@ -1,7 +1,7 @@
 when not defined(useDynlib):
+  import "../modules/input_handler/input_handler.nim"
   import "../modules/terminal_platform/terminal_platform.nim"
   import "../modules/status_line.nim"
-  import "../modules/input_handler.nim"
   import "../modules/text_editor_component.nim"
   import "../modules/register.nim"
   import "../modules/command_service.nim"
@@ -51,9 +51,9 @@ when not defined(useDynlib):
   import "../modules/git_ui.nim"
 
 proc initModules*() =
+  when declared(init_module_input_handler): init_module_input_handler()
   when declared(init_module_terminal_platform): init_module_terminal_platform()
   when declared(init_module_status_line): init_module_status_line()
-  when declared(init_module_input_handler): init_module_input_handler()
   when declared(init_module_text_editor_component): init_module_text_editor_component()
   when declared(init_module_register): init_module_register()
   when declared(init_module_command_service): init_module_command_service()
@@ -150,14 +150,14 @@ proc shutdownModules*() =
   when declared(shutdown_module_command_service): shutdown_module_command_service()
   when declared(shutdown_module_register): shutdown_module_register()
   when declared(shutdown_module_text_editor_component): shutdown_module_text_editor_component()
-  when declared(shutdown_module_input_handler): shutdown_module_input_handler()
   when declared(shutdown_module_status_line): shutdown_module_status_line()
   when declared(shutdown_module_terminal_platform): shutdown_module_terminal_platform()
+  when declared(shutdown_module_input_handler): shutdown_module_input_handler()
 
 proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
+  loadModule("input_handler")
   loadModule("terminal_platform")
   loadModule("status_line")
-  loadModule("input_handler")
   loadModule("text_editor_component")
   loadModule("register")
   loadModule("command_service")

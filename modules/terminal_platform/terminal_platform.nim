@@ -1,3 +1,4 @@
+#use input_handler
 import platform/platform
 
 const currentSourcePath2 = currentSourcePath()
@@ -11,8 +12,8 @@ when implModule:
   import vmath
   import chroma as chroma
   import misc/[custom_logger, rect_utils, event, timer, custom_unicode, custom_async]
-  import platform/tui, input, ui/node
-  import app_options, terminal_input
+  import platform/tui, ui/node
+  import app_options, terminal_input, input_api, input_handler/input_handler
   import vterm
 
   when defined(windows):
@@ -47,7 +48,7 @@ when implModule:
       buffer: TerminalBuffer
       borderBuffer: BoxBuffer
       trueColorSupport*: bool
-      mouseButtons: set[input.MouseButton]
+      mouseButtons: set[input_api.MouseButton]
       masks: seq[Rect]
       cursor: tuple[row: int, col: int, visible: bool, shape: UINodeFlags]
       noPty: bool

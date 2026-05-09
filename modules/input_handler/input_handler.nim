@@ -68,6 +68,7 @@ func serviceName*(_: typedesc[EventHandlerService]): string = "EventHandlerServi
 {.push modrtl, gcsafe, raises: [].}
 proc eventsGetEventHandlerConfig(self: EventHandlerService, context: string): EventHandlerConfig
 proc eventsBuildDFA(config: EventHandlerConfig): CommandDFA
+proc commandDumpGraphViz(dfa: CommandDFA): string
 proc commandInfosGetInfos(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]]
 proc commandInfosInvalidateCommandToKeysMap(self: EventHandlerService)
 proc commandInfosRebuildCommandToKeysMap(self: EventHandlerService)
@@ -80,11 +81,13 @@ proc eventHandlerResetHandler(handler: EventHandler)
 proc eventHandlerResetHandlers(handlers: seq[EventHandler])
 proc eventsHandleEvent(handlers: seq[EventHandler], input: int64, modifiers: Modifiers, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]], debug: bool = false): EventResponse
 proc eventsRemoveCommand(self: EventHandlerService, context: string, keys: string)
+proc inputHandlerInputToString(key: int64, modifiers: Modifiers = {}): string
 {.pop.}
 
 # Nice wrappers
 proc getEventHandlerConfig*(self: EventHandlerService, context: string): EventHandlerConfig {.inline.} = eventsGetEventHandlerConfig(self, context)
 proc buildDFA*(config: EventHandlerConfig): CommandDFA {.inline.} = eventsBuildDFA(config)
+proc dumpGraphViz*(dfa: CommandDFA): string = commandDumpGraphViz(dfa)
 proc getInfos*(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] {.inline.} = commandInfosGetInfos(self, command)
 proc invalidateCommandToKeysMap*(self: EventHandlerService) = commandInfosInvalidateCommandToKeysMap(self)
 proc rebuildCommandToKeysMap*(self: EventHandlerService) {.inline.} = commandInfosRebuildCommandToKeysMap(self)
@@ -96,6 +99,7 @@ proc resetHandler*(handler: EventHandler) = eventHandlerResetHandler(handler)
 proc resetHandlers*(handlers: seq[EventHandler]) = eventHandlerResetHandlers(handlers)
 proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]], debug: bool = false): EventResponse = eventsHandleEvent(handlers, input, modifiers, delayedInputs, debug)
 proc removeCommand*(self: EventHandlerService, context: string, keys: string) = eventsRemoveCommand(self, context, keys)
+proc inputToString*(key: int64, modifiers: Modifiers = {}): string = inputHandlerInputToString(key, modifiers)
 
 proc getNextPossibleInputs*(self: EventHandlerService, inProgressOnly: bool, filter: EventHandleFilterFunc = nil): seq[tuple[input: string, description: string, continues: bool]] = eventsGetNextPossibleInputs(self, inProgressOnly, filter)
 
@@ -610,6 +614,12 @@ when implModule:
     self.getEventHandlerConfig(context).addCommandDescription(keys, description)
 
   addGlobalDispatchTable "events", genDispatchTable("events")
+
+  proc inputHandlerInputToString(key: int64, modifiers: Modifiers = {}): string =
+    input.inputToString(key, modifiers)
+
+  proc commandDumpGraphViz(dfa: CommandDFA): string =
+    input.dumpGraphViz(dfa)
 
   proc init_module_input_handler*() {.cdecl, exportc, dynlib.} =
     getServices().addService(EventHandlerService(

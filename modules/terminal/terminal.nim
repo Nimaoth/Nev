@@ -34,7 +34,7 @@ when implModule:
   import ui/node
   import platform/platform
   import finder/[finder, previewer]
-  import dynamic_view, input_handler, config_provider, layout/layout, theme, vterm, input, input_api, selector_popup/builder, vfs, vfs_service
+  import dynamic_view, input_handler/input_handler, config_provider, layout/layout, theme, vterm, input_api, selector_popup/builder, vfs, vfs_service
   import text_editor_component, config_component, register, service, command_service
   import types_impl
   import render
@@ -127,12 +127,12 @@ when implModule:
     if Modifier.Alt in modifiers:
       result = result or VTERM_MOD_ALT.ord.uint32
 
-  proc toVtermButton(button: input.MouseButton): cint =
+  proc toVtermButton(button: input_api.MouseButton): cint =
     # todo: figure out what to do here and handle other mouse buttons
     case button
-    of input.MouseButton.Left: return 1
-    of input.MouseButton.Middle: return 2
-    of input.MouseButton.Right: return 3
+    of input_api.MouseButton.Left: return 1
+    of input_api.MouseButton.Middle: return 2
+    of input_api.MouseButton.Right: return 3
     else: return 4
 
   when defined(windows):
@@ -690,7 +690,7 @@ when implModule:
           state.vterm.mouseMove(event.row.cint, event.col.cint, event.modifiers.toVtermModifiers)
 
         of InputEventKind.MouseClick:
-          if event.button in {input.MouseButton.Left, input.MouseButton.Middle, input.MouseButton.Right}: # todo: other buttons. DoubleClick would currently be interpreted as scroll
+          if event.button in {input_api.MouseButton.Left, input_api.MouseButton.Middle, input_api.MouseButton.Right}: # todo: other buttons. DoubleClick would currently be interpreted as scroll
             state.vterm.mouseButton(event.button.toVtermButton, event.pressed, event.modifiers.toVtermModifiers)
 
         of InputEventKind.Scroll:
@@ -2589,12 +2589,12 @@ when implModule:
     view.terminal.sendEvent(InputEvent(kind: InputEventKind.Scroll, deltaY: deltaY, modifiers: modifiers))
     view.terminal.lastEventTime = startTimer()
 
-  proc handleClick*(view: TerminalView, button: input.MouseButton, pressed: bool, modifiers: Modifiers, col: int, row: int) =
+  proc handleClick*(view: TerminalView, button: input_api.MouseButton, pressed: bool, modifiers: Modifiers, col: int, row: int) =
     view.terminal.sendEvent(InputEvent(kind: InputEventKind.MouseClick, button: button, pressed: pressed, row: row, col: col, modifiers: modifiers))
     view.terminal.lastEventTime = startTimer()
     view.terminals.layout.tryActivateView(view)
 
-  proc handleDrag*(view: TerminalView, button: input.MouseButton, col: int, row: int, modifiers: Modifiers) =
+  proc handleDrag*(view: TerminalView, button: input_api.MouseButton, col: int, row: int, modifiers: Modifiers) =
     view.terminal.sendEvent(InputEvent(kind: InputEventKind.MouseMove, row: row, col: col, modifiers: modifiers))
     view.terminal.lastEventTime = startTimer()
     view.terminals.layout.tryActivateView(view)

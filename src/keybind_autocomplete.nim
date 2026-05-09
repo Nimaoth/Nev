@@ -1,4 +1,4 @@
-import document_editor, input_handler
+import document_editor, input_handler/input_handler
 
 type KeybindAutocompletion* = ref object of DocumentEditor
   discard

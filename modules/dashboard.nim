@@ -60,7 +60,7 @@ when implModule:
   import vmath, chroma
   import misc/[custom_logger, util, custom_async, custom_unicode, jsonex, myjsonutils, timer]
   import ui/node
-  import view, dynamic_view, layout/layout, service, input_handler, command_service
+  import view, dynamic_view, layout/layout, service, input_handler/input_handler, command_service
   import theme
   import vcs/vcs
   import platform_service, stats

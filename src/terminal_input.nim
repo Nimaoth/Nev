@@ -1,9 +1,9 @@
 
 import std/[strformat, strutils]
 import misc/[custom_unicode, timer]
-import input, input_api
+import input_api, input_handler/input_handler
 
-export input, input_api
+export input_api
 
 const INTERMED_MAX = 16
 const CSI_ARGS_MAX = 16

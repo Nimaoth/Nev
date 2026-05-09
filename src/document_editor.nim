@@ -2,7 +2,7 @@ import std/[tables, options, sets, hashes, json]
 import bumpy
 import misc/[event, custom_logger, id, custom_async, util, generational_seq, jsonex]
 import ui/node
-import input_handler
+import input_handler/input_handler
 import component
 
 export component
@@ -206,7 +206,7 @@ when implModule:
   import std/[json, algorithm]
   import misc/[array_set]
   import vmath
-  import input, platform_service, dispatch_tables
+  import platform_service, dispatch_tables
 
   addBuiltinService(DocumentEditorService)
 

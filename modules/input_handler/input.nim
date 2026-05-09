@@ -41,9 +41,6 @@ type
     captures*: Table[string, string]
     functionIndices*: BitSet
 
-  MouseButton* {.pure.} = enum
-    Left, Middle, Right, DoubleClick, TripleClick, Unknown
-
 proc inputToString*(input: int64, modifiers: Modifiers = {}): string
 proc inputToCharString*(input: int64, modifiers: Modifiers = {}): string
 

@@ -6,7 +6,7 @@ import platform/platform
 import ui/[widget_library]
 import selector_popup, theme, document_editor
 import finder/[finder, previewer, file_previewer, open_editor_previewer, data_previewer]
-import config_provider, input_handler, view
+import config_provider, input_handler/input_handler, view
 import service
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method

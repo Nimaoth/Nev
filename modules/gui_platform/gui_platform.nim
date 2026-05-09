@@ -12,7 +12,7 @@ when implModule and enableGui:
   import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer, generational_seq]
   import ui/node
   import nimsumtree/[arc]
-  import input, monitors, lrucache, compilation_config, vfs, app_options, theme, service
+  import monitors, lrucache, compilation_config, vfs, app_options, theme, service
 
   {.push raises: [].}
   {.push gcsafe.}

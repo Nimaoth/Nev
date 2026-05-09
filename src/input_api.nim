@@ -47,6 +47,9 @@ type
     Repeat
     Release
 
+  MouseButton* {.pure.} = enum
+    Left, Middle, Right, DoubleClick, TripleClick, Unknown
+
 proc isAscii*(input: int64): bool =
   if input >= char.low.ord and input <= char.high.ord:
     return true

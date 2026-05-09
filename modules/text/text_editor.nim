@@ -8,7 +8,7 @@ import misc/[custom_unicode, delayed_task, myjsonutils, regex, timer, response, 
 import scripting/[expose]
 import platform/[platform]
 import text/language/language_server_base, language_server_dynamic
-import document, document_editor, input_handler, vmath, bumpy, input, text_document
+import document, document_editor, input_handler/input_handler, vmath, bumpy, text_document
 import selector_popup/builder, dispatch_tables, register
 import config_provider, service, layout/layout, platform_service, vfs, vfs_service, command_service, toast
 import move_database, event_service

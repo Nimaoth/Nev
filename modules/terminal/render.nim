@@ -144,17 +144,17 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
       builder.panel(sizeFlags + &{FillBackground, MouseHover}, backgroundColor = backgroundColor):
         onScroll:
           self.onScroll(self, delta.y.int, modifiers)
-        currentNode.handlePressed = proc(node: UINode, btn: input.MouseButton, modifiers: set[Modifier], pos: Vec2): bool =
+        currentNode.handlePressed = proc(node: UINode, btn: input_api.MouseButton, modifiers: set[Modifier], pos: Vec2): bool =
           # self.terminals.layout.tryActivateView(self) # todo
           let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
           self.onClick(self, btn, true, modifiers, cellPos.x.int, cellPos.y.int)
           return true
 
-        currentNode.handleReleased = proc(node: UINode, btn: input.MouseButton, modifiers: set[Modifier], pos: Vec2): bool =
+        currentNode.handleReleased = proc(node: UINode, btn: input_api.MouseButton, modifiers: set[Modifier], pos: Vec2): bool =
           let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
           self.onClick(self, btn, false, modifiers, cellPos.x.int, cellPos.y.int)
           return true
-        currentNode.handleDrag = proc(node: UINode, btn: input.MouseButton, modifiers: set[Modifier], pos: Vec2, d: Vec2): bool =
+        currentNode.handleDrag = proc(node: UINode, btn: input_api.MouseButton, modifiers: set[Modifier], pos: Vec2, d: Vec2): bool =
           let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
           self.onDrag(self, btn, cellPos.x.int, cellPos.y.int, modifiers)
           return true

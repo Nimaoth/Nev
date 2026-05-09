@@ -43,7 +43,7 @@ when implModule:
   import layout/layout
   import text/language/[language_server_base]
   import text/[display_map, overlay_map]
-  import config_provider, dispatch_tables, input_api, input_handler
+  import config_provider, dispatch_tables, input_api, input_handler/input_handler
   import decoration_component, document, vfs_service, vfs, register
   import language_server_command_line, command_component, text_editor_component, text_component, document_editor
   import scripting_api, event_service

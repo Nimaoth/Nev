@@ -12,7 +12,7 @@ include module_base
 when implModule:
   import std/sets
   import misc/[custom_logger, util, id, myjsonutils]
-  import text_component, document_editor, document, layout/layout, command_component, input_handler, platform_service
+  import text_component, document_editor, document, layout/layout, command_component, input_handler/input_handler, platform_service
   import nimsumtree/[buffer, clock]
   import ui/node
   import command_service

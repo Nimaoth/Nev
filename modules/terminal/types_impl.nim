@@ -4,7 +4,7 @@ import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, my
 import ui/node
 import platform/[tui]
 import nimsumtree/[rope, arc]
-import dynamic_view, input_handler, config_provider, layout/layout, theme, vterm, input, input_api, channel, register
+import dynamic_view, input_handler/input_handler, config_provider, layout/layout, theme, vterm, input_api, channel, register
 from scripting_api import SshOptions, RunInTerminalOptions, CreateTerminalOptions
 import types
 
@@ -101,7 +101,7 @@ type
     of InputEventKind.MouseMove:
       discard
     of InputEventKind.MouseClick:
-      button*: input.MouseButton
+      button*: input_api.MouseButton
       pressed*: bool
     of InputEventKind.Scroll:
       deltaY*: int
@@ -309,9 +309,9 @@ type
     closeOnTerminate*: bool
     slot*: string
     open*: bool = true
-    onClick*: proc (view: TerminalView, button: input.MouseButton, pressed: bool, modifiers: Modifiers, col: int, row: int) {.gcsafe, raises: [].}
+    onClick*: proc (view: TerminalView, button: input_api.MouseButton, pressed: bool, modifiers: Modifiers, col: int, row: int) {.gcsafe, raises: [].}
     onScroll*: proc(view: TerminalView, deltaY: int, modifiers: Modifiers) {.gcsafe, raises: [].}
-    onDrag*: proc(view: TerminalView, button: input.MouseButton, col: int, row: int, modifiers: Modifiers) {.gcsafe, raises: [].}
+    onDrag*: proc(view: TerminalView, button: input_api.MouseButton, col: int, row: int, modifiers: Modifiers) {.gcsafe, raises: [].}
     onMove*: proc(view: TerminalView, col: int, row: int) {.gcsafe, raises: [].}
     isInPreview*: bool = false
 

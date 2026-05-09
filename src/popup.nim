@@ -1,7 +1,7 @@
 import std/[options, json]
 import vmath, bumpy
 import misc/[event, id]
-import input_handler, input
+import input_handler/input_handler
 import ui/node
 
 import document_editor

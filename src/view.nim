@@ -1,6 +1,6 @@
 import std/[options, tables, json, sets]
 import misc/[event, id]
-import input_handler, document_editor
+import input_handler/input_handler, document_editor
 import bumpy
 import ui/node
 

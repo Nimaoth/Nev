@@ -20,7 +20,7 @@ when implModule:
   import vmath, chroma
   import theme
   import misc/[render_command]
-  import input_handler
+  import input_handler/input_handler
   import document_editor_render, toast
 
   logCategory "git-ui"

@@ -3,7 +3,7 @@ import nimsumtree/rope
 import misc/[custom_logger, custom_async, util, response, rope_utils, event, myjsonutils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types], language_server_dynamic
-import dispatch_tables, document_editor, service, layout/layout, input_handler, config_provider, command_service
+import dispatch_tables, document_editor, service, layout/layout, input_handler/input_handler, config_provider, command_service
 import document, text_component, move_component, language_component, language_server_component, session
 
 logCategory "language-server-command-line"

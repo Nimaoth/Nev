@@ -3,9 +3,9 @@ import vmath, chroma
 import ui/node
 import misc/[event, timer, custom_async]
 import nimsumtree/[arc]
-import input, vfs, app_options, scripting_api, pixie
+import vfs, app_options, scripting_api, pixie, input_api
 
-export input, event
+export input_api, event
 
 type
   RequestRenderImpl* = proc(self: Platform, redrawEverything: bool) {.gcsafe, raises: [].}
