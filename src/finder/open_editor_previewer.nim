@@ -9,7 +9,7 @@ import ui/node
 logCategory "open-editor-previewer"
 
 type
-  OpenEditorPreviewer* = ref object of DynamicPreviewer
+  OpenEditorPreviewer* = ref object of Previewer
     services*: Services
     editors*: DocumentEditorService
     editor*: DocumentEditor
@@ -44,9 +44,9 @@ proc newOpenEditorPreviewer*(services: Services): OpenEditorPreviewer =
   new result
   result.services = services
   result.editors = services.getService(DocumentEditorService).get
-  result.previewItemImpl = proc(self: DynamicPreviewer, item: FinderItem, editor: DocumentEditor) = previewItemImpl(self.OpenEditorPreviewer, item, editor)
-  result.deinitImpl = proc(self: DynamicPreviewer) = deinitImpl(self.OpenEditorPreviewer)
-  result.renderImpl = proc(self: DynamicPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
+  result.previewItemImpl = proc(self: Previewer, item: FinderItem, editor: DocumentEditor) = previewItemImpl(self.OpenEditorPreviewer, item, editor)
+  result.deinitImpl = proc(self: Previewer) = deinitImpl(self.OpenEditorPreviewer)
+  result.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
     let self = self.OpenEditorPreviewer
     if self.editor.isNotNil:
       result.add self.editor.render(builder)

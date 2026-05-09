@@ -2925,7 +2925,7 @@ when implModule:
       asyncSpawn view.requestEditBuffer()
 
   type
-    TerminalPreviewer* = ref object of DynamicPreviewer
+    TerminalPreviewer* = ref object of Previewer
       view*: TerminalView
       terminals: TerminalServiceImpl
 
@@ -2953,9 +2953,9 @@ when implModule:
   proc newTerminalPreviewer*(services: Services, terminals: TerminalServiceImpl): TerminalPreviewer =
     new result
     result.terminals = terminals
-    result.deinitImpl = proc(self: DynamicPreviewer) = self.TerminalPreviewer.terminalPreviewerDeinit()
-    result.delayPreviewImpl = proc(self: DynamicPreviewer) = self.TerminalPreviewer.terminalPreviewerDelayPreview()
-    result.previewItemImpl2 = proc(self: DynamicPreviewer, item: FinderItem): View = self.TerminalPreviewer.terminalPreviewerPreviewItem(item)
+    result.deinitImpl = proc(self: Previewer) = self.TerminalPreviewer.terminalPreviewerDeinit()
+    result.delayPreviewImpl = proc(self: Previewer) = self.TerminalPreviewer.terminalPreviewerDelayPreview()
+    result.previewItemImpl2 = proc(self: Previewer, item: FinderItem): View = self.TerminalPreviewer.terminalPreviewerPreviewItem(item)
 
   proc selectTerminal*(self: TerminalServiceImpl, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.9, previewScale: float = 0.6) =
     proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =

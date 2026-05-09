@@ -9,11 +9,11 @@ import nimsumtree/[rope, arc]
 include dynlib_export
 
 {.push apprtl, gcsafe, raises: [].}
-proc newFilePreviewer*(vfs: Arc[VFS2], services: Services, openNewDocuments: bool = false, reuseExistingDocuments: bool = true): DynamicPreviewer
-proc filePreviewerEditor(self: DynamicPreviewer): DocumentEditor
+proc newFilePreviewer*(vfs: Arc[VFS2], services: Services, openNewDocuments: bool = false, reuseExistingDocuments: bool = true): Previewer
+proc filePreviewerEditor(self: Previewer): DocumentEditor
 {.pop.}
 
-proc editor*(self: DynamicPreviewer): DocumentEditor = filePreviewerEditor(self)
+proc editor*(self: Previewer): DocumentEditor = filePreviewerEditor(self)
 
 when implModule:
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -24,7 +24,7 @@ when implModule:
   logCategory "file-previewer"
 
   type
-    FilePreviewer* = ref object of DynamicPreviewer
+    FilePreviewer* = ref object of Previewer
       services*: Services
       editors*: DocumentEditorService
       vfs: Arc[VFS2]
@@ -41,14 +41,14 @@ when implModule:
       currentDiff: bool
       currentLoadTask: Future[void]
 
-  proc filePreviewerEditor(self: DynamicPreviewer): DocumentEditor =
+  proc filePreviewerEditor(self: Previewer): DocumentEditor =
     return self.FilePreviewer.editor
 
-  proc filePreviewerDeinit*(self: DynamicPreviewer) {.gcsafe, raises: [].}
-  proc filePreviewerDelayPreview*(self: DynamicPreviewer) {.gcsafe, raises: [].}
-  proc filePreviewerPreviewItem*(self: DynamicPreviewer, item: FinderItem, editor: DocumentEditor) {.gcsafe, raises: [].}
+  proc filePreviewerDeinit*(self: Previewer) {.gcsafe, raises: [].}
+  proc filePreviewerDelayPreview*(self: Previewer) {.gcsafe, raises: [].}
+  proc filePreviewerPreviewItem*(self: Previewer, item: FinderItem, editor: DocumentEditor) {.gcsafe, raises: [].}
 
-  proc newFilePreviewer*(vfs: Arc[VFS2], services: Services, openNewDocuments: bool = false, reuseExistingDocuments: bool = true): DynamicPreviewer =
+  proc newFilePreviewer*(vfs: Arc[VFS2], services: Services, openNewDocuments: bool = false, reuseExistingDocuments: bool = true): Previewer =
     let res = FilePreviewer()
     res.services = services
     res.editors = services.getService(DocumentEditorService).get
@@ -66,14 +66,14 @@ when implModule:
     res.previewItemImpl = filePreviewerPreviewItem
     res.delayPreviewImpl = filePreviewerDelayPreview
     res.deinitImpl = filePreviewerDeinit
-    res.renderImpl = proc(self: DynamicPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
+    res.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
       let self = self.FilePreviewer
       if self.editor.isNotNil:
         result.add self.editor.render(builder)
 
     return res
 
-  proc filePreviewerDeinit*(self: DynamicPreviewer) =
+  proc filePreviewerDeinit*(self: Previewer) =
     let self = self.FilePreviewer
     logScope lvlInfo, &"[deinit] Destroying file previewer"
 
@@ -179,12 +179,12 @@ when implModule:
 
     editor.markDirty()
 
-  proc filePreviewerDelayPreview*(self: DynamicPreviewer) =
+  proc filePreviewerDelayPreview*(self: Previewer) =
     let self = self.FilePreviewer
     if self.triggerLoadTask.isNotNil and self.triggerLoadTask.isActive:
       self.triggerLoadTask.reschedule()
 
-  proc filePreviewerPreviewItem*(self: DynamicPreviewer, item: FinderItem, editor: DocumentEditor) =
+  proc filePreviewerPreviewItem*(self: Previewer, item: FinderItem, editor: DocumentEditor) =
     let self = self.FilePreviewer
     # logScope lvlInfo, &"previewItem {item}"
 

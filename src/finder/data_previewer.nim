@@ -11,7 +11,7 @@ export previewer
 logCategory "data-previewer"
 
 type
-  DataPreviewer* = ref object of DynamicPreviewer
+  DataPreviewer* = ref object of Previewer
     editor*: DocumentEditor
     tempDocument: Document
     getPreviewTextImpl: proc(item: FinderItem): string {.gcsafe, raises: [].}
@@ -53,15 +53,15 @@ proc newDataPreviewer*(services: Services, language = string.none,
     getPreviewTextImpl: proc(item: FinderItem): string {.gcsafe, raises: [].} = nil): DataPreviewer =
 
   new result
-  result.activateImpl = proc (self: DynamicPreviewer) =
+  result.activateImpl = proc (self: Previewer) =
     self.DataPreviewer.dataPreviewerActivate()
-  result.deactivateImpl = proc (self: DynamicPreviewer) =
+  result.deactivateImpl = proc (self: Previewer) =
     self.DataPreviewer.dataPreviewerDeactivate()
-  result.previewItemImpl = proc (self: DynamicPreviewer, item: FinderItem, editor: DocumentEditor) =
+  result.previewItemImpl = proc (self: Previewer, item: FinderItem, editor: DocumentEditor) =
     self.DataPreviewer.dataPreviewerPreviewItem(item, editor)
-  result.delayPreviewImpl = proc (self: DynamicPreviewer) =
+  result.delayPreviewImpl = proc (self: Previewer) =
     self.DataPreviewer.dataPreviewerDelayPreview()
-  result.deinitImpl = proc (self: DynamicPreviewer) =
+  result.deinitImpl = proc (self: Previewer) =
     self.DataPreviewer.dataPreviewerDeinit()
 
   let document = getServiceChecked(DocumentEditorService).createDocument("text", ".txt", load = false, %%*{"createLanguageServer": false})
@@ -73,7 +73,7 @@ proc newDataPreviewer*(services: Services, language = string.none,
     document.getLanguageComponent().get.setLanguageId(language.get)
   result.tempDocument = document
   result.getPreviewTextImpl = getPreviewTextImpl
-  result.renderImpl = proc(self: DynamicPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
+  result.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
     let self = self.DataPreviewer
     if self.editor.isNotNil:
       result.add self.editor.render(builder)
