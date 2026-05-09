@@ -25,6 +25,7 @@ gServices = Services()
 gServices.addBuiltinServices()
 gServices.getService(PlatformService).get.setPlatform(NilPlatform())
 
+init_module_input_handler()
 init_module_session()
 init_module_event_service()
 init_module_move_database()
