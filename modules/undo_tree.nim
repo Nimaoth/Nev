@@ -1,4 +1,4 @@
-#use command_component layout command_service
+#use command_component layout command_service input_handler
 import std/[options, algorithm, strutils, times, tables, json]
 import service, dynamic_view
 import component
@@ -12,7 +12,7 @@ include module_base
 when implModule:
   import std/sets
   import misc/[custom_logger, util, id, myjsonutils]
-  import text_component, document_editor, document, layout/layout, command_component, events, platform_service
+  import text_component, document_editor, document, layout/layout, command_component, input_handler, platform_service
   import nimsumtree/[buffer, clock]
   import ui/node
   import command_service

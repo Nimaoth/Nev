@@ -2,7 +2,7 @@ import std/[tables, options, sets, hashes, json]
 import bumpy
 import misc/[event, custom_logger, id, custom_async, util, generational_seq, jsonex]
 import ui/node
-import events
+import input_handler
 import component
 
 export component

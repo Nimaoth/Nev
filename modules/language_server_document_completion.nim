@@ -1,4 +1,4 @@
-#use event_service language_server_component
+#use event_service language_server_component input_handler
 import std/[options, strutils, sets]
 import nimsumtree/rope except Cursor
 import misc/[custom_logger, custom_unicode, util, event, custom_async, response, fuzzy_matching]

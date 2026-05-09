@@ -1,4 +1,4 @@
-#use layout text_editor_component command_service search_component
+#use layout text_editor_component command_service search_component input_handler
 import std/[options]
 import vmath
 import misc/[myjsonutils]
@@ -68,7 +68,7 @@ when implModule:
   import bumpy
   import misc/[util, rect_utils, event, fuzzy_matching, custom_logger, rope_utils, jsonex]
   import nimsumtree/[rope, buffer]
-  import popup, events, selector_popup/builder, layout/layout, service, command_service
+  import popup, input_handler, selector_popup/builder, layout/layout, service, command_service
   import search_component, document_editor, text_component, text_editor_component, config_component
   import ui/node
 

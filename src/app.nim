@@ -7,7 +7,7 @@ import scripting/[expose]
 import platform/[platform]
 import workspaces/[workspace]
 import config_provider, app_interface
-import input, events, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
+import input, input_handler, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
 import text_component, text_editor_component
 import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]
@@ -2659,27 +2659,30 @@ proc baseEventHandlers(self: App): seq[EventHandler] =
   return self.mEventHandlers
 
 proc currentEventHandlers*(self: App): seq[EventHandler] =
-  result = self.baseEventHandlers
+  var res = self.baseEventHandlers
 
   let modeOnTop = self.config.runtime.get(self.getContextWithMode("editor.custom-mode-on-top"), true)
   if not self.modeEventHandler.isNil and not modeOnTop:
-    result.add self.modeEventHandler
+    res.add self.modeEventHandler
 
   if self.commandLine.commandLineInputMode:
     let commandLineEventHandlerLow = self.getEventHandler(self.generalSettings.commandLineModeLow.get())
-    result.add self.commandLine.commandLineEditor.getEventHandlers({"above-mode": commandLineEventHandlerLow}.toTable)
-    result.add self.getEventHandler(self.generalSettings.commandLineModeHigh.get())
+    res.add self.commandLine.commandLineEditor.getEventHandlers({"above-mode": commandLineEventHandlerLow}.toTable)
+    res.add self.getEventHandler(self.generalSettings.commandLineModeHigh.get())
   elif self.commandLine.commandLineResultMode:
     let commandLineResultEventHandlerLow = self.getEventHandler(self.generalSettings.commandLineResultModeLow.get())
-    result.add self.commandLine.commandLineEditor.getEventHandlers({"above-mode": commandLineResultEventHandlerLow}.toTable)
-    result.add self.getEventHandler(self.generalSettings.commandLineResultModeHigh.get())
+    res.add self.commandLine.commandLineEditor.getEventHandlers({"above-mode": commandLineResultEventHandlerLow}.toTable)
+    res.add self.getEventHandler(self.generalSettings.commandLineResultModeHigh.get())
   elif self.layout.popups.len > 0:
-    result.add self.layout.popups[self.layout.popups.high].getEventHandlers()
+    res.add self.layout.popups[self.layout.popups.high].getEventHandlers()
   elif self.layout.tryGetCurrentView().getSome(view):
-    result.add view.getEventHandlers(initTable[string, EventHandler](0))
+    res.add view.getEventHandlers(initTable[string, EventHandler](0))
 
   if not self.modeEventHandler.isNil and modeOnTop:
-    result.add self.modeEventHandler
+    res.add self.modeEventHandler
+
+  self.events.handlers = res
+  return res
 
 proc clearInputHistoryDelayed*(self: App) =
   let clearInputHistoryDelay = self.generalSettings.clearInputHistoryDelay.get()
@@ -2701,59 +2704,11 @@ proc recordInputToHistory*(self: App, input: string) =
   if self.inputHistory.len > maxLen:
     self.inputHistory = self.inputHistory[(self.inputHistory.len - maxLen)..^1]
 
-proc getNextPossibleInputs*(self: App, inProgressOnly: bool, filter: proc(handler: EventHandler): bool {.gcsafe, raises: [].} = nil): seq[tuple[input: string, description: string, continues: bool]] =
-  result.setLen(0)
-  let handlers = self.currentEventHandlers
-  let anyInProgress = handlers.anyInProgress
-
-  for handler in handlers:
-    assert handler != nil
-    if (anyInProgress or inProgressOnly) and not handler.inProgress:
-      continue
-
-    if filter != nil and not filter(handler):
-      continue
-
-    let nextPossibleInputs = handler.getNextPossibleInputs()
-    for x in nextPossibleInputs:
-      if not inProgressOnly and x[1] != self.platform.currentModifiers:
-        continue
-
-      let key = inputToString(x[0], x[1])
-
-      for next in x[2]:
-        if x[1] == {Shift} and x[0] in 0..Rune.high.int and x[0].Rune.isUpper:
-          continue
-
-        var desc = ""
-        var continues = false
-        let actions = handler.dfa.getActions(next)
-        if actions.len > 1:
-          continues = true
-          desc = &"... ({handler.config.context})"
-          handler.config.stateToDescription.withValue(next.current, val):
-            desc = val[] & "..."
-        elif actions.len > 0:
-          desc = &"{actions[0][0]} {actions[0][1]}"
-          handler.config.stateToDescription.withValue(next.current, val):
-            desc = val[]
-
-          for i in countdown(result.high, 0):
-            if result[i].input == key:
-              result.removeSwap(i)
-
-        if actions.len > 0:
-          result.add (key, desc, continues)
-
-    result.sort proc(a, b: tuple[input: string, description: string, continues: bool]): int =
-      cmp(a.input, b.input)
-    result = result.deduplicate(true)
-
 proc updateNextPossibleInputs*(self: App) =
   var whichKeyInProgressOnly = not self.uiSettings.whichKeyNoProgress.get()
   if self.uiSettings.whichKeyShowWhenMod.get() and self.platform.currentModifiers != {}:
     whichKeyInProgressOnly = false
-  self.nextPossibleInputs = self.getNextPossibleInputs(whichKeyInProgressOnly)
+  self.nextPossibleInputs = self.events.getNextPossibleInputs(whichKeyInProgressOnly)
 
   if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:
     self.showNextPossibleInputsTask.interval = self.uiSettings.whichKeyDelay.get()
@@ -2910,7 +2865,7 @@ proc addCommandScript*(self: App, context: string, keys: string, action: string,
 
   if description.len > 0:
     self.events.commandDescriptions[baseContext & subContext & keys] = description
-    self.events.getEventHandlerConfig(baseContext).addCommandDescription(keys, description)
+    self.events.addCommandDescription(baseContext, keys, description)
 
   var source = source
   if self.plugins.currentPluginSystem.getSome(pluginSystem):

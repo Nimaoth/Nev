@@ -14,7 +14,7 @@ type
 when implModule:
   import std/[tables, json, sets]
   import misc/[custom_logger, util]
-  import view, events
+  import view, input_handler
   import ui/node, document_editor
 
   method close*(view: DynamicView) =

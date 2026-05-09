@@ -239,7 +239,7 @@ when enableGui:
 # Don't remove those imports, they are needed by generatePluginBindings
 {.push warning[UnusedImport]:off.}
 import service
-import document_editor, events, vfs_service, toast
+import document_editor, input_handler, vfs_service, toast
 import language_server_dynamic
 import scripting/expose
 import config_provider

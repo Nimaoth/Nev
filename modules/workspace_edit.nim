@@ -1,3 +1,4 @@
+#use input_handler
 import misc/[custom_async, custom_unicode, rope_utils]
 import nimsumtree/[arc, rope]
 import document_editor, vfs

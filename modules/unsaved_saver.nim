@@ -1,4 +1,4 @@
-#use layout event_service
+#use layout event_service input_handler
 
 ##[
 ## unsaved_saver

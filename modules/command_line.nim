@@ -1,4 +1,4 @@
-#use command_service layout text_editor_component register command_component decoration_component decoration_component event_service session language_server_component
+#use command_service layout text_editor_component register command_component decoration_component decoration_component event_service session language_server_component input_handler
 import std/[options, strutils, sequtils, strformat, json, streams]
 import misc/[jsonex, myjsonutils]
 import service, lisp, document_editor, log, command_service
@@ -43,7 +43,7 @@ when implModule:
   import layout/layout
   import text/language/[language_server_base]
   import text/[display_map, overlay_map]
-  import config_provider, dispatch_tables, input_api, events
+  import config_provider, dispatch_tables, input_api, input_handler
   import decoration_component, document, vfs_service, vfs, register
   import language_server_command_line, command_component, text_editor_component, text_component, document_editor
   import scripting_api, event_service

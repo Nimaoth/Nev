@@ -1,4 +1,4 @@
-#use command_component layout text_editor_component command_service event_service
+#use command_component layout text_editor_component command_service event_service input_handler
 import std/[options, algorithm, strutils, times, tables, json]
 import service
 import component
@@ -20,7 +20,7 @@ when implModule:
   import vmath, chroma
   import theme
   import misc/[render_command]
-  import events
+  import input_handler
   import document_editor_render, toast
 
   logCategory "git-ui"

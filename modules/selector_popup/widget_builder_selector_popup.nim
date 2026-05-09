@@ -6,7 +6,7 @@ import platform/platform
 import ui/[widget_library]
 import selector_popup, theme, document_editor
 import finder/[finder, previewer, file_previewer, open_editor_previewer, data_previewer]
-import config_provider, events, view
+import config_provider, input_handler, view
 import service
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
@@ -35,6 +35,7 @@ proc selectorPopupCreateUI*(self: SelectorPopupImpl, builder: UINodeBuilder): se
   self.resetDirty()
 
   let config = getServiceChecked(ConfigService)
+  let events = getServiceChecked(EventHandlerService)
 
   defer:
     self.scrollToSelected = false
@@ -69,10 +70,10 @@ proc selectorPopupCreateUI*(self: SelectorPopupImpl, builder: UINodeBuilder): se
   let excluded = ["prev", "next", "accept", "close"]
   proc filterCommand(s: string): bool =
     return not excluded.anyIt(s.toLowerAscii.startsWith(it))
-  # let nextPossibleInputs = app.getNextPossibleInputs(false, (handler) => handler.config.context.startsWith("popup.selector")).filterIt(filterCommand(it.description))
+  let nextPossibleInputs = events.getNextPossibleInputs(false, (handler) => handler.config.context.startsWith("popup.selector")).filterIt(filterCommand(it.description))
   let uiSettings = UiSettings.new(config.runtime)
   var whichKeyHeightLines = uiSettings.popupWhichKeyHeight.get()
-  # whichKeyHeightLines = (nextPossibleInputs.len + 1) div 2
+  whichKeyHeightLines = (nextPossibleInputs.len + 1) div 2
   let whichKeyHeightPx = builder.renderCommandKeysHeight(whichKeyHeightLines, padding = 0)
 
   builder.panel(&{FillBackground, DrawBorder, DrawBorderTerminal}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, border = border(1),
@@ -222,23 +223,23 @@ proc selectorPopupCreateUI*(self: SelectorPopupImpl, builder: UINodeBuilder): se
                 let w = ceil(builder.charWidth * 0.5)
                 fillRect(rect(rowsNode.bounds.w - w, floor(thumbY), w, ceil(thumbHeight)), scrollBarColor)
 
-          # builder.updateSizeToContent(currentNode)
-          # if SizeToContentY in yFlag:
-          #   let textColor = builder.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
-          #   let continuesTextColor = builder.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
-          #   let keysTextColor = builder.theme.tokenColor("number", color(0.882, 0.784, 0.784))
-          #   var headerColor = builder.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
-          #   builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeightLines, currentNode.bounds, padding = 0)
+          builder.updateSizeToContent(currentNode)
+          if SizeToContentY in yFlag:
+            let textColor = builder.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
+            let continuesTextColor = builder.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
+            let keysTextColor = builder.theme.tokenColor("number", color(0.882, 0.784, 0.784))
+            var headerColor = builder.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
+            builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeightLines, currentNode.bounds, padding = 0)
 
-        # if SizeToContentY notin yFlag:
-        #   let textColor = builder.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
-        #   let continuesTextColor = builder.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
-        #   let keysTextColor = builder.theme.tokenColor("number", color(0.882, 0.784, 0.784))
-        #   var headerColor = builder.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
-        #   builder.panel(&{FillX, FillY, LayoutVerticalReverse}):
-        #     builder.panel(&{FillX, SizeToContentY}, pivot = vec2(0, 1)):
-        #       builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeightLines, currentNode.bounds, padding = 0)
-        #       builder.updateSizeToContent(currentNode)
+        if SizeToContentY notin yFlag:
+          let textColor = builder.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
+          let continuesTextColor = builder.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
+          let keysTextColor = builder.theme.tokenColor("number", color(0.882, 0.784, 0.784))
+          var headerColor = builder.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
+          builder.panel(&{FillX, FillY, LayoutVerticalReverse}):
+            builder.panel(&{FillX, SizeToContentY}, pivot = vec2(0, 1)):
+              builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeightLines, currentNode.bounds, padding = 0)
+              builder.updateSizeToContent(currentNode)
 
         if showPreview:
           builder.panel(0.UINodeFlags, x = bounds.w * (1 - previewScale),

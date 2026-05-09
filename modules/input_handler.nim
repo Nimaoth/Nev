@@ -1,7 +1,9 @@
+#use
 import std/[tables, json, options]
 import input, service, config_provider
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type
   EventResponse* = enum
@@ -20,7 +22,7 @@ type
   EventHandlerConfig* = ref object
     parent*: EventHandlerConfig
     context*: string
-    commands: Table[string, Table[string, Command]]
+    commands*: Table[string, Table[string, Command]]
     revision: int
     keyDefinitions: Table[string, seq[string]]
     descriptions*: Table[string, string]
@@ -48,23 +50,36 @@ type
     built: bool = false
     commandToKeys*: Table[string, seq[CommandKeyInfo]]
 
-  EventHandlerService* = ref object of Service
+  EventHandlerService* = ref object of DynamicService
     eventHandlerConfigs*: Table[string, EventHandlerConfig]
     keyDefinitions: Table[string, seq[string]] # e.g. LEADER -> [<SPACE>], CUSTOM_LEADER -> [<C-w>]
     commandInfos*: CommandInfos
     commandDescriptions*: Table[string, string]
     settings: ConfigStore
 
+    handlers*: seq[EventHandler]
+
+
+  EventHandleFilterFunc* = proc(handler: EventHandler): bool {.gcsafe, raises: [].}
+
 func serviceName*(_: typedesc[EventHandlerService]): string = "EventHandlerService"
 
 # DLL API
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc eventsGetEventHandlerConfig(self: EventHandlerService, context: string): EventHandlerConfig
 proc eventsBuildDFA(config: EventHandlerConfig): CommandDFA
 proc commandInfosGetInfos(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]]
 proc commandInfosInvalidateCommandToKeysMap(self: EventHandlerService)
 proc commandInfosRebuildCommandToKeysMap(self: EventHandlerService)
-proc eventsAddCommand(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default)
+proc eventsGetNextPossibleInputs(self: EventHandlerService, inProgressOnly: bool, filter: EventHandleFilterFunc = nil): seq[tuple[input: string, description: string, continues: bool]]
+proc eventsAddKeyDefinitions(self: EventHandlerService, name: string, keys: seq[string])
+proc eventsSetKeyDefinitions(self: EventHandlerService, name: string, keys: seq[string])
+proc eventsAddCommandDescription(self: EventHandlerService, context: string, keys: string, description: string = "")
+proc eventHandlerDfa(handler: EventHandler): CommandDFA
+proc eventHandlerResetHandler(handler: EventHandler)
+proc eventHandlerResetHandlers(handlers: seq[EventHandler])
+proc eventsHandleEvent(handlers: seq[EventHandler], input: int64, modifiers: Modifiers, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]], debug: bool = false): EventResponse
+proc eventsRemoveCommand(self: EventHandlerService, context: string, keys: string)
 {.pop.}
 
 # Nice wrappers
@@ -73,7 +88,16 @@ proc buildDFA*(config: EventHandlerConfig): CommandDFA {.inline.} = eventsBuildD
 proc getInfos*(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] {.inline.} = commandInfosGetInfos(self, command)
 proc invalidateCommandToKeysMap*(self: EventHandlerService) = commandInfosInvalidateCommandToKeysMap(self)
 proc rebuildCommandToKeysMap*(self: EventHandlerService) {.inline.} = commandInfosRebuildCommandToKeysMap(self)
-proc addCommand*(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default) = eventsAddCommand(config, context, keys, action, source)
+proc addKeyDefinitions*(self: EventHandlerService, name: string, keys: seq[string]) = eventsAddKeyDefinitions(self, name, keys)
+proc setKeyDefinitions*(self: EventHandlerService, name: string, keys: seq[string]) = eventsSetKeyDefinitions(self, name, keys)
+proc addCommandDescription*(self: EventHandlerService, context: string, keys: string, description: string = "") = eventsAddCommandDescription(self, context, keys, description)
+proc dfa*(handler: EventHandler): CommandDFA = eventHandlerDfa(handler)
+proc resetHandler*(handler: EventHandler) = eventHandlerResetHandler(handler)
+proc resetHandlers*(handlers: seq[EventHandler]) = eventHandlerResetHandlers(handlers)
+proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]], debug: bool = false): EventResponse = eventsHandleEvent(handlers, input, modifiers, delayedInputs, debug)
+proc removeCommand*(self: EventHandlerService, context: string, keys: string) = eventsRemoveCommand(self, context, keys)
+
+proc getNextPossibleInputs*(self: EventHandlerService, inProgressOnly: bool, filter: EventHandleFilterFunc = nil): seq[tuple[input: string, description: string, continues: bool]] = eventsGetNextPossibleInputs(self, inProgressOnly, filter)
 
 proc handleInputs*(config: EventHandlerConfig): bool =
   return config.settings.get("input." & config.context & ".handle-inputs", false)
@@ -93,23 +117,40 @@ proc consumeAllInput*(config: EventHandlerConfig): bool =
 proc inputHandlerAction*(config: EventHandlerConfig): string =
   return config.settings.get("input." & config.context & ".input-handler-command", "")
 
+proc addCommandDescription*(config: EventHandlerConfig, keys: string, description: string) =
+  config.descriptions[keys] = description
+  config.revision += 1
+
+proc removeCommandDescription*(config: EventHandlerConfig, keys: string) =
+  config.descriptions.del(keys)
+  config.revision += 1
+
+proc addCommand*(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default) =
+  if not config.commands.contains(context):
+    config.commands[context] = initTable[string, Command]()
+  config.commands[context][keys] = Command(command: action, source: source)
+  config.revision += 1
+
+proc removeCommand*(config: EventHandlerConfig, subContext: string, keys: string) =
+  if subContext in config.commands:
+    config.commands[subContext].del(keys)
+    config.revision += 1
+
+proc clearCommands*(config: EventHandlerConfig) =
+  config.commands.clear
+  config.revision += 1
+
 # Implementation
 when implModule:
-  import std/[sequtils, strutils, sugar, unicode]
+  import std/[sequtils, strutils, sugar, unicode, algorithm]
   import misc/[custom_logger, util, custom_async]
   import scripting/expose
   import dispatch_tables
+  import platform_service
 
   logCategory "events"
 
   var debugEventHandlers = false
-
-  addBuiltinService(EventHandlerService, ConfigService)
-
-  method init*(self: EventHandlerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-    self.commandInfos = CommandInfos()
-    self.settings = self.services.getService(ConfigService).get.runtime
-    return ok()
 
   func newEventHandlerConfig(context: string, settings: ConfigStore, parent: EventHandlerConfig = nil): EventHandlerConfig =
     new result
@@ -168,36 +209,13 @@ when implModule:
     if config.parent.isNotNil:
       result = max(result, config.parent.maxRevision)
 
-  proc dfa*(handler: EventHandler): CommandDFA =
+  proc eventHandlerDfa(handler: EventHandler): CommandDFA =
     let configRevision = handler.config.maxRevision
     if handler.revision < configRevision:
       handler.dfaInternal = handler.config.buildDFA()
       # fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
       handler.revision = configRevision
     return handler.dfaInternal
-
-  proc eventsAddCommand(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default) =
-    if not config.commands.contains(context):
-      config.commands[context] = initTable[string, Command]()
-    config.commands[context][keys] = Command(command: action, source: source)
-    config.revision += 1
-
-  proc addCommandDescription*(config: EventHandlerConfig, keys: string, description: string) =
-    config.descriptions[keys] = description
-    config.revision += 1
-
-  proc removeCommandDescription*(config: EventHandlerConfig, keys: string) =
-    config.descriptions.del(keys)
-    config.revision += 1
-
-  proc removeCommand*(config: EventHandlerConfig, subContext: string, keys: string) =
-    if subContext in config.commands:
-      config.commands[subContext].del(keys)
-      config.revision += 1
-
-  proc clearCommands*(config: EventHandlerConfig) =
-    config.commands.clear
-    config.revision += 1
 
   proc setKeyDefinitions*(config: EventHandlerConfig, name: string, keys: openArray[string]) =
     config.keyDefinitions.mgetOrPut(name, @[]) = @keys
@@ -266,10 +284,10 @@ when implModule:
       handlerBody
       handler
 
-  proc resetHandler*(handler: EventHandler) =
+  proc eventHandlerResetHandler(handler: EventHandler) =
     handler.states = @[]
 
-  proc resetHandlers*(handlers: seq[EventHandler]) =
+  proc eventHandlerResetHandlers(handlers: seq[EventHandler]) =
     for handler in handlers:
       handler.resetHandler()
 
@@ -288,7 +306,7 @@ when implModule:
         return true
     return false
 
-  proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool, allowHandlingEvent: bool, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]], debug: bool = false): EventResponse {.gcsafe.} =
+  proc handleEvent(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool, allowHandlingEvent: bool, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]], debug: bool = false): EventResponse {.gcsafe.} =
     if input != 0:
       # only handle if no modifier or only shift is pressed, because if any other modifiers are pressed
       # (ctrl, alt, win) then it doesn't produce input
@@ -378,7 +396,7 @@ when implModule:
     else:
       return Ignored
 
-  proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]], debug: bool = false): EventResponse {.gcsafe.} =
+  proc eventsHandleEvent(handlers: seq[EventHandler], input: int64, modifiers: Modifiers, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]], debug: bool = false): EventResponse {.gcsafe.} =
     let anyInProgress = handlers.anyInProgress
 
     if debugEventHandlers or debug:
@@ -435,9 +453,6 @@ when implModule:
     else:
       result = Ignored
 
-  proc commands*(config {.byref.}: EventHandlerConfig): lent Table[string, Table[string, Command]] =
-    config.commands
-
   proc invalidate*(self: CommandInfos) =
     self.built = false
     self.commandToKeys.clear()
@@ -488,6 +503,55 @@ when implModule:
   proc commandInfosRebuildCommandToKeysMap(self: EventHandlerService) =
     self.commandInfos.rebuild(self.eventHandlerConfigs)
 
+  proc eventsGetNextPossibleInputs(self: EventHandlerService, inProgressOnly: bool, filter: proc(handler: EventHandler): bool {.gcsafe, raises: [].} = nil): seq[tuple[input: string, description: string, continues: bool]] =
+    result.setLen(0)
+    let anyInProgress = self.handlers.anyInProgress
+
+    let platform = getServiceChecked(PlatformService).platform
+
+    for handler in self.handlers:
+      assert handler != nil
+      if (anyInProgress or inProgressOnly) and not handler.inProgress:
+        continue
+
+      if filter != nil and not filter(handler):
+        continue
+
+      let nextPossibleInputs = handler.getNextPossibleInputs()
+      for x in nextPossibleInputs:
+        if not inProgressOnly and x[1] != platform.currentModifiers:
+          continue
+
+        let key = inputToString(x[0], x[1])
+
+        for next in x[2]:
+          if x[1] == {Shift} and x[0] in 0..Rune.high.int and x[0].Rune.isUpper:
+            continue
+
+          var desc = ""
+          var continues = false
+          let actions = handler.dfa.getActions(next)
+          if actions.len > 1:
+            continues = true
+            desc = &"... ({handler.config.context})"
+            handler.config.stateToDescription.withValue(next.current, val):
+              desc = val[] & "..."
+          elif actions.len > 0:
+            desc = &"{actions[0][0]} {actions[0][1]}"
+            handler.config.stateToDescription.withValue(next.current, val):
+              desc = val[]
+
+            for i in countdown(result.high, 0):
+              if result[i].input == key:
+                result.removeSwap(i)
+
+          if actions.len > 0:
+            result.add (key, desc, continues)
+
+      result.sort proc(a, b: tuple[input: string, description: string, continues: bool]): int =
+        cmp(a.input, b.input)
+      result = result.deduplicate(true)
+
   ###########################################################################
 
   proc getEventHandlerService(): Option[EventHandlerService] =
@@ -498,12 +562,12 @@ when implModule:
   static:
     addInjector(EventHandlerService, getEventHandlerService)
 
-  proc addKeyDefinitions*(self: EventHandlerService, name: string, keys: seq[string]) {.expose("events").} =
+  proc eventsAddKeyDefinitions(self: EventHandlerService, name: string, keys: seq[string]) =
     self.keyDefinitions.mgetOrPut(name, @[]).add(keys)
     for config in self.eventHandlerConfigs.values:
       config.setKeyDefinitions(self.keyDefinitions)
 
-  proc setKeyDefinitions*(self: EventHandlerService, name: string, keys: seq[string]) {.expose("events").} =
+  proc eventsSetKeyDefinitions(self: EventHandlerService, name: string, keys: seq[string]) =
     self.keyDefinitions.mgetOrPut(name, @[]) = keys
     for config in self.eventHandlerConfigs.values:
       config.setKeyDefinitions(self.keyDefinitions)
@@ -525,7 +589,7 @@ when implModule:
     self.getEventHandlerConfig(context).clearCommands()
     self.invalidateCommandToKeysMap()
 
-  proc removeCommand*(self: EventHandlerService, context: string, keys: string) {.expose("events").} =
+  proc eventsRemoveCommand(self: EventHandlerService, context: string, keys: string) =
     # log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
     let (baseContext, subContext) = if (let i = context.find('#'); i != -1):
       (context[0..<i], context[i+1..^1])
@@ -535,7 +599,7 @@ when implModule:
     self.getEventHandlerConfig(baseContext).removeCommand(subContext, keys)
     self.invalidateCommandToKeysMap()
 
-  proc addCommandDescription*(self: EventHandlerService, context: string, keys: string, description: string = "") {.expose("events").} =
+  proc eventsAddCommandDescription(self: EventHandlerService, context: string, keys: string, description: string = "") =
     let context = if context.endsWith("."):
       context[0..^2]
     else:
@@ -546,6 +610,12 @@ when implModule:
     self.getEventHandlerConfig(context).addCommandDescription(keys, description)
 
   addGlobalDispatchTable "events", genDispatchTable("events")
+
+  proc init_module_input_handler*() {.cdecl, exportc, dynlib.} =
+    getServices().addService(EventHandlerService(
+      commandInfos: CommandInfos(),
+      settings: getServiceChecked(ConfigService).runtime,
+    ))
 
 template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, handlerBody: untyped): untyped =
   block:

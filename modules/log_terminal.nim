@@ -1,4 +1,4 @@
-#use terminal log:MemChannels layout
+#use terminal log:MemChannels layout input_handler
 
 const currentSourcePath2 = currentSourcePath()
 include module_base

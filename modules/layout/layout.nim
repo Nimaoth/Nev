@@ -1,4 +1,4 @@
-#use status_line text_editor_component command_service session
+#use status_line text_editor_component command_service session input_handler
 # text_editor_component is needed for OpenEditorPreviewer. todo: OpenEditorPreviewer shouldn't care about text editors
 import std/[options, json]
 import misc/[custom_async, id]
@@ -168,7 +168,7 @@ when implModule:
   import misc/[custom_logger, rect_utils, myjsonutils, util, jsonex]
   import workspaces/workspace
   import finder/[finder, previewer]
-  import platform_service, events, config_provider, vfs, vfs_service, session, layouts, command_service, status_line, theme
+  import platform_service, input_handler, config_provider, vfs, vfs_service, session, layouts, command_service, status_line, theme
   import nimsumtree/arc
 
   export layouts

@@ -1,4 +1,4 @@
-#use command_service stats
+#use command_service stats input_handler
 import std/[json, tables, options, strformat]
 import misc/[custom_async, event]
 import lisp
@@ -161,7 +161,7 @@ when implModule:
   import std/[macros, os, sugar, strutils]
   import misc/[custom_logger, util, myjsonutils]
   import scripting/expose
-  import vfs_service, vfs, vfs_local, dispatch_tables, events
+  import vfs_service, vfs, vfs_local, dispatch_tables, input_handler
 
   logCategory "plugins"
 

@@ -1,4 +1,4 @@
-#use layout command_service
+#use layout command_service input_handler
 import misc/[custom_async]
 import app_options
 

@@ -1,3 +1,4 @@
+#use input_handler
 import std/[options, tables]
 import chroma, vmath
 import nimsumtree/rope
