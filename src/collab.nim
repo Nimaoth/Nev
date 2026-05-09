@@ -4,7 +4,7 @@ when false:
 
   import misc/[util, event, myjsonutils, custom_logger, custom_async, delayed_task]
   import scripting/[expose]
-  import config_provider, app_interface, dispatch_tables, document_editor
+  import config_provider, dispatch_tables, document_editor
   import document
   import toast, layout/layout
   import scripting_api except TextDocumentEditor

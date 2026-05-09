@@ -1,12 +1,12 @@
 import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
-import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
+import misc/[id, util, timer, event, myjsonutils, rect_utils, custom_logger, custom_async,
   array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, generational_seq, fuzzy_matching,
   rope_utils]
 import ui/node
 import scripting/[expose]
 import platform/[platform]
 import workspaces/[workspace]
-import config_provider, app_interface
+import config_provider
 import input_handler/input_handler, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
 import text_component, text_editor_component
 import text/[custom_treesitter]
@@ -141,7 +141,7 @@ type
     generalSettings*: GeneralSettings
     debugSettings*: DebugSettings
 
-var gEditor* {.exportc.}: App = nil
+var gApp* {.exportc.}: App = nil
 
 proc handleLog(self: App, level: Level, args: openArray[string])
 proc getActiveEditor*(self: App): Option[DocumentEditor]
@@ -154,10 +154,6 @@ proc currentEventHandlers*(self: App): seq[EventHandler]
 proc defaultHandleCommand*(self: App, command: string): Option[string]
 proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.}
 proc runLateCommandsFromAppOptions(self: App)
-
-implTrait AppInterface, App:
-  getActiveEditor(Option[DocumentEditor], App)
-  setLocationList(void, App, seq[FinderItem], Option[Previewer])
 
 type
   AppLogger* = ref object of Logger
@@ -705,8 +701,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   var self = App()
 
   {.gcsafe.}:
-    gEditor = self
-    gAppInterface = self.asAppInterface
+    gApp = self
     self.platform = platform
 
     logger().addLogger AppLogger(app: self, fmtStr: "")
@@ -933,10 +928,9 @@ proc shutdown*(self: App) =
   for document in self.editors.documents:
     document.deinit()
 
-  {.gcsafe.}:
-    gAppInterface = nil
   self[] = AppObject()
 
+  # todo: do this in treesitter module shutdown
   {.gcsafe.}:
     custom_treesitter.freeDynamicLibraries()
 
@@ -947,8 +941,8 @@ proc handleLog(self: App, level: Level, args: openArray[string]) =
 
 proc getEditor(): Option[App] =
   {.gcsafe.}:
-    if gEditor.isNil: return App.none
-    return gEditor.some
+    if gApp.isNil: return App.none
+    return gApp.some
 
 static:
   addInjector(App, getEditor)
