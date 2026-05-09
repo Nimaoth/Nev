@@ -38,6 +38,8 @@ type
     handleItemSelected*: proc(finderItem: FinderItem) {.gcsafe, raises: [].}
     handleCanceled*: proc() {.gcsafe, raises: [].}
 
+  SelectorPopupCommand* = proc(popup: SelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].}
+
 # DLL API
 {.push modrtl, gcsafe, raises: [].}
 proc newSelectorPopup*(scopeName = string.none, finder = Finder.none, previewer: Option[Previewer] = Previewer.none): SelectorPopup
@@ -48,12 +50,11 @@ proc selectorPopupClosed(self: SelectorPopup): bool
 proc selectorPopupGetSelectedItem(self: SelectorPopup): Option[FinderItem]
 proc selectorPopupPop(self: SelectorPopup)
 proc selectorPopupGetPreviewSelection(self: SelectorPopup): Option[Selection]
+proc selectorPopupAddCustomCommand(self: SelectorPopup, name: string, command: SelectorPopupCommand)
 {.pop.}
 
 # Nice wrappers
-proc addCustomCommand*(self: SelectorPopup, name: string,
-    command: proc(popup: SelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].}) =
-  discard
+proc addCustomCommand*(self: SelectorPopup, name: string, command: SelectorPopupCommand) = selectorPopupAddCustomCommand(self, name, command)
 
 proc setSearchString*(self: SelectorPopup, query: string) = selectorPopupSetSearchString(self, query)
 proc getSearchString*(self: SelectorPopup): string = selectorPopupGetSearchString(self)
@@ -97,7 +98,7 @@ when implModule:
       viewMarkedDirtyHandle: Id
       configChangedHandle: Id
 
-      customCommands: Table[string, proc(popup: SelectorPopupImpl, args: JsonNode): bool {.gcsafe, raises: [].}]
+      customCommands: Table[string, SelectorPopupCommand]
 
       maxItemsToShow: int = 50
 
@@ -145,8 +146,8 @@ when implModule:
 
     self[] = default(typeof(self[]))
 
-  proc addCustomCommand*(self: SelectorPopupImpl, name: string,
-      command: proc(popup: SelectorPopupImpl, args: JsonNode): bool {.gcsafe, raises: [].}) =
+  proc selectorPopupAddCustomCommand(self: SelectorPopup, name: string, command: SelectorPopupCommand) =
+    let self = self.SelectorPopupImpl
     self.customCommands[name] = command
 
   proc selectorPopupGetSearchString(self: SelectorPopup): string =
