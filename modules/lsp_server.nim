@@ -30,7 +30,7 @@ when implModule and defined(appLspServer):
   import text_component, language_server_component
   import document_editor, vfs_service
   import text/language/lsp_types as lsp_types
-  import language_server_dynamic
+  import text/language/language_server_base
   import language_server_lsp/language_server_lsp
   import workspaces/workspace
 
@@ -250,14 +250,14 @@ when implModule and defined(appLspServer):
     if uri == "": return ""
     uriToPath(uri, vfs)
 
-  proc getLspBackup(self: LspServerService, name: string): Option[LanguageServerDynamic] =
+  proc getLspBackup(self: LspServerService, name: string): Option[LanguageServer] =
     if name.endsWith(".as"):
       return getLanguageServerUEAs().some
     if name.endsWith(".h") or name.endsWith(".cpp"):
       return getLanguageServerUECpp().some
-    return LanguageServerDynamic.none
+    return LanguageServer.none
 
-  proc getLsp(self: LspServerService, name: string): Future[Option[LanguageServerDynamic]] {.async: (raises: []).} =
+  proc getLsp(self: LspServerService, name: string): Future[Option[LanguageServer]] {.async: (raises: []).} =
     ## Returns the named LSP instance (creating it if necessary), or none if
     ## the language_server_lsp module is unavailable or the server fails to start.
     let doc = self.editors.getDocumentByPath(name).getOr:

@@ -3,9 +3,9 @@ import nimsumtree/rope
 import misc/[custom_logger, custom_async, util, response, event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
-import document, config_provider, language_server_dynamic
+import document, config_provider
 
-export language_server_dynamic
+export language_server_base
 
 logCategory "language-server-list"
 
@@ -16,10 +16,10 @@ declareSettings LspMergeSettings, "lsp-merge":
 type
   # todo
   MergeStrategy* = enum First, All, FirstThenTimeout, AnyThenTimeout
-  LanguageServerList* = ref object of LanguageServerDynamic
+  LanguageServerList* = ref object of LanguageServer
     config: ConfigStore
     mergeConfig: LspMergeSettings
-    languageServers*: seq[LanguageServerDynamic]
+    languageServers*: seq[LanguageServer]
     timeout: int
 
 proc updateRefetchWorkspaceSymbolsOnQueryChange*(self: LanguageServerList) =
@@ -30,9 +30,9 @@ proc updateRefetchWorkspaceSymbolsOnQueryChange*(self: LanguageServerList) =
       break
 
 proc addLanguageServer*(self: LanguageServerList, languageServer: LanguageServer): bool =
-  if not (languageServer of LanguageServerDynamic):
+  if not (languageServer of LanguageServer):
     return false
-  let languageServer = languageServer.LanguageServerDynamic
+  let languageServer = languageServer.LanguageServer
   if languageServer in self.languageServers:
     return false
 
@@ -45,9 +45,9 @@ proc addLanguageServer*(self: LanguageServerList, languageServer: LanguageServer
   return true
 
 proc removeLanguageServer*(self: LanguageServerList, languageServer: LanguageServer): bool =
-  if not (languageServer of LanguageServerDynamic):
+  if not (languageServer of LanguageServer):
     return false
-  let languageServer = languageServer.LanguageServerDynamic
+  let languageServer = languageServer.LanguageServer
   let index = self.languageServers.find(languageServer)
   if index != -1:
     self.languageServers.removeShift(index)
@@ -129,41 +129,41 @@ template mergeResponse(self: LanguageServerList, T: untyped, subCall: untyped, n
   except CatchableError as e:
     errorResponse[seq[T]](500, e.msg)
 
-proc lslConnect(self: LanguageServerDynamic, document: Document) {.gcsafe, raises: [].} =
+proc lslConnect(self: LanguageServer, document: Document) {.gcsafe, raises: [].} =
   let self = self.LanguageServerList
   for ls in self.languageServers:
     ls.connect(document)
 
-proc lslDisconnect(self: LanguageServerDynamic, document: Document) {.gcsafe, raises: [].} =
+proc lslDisconnect(self: LanguageServer, document: Document) {.gcsafe, raises: [].} =
   let self = self.LanguageServerList
   for ls in self.languageServers:
     ls.disconnect(document)
 
-proc lslGetDefinition(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+proc lslGetDefinition(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   let self = self.LanguageServerList
   return self.merge(Definition, ls.getDefinition(filename, location), "getDefinition")
 
-proc lslGetDeclaration(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+proc lslGetDeclaration(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   let self = self.LanguageServerList
   return self.merge(Definition, ls.getDeclaration(filename, location), "getDeclaration")
 
-proc lslGetImplementation(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+proc lslGetImplementation(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   let self = self.LanguageServerList
   return self.merge(Definition, ls.getImplementation(filename, location), "getImplementation")
 
-proc lslGetTypeDefinition(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+proc lslGetTypeDefinition(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   let self = self.LanguageServerList
   return self.merge(Definition, ls.getTypeDefinition(filename, location), "getTypeDefinition")
 
-proc lslGetReferences(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+proc lslGetReferences(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   let self = self.LanguageServerList
   return self.merge(Definition, ls.getReferences(filename, location), "getReferences")
 
-proc lslSwitchSourceHeader(self: LanguageServerDynamic, filename: string): Future[Option[string]] {.async.} =
+proc lslSwitchSourceHeader(self: LanguageServer, filename: string): Future[Option[string]] {.async.} =
   let self = self.LanguageServerList
   return self.mergeOption(string, ls.switchSourceHeader(filename), "switchSourceHeader")
 
-proc lslGetCompletions(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
+proc lslGetCompletions(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
   try:
     let self = self.LanguageServerList
     let timeout = self.mergeConfig.timeout.get()
@@ -190,52 +190,52 @@ proc lslGetCompletions(self: LanguageServerDynamic, filename: string, location: 
   except CatchableError as e:
     return errorResponse[lsp_types.CompletionList](500, e.msg)
 
-proc lslGetSymbols(self: LanguageServerDynamic, filename: string): Future[seq[Symbol]] {.async.} =
+proc lslGetSymbols(self: LanguageServer, filename: string): Future[seq[Symbol]] {.async.} =
   let self = self.LanguageServerList
   return self.merge(Symbol, ls.getSymbols(filename), "getSymbols")
 
-proc lslGetWorkspaceSymbols(self: LanguageServerDynamic, filename: string, query: string): Future[seq[Symbol]] {.async.} =
+proc lslGetWorkspaceSymbols(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.async.} =
   let self = self.LanguageServerList
   return self.merge(Symbol, ls.getWorkspaceSymbols(filename, query), "getWorkspaceSymbols")
 
-proc lslGetWorkspaceSymbolsRaw(self: LanguageServerDynamic, filename: string, query: string): Future[seq[language_server_base.WorkspaceSymbolRaw]] {.async.} =
+proc lslGetWorkspaceSymbolsRaw(self: LanguageServer, filename: string, query: string): Future[seq[language_server_base.WorkspaceSymbolRaw]] {.async.} =
   let self = self.LanguageServerList
   return self.merge(language_server_base.WorkspaceSymbolRaw, ls.getWorkspaceSymbolsRaw(filename, query), "getWorkspaceSymbolsRaw")
 
-proc lslResolveWorkspaceSymbol(self: LanguageServerDynamic, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
+proc lslResolveWorkspaceSymbol(self: LanguageServer, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
   let self = self.LanguageServerList
   return self.mergeOption(Definition, ls.resolveWorkspaceSymbol(symbol), "resolveWorkspaceSymbol")
 
-proc lslGetHover(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Option[string]] {.async.} =
+proc lslGetHover(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.async.} =
   let self = self.LanguageServerList
   return self.mergeOption(string, ls.getHover(filename, location), "getHover")
 
-proc lslGetSignatureHelp(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
+proc lslGetSignatureHelp(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
   let self = self.LanguageServerList
   return self.mergeResponse(lsp_types.SignatureHelpResponse, ls.getSignatureHelp(filename, location), "getSignatureHelp")
 
-proc lslGetInlayHints(self: LanguageServerDynamic, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+proc lslGetInlayHints(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
   let self = self.LanguageServerList
   return self.mergeResponse(language_server_base.InlayHint, ls.getInlayHints(filename, selection), "getInlayHints")
 
-proc lslGetDiagnostics(self: LanguageServerDynamic, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
+proc lslGetDiagnostics(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
   let self = self.LanguageServerList
   return self.mergeResponse(lsp_types.Diagnostic, ls.getDiagnostics(filename), "getDiagnostics")
 
-proc lslGetCompletionTriggerChars(self: LanguageServerDynamic): set[char] {.gcsafe, raises: [].} =
+proc lslGetCompletionTriggerChars(self: LanguageServer): set[char] {.gcsafe, raises: [].} =
   let self = self.LanguageServerList
   for ls in self.languageServers:
     result.incl ls.getCompletionTriggerChars()
 
-proc lslGetCodeActions(self: LanguageServerDynamic, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.async.} =
+proc lslGetCodeActions(self: LanguageServer, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.async.} =
   let self = self.LanguageServerList
   return self.mergeResponse(lsp_types.CodeActionResponseVariant, ls.getCodeActions(filename, selection, diagnostics), "getCodeActions")
 
-proc lslRename(self: LanguageServerDynamic, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.async.} =
+proc lslRename(self: LanguageServer, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.async.} =
   let self = self.LanguageServerList
   return self.mergeResponse(lsp_types.WorkspaceEdit, ls.rename(filename, position, newName), "rename")
 
-proc lslExecuteCommand(self: LanguageServerDynamic, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
+proc lslExecuteCommand(self: LanguageServer, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
   try:
     let self = self.LanguageServerList
     let timeout = self.mergeConfig.timeout.get()

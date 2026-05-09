@@ -4,7 +4,8 @@ import misc/[id, custom_logger, util, event, response]
 import dap_client, config_provider, command_service, input_handler/input_handler, dynamic_view, document, document_editor, layout/layout
 import platform/platform
 import finder/[previewer]
-import workspaces/workspace, vfs, vfs_service, language_server_dynamic
+import workspaces/workspace, vfs, vfs_service
+import text/language/[lsp_types, language_server_base]
 import ui/node
 import nimsumtree/[rope, buffer]
 import types
@@ -104,6 +105,6 @@ type
   OutputView* = ref object of DynamicView
   ToolbarView* = ref object of DynamicView
 
-  LanguageServerDebugger* = ref object of LanguageServerDynamic
+  LanguageServerDebugger* = ref object of LanguageServer
     debugger*: Debugger
-    evaluations*: Table[tuple[file: string, range: Range[Point], expression: string], Response[EvaluateResponse]]
+    evaluations*: Table[tuple[file: string, range: rope.Range[Point], expression: string], Response[EvaluateResponse]]

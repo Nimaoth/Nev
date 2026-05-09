@@ -3,7 +3,7 @@ import std/[options, tables, strutils, os, strformat, sugar, sequtils]
 import misc/[custom_logger, custom_async, util, rope_utils, event, rope_regex, myjsonutils, jsonex]
 import text/language/[language_server_base]
 import nimsumtree/[arc, rope]
-import service, event_service, language_server_dynamic, document_editor, document, config_provider, vfs, vfs_service
+import service, event_service, document_editor, document, config_provider, vfs, vfs_service
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import workspaces/workspace
 
@@ -11,7 +11,7 @@ const currentSourcePath2 = currentSourcePath()
 include module_base
 
 type
-  LanguageServerRegex* = ref object of LanguageServerDynamic
+  LanguageServerRegex* = ref object of LanguageServer
     services: Services
     config: ConfigStore
     documents: DocumentEditorService
@@ -70,37 +70,37 @@ when implModule:
 
     return locations
 
-  proc regexGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc regexGetDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerRegex
     if self.documents.getDocumentByPath(filename).getSome(doc):
       return await self.gotoRegexLocation(doc, location, "goto-definition")
     return @[]
 
-  proc regexGetDeclaration*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc regexGetDeclaration*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerRegex
     if self.documents.getDocumentByPath(filename).getSome(doc):
       return await self.gotoRegexLocation(doc, location, "goto-declaration")
     return @[]
 
-  proc regexGetImplementation*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc regexGetImplementation*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerRegex
     if self.documents.getDocumentByPath(filename).getSome(doc):
       return await self.gotoRegexLocation(doc, location, "goto-implementation")
     return @[]
 
-  proc regexGetTypeDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc regexGetTypeDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerRegex
     if self.documents.getDocumentByPath(filename).getSome(doc):
       return await self.gotoRegexLocation(doc, location, "goto-type-definition")
     return @[]
 
-  proc regexGetReferences*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc regexGetReferences*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerRegex
     if self.documents.getDocumentByPath(filename).getSome(doc):
       return await self.gotoRegexLocation(doc, location, "goto-references")
     return @[]
 
-  proc regexGetSymbols*(self: LanguageServerDynamic, filename: string): Future[seq[Symbol]] {.async.} =
+  proc regexGetSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.async.} =
     let self = self.LanguageServerRegex
     if self.documents.getDocumentByPath(filename).getSome(doc):
       let text = doc.getTextComponent().getOr:
@@ -135,7 +135,7 @@ when implModule:
 
     return @[]
 
-  proc regexGetWorkspaceSymbols*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[Symbol]] {.async.} =
+  proc regexGetWorkspaceSymbols*(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.async.} =
     let self = self.LanguageServerRegex
     if self.documents.getDocumentByPath(filename).getSome(doc):
       let config = doc.getConfigComponent().getOr:

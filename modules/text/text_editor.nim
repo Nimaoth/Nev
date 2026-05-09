@@ -7,7 +7,7 @@ import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_mat
 import misc/[custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex, case_swap]
 import scripting/[expose]
 import platform/[platform]
-import text/language/language_server_base, language_server_dynamic
+import text/language/language_server_base
 import document, document_editor, input_handler/input_handler, vmath, bumpy, text_document
 import selector_popup/builder, dispatch_tables, register
 import config_provider, service, layout/layout, platform_service, vfs, vfs_service, command_service, toast
@@ -458,8 +458,8 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, w
 proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string)
 proc setDefaultMode*(self: TextDocumentEditor, forceNotify: bool = false)
 
-proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServerDynamic)
-proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServerDynamic)
+proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
+proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]])
 proc handleTextDocumentTextChanged(self: TextDocumentEditor)
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument)
@@ -669,11 +669,11 @@ proc textEditorSetDocument(self: DocumentEditor, document: Document) {.gcsafe, r
     self.handleTextDocumentSaved()
 
   self.languageServerAttachedHandle = document.onLanguageServerAttached.subscribe (
-      arg: tuple[document: TextDocument, languageServer: LanguageServerDynamic]) =>
+      arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
     self.handleLanguageServerAttached(arg.document, arg.languageServer)
 
   self.onDiagnosticsHandle = document.onDiagnostics.subscribe (
-      arg: tuple[document: TextDocument, languageServer: LanguageServerDynamic]) =>
+      arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
     self.handleDiagnosticsChanged(arg.document, arg.languageServer)
 
   self.completionEngine = CompletionEngine()
@@ -3442,7 +3442,7 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
 type
   LspWorkspaceSymbolsDataSource* = ref object of DataSource
     workspace: Workspace
-    languageServer: LanguageServerDynamic
+    languageServer: LanguageServer
     query: string
     delayedTask: DelayedTask
     filename: string
@@ -3502,7 +3502,7 @@ proc lspWorkspaceSymbolsDataSourceSetQuery(self: DataSource, query: string) =
     if self.languageServer.refetchWorkspaceSymbolsOnQueryChange:
       self.delayedTask.reschedule()
 
-proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServerDynamic, workspace: Workspace, filename: string): LspWorkspaceSymbolsDataSource =
+proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer, workspace: Workspace, filename: string): LspWorkspaceSymbolsDataSource =
 
   new result
   result.languageServer = languageServer
@@ -4010,7 +4010,7 @@ proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
 
   self.markDirty()
 
-proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor, languageServer: LanguageServerDynamic): seq[lsp_types.Diagnostic] =
+proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor, languageServer: LanguageServer): seq[lsp_types.Diagnostic] =
   let codeActions = self.codeActions.mgetOrPut(languageServer.name).addr
   let visibleRange = self.visibleTextRange(0)
   for diagnosticsData in self.document.diagnosticsPerLS.mitems:
@@ -4065,7 +4065,7 @@ proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeA
         if res.isError:
           log lvlError, &"Failed to execute lsp command '{command.command}, {command.arguments}': {res.error}"
 
-proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServerDynamic, selection: Selection, versionId: BufferVersionId,
+proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection, versionId: BufferVersionId,
     diagnosticsVersion: int, addSign: bool): Future[void] {.async.} =
   # todo: correctly convert selection coordinate (line, bytes) to lsp (line, rune?)
   let codeActions = self.codeActions.mgetOrPut(ls.name).addr
@@ -4151,7 +4151,7 @@ proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
 proc selectCodeAction(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncSpawn self.selectCodeActionAsync()
 
-proc updateCodeActionsAsync*(self: TextDocumentEditor, languageServer: Option[LanguageServerDynamic]): Future[void] {.async.} =
+proc updateCodeActionsAsync*(self: TextDocumentEditor, languageServer: Option[LanguageServer]): Future[void] {.async.} =
   if self.document.isNil:
     return
 
@@ -4187,7 +4187,7 @@ proc updateInlayHints*(self: TextDocumentEditor) {.expose("editor.text").} =
 proc updateCodeActions*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.codeActionsTask.isNil:
     self.codeActionsTask = startDelayed(200, repeat=false):
-      asyncSpawn self.updateCodeActionsAsync(LanguageServerDynamic.none)
+      asyncSpawn self.updateCodeActionsAsync(LanguageServer.none)
   else:
     self.codeActionsTask.reschedule()
 
@@ -4541,7 +4541,7 @@ proc handleFocusChanged*(self: TextDocumentEditor, focused: bool) =
       self.blinkCursorTask.reschedule()
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument,
-    languageServer: LanguageServerDynamic) =
+    languageServer: LanguageServer) =
   # log lvlInfo, fmt"[handleLanguageServerAttached] '{self.document.filename}'"
   if languageServer.capabilities.completionProvider.isSome:
     self.completionEngine.addProvider newCompletionProviderLsp(document, languageServer)
@@ -4550,7 +4550,7 @@ proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocume
 
   self.inlayHints.updateInlayHints()
 
-proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServerDynamic) =
+proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer) =
   if document != self.document:
     return
 

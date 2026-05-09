@@ -16,9 +16,9 @@ const currentSourcePath2 = currentSourcePath()
 include module_base
 
 when defined(appLspUeAs):
-  import language_server_dynamic
+  import text/language/language_server_base
 
-  proc getLanguageServerUEAs*(): LanguageServerDynamic {.rtl, gcsafe, raises: [].}
+  proc getLanguageServerUEAs*(): LanguageServer {.rtl, gcsafe, raises: [].}
 
 else:
   static:
@@ -38,25 +38,25 @@ when implModule and defined(appLspUeAs):
   logCategory "language-server-ue-as"
 
   type
-    LanguageServerUEAs* = ref object of LanguageServerDynamic
+    LanguageServerUEAs* = ref object of LanguageServer
       services: Services
       config: ConfigStore
       documents: DocumentEditorService
       eventBus: EventService
       angelLsDiagnosticsHandle: Id
-      clangd: LanguageServerDynamic
-      angelLs: LanguageServerDynamic
+      clangd: LanguageServer
+      angelLs: LanguageServer
       regexLs: LanguageServerRegex
       vfs*: Arc[VFS2]
       workspace*: Workspace
 
-  proc getClangd(self: LanguageServerDynamic): Future[Option[LanguageServerDynamic]] {.async.} =
+  proc getClangd(self: LanguageServer): Future[Option[LanguageServer]] {.async.} =
     let self = self.LanguageServerUEAs
     result = await getOrCreateLanguageServerLSP("clangd")
     if result.isSome and result.get != self.clangd:
       self.clangd = result.get
 
-  proc getAngelLs(self: LanguageServerDynamic): Future[Option[LanguageServerDynamic]] {.async.} =
+  proc getAngelLs(self: LanguageServer): Future[Option[LanguageServer]] {.async.} =
     let self = self.LanguageServerUEAs
     result = await getOrCreateLanguageServerLSP("angel-lsp")
     if result.isSome and result.get != self.angelLs:
@@ -74,7 +74,7 @@ when implModule and defined(appLspUeAs):
         return true
     return false
 
-  proc getDefinitionCpp*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc getDefinitionCpp*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerUEAs
     let clangd = (await self.getClangd()).getOr: return @[]
 
@@ -107,7 +107,7 @@ when implModule and defined(appLspUeAs):
           res.add Definition(filename: sym.path)
     return res
 
-  proc getDefinitionCppRegex*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc getDefinitionCppRegex*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     ## Searches C++ header files in the workspace for declarations matching the
     ## word under the cursor. Uses different regexes depending on the kind of
     ## symbol: function, type/class, or field/variable.
@@ -157,7 +157,7 @@ when implModule and defined(appLspUeAs):
       res.add Definition(filename: "local://" // info.path, location: (info.line - 1, info.column - 1))
     return res
 
-  proc ueGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc ueGetDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let angelLs = await self.getAngelLs()
     if angelLs.isSome:
       let angelDef = await angelLs.get.getDefinition(filename, location)
@@ -170,48 +170,48 @@ when implModule and defined(appLspUeAs):
     # await allFutures(cppFut, regexFut)
     # return cppFut.read.catch(@[]) & regexFut.read.catch(@[])
 
-  proc ueGetDeclaration*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc ueGetDeclaration*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return @[]
     return await angelLs.getDeclaration(filename, location)
 
-  proc ueGetImplementation*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc ueGetImplementation*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return @[]
     return await angelLs.getImplementation(filename, location)
 
-  proc ueGetTypeDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc ueGetTypeDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return @[]
     return await angelLs.getTypeDefinition(filename, location)
 
-  proc ueGetReferences*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc ueGetReferences*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return @[]
     return await angelLs.getReferences(filename, location)
 
-  proc ueSwitchSourceHeader*(self: LanguageServerDynamic, filename: string): Future[Option[string]] {.async.} =
+  proc ueSwitchSourceHeader*(self: LanguageServer, filename: string): Future[Option[string]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return string.none
     return await angelLs.switchSourceHeader(filename)
 
-  proc ueGetCompletions*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
+  proc ueGetCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return Response[lsp_types.CompletionList].default
     return await angelLs.getCompletions(filename, location)
 
-  proc ueGetSymbols*(self: LanguageServerDynamic, filename: string): Future[seq[Symbol]] {.async.} =
+  proc ueGetSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return @[]
     return await angelLs.getSymbols(filename)
 
-  proc getWorkspaceSymbolsClangd*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[Symbol]] {.async.} =
+  proc getWorkspaceSymbolsClangd*(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.async.} =
     let clangd = (await self.getClangd()).getOr: return @[]
     return await clangd.getWorkspaceSymbols(filename, query)
 
-  proc getWorkspaceSymbolsAngelscript*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[Symbol]] {.async.} =
+  proc getWorkspaceSymbolsAngelscript*(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return @[]
     return await angelLs.getWorkspaceSymbols(filename, query)
 
-  proc ueGetWorkspaceSymbols*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[Symbol]] {.async.} =
+  proc ueGetWorkspaceSymbols*(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.async.} =
     let clangdSymbols = self.getWorkspaceSymbolsClangd(filename, query)
     let angelscriptSymbols = self.getWorkspaceSymbolsAngelscript(filename, query)
     return angelscriptSymbols.await & clangdSymbols.await
 
-  proc getWorkspaceSymbolsRawClangd*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.async.} =
+  proc getWorkspaceSymbolsRawClangd*(self: LanguageServer, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.async.} =
     let clangd = (await self.getClangd()).getOr: return @[]
     let res = await clangd.getWorkspaceSymbolsRaw(filename, query)
     result = newSeqOfCap[WorkspaceSymbolRaw](res.len)
@@ -220,69 +220,69 @@ when implModule and defined(appLspUeAs):
         continue
       result.add r
 
-  proc getWorkspaceSymbolsRawAngelscript*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.async.} =
+  proc getWorkspaceSymbolsRawAngelscript*(self: LanguageServer, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return @[]
     result = await angelLs.getWorkspaceSymbolsRaw(filename, query)
 
-  proc ueGetWorkspaceSymbolsRaw*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.async.} =
+  proc ueGetWorkspaceSymbolsRaw*(self: LanguageServer, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.async.} =
     let clangdSymbolsFut = self.getWorkspaceSymbolsRawClangd(filename, query)
     let angelscriptSymbolsFut = self.getWorkspaceSymbolsRawAngelscript(filename, query)
     let clangdSymbols = await clangdSymbolsFut
     let angelscriptSymbols = await angelscriptSymbolsFut
     result = angelscriptSymbols & clangdSymbols
 
-  proc resolveWorkspaceSymbolClangd*(self: LanguageServerDynamic, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
+  proc resolveWorkspaceSymbolClangd*(self: LanguageServer, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
     let clangd = (await self.getClangd()).getOr: return Definition.none
     return await clangd.resolveWorkspaceSymbol(symbol)
 
-  proc resolveWorkspaceSymbolAngelscript*(self: LanguageServerDynamic, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
+  proc resolveWorkspaceSymbolAngelscript*(self: LanguageServer, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return Definition.none
     return await angelLs.resolveWorkspaceSymbol(symbol)
 
-  proc ueResolveWorkspaceSymbol*(self: LanguageServerDynamic, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
+  proc ueResolveWorkspaceSymbol*(self: LanguageServer, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
     if symbol.location.asUriObject().getSome(uri) and not uri.uri.endsWith(".as"):
       return await self.resolveWorkspaceSymbolClangd(symbol)
     return await self.resolveWorkspaceSymbolAngelscript(symbol)
 
-  proc ueGetHover*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Option[string]] {.async.} =
+  proc ueGetHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return string.none
     return await angelLs.getHover(filename, location)
 
-  proc ueGetSignatureHelp*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
+  proc ueGetSignatureHelp*(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return Response[seq[lsp_types.SignatureHelpResponse]].default
     return await angelLs.getSignatureHelp(filename, location)
 
-  proc ueGetInlayHints*(self: LanguageServerDynamic, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+  proc ueGetInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return Response[seq[language_server_base.InlayHint]].default
     return await angelLs.getInlayHints(filename, selection)
 
-  proc ueGetDiagnostics*(self: LanguageServerDynamic, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
+  proc ueGetDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return Response[seq[lsp_types.Diagnostic]].default
     return await angelLs.getDiagnostics(filename)
 
-  proc ueGetCompletionTriggerChars*(self: LanguageServerDynamic): set[char] =
+  proc ueGetCompletionTriggerChars*(self: LanguageServer): set[char] =
     return {'.', '>', ':'}
 
-  proc ueGetCodeActions*(self: LanguageServerDynamic, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.async.} =
+  proc ueGetCodeActions*(self: LanguageServer, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return Response[lsp_types.CodeActionResponse].default
     return await angelLs.getCodeActions(filename, selection, diagnostics)
 
-  proc ueRename*(self: LanguageServerDynamic, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.async.} =
+  proc ueRename*(self: LanguageServer, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return Response[seq[lsp_types.WorkspaceEdit]].default
     return await angelLs.rename(filename, position, newName)
 
-  proc ueExecuteCommand*(self: LanguageServerDynamic, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
+  proc ueExecuteCommand*(self: LanguageServer, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
     let angelLs = (await self.getAngelLs()).getOr: return errorResponse[JsonNode](0, "ue-as: no angelLs instance")
     return await angelLs.executeCommand(command, arguments)
 
-  proc ueConnect*(self: LanguageServerDynamic, document: Document) {.gcsafe, raises: [].} =
+  proc ueConnect*(self: LanguageServer, document: Document) {.gcsafe, raises: [].} =
     let self = self.LanguageServerUEAs
     proc doConnect() {.async.} =
       let angelLs = (await self.getAngelLs()).getOr: return
       angelLs.connect(document)
     asyncSpawn doConnect()
 
-  proc ueDisconnect*(self: LanguageServerDynamic, document: Document) {.gcsafe, raises: [].} =
+  proc ueDisconnect*(self: LanguageServer, document: Document) {.gcsafe, raises: [].} =
     let self = self.LanguageServerUEAs
     proc doDisconnect() {.async.} =
       let angelLs = (await self.getAngelLs()).getOr: return
@@ -325,7 +325,7 @@ when implModule and defined(appLspUeAs):
 
   var gls: LanguageServerUEAs = nil
 
-  proc getLanguageServerUEAs*(): LanguageServerDynamic {.gcsafe, raises: [].} =
+  proc getLanguageServerUEAs*(): LanguageServer {.gcsafe, raises: [].} =
     {.gcsafe.}:
       return gls
 

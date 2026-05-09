@@ -178,9 +178,9 @@ type
     onEdit*: Event[tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]]
     onOperation*: Event[tuple[document: TextDocument, op: buffer.Operation]]
     onBufferChanged*: Event[tuple[document: TextDocument]]
-    onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServerDynamic]]
-    onLanguageServerDetached*: Event[tuple[document: TextDocument, languageServer: LanguageServerDynamic]]
-    onDiagnostics*: Event[tuple[document: TextDocument, languageServer: LanguageServerDynamic]]
+    onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
+    onLanguageServerDetached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
+    onDiagnostics*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
     onLanguageChanged*: Event[tuple[document: TextDocument]]
 
     undoSelections*: Table[TransactionId, Selections]
@@ -198,7 +198,7 @@ type
     diagnosticsPerLS*: seq[DiagnosticsData] ## Diagnostics per language server
     languageServerDiagnosticsIndex*: Table[string, int] ## Diagnostics per language server
     diagnosticEndPoints*: seq[DiagnosticEndPoint]
-    onDiagnosticsHandles: Table[string, (LanguageServerDynamic, Id)]
+    onDiagnosticsHandles: Table[string, (LanguageServer, Id)]
     diagnosticSnapshots: seq[BufferSnapshot] # todo: reset at appropriate times
 
     checkpoints: Table[TransactionId, seq[string]]
@@ -211,7 +211,7 @@ type
     currentDisplayMap: DisplayMap
 
   DiagnosticsData* = object
-    languageServer*: LanguageServerDynamic
+    languageServer*: LanguageServer
     currentDiagnostics*: seq[Diagnostic]
     currentDiagnosticsAnchors: seq[Range[Anchor]]
     diagnosticsPerLine*: Table[int, seq[int]]
@@ -231,8 +231,8 @@ proc recordSnapshotForDiagnostics(self: TextDocument)
 proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
 proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.}
 proc enableAutoReload*(self: TextDocument, enabled: bool)
-proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageServerDynamic)
-proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageServerDynamic)
+proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageServer)
+proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageServer)
 proc addNextCheckpoint*(self: TextDocument, checkpoint: string)
 proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, content: sink S)
 proc textDocumentDeinit(self: Document)
@@ -800,7 +800,7 @@ proc newTextDocument*(
     content: string = "",
     app: bool = false,
     language: Option[string] = string.none,
-    languageServer: Option[LanguageServerDynamic] = LanguageServerDynamic.none,
+    languageServer: Option[LanguageServer] = LanguageServer.none,
     load: bool = false,
     createLanguageServer: bool = true,
     id = Id.none,
@@ -885,9 +885,9 @@ proc newTextDocument*(
 
   self.lsComponent = newLanguageServerComponent(self.languageServerList)
   discard self.lsComponent.onLanguageServerAttached.subscribe proc(arg: auto) {.gcsafe, raises: [].} =
-    self.handleLanguageServerAttached(arg[1].LanguageServerDynamic)
+    self.handleLanguageServerAttached(arg[1].LanguageServer)
   discard self.lsComponent.onLanguageServerDetached.subscribe proc(arg: auto) {.gcsafe, raises: [].} =
-    self.handleLanguageServerDetached(arg[1].LanguageServerDynamic)
+    self.handleLanguageServerDetached(arg[1].LanguageServer)
   self.addComponent(self.lsComponent)
 
   self.content = content
@@ -1260,7 +1260,7 @@ proc resolveDiagnosticAnchors*(self: TextDocument) =
     diagnostics.resolveDiagnosticAnchors(self.buffer.snapshot.clone())
   self.updateDiagnosticEndPoints()
 
-proc setCurrentDiagnostics(self: TextDocument, languageServer: LanguageServerDynamic, diagnostics: openArray[lsp_types.Diagnostic], snapshot: sink Option[BufferSnapshot]) =
+proc setCurrentDiagnostics(self: TextDocument, languageServer: LanguageServer, diagnostics: openArray[lsp_types.Diagnostic], snapshot: sink Option[BufferSnapshot]) =
 
   let snapshot = snapshot.take(self.buffer.snapshot.clone())
 
@@ -1334,7 +1334,7 @@ proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
   #   self.lastDiagnosticVersion = snapshot.version
   #   self.setCurrentDiagnostics(ls, diagnostics.result, snapshot.some)
 
-proc handleDiagnosticsReceived(self: TextDocument, languageServer: LanguageServerDynamic, diagnostics: lsp_types.PublicDiagnosticsParams) =
+proc handleDiagnosticsReceived(self: TextDocument, languageServer: LanguageServer, diagnostics: lsp_types.PublicDiagnosticsParams) =
   if not self.settings.diagnostics.enable.get():
     self.clearDiagnostics(languageServer.name)
     return
@@ -1368,13 +1368,13 @@ proc handleDiagnosticsReceived(self: TextDocument, languageServer: LanguageServe
 
   self.setCurrentDiagnostics(languageServer, diagnostics.diagnostics, snapshot)
 
-proc addLanguageServer*(self: TextDocument, languageServer: LanguageServerDynamic): bool =
+proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
   self.lsComponent.addLanguageServer(languageServer)
 
-proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServerDynamic): bool =
+proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
   self.lsComponent.removeLanguageServer(languageServer)
 
-proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageServerDynamic) =
+proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageServer) =
   languageServer.connect(self)
 
   # todo: only do that if language server supports sending diagnostics
@@ -1388,20 +1388,20 @@ proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageSe
     self.completionTriggerCharacters.incl ls.getCompletionTriggerChars()
   self.onLanguageServerAttached.invoke (self, languageServer)
 
-proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageServerDynamic) =
+proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageServer) =
   if languageServer.name in self.onDiagnosticsHandles:
     languageServer.onDiagnostics.unsubscribe(self.onDiagnosticsHandles[languageServer.name][1])
     self.onDiagnosticsHandles.del(languageServer.name)
 
   self.onLanguageServerDetached.invoke (self, languageServer)
 
-proc hasLanguageServer*(self: TextDocument, languageServer: LanguageServerDynamic): bool =
+proc hasLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
   self.languageServerList.languageServers.find(languageServer) != -1
 
-proc getLanguageServer*(self: TextDocument): Option[LanguageServerDynamic] =
+proc getLanguageServer*(self: TextDocument): Option[LanguageServer] =
   if self.languageServerList.languageServers.len > 0:
-    return self.languageServerList.LanguageServerDynamic.some
-  return LanguageServerDynamic.none
+    return self.languageServerList.LanguageServer.some
+  return LanguageServer.none
 
 proc clearDiagnostics*(self: TextDocument, languageServerName: string = "") =
   if languageServerName == "":

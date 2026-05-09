@@ -1,6 +1,6 @@
 import std/[options, json]
 import misc/[event, custom_async, response]
-import component, language_server_dynamic
+import component
 import text/language/[language_server_base, lsp_types]
 import language_server_list
 export component
@@ -10,16 +10,16 @@ const currentSourcePath2 = currentSourcePath()
 include module_base
 
 type LanguageServerComponent* = ref object of Component
-  onLanguageServerAttached*: Event[tuple[component: LanguageServerComponent, languageServer: LanguageServerDynamic]]
-  onLanguageServerDetached*: Event[tuple[component: LanguageServerComponent, languageServer: LanguageServerDynamic]]
-  languageServer*: LanguageServerDynamic
+  onLanguageServerAttached*: Event[tuple[component: LanguageServerComponent, languageServer: LanguageServer]]
+  onLanguageServerDetached*: Event[tuple[component: LanguageServerComponent, languageServer: LanguageServer]]
+  languageServer*: LanguageServer
 
 # DLL API
 
 proc newLanguageServerComponent*(languageServer: LanguageServerList): LanguageServerComponent {.modrtl, gcsafe, raises: [].}
-proc languageServerComponentAddLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool {.modrtl, gcsafe, raises: [].}
-proc languageServerComponentRemoveLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool {.modrtl, gcsafe, raises: [].}
-proc languageServerComponentHasLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool {.modrtl, gcsafe, raises: [].}
+proc languageServerComponentAddLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool {.modrtl, gcsafe, raises: [].}
+proc languageServerComponentRemoveLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool {.modrtl, gcsafe, raises: [].}
+proc languageServerComponentHasLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool {.modrtl, gcsafe, raises: [].}
 proc getLanguageServerComponent*(self: ComponentOwner): Option[LanguageServerComponent] {.modrtl, gcsafe, raises: [].}
 
 proc languageServerComponentGetDefinition(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.modrtl, async: (raises: []), gcsafe.}
@@ -41,10 +41,10 @@ proc languageServerComponentRename(self: LanguageServerComponent, filename: stri
 proc languageServerComponentExecuteCommand(self: LanguageServerComponent, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.modrtl, async: (raises: []), gcsafe.}
 
 # Nice wrappers
-proc addLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool = languageServerComponentAddLanguageServer(self, languageServer)
-proc removeLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool = languageServerComponentRemoveLanguageServer(self, languageServer)
+proc addLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool = languageServerComponentAddLanguageServer(self, languageServer)
+proc removeLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool = languageServerComponentRemoveLanguageServer(self, languageServer)
 
-proc hasLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool = languageServerComponentHasLanguageServer(self, languageServer)
+proc hasLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool = languageServerComponentHasLanguageServer(self, languageServer)
 
 
 proc getDefinition*(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.async: (raises: []).} =
@@ -94,21 +94,21 @@ when implModule:
   type LanguageServerComponentImpl* = ref object of LanguageServerComponent
     languageServerList*: LanguageServerList
 
-  proc languageServerComponentAddLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool =
+  proc languageServerComponentAddLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool =
     let self = self.LanguageServerComponentImpl
     if not self.languageServerList.addLanguageServer(languageServer):
       return false
     self.onLanguageServerAttached.invoke (self.LanguageServerComponent, languageServer)
     return true
 
-  proc languageServerComponentRemoveLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool =
+  proc languageServerComponentRemoveLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool =
     let self = self.LanguageServerComponentImpl
     if not self.languageServerList.removeLanguageServer(languageServer):
       return false
     self.onLanguageServerDetached.invoke (self.LanguageServerComponent, languageServer)
     return true
 
-  proc languageServerComponentHasLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServerDynamic): bool =
+  proc languageServerComponentHasLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool =
     let self = self.LanguageServerComponentImpl
     return self.languageServerList.languageServers.find(languageServer) != -1
 

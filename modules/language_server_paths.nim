@@ -3,7 +3,7 @@ import std/[options, tables, strutils, os, strformat]
 import misc/[custom_logger, custom_async, util, response, rope_utils, event, regex, rope_regex, myjsonutils]
 import text/language/[language_server_base, lsp_types]
 import nimsumtree/[arc, rope]
-import service, event_service, language_server_dynamic, document_editor, config_provider, vfs, vfs_service
+import service, event_service, document_editor, config_provider, vfs, vfs_service
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
 const currentSourcePath2 = currentSourcePath()
@@ -18,7 +18,7 @@ when implModule:
   const numberRegex = """(\d+)"""
 
   type
-    LanguageServerPaths* = ref object of LanguageServerDynamic
+    LanguageServerPaths* = ref object of LanguageServer
       services: Services
       config: ConfigStore
       documents: DocumentEditorService
@@ -28,7 +28,7 @@ when implModule:
       commandHistory*: seq[string]
       pathRegex: Regex
 
-  proc pathsGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc pathsGetDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerPaths
     # log lvlDebug, &"getDefinition '{filename}', {location}"
     var definitions = newSeq[Definition]()
@@ -86,11 +86,11 @@ when implModule:
 
     return definitions
 
-  proc pathsGetCompletionTriggerChars*(self: LanguageServerDynamic): set[char] {.gcsafe, raises: [].} = {'a'..'z', 'A'..'Z', '0'..'9', '/', '\\', ':', '-', '_', '.'}
+  proc pathsGetCompletionTriggerChars*(self: LanguageServer): set[char] {.gcsafe, raises: [].} = {'a'..'z', 'A'..'Z', '0'..'9', '/', '\\', ':', '-', '_', '.'}
 
-  proc pathsGetCompletions*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
+  proc pathsGetCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
     let self = self.LanguageServerPaths
-    # log lvlDebug, &"LanguageServerDynamic.getCompletions '{filename}', {location}"
+    # log lvlDebug, &"LanguageServer.getCompletions '{filename}', {location}"
 
     var completions = newSeq[CompletionItem]()
 

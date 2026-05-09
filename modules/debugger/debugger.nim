@@ -20,7 +20,7 @@ when implModule:
   import text/[treesitter_type_conv]
   import platform/platform
   import finder/[previewer, finder]
-  import workspaces/workspace, vfs, vfs_service, language_server_dynamic
+  import workspaces/workspace, vfs, vfs_service
   import ui/node
   import nimsumtree/[rope, buffer]
   import text_component, text_editor_component, language_server_component, decoration_component, inlay_hint_component, treesitter_component
@@ -2327,7 +2327,7 @@ when implModule:
 
     return result
 
-  proc debuggerGetInlayHints*(self: LanguageServerDynamic, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+  proc debuggerGetInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
     let self = self.LanguageServerDebugger
     result = newSeq[language_server_base.InlayHint]().success
 

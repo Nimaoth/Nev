@@ -1,6 +1,7 @@
 import std/[options, json]
-import misc/[custom_async, custom_logger, event]
+import misc/[custom_async, custom_logger, event, response, myjsonutils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
+import document
 
 from lsp_types as lsp_types import CompletionItem, WorkspaceEdit, ServerCapabilities
 export ServerCapabilities
@@ -12,135 +13,268 @@ logCategory "language-server-base"
 {.push gcsafe.}
 {.push raises: [].}
 
-type LanguageServer* = ref object of RootObj
-  name*: string
-  priority*: int
-  onMessage*: Event[tuple[verbosity: lsp_types.MessageType, message: string]]
-  onDiagnostics*: Event[lsp_types.PublicDiagnosticsParams]
-  capabilities*: ServerCapabilities
-  refetchWorkspaceSymbolsOnQueryChange*: bool = false
+type
+  LanguageServer* = ref object of RootObj
+    name*: string
+    priority*: int
+    onMessage*: Event[tuple[verbosity: lsp_types.MessageType, message: string]]
+    onDiagnostics*: Event[lsp_types.PublicDiagnosticsParams]
+    capabilities*: ServerCapabilities
+    refetchWorkspaceSymbolsOnQueryChange*: bool = false
 
-type SymbolType* {.pure.} = enum
-  Unknown = 0
-  File = 1
-  Module = 2
-  Namespace = 3
-  Package = 4
-  Class = 5
-  Method = 6
-  Property = 7
-  Field = 8
-  Constructor = 9
-  Enum = 10
-  Interface = 11
-  Function = 12
-  Variable = 13
-  Constant = 14
-  String = 15
-  Number = 16
-  Boolean = 17
-  Array = 18
-  Object = 19
-  Key = 20
-  Null = 21
-  EnumMember = 22
-  Struct = 23
-  Event = 24
-  Operator = 25
-  TypeParameter = 26
+    startImpl*: proc(self: LanguageServer) {.gcsafe, async: (raises: []).}
+    stopImpl*: proc(self: LanguageServer) {.gcsafe, raises: [].}
+    connectImpl*: proc(self: LanguageServer, document: Document) {.gcsafe, raises: [].}
+    disconnectImpl*: proc(self: LanguageServer, document: Document) {.gcsafe, raises: [].}
+    getDefinitionImpl*: proc(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.gcsafe, raises: [].}
+    getDeclarationImpl*: proc(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.gcsafe, raises: [].}
+    getImplementationImpl*: proc(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.gcsafe, raises: [].}
+    getTypeDefinitionImpl*: proc(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.gcsafe, raises: [].}
+    getReferencesImpl*: proc(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.gcsafe, raises: [].}
+    switchSourceHeaderImpl*: proc(self: LanguageServer, filename: string): Future[Option[string]] {.gcsafe, raises: [].}
+    getCompletionsImpl*: proc(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.gcsafe, raises: [].}
+    getSymbolsImpl*: proc(self: LanguageServer, filename: string): Future[seq[Symbol]] {.gcsafe, raises: [].}
+    getWorkspaceSymbolsImpl*: proc(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.gcsafe, raises: [].}
+    getWorkspaceSymbolsRawImpl*: proc(self: LanguageServer, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.gcsafe, raises: [].}
+    resolveWorkspaceSymbolImpl*: proc(self: LanguageServer, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.gcsafe, raises: [].}
+    getHoverImpl*: proc(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.gcsafe, raises: [].}
+    getSignatureHelpImpl*: proc(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.gcsafe, raises: [].}
+    getInlayHintsImpl*: proc(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[InlayHint]]] {.gcsafe, raises: [].}
+    getDiagnosticsImpl*: proc(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.gcsafe, raises: [].}
+    getCompletionTriggerCharsImpl*: proc(self: LanguageServer): set[char] {.gcsafe, raises: [].}
+    getCodeActionsImpl*: proc(self: LanguageServer, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.gcsafe, raises: [].}
+    renameImpl*: proc(self: LanguageServer, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.gcsafe, raises: [].}
+    executeCommandImpl*: proc(self: LanguageServer, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.gcsafe, raises: [].}
 
-type InlayHintKind* = enum Type, Parameter
+  SymbolType* {.pure.} = enum
+    Unknown = 0
+    File = 1
+    Module = 2
+    Namespace = 3
+    Package = 4
+    Class = 5
+    Method = 6
+    Property = 7
+    Field = 8
+    Constructor = 9
+    Enum = 10
+    Interface = 11
+    Function = 12
+    Variable = 13
+    Constant = 14
+    String = 15
+    Number = 16
+    Boolean = 17
+    Array = 18
+    Object = 19
+    Key = 20
+    Null = 21
+    EnumMember = 22
+    Struct = 23
+    Event = 24
+    Operator = 25
+    TypeParameter = 26
 
-type TextEdit* = object
-  selection*: Selection
-  newText*: string
+  InlayHintKind* = enum Type, Parameter
 
-type Definition* = object
-  location*: Cursor
-  filename*: string
+  TextEdit* = object
+    selection*: Selection
+    newText*: string
 
-type Symbol* = object
-  location*: Cursor
-  name*: string
-  symbolType*: SymbolType
-  filename*: string
-  score*: Option[float]
+  Definition* = object
+    location*: Cursor
+    filename*: string
 
-type WorkspaceSymbolRaw* = object
-  symbol*: lsp_types.WorkspaceSymbol
-  path*: string
-  location*: Option[Cursor]
+  Symbol* = object
+    location*: Cursor
+    name*: string
+    symbolType*: SymbolType
+    filename*: string
+    score*: Option[float]
 
-type InlayHint* = object
-  location*: Cursor
-  label*: string # | InlayHintLabelPart[] # todo
-  kind*: Option[InlayHintKind]
-  textEdits*: seq[TextEdit]
-  tooltip*: Option[string] # | MarkupContent # todo
-  paddingLeft*: bool
-  paddingRight*: bool
-  data*: Option[JsonNode]
+  WorkspaceSymbolRaw* = object
+    symbol*: lsp_types.WorkspaceSymbol
+    path*: string
+    location*: Option[Cursor]
 
-type Diagnostic* = object
-  selection*: Selection
-  severity*: Option[lsp_types.DiagnosticSeverity]
-  code*: Option[JsonNode]
-  codeDescription*: Option[lsp_types.CodeDescription]
-  source*: Option[string]
-  message*: string
-  tags*: Option[seq[lsp_types.DiagnosticTag]]
-  relatedInformation*: Option[seq[lsp_types.DiagnosticRelatedInformation]]
-  data*: Option[JsonNode]
-  removed*: bool = false
-  codeActionRequested*: bool = false
+  InlayHint* = object
+    location*: Cursor
+    label*: string # | InlayHintLabelPart[] # todo
+    kind*: Option[InlayHintKind]
+    textEdits*: seq[TextEdit]
+    tooltip*: Option[string] # | MarkupContent # todo
+    paddingLeft*: bool
+    paddingRight*: bool
+    data*: Option[JsonNode]
+
+  Diagnostic* = object
+    selection*: Selection
+    severity*: Option[lsp_types.DiagnosticSeverity]
+    code*: Option[JsonNode]
+    codeDescription*: Option[lsp_types.CodeDescription]
+    source*: Option[string]
+    message*: string
+    tags*: Option[seq[lsp_types.DiagnosticTag]]
+    relatedInformation*: Option[seq[lsp_types.DiagnosticRelatedInformation]]
+    data*: Option[JsonNode]
+    removed*: bool = false
+    codeActionRequested*: bool = false
 
 proc toLspPosition*(cursor: Cursor): lsp_types.Position = lsp_types.Position(line: cursor.line, character: cursor.column)
 proc toLspRange*(selection: Selection): lsp_types.Range = lsp_types.Range(start: selection.first.toLspPosition, `end`: selection.last.toLspPosition)
 proc toCursor*(position: lsp_types.Position): Cursor = (position.line, position.character)
 proc toSelection*(`range`: lsp_types.Range): Selection = (`range`.start.toCursor, `range`.`end`.toCursor)
 
-when implModule:
-  import misc/[response]
-  import document, service
-  import workspaces/workspace
-  import config_provider
+proc start*(self: LanguageServer) {.gcsafe, async: (raises: []).} =
+  if self.startImpl != nil:
+    await self.startImpl(self)
 
-  type
-    LanguageServerService* = ref object of Service
-      config: ConfigStore
+proc stop*(self: LanguageServer) {.gcsafe, raises: [].} =
+  if self.stopImpl != nil:
+    self.stopImpl(self)
 
-  func serviceName*(_: typedesc[LanguageServerService]): string = "LanguageServerService"
+proc connect*(self: LanguageServer, document: Document) {.gcsafe, raises: [].} =
+  if self.connectImpl != nil:
+    self.connectImpl(self, document)
 
-  addBuiltinService(LanguageServerService, ConfigService)
+proc disconnect*(self: LanguageServer, document: Document) {.gcsafe, raises: [].} =
+  if self.disconnectImpl != nil:
+    self.disconnectImpl(self, document)
 
-  method init*(self: LanguageServerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-    log lvlInfo, &"LanguageServerService.init"
-    self.config = self.services.getService(ConfigService).get.runtime
-    return ok()
+proc getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.gcsafe, raises: [].} =
+  if self.getDefinitionImpl != nil:
+    return self.getDefinitionImpl(self, filename, location)
+  else:
+    return seq[Definition].default.toFuture
 
-  var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = Workspace.none): Future[Option[LanguageServer]] {.gcsafe, raises: [].} = nil
+proc getDeclaration*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.gcsafe, raises: [].} =
+  if self.getDeclarationImpl != nil:
+    return self.getDeclarationImpl(self, filename, location)
+  else:
+    return seq[Definition].default.toFuture
 
-  method start*(self: LanguageServer): Future[void] {.base, gcsafe, raises: [].} = doneFuture()
-  method stop*(self: LanguageServer) {.base, gcsafe, raises: [].} = discard
-  method deinit*(self: LanguageServer) {.base, gcsafe, raises: [].} = discard
-  method connect*(self: LanguageServer, document: Document) {.base, gcsafe, raises: [].} = discard
-  method disconnect*(self: LanguageServer, document: Document) {.base, gcsafe, raises: [].} = discard
-  method getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = newSeq[Definition]().toFuture
-  method getDeclaration*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = newSeq[Definition]().toFuture
-  method getImplementation*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = newSeq[Definition]().toFuture
-  method getTypeDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = newSeq[Definition]().toFuture
-  method getReferences*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = newSeq[Definition]().toFuture
-  method switchSourceHeader*(self: LanguageServer, filename: string): Future[Option[string]] {.base, gcsafe, raises: [].} = Option[string].default.toFuture
-  method getCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.base, gcsafe, raises: [].} = Response[lsp_types.CompletionList].default.toFuture
-  method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = seq[Symbol].default.toFuture
-  method getWorkspaceSymbols*(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = seq[Symbol].default.toFuture
-  method getWorkspaceSymbolsRaw*(self: LanguageServer, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.base, gcsafe, raises: [].} = seq[WorkspaceSymbolRaw].default.toFuture
-  method resolveWorkspaceSymbol*(self: LanguageServer, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.base, gcsafe, raises: [].} = Option[Definition].default.toFuture
-  method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base, gcsafe, raises: [].} = Option[string].default.toFuture
-  method getSignatureHelp*(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.base, gcsafe, raises: [].} = Response[seq[lsp_types.SignatureHelpResponse]].default.toFuture
-  method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.base, gcsafe, raises: [].} = seq[language_server_base.InlayHint].default.success.toFuture
-  method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.base, gcsafe, raises: [].} = seq[lsp_types.Diagnostic].default.success.toFuture
-  method getCompletionTriggerChars*(self: LanguageServer): set[char] {.base, gcsafe, raises: [].} = {}
-  method getCodeActions*(self: LanguageServer, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.base, gcsafe, raises: [].} = lsp_types.CodeActionResponse.default.success.toFuture
-  method rename*(self: LanguageServer, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.base, gcsafe, raises: [].} = newSeq[lsp_types.WorkspaceEdit]().success.toFuture
-  method executeCommand*(self: LanguageServer, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.base, gcsafe, raises: [].} = errorResponse[JsonNode](0, "Command not found: " & command).toFuture
+proc getImplementation*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.gcsafe, raises: [].} =
+  if self.getImplementationImpl != nil:
+    return self.getImplementationImpl(self, filename, location)
+  else:
+    return seq[Definition].default.toFuture
+
+proc getTypeDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.gcsafe, raises: [].} =
+  if self.getTypeDefinitionImpl != nil:
+    return self.getTypeDefinitionImpl(self, filename, location)
+  else:
+    return seq[Definition].default.toFuture
+
+proc getReferences*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.gcsafe, raises: [].} =
+  if self.getReferencesImpl != nil:
+    return self.getReferencesImpl(self, filename, location)
+  else:
+    return seq[Definition].default.toFuture
+
+proc switchSourceHeader*(self: LanguageServer, filename: string): Future[Option[string]] {.gcsafe, raises: [].} =
+  if self.switchSourceHeaderImpl != nil:
+    return self.switchSourceHeaderImpl(self, filename)
+  else:
+    return Option[string].default.toFuture
+
+proc getCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.gcsafe, raises: [].} =
+  if self.getCompletionsImpl != nil:
+    return self.getCompletionsImpl(self, filename, location)
+  else:
+    return Response[lsp_types.CompletionList].default.toFuture
+
+proc getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.gcsafe, raises: [].} =
+  if self.getSymbolsImpl != nil:
+    return self.getSymbolsImpl(self, filename)
+  else:
+    return seq[Symbol].default.toFuture
+
+proc getWorkspaceSymbols*(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.gcsafe, raises: [].} =
+  if self.getWorkspaceSymbolsImpl != nil:
+    return self.getWorkspaceSymbolsImpl(self, filename, query)
+  else:
+    return seq[Symbol].default.toFuture
+
+proc getWorkspaceSymbolsRaw*(self: LanguageServer, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.gcsafe, async: (raises: []).} =
+  try:
+    if self.getWorkspaceSymbolsRawImpl != nil:
+      return await self.getWorkspaceSymbolsRawImpl(self, filename, query)
+    elif self.getWorkspaceSymbolsImpl != nil:
+      proc toLspSymbolKind(symbolKind: SymbolType): lsp_types.SymbolKind =
+        try:
+          return lsp_types.SymbolKind(symbolKind.ord)
+        except:
+          return lsp_types.SymbolKind.Class
+
+      let res = await self.getWorkspaceSymbolsImpl(self, filename, query)
+      var resRaw = newSeq[WorkspaceSymbolRaw](res.len)
+      for i, r in res:
+        let pos = lsp_types.Position(line: r.location.line, character: r.location.column)
+        resRaw[i] = WorkspaceSymbolRaw(
+          symbol: lsp_types.WorkspaceSymbol(
+            name: r.name,
+            kind: r.symbolType.toLspSymbolKind,
+            location: lsp_types.WorkspaceLocationVariant(node: lsp_types.Location(uri: r.filename, `range`: lsp_types.Range(start: pos, `end`: pos)).toJson),
+          ),
+          path: r.filename,
+          location: r.location.some,
+        )
+      return resRaw
+    else:
+      return newSeq[WorkspaceSymbolRaw]()
+  except CatchableError:
+    return newSeq[WorkspaceSymbolRaw]()
+
+proc resolveWorkspaceSymbol*(self: LanguageServer, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.gcsafe, raises: [].} =
+  if self.resolveWorkspaceSymbolImpl != nil:
+    return self.resolveWorkspaceSymbolImpl(self, symbol)
+  else:
+    return Option[Definition].default.toFuture
+
+proc getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.gcsafe, raises: [].} =
+  if self.getHoverImpl != nil:
+    return self.getHoverImpl(self, filename, location)
+  else:
+    return Option[string].default.toFuture
+
+proc getSignatureHelp*(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.gcsafe, raises: [].} =
+  if self.getSignatureHelpImpl != nil:
+    return self.getSignatureHelpImpl(self, filename, location)
+  else:
+    return Response[seq[lsp_types.SignatureHelpResponse]].default.toFuture
+
+proc getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[InlayHint]]] {.gcsafe, raises: [].} =
+  if self.getInlayHintsImpl != nil:
+    return self.getInlayHintsImpl(self, filename, selection)
+  else:
+    return Response[seq[InlayHint]].default.toFuture
+
+proc getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.gcsafe, raises: [].} =
+  if self.getDiagnosticsImpl != nil:
+    return self.getDiagnosticsImpl(self, filename)
+  else:
+    return Response[seq[lsp_types.Diagnostic]].default.toFuture
+
+proc getCompletionTriggerChars*(self: LanguageServer): set[char] {.gcsafe, raises: [].} =
+  if self.getCompletionTriggerCharsImpl != nil:
+    return self.getCompletionTriggerCharsImpl(self)
+  else:
+    return set[char].default
+
+proc getCodeActions*(self: LanguageServer, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.gcsafe, raises: [].} =
+  if self.getCodeActionsImpl != nil:
+    return self.getCodeActionsImpl(self, filename, selection, diagnostics)
+  else:
+    return Response[lsp_types.CodeActionResponse].default.toFuture
+
+proc rename*(self: LanguageServer, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.gcsafe, raises: [].} =
+  if self.renameImpl != nil:
+    return self.renameImpl(self, filename, position, newName)
+  else:
+    return Response[seq[lsp_types.WorkspaceEdit]].default.toFuture
+
+proc executeCommand*(self: LanguageServer, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.gcsafe, raises: [].} =
+  if self.executeCommandImpl != nil:
+    return self.executeCommandImpl(self, command, arguments)
+  else:
+    return Response[JsonNode].default.toFuture

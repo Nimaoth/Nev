@@ -240,7 +240,6 @@ when enableGui:
 {.push warning[UnusedImport]:off.}
 import service
 import document_editor, input_handler/input_handler, vfs_service, toast
-import language_server_dynamic
 import scripting/expose
 import config_provider
 import vcs/vcs_api

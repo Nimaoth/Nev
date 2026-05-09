@@ -2,7 +2,7 @@
 import std/[strformat, strutils, os, sets, tables, options, json, sequtils, uri]
 import misc/[id, custom_logger, util, custom_async, async_process, event, response, rope_utils, array_view, jsonex, myjsonutils]
 import text/language/[language_server_base, lsp_types]
-import language_server_dynamic
+import text/language/language_server_base
 
 # import std/[typedthreads]
 # import misc/[custom_unicode, id, jsonex]
@@ -10,7 +10,7 @@ import language_server_dynamic
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-proc getOrCreateLanguageServerLSP*(name: string): Future[Option[LanguageServerDynamic]] {.rtl, gcsafe, async: (raises: []).}
+proc getOrCreateLanguageServerLSP*(name: string): Future[Option[LanguageServer]] {.rtl, gcsafe, async: (raises: []).}
 
 when implModule:
   import language_server_component, text_component, treesitter_component, language_component
@@ -27,7 +27,7 @@ when implModule:
   logCategory "language-server-lsp"
 
   type
-    LanguageServerLSP* = ref object of LanguageServerDynamic
+    LanguageServerLSP* = ref object of LanguageServer
       client: LSPClient
       initializedFuture: Future[bool]
 
@@ -231,7 +231,7 @@ when implModule:
 
     log lvlInfo, &"[{self.name}] handleDiagnostics: client gone"
 
-  proc lspStop*(self: LanguageServerDynamic) {.gcsafe, raises: [].} =
+  proc lspStop*(self: LanguageServer) {.gcsafe, raises: [].} =
     let self = self.LanguageServerLSP
     log lvlInfo, fmt"[{self.name}] Stopping language server for '{self.name}'"
     asyncSpawn self.client.stop()
@@ -241,7 +241,7 @@ when implModule:
     let localPath = lspPath.decodeUrl.parseUri.path.normalizePathUnix
     return self.localVfs.normalize(localPath)
 
-  proc lspGetCompletionTriggerChars*(self: LanguageServerDynamic): set[char] =
+  proc lspGetCompletionTriggerChars*(self: LanguageServer): set[char] =
     let self = self.LanguageServerLSP
     if self.serverCapabilities.completionProvider.getSome(opts):
       for s in opts.triggerCharacters:
@@ -281,7 +281,7 @@ when implModule:
         newSeq[Definition]()
 
   # todo: change return type to Response[seq[Definition]]
-  proc lspGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc lspGetDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerLSP
     if self.serverCapabilities.definitionProvider.isNone:
       return @[]
@@ -302,7 +302,7 @@ when implModule:
     return res
 
   # todo: change return type to Response[seq[Definition]]
-  proc lspGetDeclaration*(self: LanguageServerDynamic, filename: string, location: Cursor):
+  proc lspGetDeclaration*(self: LanguageServer, filename: string, location: Cursor):
       Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerLSP
 
@@ -325,7 +325,7 @@ when implModule:
     return res
 
   # todo: change return type to Response[seq[Definition]]
-  proc lspGetTypeDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor):
+  proc lspGetTypeDefinition*(self: LanguageServer, filename: string, location: Cursor):
       Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerLSP
 
@@ -348,7 +348,7 @@ when implModule:
     return res
 
   # todo: change return type to Response[seq[Definition]]
-  proc lspGetImplementation*(self: LanguageServerDynamic, filename: string, location: Cursor):
+  proc lspGetImplementation*(self: LanguageServer, filename: string, location: Cursor):
       Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerLSP
 
@@ -371,7 +371,7 @@ when implModule:
     return res
 
   # todo: change return type to Response[seq[Definition]]
-  proc lspGetReferences*(self: LanguageServerDynamic, filename: string, location: Cursor):
+  proc lspGetReferences*(self: LanguageServer, filename: string, location: Cursor):
       Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerLSP
 
@@ -401,7 +401,7 @@ when implModule:
 
     return newSeq[Definition]()
 
-  proc lspSwitchSourceHeader*(self: LanguageServerDynamic, filename: string): Future[Option[string]] {.async.} =
+  proc lspSwitchSourceHeader*(self: LanguageServer, filename: string): Future[Option[string]] {.async.} =
     let self = self.LanguageServerLSP
     let localizedPath = self.vfs.localize(filename)
     let response = await self.client.switchSourceHeader(localizedPath)
@@ -419,7 +419,7 @@ when implModule:
     return response.result.decodeUrl.parseUri.path.normalizePathUnix.some
 
   # todo: change return type to Response
-  proc lspGetHover*(self: LanguageServerDynamic, filename: string, location: Cursor):
+  proc lspGetHover*(self: LanguageServer, filename: string, location: Cursor):
       Future[Option[string]] {.async.} =
     let self = self.LanguageServerLSP
 
@@ -467,7 +467,7 @@ when implModule:
 
     return string.none
 
-  proc lspGetSignatureHelp*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
+  proc lspGetSignatureHelp*(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
     let self = self.LanguageServerLSP
 
     if self.serverCapabilities.signatureHelpProvider.isNone:
@@ -488,7 +488,7 @@ when implModule:
     res[0] = parsedResponse
     return success[seq[lsp_types.SignatureHelpResponse]](res)
 
-  proc lspGetInlayHints*(self: LanguageServerDynamic, filename: string, selection: Selection):
+  proc lspGetInlayHints*(self: LanguageServer, filename: string, selection: Selection):
       Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
     let self = self.LanguageServerLSP
 
@@ -547,7 +547,7 @@ when implModule:
       return SymbolType.Unknown
 
   # todo: change return type to Response
-  proc lspGetSymbols*(self: LanguageServerDynamic, filename: string): Future[seq[Symbol]] {.async.} =
+  proc lspGetSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.async.} =
     let self = self.LanguageServerLSP
     var completions: seq[Symbol]
 
@@ -600,7 +600,7 @@ when implModule:
     return completions
 
   # todo: change return type to Response
-  proc lspGetWorkspaceSymbols*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[Symbol]] {.async.} =
+  proc lspGetWorkspaceSymbols*(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.async.} =
     let self = self.LanguageServerLSP
     var completions: seq[Symbol]
 
@@ -654,7 +654,7 @@ when implModule:
 
     return completions
 
-  proc lspResolveWorkspaceSymbol*(self: LanguageServerDynamic, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
+  proc lspResolveWorkspaceSymbol*(self: LanguageServer, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
     let self = self.LanguageServerLSP
 
     let resolveProvider = self.serverCapabilities.workspaceSymbolProvider
@@ -681,7 +681,7 @@ when implModule:
       ).some
     return Definition.none
 
-  proc lspGetWorkspaceSymbolsRaw*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.async.} =
+  proc lspGetWorkspaceSymbolsRaw*(self: LanguageServer, filename: string, query: string): Future[seq[WorkspaceSymbolRaw]] {.async.} =
     let self = self.LanguageServerLSP
     var res: seq[WorkspaceSymbolRaw]
 
@@ -728,7 +728,7 @@ when implModule:
 
     return res
 
-  proc lspGetDiagnostics*(self: LanguageServerDynamic, filename: string):
+  proc lspGetDiagnostics*(self: LanguageServer, filename: string):
       Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
     let self = self.LanguageServerLSP
     # debugf"getDiagnostics: {filename}"
@@ -754,7 +754,7 @@ when implModule:
     # todo: better error message
     return errorResponse[seq[lsp_types.Diagnostic]](-1, "Invalid response")
 
-  proc lspGetCompletions*(self: LanguageServerDynamic, filename: string, location: Cursor):
+  proc lspGetCompletions*(self: LanguageServer, filename: string, location: Cursor):
       Future[Response[CompletionList]] {.async.} =
     let self = self.LanguageServerLSP
     if self.serverCapabilities.completionProvider.isNone:
@@ -762,7 +762,7 @@ when implModule:
     let localizedPath = self.vfs.localize(filename)
     return await self.client.getCompletions(localizedPath, location.line, location.column)
 
-  proc lspGetCodeActions*(self: LanguageServerDynamic, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]):
+  proc lspGetCodeActions*(self: LanguageServer, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]):
       Future[Response[lsp_types.CodeActionResponse]] {.async.} =
     let self = self.LanguageServerLSP
     if self.serverCapabilities.codeActionProvider.isNone:
@@ -770,7 +770,7 @@ when implModule:
     let localizedPath = self.vfs.localize(filename)
     return await self.client.getCodeActions(localizedPath, selection, diagnostics)
 
-  proc lspRename*(self: LanguageServerDynamic, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.async.} =
+  proc lspRename*(self: LanguageServer, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.async.} =
     let self = self.LanguageServerLSP
     let localizedPath = self.vfs.localize(filename)
     let res = await self.client.rename(localizedPath, position, newName)
@@ -778,11 +778,11 @@ when implModule:
       return success(@[edit])
     return res.to(seq[lsp_types.WorkspaceEdit])
 
-  proc lspExecuteCommand*(self: LanguageServerDynamic, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
+  proc lspExecuteCommand*(self: LanguageServer, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
     let self = self.LanguageServerLSP
     return await self.client.executeCommand(command, arguments)
 
-  proc lspConnect*(self: LanguageServerDynamic, document: Document) =
+  proc lspConnect*(self: LanguageServer, document: Document) =
     let self = self.LanguageServerLSP
     log lvlInfo, fmt"[{self.name}] Connecting document (loadingAsync: {document.isLoadingAsync}, requiresLoad: {document.requiresLoad}) '{document.filename}'"
     let text = document.getTextComponent().getOr:
@@ -822,7 +822,7 @@ when implModule:
 
     self.documentHandles.add (document.Document, onEditHandle)
 
-  proc lspDisconnect*(self: LanguageServerDynamic, document: Document) {.gcsafe, raises: [].} =
+  proc lspDisconnect*(self: LanguageServer, document: Document) {.gcsafe, raises: [].} =
     let self = self.LanguageServerLSP
     log lvlInfo, fmt"[{self.name}] Disconnecting document '{document.filename}'"
     let text = document.getTextComponent().getOr:
@@ -966,16 +966,16 @@ when implModule:
       log lvlError, &"Failed to create language server '{name}': {getCurrentExceptionMsg()}"
       return LanguageServerLSP.none
 
-  proc getOrCreateLanguageServerLSP*(name: string): Future[Option[LanguageServerDynamic]] {.gcsafe, async: (raises: []).} =
+  proc getOrCreateLanguageServerLSP*(name: string): Future[Option[LanguageServer]] {.gcsafe, async: (raises: []).} =
     try:
       let service = getServices().getService(LanguageServerLspService).getOr:
-        return LanguageServerDynamic.none
+        return LanguageServer.none
       let res = service.getOrCreateLanguageServerLSP(name).await
       if res.isNone:
-        return LanguageServerDynamic.none
-      return res.get.LanguageServerDynamic.some
+        return LanguageServer.none
+      return res.get.LanguageServer.some
     except CatchableError:
-      return LanguageServerDynamic.none
+      return LanguageServer.none
 
   proc listLanguageServers(self: LanguageServerLspService) =
     var builder = SelectorPopupBuilder()

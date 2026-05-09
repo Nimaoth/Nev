@@ -2,14 +2,14 @@ import std/[options, tables, strutils, json]
 import nimsumtree/rope
 import misc/[custom_logger, custom_async, util, response, rope_utils, event, myjsonutils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import text/language/[language_server_base, lsp_types], language_server_dynamic
+import text/language/[language_server_base, lsp_types]
 import dispatch_tables, document_editor, service, layout/layout, input_handler/input_handler, config_provider, command_service
 import document, text_component, move_component, language_component, language_server_component, session
 
 logCategory "language-server-command-line"
 
 type
-  LanguageServerCommandLine* = ref object of LanguageServerDynamic
+  LanguageServerCommandLine* = ref object of LanguageServer
     services: Services
     commands: CommandService
     documents: DocumentEditorService
@@ -53,11 +53,11 @@ proc newLanguageServerCommandLineService*(): LanguageServerCommandLineService =
   session.addSaveHandler "command-line-history", save, load
   return self
 
-proc lspCommandLineGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+proc lspCommandLineGetDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   let self = self.LanguageServerCommandLine
   return newSeq[Definition]()
 
-proc lspCommandLineGetCompletions*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
+proc lspCommandLineGetCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
   let self = self.LanguageServerCommandLine
   let layout = self.services.getService(LayoutService).get
 
@@ -139,20 +139,20 @@ proc lspCommandLineGetCompletions*(self: LanguageServerDynamic, filename: string
 
   return CompletionList(items: completions).success
 
-proc lspCommandLineGetSymbols*(self: LanguageServerDynamic, filename: string): Future[seq[Symbol]] {.async.} =
+proc lspCommandLineGetSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.async.} =
   let self = self.LanguageServerCommandLine
   var completions: seq[Symbol]
   return completions
 
-proc lspCommandLineGetHover*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Option[string]] {.async.} =
+proc lspCommandLineGetHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.async.} =
   let self = self.LanguageServerCommandLine
   return string.none
 
-proc lspCommandLineGetInlayHints*(self: LanguageServerDynamic, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+proc lspCommandLineGetInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
   let self = self.LanguageServerCommandLine
   return success[seq[language_server_base.InlayHint]](@[])
 
-proc lspCommandLineGetDiagnostics*(self: LanguageServerDynamic, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
+proc lspCommandLineGetDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
   let self = self.LanguageServerCommandLine
   return success[seq[lsp_types.Diagnostic]](@[])
 

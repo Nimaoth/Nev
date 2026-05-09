@@ -3,12 +3,12 @@ import std/[options, strutils, sets]
 import nimsumtree/rope except Cursor
 import misc/[custom_logger, custom_unicode, util, event, custom_async, response, fuzzy_matching]
 import text/language/[language_server_base, lsp_types]
-import service, event_service, language_server_dynamic, document_editor, config_provider
+import service, event_service, document_editor, config_provider
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-proc getLanguageServerDocumentCompletion*(): LanguageServerDynamic {.rtl, gcsafe, raises: [].}
+proc getLanguageServerDocumentCompletion*(): LanguageServer {.rtl, gcsafe, raises: [].}
 
 when implModule:
   import language_server_component, config_component, language_component, text_component
@@ -17,7 +17,7 @@ when implModule:
   logCategory "language-server-document-completion"
 
   type
-    LanguageServerDocumentCompletion* = ref object of LanguageServerDynamic
+    LanguageServerDocumentCompletion* = ref object of LanguageServer
       services: Services
       config: ConfigStore
       documents: DocumentEditorService
@@ -89,7 +89,7 @@ when implModule:
         word.setLen(0)
     return word
 
-  proc getCompletionsImpl(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
+  proc getCompletionsImpl(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
     let self = self.LanguageServerDocumentCompletion
     let doc = self.documents.getDocumentByPath(filename).getOr:
       return success(lsp_types.CompletionList())
@@ -108,7 +108,7 @@ when implModule:
 
     return success(lsp_types.CompletionList(isIncomplete: false, items: data.items))
 
-  # proc ueGetCompletionTriggerChars*(self: LanguageServerDynamic): set[char] =
+  # proc ueGetCompletionTriggerChars*(self: LanguageServer): set[char] =
   #   return {'.', '>', ':'}
 
   proc newLanguageServerDocumentCompletion(services: Services): LanguageServerDocumentCompletion =
@@ -123,7 +123,7 @@ when implModule:
 
   var gls: LanguageServerDocumentCompletion = nil
 
-  proc getLanguageServerDocumentCompletion*(): LanguageServerDynamic {.gcsafe, raises: [].} =
+  proc getLanguageServerDocumentCompletion*(): LanguageServer {.gcsafe, raises: [].} =
     {.gcsafe.}:
       return gls
 

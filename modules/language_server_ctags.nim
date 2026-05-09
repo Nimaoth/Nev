@@ -4,7 +4,7 @@ import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_p
   rope_utils, arena, array_view, array_set]
 import text/language/[language_server_base, lsp_types]
 import nimsumtree/[arc, rope]
-import service, event_service, language_server_dynamic, document_editor, document, config_provider, vfs, vfs_service
+import service, event_service, document_editor, document, config_provider, vfs, vfs_service
 import text/[treesitter_type_conv]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
@@ -34,7 +34,7 @@ type
     symbols: seq[Symbol]
     moduleCompletions: seq[lsp_types.CompletionItem]
 
-  LanguageServerCTags* = ref object of LanguageServerDynamic
+  LanguageServerCTags* = ref object of LanguageServer
     services: Services
     config: ConfigStore
     documents: DocumentEditorService
@@ -88,44 +88,44 @@ when implModule:
             filename: if def.filename.len > 0: def.filename else: $def.filename)
     return res
 
-  proc ctagsGetDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc ctagsGetDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerCTags
     if self.documents.getDocumentByPath(filename).getSome(doc):
       return await self.getDefinitions(doc, location)
     return @[]
 
-  proc ctagsGetDeclaration*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc ctagsGetDeclaration*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerCTags
     if self.documents.getDocumentByPath(filename).getSome(doc):
       return await self.getDefinitions(doc, location)
     return @[]
 
-  proc ctagsGetImplementation*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc ctagsGetImplementation*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerCTags
     if self.documents.getDocumentByPath(filename).getSome(doc):
       return await self.getDefinitions(doc, location)
     return @[]
 
-  proc ctagsGetTypeDefinition*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc ctagsGetTypeDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerCTags
     if self.documents.getDocumentByPath(filename).getSome(doc):
       return await self.getDefinitions(doc, location)
     return @[]
 
-  proc ctagsGetReferences*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  proc ctagsGetReferences*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
     let self = self.LanguageServerCTags
     if self.documents.getDocumentByPath(filename).getSome(doc):
       return await self.getDefinitions(doc, location)
     return @[]
 
-  proc ctagsGetSymbols*(self: LanguageServerDynamic, filename: string): Future[seq[Symbol]] {.async.} =
+  proc ctagsGetSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.async.} =
     let self = self.LanguageServerCTags
     if filename in self.files:
       return self.files[filename].symbols
 
     return @[]
 
-  proc ctagsGetWorkspaceSymbols*(self: LanguageServerDynamic, filename: string, query: string): Future[seq[Symbol]] {.async.} =
+  proc ctagsGetWorkspaceSymbols*(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.async.} =
     let self = self.LanguageServerCTags
     var total: int = 0
     for file in self.files.values:
@@ -135,7 +135,7 @@ when implModule:
       allSymbols.add file.symbols
     return allSymbols
 
-  proc ctagsGetHover*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Option[string]] {.async.} =
+  proc ctagsGetHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.async.} =
     let self = self.LanguageServerCTags
     var res = ""
     if self.documents.getDocumentByPath(filename).getSome(doc):
@@ -159,7 +159,7 @@ when implModule:
     else:
       return string.none
 
-  proc ctagsGetSignatureHelp*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
+  proc ctagsGetSignatureHelp*(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
     let self = self.LanguageServerCTags
     var res = newSeq[lsp_types.SignatureInformation]()
     if self.documents.getDocumentByPath(filename).getSome(doc):
@@ -217,7 +217,7 @@ when implModule:
 
     return some(^flowVar)
 
-  proc ctagsGetCompletions*(self: LanguageServerDynamic, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
+  proc ctagsGetCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
     let self = self.LanguageServerCTags
 
     var t = startTimer()
