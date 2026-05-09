@@ -1,4 +1,4 @@
-#use input_handler
+#use input_handler move_component
 import std/[options]
 import vmath
 import nimsumtree/[rope, buffer]

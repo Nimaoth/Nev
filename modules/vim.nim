@@ -1,4 +1,4 @@
-#use command_component snippet_component search_component layout text_editor_component register command_service decoration_component input_handler
+#use command_component snippet_component search_component layout text_editor_component register command_service decoration_component input_handler move_component
 import platform/platform
 
 const currentSourcePath2 = currentSourcePath()

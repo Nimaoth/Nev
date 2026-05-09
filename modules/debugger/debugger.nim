@@ -1,4 +1,4 @@
-#use hover_component layout text_editor_component treesitter_component command_service decoration_component event_service session language_server_component selector_popup input_handler
+#use hover_component layout text_editor_component treesitter_component command_service decoration_component event_service session language_server_component selector_popup input_handler move_component
 import platform/[tui]
 import nimsumtree/[arc]
 import service, command_service, channel, view

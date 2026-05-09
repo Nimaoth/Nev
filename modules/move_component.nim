@@ -1,3 +1,4 @@
+#use move_database
 import std/[options, json]
 import nimsumtree/[rope]
 import component, service
@@ -8,7 +9,8 @@ import scripting_api except TextDocumentEditor
 
 export component
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type MoveComponent* = ref object of Component
   targetColumn*: int = -1
@@ -17,7 +19,7 @@ type MoveFunction = proc(move: string, selections: openArray[Selection], count: 
 
 # DLL API
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newMoveComponent*(services: Services, displayMap: DisplayMap, fallbackMoves: MoveFunction): MoveComponent
 proc moveComponentApplyMove*(self: MoveComponent, selections: openArray[Range[Point]], move: string, count: int = 0, includeEol: bool = true, wrap: bool = true, options: JsonNode = nil): seq[Range[Point]]
 proc getMoveComponent*(self: ComponentOwner): Option[MoveComponent]

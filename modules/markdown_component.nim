@@ -1,4 +1,4 @@
-#use command_component snippet_component text_editor_component treesitter_component decoration_component event_service input_handler
+#use command_component snippet_component text_editor_component treesitter_component decoration_component event_service input_handler move_component
 const currentSourcePath2 = currentSourcePath()
 include module_base
 

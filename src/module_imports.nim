@@ -2,6 +2,8 @@ when not defined(useDynlib):
   import "../modules/input_handler/input_handler.nim"
   import "../modules/terminal_platform/terminal_platform.nim"
   import "../modules/status_line.nim"
+  import "../modules/move_database.nim"
+  import "../modules/move_component.nim"
   import "../modules/text_editor_component.nim"
   import "../modules/register.nim"
   import "../modules/command_service.nim"
@@ -24,7 +26,6 @@ when not defined(useDynlib):
   import "../modules/treesitter_component.nim"
   import "../modules/contextline_component.nim"
   import "../modules/workspace_edit.nim"
-  import "../modules/move_database.nim"
   import "../modules/text/text.nim"
   import "../modules/wasm_engine.nim"
   import "../modules/plugin_system_wasm/plugin_system_wasm.nim"
@@ -54,6 +55,8 @@ proc initModules*() =
   when declared(init_module_input_handler): init_module_input_handler()
   when declared(init_module_terminal_platform): init_module_terminal_platform()
   when declared(init_module_status_line): init_module_status_line()
+  when declared(init_module_move_database): init_module_move_database()
+  when declared(init_module_move_component): init_module_move_component()
   when declared(init_module_text_editor_component): init_module_text_editor_component()
   when declared(init_module_register): init_module_register()
   when declared(init_module_command_service): init_module_command_service()
@@ -76,7 +79,6 @@ proc initModules*() =
   when declared(init_module_treesitter_component): init_module_treesitter_component()
   when declared(init_module_contextline_component): init_module_contextline_component()
   when declared(init_module_workspace_edit): init_module_workspace_edit()
-  when declared(init_module_move_database): init_module_move_database()
   when declared(init_module_text): init_module_text()
   when declared(init_module_wasm_engine): init_module_wasm_engine()
   when declared(init_module_plugin_system_wasm): init_module_plugin_system_wasm()
@@ -127,7 +129,6 @@ proc shutdownModules*() =
   when declared(shutdown_module_plugin_system_wasm): shutdown_module_plugin_system_wasm()
   when declared(shutdown_module_wasm_engine): shutdown_module_wasm_engine()
   when declared(shutdown_module_text): shutdown_module_text()
-  when declared(shutdown_module_move_database): shutdown_module_move_database()
   when declared(shutdown_module_workspace_edit): shutdown_module_workspace_edit()
   when declared(shutdown_module_contextline_component): shutdown_module_contextline_component()
   when declared(shutdown_module_treesitter_component): shutdown_module_treesitter_component()
@@ -150,6 +151,8 @@ proc shutdownModules*() =
   when declared(shutdown_module_command_service): shutdown_module_command_service()
   when declared(shutdown_module_register): shutdown_module_register()
   when declared(shutdown_module_text_editor_component): shutdown_module_text_editor_component()
+  when declared(shutdown_module_move_component): shutdown_module_move_component()
+  when declared(shutdown_module_move_database): shutdown_module_move_database()
   when declared(shutdown_module_status_line): shutdown_module_status_line()
   when declared(shutdown_module_terminal_platform): shutdown_module_terminal_platform()
   when declared(shutdown_module_input_handler): shutdown_module_input_handler()
@@ -158,6 +161,8 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("input_handler")
   loadModule("terminal_platform")
   loadModule("status_line")
+  loadModule("move_database")
+  loadModule("move_component")
   loadModule("text_editor_component")
   loadModule("register")
   loadModule("command_service")
@@ -180,7 +185,6 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("treesitter_component")
   loadModule("contextline_component")
   loadModule("workspace_edit")
-  loadModule("move_database")
   loadModule("text")
   loadModule("wasm_engine")
   loadModule("plugin_system_wasm")
