@@ -1,6 +1,7 @@
 import std/[json, tables, options]
 import misc/[myjsonutils]
 import finder/[finder, previewer]
+import document_editor
 
 type ISelectorPopup* = object
   getSearchString*: proc(): string {.gcsafe, raises: [].}
@@ -8,6 +9,7 @@ type ISelectorPopup* = object
   getSelectedItem*: proc(): Option[FinderItem] {.gcsafe, raises: [].}
   pop*: proc() {.gcsafe, raises: [].}
   preview*: proc(item: FinderItem) {.gcsafe, raises: [].}
+  getPreviewEditor*: proc(): DocumentEditor {.gcsafe, raises: [].}
 
 type
   SelectorPopupBuilder* = object

@@ -1,4 +1,4 @@
-import std/[options, os, json, sugar]
+import std/[options, os, json, sugar, tables]
 import vmath
 import misc/[custom_async, custom_logger, util, myjsonutils, disposable_ref, jsonex, rope_utils]
 import scripting/expose
@@ -6,7 +6,7 @@ import workspaces/workspace
 import finder/[finder, previewer, file_previewer]
 import platform/[platform]
 import service, dispatch_tables, platform_service
-import selector_popup, vcs, layout/layout, vfs, config_provider
+import selector_popup_builder, vcs, layout/layout, vfs, config_provider
 from scripting_api import SelectionCursor, ScrollSnapBehaviour, toSelection
 import document_editor, text_editor_component, move_component, command_component
 
@@ -52,10 +52,10 @@ proc getChangedFilesFromGitAsync(self: VCSService, workspace: Workspace, all: bo
 
   return newItemList(items)
 
-proc stageSelectedFileAsync(popup: SelectorPopup, self: VCSService,
+proc stageSelectedFileAsync(popup: ISelectorPopup, self: VCSService,
     source: AsyncCallbackDataSource): Future[void] {.async.} =
 
-  log lvlInfo, fmt"Stage selected entry ({popup.selected})"
+  log lvlInfo, fmt"Stage selected entry ({popup.getSelectedItem()})"
 
   let item = popup.getSelectedItem().getOr:
     return
@@ -68,16 +68,14 @@ proc stageSelectedFileAsync(popup: SelectorPopup, self: VCSService,
   let localizedPath = self.vfs.localize(fileInfo.path)
   if self.getVcsForFile(localizedPath).getSome(vcs):
     let res = await vcs.stageFile(localizedPath)
-    debugf"add finished: {res}"
-    if popup.textEditor.isNil:
+    if popup.closed():
       return
-
     source.retrigger()
 
-proc unstageSelectedFileAsync(popup: SelectorPopup, self: VCSService,
+proc unstageSelectedFileAsync(popup: ISelectorPopup, self: VCSService,
     source: AsyncCallbackDataSource): Future[void] {.async.} =
 
-  log lvlInfo, fmt"Unstage selected entry ({popup.selected})"
+  log lvlInfo, fmt"Unstage selected entry ({popup.getSelectedItem()})"
 
   let item = popup.getSelectedItem().getOr:
     return
@@ -90,16 +88,14 @@ proc unstageSelectedFileAsync(popup: SelectorPopup, self: VCSService,
   let localizedPath = self.vfs.localize(fileInfo.path)
   if self.getVcsForFile(localizedPath).getSome(vcs):
     let res = await vcs.unstageFile(localizedPath)
-    debugf"unstage finished: {res}"
-    if popup.textEditor.isNil:
+    if popup.closed():
       return
-
     source.retrigger()
 
-proc revertSelectedFileAsync(popup: SelectorPopup, self: VCSService,
+proc revertSelectedFileAsync(popup: ISelectorPopup, self: VCSService,
     source: AsyncCallbackDataSource): Future[void] {.async.} =
 
-  log lvlInfo, fmt"Revert selected entry ({popup.selected})"
+  log lvlInfo, fmt"Revert selected entry ({popup.getSelectedItem()})"
 
   let item = popup.getSelectedItem().getOr:
     return
@@ -112,10 +108,8 @@ proc revertSelectedFileAsync(popup: SelectorPopup, self: VCSService,
   let localizedPath = self.vfs.localize(fileInfo.path)
   if self.getVcsForFile(localizedPath).getSome(vcs):
     let res = await vcs.revertFile(localizedPath)
-    debugf"revert finished: {res}"
-    if popup.textEditor.isNil:
+    if popup.closed():
       return
-
     source.retrigger()
 
 proc diffStagedFileAsync(self: VCSService, workspace: Workspace, path: string): Future[void] {.async.} =
@@ -147,17 +141,20 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
 
   let previewer = newFilePreviewer(self.vfs2, self.services, openNewDocuments=true)
 
-  var popup = newSelectorPopup(self.services, "git".some, finder.some, previewer.Previewer.toDisposableRef.some)
+  var popup = SelectorPopupBuilder()
+  popup.scope = "git".some
+  popup.finder = finder.some
+  popup.previewer = previewer.Previewer.some
 
   for vcs in self.getAllVersionControlSystems():
     popup.title.add &"{vcs.name}: {vcs.status}"
     break
 
-  popup.scale.x = 1
-  popup.scale.y = 0.9
+  popup.scaleX = 1
+  popup.scaleY = 0.9
   popup.previewScale = 0.75
 
-  popup.handleItemConfirmed = proc(item: FinderItem): bool =
+  popup.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
     let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).catch:
       log lvlError, fmt"Failed to parse git file info from item: {item}"
       return true
@@ -171,44 +168,34 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
         if editor.getCommandComponent().getSome(commands):
           commands.executeCommand(&"""update-diff""")
 
-        if popup.getPreviewSelection().getSome(selection) and editor.getTextEditorComponent().getSome(te):
-          te.selection = selection.toRange
-          te.centerCursor(selection.last.toPoint)
+        let previewEditor = popup.getPreviewEditor()
+        if previewEditor.isNil:
+          return true
+        let previewTE = previewEditor.getTextEditorComponent().getOr:
+          return true
+        if editor.getTextEditorComponent().getSome(te):
+          te.selection = previewTE.selection
+          te.centerCursor(te.selection.b)
 
     return true
 
-  popup.addCustomCommand "refresh", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil:
-      return false
-
+  popup.customActions["refresh"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
     source.retrigger()
     return true
 
-  popup.addCustomCommand "stage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil:
-      return false
-
+  popup.customActions["stage-selected"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
     asyncSpawn popup.stageSelectedFileAsync(self, source)
     return true
 
-  popup.addCustomCommand "unstage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil:
-      return false
-
+  popup.customActions["unstage-selected"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
     asyncSpawn popup.unstageSelectedFileAsync(self, source)
     return true
 
-  popup.addCustomCommand "revert-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil:
-      return false
-
+  popup.customActions["revert-selected"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
     asyncSpawn popup.revertSelectedFileAsync(self, source)
     return true
 
-  popup.addCustomCommand "diff-staged", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil:
-      return false
-
+  popup.customActions["diff-staged"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
     let item = popup.getSelectedItem().getOr:
       return
 
@@ -220,37 +207,29 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
     asyncSpawn self.diffStagedFileAsync(workspace, self.vfs.localize(fileInfo.path))
     return true
 
-  popup.addCustomCommand "prev-change", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil:
-      return false
-    if popup.previewEditor.getTextEditorComponent().getSome(te) and popup.previewEditor.getMoveComponent().getSome(moves):
+  popup.customActions["prev-change"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
+    if popup.getPreviewEditor().getTextEditorComponent().getSome(te) and popup.getPreviewEditor().getMoveComponent().getSome(moves):
       te.selection = moves.applyMove(te.selection, "(prev-change)")
       te.centerCursor(te.selection.b)
     return true
 
-  popup.addCustomCommand "next-change", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil:
-      return false
-    if popup.previewEditor.getTextEditorComponent().getSome(te) and popup.previewEditor.getMoveComponent().getSome(moves):
+  popup.customActions["next-change"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
+    if popup.getPreviewEditor().getTextEditorComponent().getSome(te) and popup.getPreviewEditor().getMoveComponent().getSome(moves):
       te.selection = moves.applyMove(te.selection, "(next-change)")
       te.centerCursor(te.selection.b)
     return true
 
-  popup.addCustomCommand "stage-change", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil:
-      return false
-    if popup.previewEditor.getCommandComponent().getSome(commands):
+  popup.customActions["stage-change"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
+    if popup.getPreviewEditor().getCommandComponent().getSome(commands):
       commands.executeCommand("stage-selected")
     return true
 
-  popup.addCustomCommand "revert-change", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil:
-      return false
-    if popup.previewEditor.getCommandComponent().getSome(commands):
+  popup.customActions["revert-change"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
+    if popup.getPreviewEditor().getCommandComponent().getSome(commands):
       commands.executeCommand("revert-selected")
     return true
 
   let layout = self.services.getService(LayoutService).get
-  layout.pushPopup popup
+  discard layout.pushSelectorPopup popup
 
 addGlobalDispatchTable "vcs", genDispatchTable("vcs")

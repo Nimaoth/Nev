@@ -536,3 +536,4 @@ proc asISelectorPopup*(self: SelectorPopup): ISelectorPopup =
   result.getSelectedItem = proc(): Option[FinderItem] {.gcsafe, raises: [].} = self.getSelectedItem()
   result.pop = proc() {.gcsafe, raises: [].} = self.pop()
   result.preview = proc(item: FinderItem) {.gcsafe, raises: [].} = self.updatePreview(item)
+  result.getPreviewEditor = proc(): DocumentEditor {.gcsafe, raises: [].} = self.previewEditor
