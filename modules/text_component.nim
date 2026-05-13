@@ -1,3 +1,4 @@
+#use
 import std/[options]
 import nimsumtree/[rope, buffer, clock]
 import misc/[event, custom_async]
@@ -5,7 +6,8 @@ import component
 
 export component
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type TextComponent* = ref object of Component
   buffer*: Buffer
@@ -21,7 +23,7 @@ type TextComponent* = ref object of Component
 
 # DLL API
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newTextComponent*(): TextComponent
 proc textComponentContent*(self: TextComponent): Rope
 proc textComponentBuffer*(self: TextComponent): var Buffer
@@ -207,5 +209,8 @@ when implModule:
 
   proc textComponentSetFileAndContent(self: TextComponent, filename: string, content: sink Rope) =
     self.TextComponentImpl.setFileAndContentImpl(filename, content)
+
+  proc init_module_text_component*() {.cdecl, exportc, dynlib.} =
+    discard
 
 proc buffer*(self: TextComponent): var Buffer {.inline.} = self.textComponentBuffer()

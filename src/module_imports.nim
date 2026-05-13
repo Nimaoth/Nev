@@ -10,6 +10,7 @@ when not defined(useDynlib):
   import "../modules/command_service.nim"
   import "../modules/move_database.nim"
   import "../modules/move_component.nim"
+  import "../modules/text_component.nim"
   import "../modules/text_editor_component.nim"
   import "../modules/layout/layout.nim"
   import "../modules/command_server.nim"
@@ -66,6 +67,7 @@ proc initModules*() =
   when declared(init_module_command_service): init_module_command_service()
   when declared(init_module_move_database): init_module_move_database()
   when declared(init_module_move_component): init_module_move_component()
+  when declared(init_module_text_component): init_module_text_component()
   when declared(init_module_text_editor_component): init_module_text_editor_component()
   when declared(init_module_layout): init_module_layout()
   when declared(init_module_command_server): init_module_command_server()
@@ -154,6 +156,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_command_server): shutdown_module_command_server()
   when declared(shutdown_module_layout): shutdown_module_layout()
   when declared(shutdown_module_text_editor_component): shutdown_module_text_editor_component()
+  when declared(shutdown_module_text_component): shutdown_module_text_component()
   when declared(shutdown_module_move_component): shutdown_module_move_component()
   when declared(shutdown_module_move_database): shutdown_module_move_database()
   when declared(shutdown_module_command_service): shutdown_module_command_service()
@@ -178,6 +181,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("command_service")
   loadModule("move_database")
   loadModule("move_component")
+  loadModule("text_component")
   loadModule("text_editor_component")
   loadModule("layout")
   loadModule("command_server")
