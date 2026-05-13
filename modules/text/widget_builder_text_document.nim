@@ -7,8 +7,8 @@ import platform/platform
 import ui/[widget_library]
 import document_editor, theme, config_provider, layout/layout
 import text/language/[lsp_types]
-import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]
-import view
+import text/[diff, syntax_map, overlay_map, wrap_map, diff_map, display_map]
+import view, treesitter
 import scroll_box, treesitter_component, decoration_component, hover_component, contextline_component
 
 import ui/node

@@ -1,4 +1,4 @@
-#use move_database
+#use move_database treesitter
 import std/[options, json]
 import nimsumtree/[rope]
 import component, service

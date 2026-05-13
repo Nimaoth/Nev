@@ -41,7 +41,7 @@ proc clear*(self: TreeSitterComponent) = treesitterComponentClear(self)
 when implModule:
   import std/[strformat]
   import misc/[util, custom_logger]
-  import text/custom_treesitter
+  import treesitter
 
   logCategory "treesitter-component"
 

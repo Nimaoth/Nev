@@ -20,6 +20,7 @@ when defined(useDynlib):
     {.pragma: rtl, exportc, dynlib, cdecl.}
     {.pragma: modrtl, exportc, dynlib, cdecl.}
     {.pragma: rtlvar, exportc, dynlib.}
+    {.pragma: modrtlvar, exportc, dynlib.}
   else:
     const nevDeps {.strdefine.}: string = ""
     const nevDepsA = nevDeps.split(",")
@@ -28,14 +29,17 @@ when defined(useDynlib):
       {.pragma: rtl, importc, dynlib: "native_plugins/" & currentModuleName & ".dll", cdecl.}
       {.pragma: modrtl, importc, dynlib: "native_plugins/" & currentModuleName & ".dll", cdecl.}
       {.pragma: rtlvar, importc, dynlib: "native_plugins/" & currentModuleName & ".dll".}
+      {.pragma: modrtlvar, importc, dynlib: "native_plugins/" & currentModuleName & ".dll".}
     else:
       import std/[strformat]
       {.error: &"{currentModuleName} is not defined as dependency for {nevModuleName}".}
       {.pragma: rtl, importc, dynlib: "native_plugins/" & currentModuleName & ".dll", cdecl.}
       {.pragma: modrtl, importc, dynlib: "native_plugins/" & currentModuleName & ".dll", cdecl.}
       {.pragma: rtlvar, importc, dynlib: "native_plugins/" & currentModuleName & ".dll".}
+      {.pragma: modrtlvar, importc, dynlib: "native_plugins/" & currentModuleName & ".dll".}
 else:
   # We are linking statically
   {.pragma: rtl, exportc, dynlib, cdecl.}
   {.pragma: modrtl, exportc, dynlib, cdecl.}
   {.pragma: rtlvar, exportc, dynlib.}
+  {.pragma: modrtlvar, exportc, dynlib.}

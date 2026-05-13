@@ -9,7 +9,6 @@ import workspaces/[workspace]
 import config_provider
 import input_handler/input_handler, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
 import text_component, text_editor_component
-import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
 import service, layout/layout, session, command_service, command_line, toast, plugin_service
@@ -930,10 +929,6 @@ proc shutdown*(self: App) =
     document.deinit()
 
   self[] = AppObject()
-
-  # todo: do this in treesitter module shutdown
-  {.gcsafe.}:
-    custom_treesitter.freeDynamicLibraries()
 
 proc handleLog(self: App, level: Level, args: openArray[string]) =
   if level == lvlError:

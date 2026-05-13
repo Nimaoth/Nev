@@ -1,3 +1,4 @@
+#use treesitter
 import std/[options]
 import text/[display_map, overlay_map]
 import config_provider

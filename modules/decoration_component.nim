@@ -1,4 +1,4 @@
-#use input_handler theme
+#use input_handler theme treesitter
 import std/[options, tables]
 import chroma, vmath
 import nimsumtree/rope

@@ -1,4 +1,4 @@
-#use text_editor_component input_handler theme
+#use text_editor_component input_handler theme treesitter
 import std/[options]
 import misc/[custom_async]
 import component, text/snippet

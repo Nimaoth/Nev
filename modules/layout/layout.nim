@@ -1,5 +1,5 @@
 #use status_line text_editor_component command_service session input_handler
-# text_editor_component is needed for OpenEditorPreviewer. todo: OpenEditorPreviewer shouldn't care about text editors
+# text_editor_component is needed for OpenEditorPreviewer. todo: OpenEditorPreviewer shouldn't care about text editors treesitter
 import std/[options, json]
 import misc/[custom_async, id]
 import service, view, popup, selector_popup/builder, dynamic_view

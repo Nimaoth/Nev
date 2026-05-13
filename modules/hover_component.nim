@@ -1,4 +1,4 @@
-#use command_component text_editor_component command_service language_server_component input_handler theme
+#use command_component text_editor_component command_service language_server_component input_handler theme treesitter
 import std/[options]
 import nimsumtree/[rope]
 import misc/[event, custom_async, delayed_task, jsonex]

@@ -14,8 +14,8 @@ import config_provider, service, layout/layout, platform_service, vfs, vfs_servi
 import move_database, event_service
 import workspaces/workspace
 import finder/[previewer, finder]
-import vcs/vcs
-import text/[overlay_map, tab_map, wrap_map, diff_map, display_map, snippet, indent, custom_treesitter, diff]
+import vcs/vcs, treesitter
+import text/[overlay_map, tab_map, wrap_map, diff_map, display_map, snippet, indent, diff]
 import text/[completion_provider_document, completion_provider_lsp, completion_provider_snippet, completion]
 import lisp
 import view
@@ -1560,8 +1560,8 @@ proc getParentNodeSelections(self: TextDocumentEditor, selections: Selections, i
   return selections.mapIt(self.getParentNodeSelection(it, includeAfter))
 
 proc printTreesitterMemoryUsage*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let allocated = custom_treesitter.tsAllocated
-  let freed = custom_treesitter.tsFreed
+  let allocated = treesitter.tsAllocated
+  let freed = treesitter.tsFreed
   log lvlInfo, &"Treesitter allocated: {allocated.float / 1000000.0} MB, freed: {freed.float / 1000000.0} MB, total: {(allocated - freed).float / 1000000.0} MB"
 
 proc printTreesitterTree*(self: TextDocumentEditor) {.expose("editor.text").} =

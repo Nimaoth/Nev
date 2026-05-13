@@ -1,4 +1,4 @@
-#use formatting_component
+#use formatting_component treesitter
 import std/[options]
 import nimsumtree/[arc]
 import regex

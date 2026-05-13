@@ -3,7 +3,7 @@ import nimsumtree/[rope, sumtree, buffer, clock]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[custom_async, custom_unicode, util, regex, timer, rope_utils, arena, array_view, array_table, event, array_set]
-import text/diff, text/[custom_treesitter, treesitter_type_conv]
+import text/diff, treesitter, text/[treesitter_type_conv]
 from language/lsp_types import nil
 import theme
 import chroma

@@ -1,4 +1,4 @@
-#use input_handler theme
+#use input_handler theme treesitter
 import misc/[custom_async, custom_unicode, rope_utils]
 import nimsumtree/[arc, rope]
 import document_editor, vfs

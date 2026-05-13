@@ -2,7 +2,7 @@ import std/[options, json, tables, locks]
 import nimsumtree/[arc]
 import misc/[custom_logger, custom_async, util, custom_unicode, jsonex, arena, array_view]
 import vfs
-import treesitter_type_conv
+import text/treesitter_type_conv
 export treesitter_type_conv
 
 from scripting_api import Cursor, Selection, byteIndexToCursor
@@ -13,18 +13,19 @@ from scripting_api import Cursor, Selection, byteIndexToCursor
 logCategory "treesitter"
 
 from treesitter/api as ts import nil
-import treesitter_types
+import text/treesitter_types
 export treesitter_types
 
-include ../dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type TSLanguageCtor = proc(): ptr ts.TSLanguage {.stdcall.}
 
 type GetTextCallback* = proc(index: int, position: Cursor): (ptr char, int)
 
-proc treesitterParseString(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree {.apprtl, gcsafe, raises: [].}
-proc treesitterParseCallback(self: TSParser, oldTree: TSTree, text: GetTextCallback): TSTree {.apprtl, gcsafe, raises: [].}
-proc treesitterQueryFile(self: TSLanguage, vfs: Arc[VFS2], id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.apprtl, gcsafe, async: (raises: []).}
+proc treesitterParseString(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree {.modrtl, gcsafe, raises: [].}
+proc treesitterParseCallback(self: TSParser, oldTree: TSTree, text: GetTextCallback): TSTree {.modrtl, gcsafe, raises: [].}
+proc treesitterQueryFile(self: TSLanguage, vfs: Arc[VFS2], id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.modrtl, gcsafe, async: (raises: []).}
 
 proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree {.inline.} = treesitterParseString(self, text, oldTree)
 proc parseCallback*(self: TSParser, oldTree: TSTree, text: GetTextCallback): TSTree {.inline.} = treesitterParseCallback(self, oldTree, text)
@@ -48,18 +49,17 @@ template withTreeCursor*(node: untyped, cursor: untyped, body: untyped): untyped
 
 import std/macros
 
-proc getParsers*(): ptr seq[TSParser] {.apprtl, gcsafe, raises: [].}
-proc getParsersLock*(): ptr Lock {.apprtl, gcsafe, raises: [].}
-proc createTsParser*(): TSParser {.apprtl, gcsafe, raises: [].}
-proc freeDynamicLibraries*() {.apprtl, gcsafe, raises: [].}
-proc unloadTreesitterLanguage*(languageId: string) {.apprtl, gcsafe, raises: [].}
-proc getTreesitterLanguage*(vfs: Arc[VFS2], languageId: string, pathOverride: Option[string] = string.none): Future[Option[TSLanguage]] {.apprtl, gcsafe, raises: [].}
-proc getLoadedLanguage*(languageId: string): TSLanguage {.apprtl, gcsafe, raises: [].}
-proc getLoadedLanguageSnapshot*(languageId: string): Option[TSLanguageSnapshot] {.apprtl, gcsafe, raises: [].}
-proc treesitterQuery(self: TSLanguage, id: string, source: string, cacheOnFail = true, logSourceOnError = true): Future[Option[TSQuery]] {.apprtl, async.}
+proc getParsers*(): ptr seq[TSParser] {.modrtl, gcsafe, raises: [].}
+proc getParsersLock*(): ptr Lock {.modrtl, gcsafe, raises: [].}
+proc createTsParser*(): TSParser {.modrtl, gcsafe, raises: [].}
+proc unloadTreesitterLanguage*(languageId: string) {.modrtl, gcsafe, raises: [].}
+proc getTreesitterLanguage*(vfs: Arc[VFS2], languageId: string, pathOverride: Option[string] = string.none): Future[Option[TSLanguage]] {.modrtl, gcsafe, raises: [].}
+proc getLoadedLanguage*(languageId: string): TSLanguage {.modrtl, gcsafe, raises: [].}
+proc getLoadedLanguageSnapshot*(languageId: string): Option[TSLanguageSnapshot] {.modrtl, gcsafe, raises: [].}
+proc treesitterQuery(self: TSLanguage, id: string, source: string, cacheOnFail = true, logSourceOnError = true): Future[Option[TSQuery]] {.modrtl, async.}
 proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true, logSourceOnError = true): Future[Option[TSQuery]] {.async.} = await treesitterQuery(self, id, source, cacheOnFail, logSourceOnError)
-var tsAllocated* {.apprtlvar.}: uint64 = 0
-var tsFreed* {.apprtlvar.}: uint64 = 0
+var tsAllocated* {.modrtlvar.}: uint64 = 0
+var tsFreed* {.modrtlvar.}: uint64 = 0
 
 when implModule:
   import std/[os, strutils, dynlib]
@@ -141,7 +141,7 @@ when implModule:
           return nil
       return gWasmStore
 
-  proc freeDynamicLibraries*() =
+  proc freeDynamicLibraries() =
     {.gcsafe.}:
       withLock gParsersLock:
         for p in gParsers:
@@ -304,7 +304,7 @@ when implModule:
     {.gcsafe.}:
       gLoadedLanguages.getOrDefault(languageId)
 
-  proc getLoadedLanguageSnapshot*(languageId: string): Option[TSLanguageSnapshot] {.apprtl, gcsafe, raises: [].} =
+  proc getLoadedLanguageSnapshot*(languageId: string): Option[TSLanguageSnapshot] {.modrtl, gcsafe, raises: [].} =
     {.gcsafe.}:
       withLock gLoadedLanguagesLock:
         if languageId in gLoadedLanguagesSnapshots:
@@ -512,7 +512,7 @@ proc tsFree(a1: pointer) {.stdcall.} =
 
 ts.tsSetAllocator(tsMalloc, tsCalloc, tsRealloc, tsFree)
 
-proc enableTreesitterMemoryTracking*() {.apprtl, gcsafe, raises: [].}
+proc enableTreesitterMemoryTracking*() {.modrtl, gcsafe, raises: [].}
 
 when implModule:
   proc tsDebugMalloc(a1: csize_t): pointer {.stdcall.} =
@@ -563,6 +563,12 @@ when implModule:
 
   proc enableTreesitterMemoryTracking*() =
     ts.tsSetAllocator(tsDebugMalloc, tsDebugCalloc, tsDebugRealloc, tsDebugFree)
+
+  proc init_module_treesitter*() {.cdecl, exportc, dynlib.} =
+    discard
+
+  proc shutdown_module_treesitter*() {.cdecl, exportc, dynlib.} =
+    freeDynamicLibraries()
 
 iterator query*(query: TSQuery, tree: TSTree, selection: Selection): seq[tuple[node: TSNode, capture: string]] =
   let range = tsRange(tsPoint(selection.first.line, selection.first.column), tsPoint(selection.last.line, selection.last.column))

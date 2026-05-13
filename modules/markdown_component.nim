@@ -10,7 +10,8 @@ when implModule:
   import nimsumtree/[buffer, sumtree, rope]
   import misc/[util, custom_logger, rope_utils, delayed_task, custom_async, arena, array_view, id]
   import misc/[event, render_command]
-  import text/[syntax_map, treesitter_types, treesitter_type_conv, custom_treesitter, snippet]
+  import text/[syntax_map, treesitter_types, treesitter_type_conv, snippet]
+  import treesitter
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import service, event_service, document_editor, document, decoration_component, treesitter_component
   import text_component, language_component, text_editor_component, command_component, move_component

@@ -1,4 +1,4 @@
-#use
+#use treesitter
 import std/[options]
 import nimsumtree/[rope, buffer, clock]
 import misc/[event, custom_async]

@@ -1,4 +1,4 @@
-#use text_editor_component command_service command_line decoration_component input_handler move_component
+#use text_editor_component command_service command_line decoration_component input_handler move_component treesitter
 import std/[options]
 import nimsumtree/[buffer, clock, rope]
 import misc/[custom_async, delayed_task, event]

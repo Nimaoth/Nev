@@ -1,4 +1,4 @@
-#use input_handler move_component theme
+#use input_handler move_component theme treesitter
 import std/[options]
 import vmath
 import nimsumtree/[rope, buffer]

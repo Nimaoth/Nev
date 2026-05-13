@@ -1,4 +1,4 @@
-#use command_service layout text_editor_component register command_component decoration_component decoration_component event_service session language_server_component input_handler move_component
+#use command_service layout text_editor_component register command_component decoration_component decoration_component event_service session language_server_component input_handler move_component treesitter
 import std/[options, strutils, sequtils, strformat, json, streams]
 import misc/[jsonex, myjsonutils]
 import service, lisp, document_editor, log, command_service

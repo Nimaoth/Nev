@@ -1,4 +1,4 @@
-#use layout text_editor_component register command_service selector_popup input_handler
+#use layout text_editor_component register command_service selector_popup input_handler treesitter
 import nimsumtree/[arc]
 import misc/[id]
 import channel, view

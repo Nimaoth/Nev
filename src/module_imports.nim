@@ -6,6 +6,8 @@ when not defined(useDynlib):
   import "../modules/session.nim"
   import "../modules/status_line.nim"
   import "../modules/log.nim"
+  import "../modules/wasm_engine.nim"
+  import "../modules/treesitter.nim"
   import "../modules/register.nim"
   import "../modules/command_service.nim"
   import "../modules/move_database.nim"
@@ -16,7 +18,6 @@ when not defined(useDynlib):
   import "../modules/command_server.nim"
   import "../modules/stats.nim"
   import "../modules/plugin_service.nim"
-  import "../modules/wasm_engine.nim"
   import "../modules/language_server_component.nim"
   import "../modules/command_component.nim"
   import "../modules/hover_component.nim"
@@ -63,6 +64,8 @@ proc initModules*() =
   when declared(init_module_session): init_module_session()
   when declared(init_module_status_line): init_module_status_line()
   when declared(init_module_log): init_module_log()
+  when declared(init_module_wasm_engine): init_module_wasm_engine()
+  when declared(init_module_treesitter): init_module_treesitter()
   when declared(init_module_register): init_module_register()
   when declared(init_module_command_service): init_module_command_service()
   when declared(init_module_move_database): init_module_move_database()
@@ -73,7 +76,6 @@ proc initModules*() =
   when declared(init_module_command_server): init_module_command_server()
   when declared(init_module_stats): init_module_stats()
   when declared(init_module_plugin_service): init_module_plugin_service()
-  when declared(init_module_wasm_engine): init_module_wasm_engine()
   when declared(init_module_language_server_component): init_module_language_server_component()
   when declared(init_module_command_component): init_module_command_component()
   when declared(init_module_hover_component): init_module_hover_component()
@@ -150,7 +152,6 @@ proc shutdownModules*() =
   when declared(shutdown_module_hover_component): shutdown_module_hover_component()
   when declared(shutdown_module_command_component): shutdown_module_command_component()
   when declared(shutdown_module_language_server_component): shutdown_module_language_server_component()
-  when declared(shutdown_module_wasm_engine): shutdown_module_wasm_engine()
   when declared(shutdown_module_plugin_service): shutdown_module_plugin_service()
   when declared(shutdown_module_stats): shutdown_module_stats()
   when declared(shutdown_module_command_server): shutdown_module_command_server()
@@ -161,6 +162,8 @@ proc shutdownModules*() =
   when declared(shutdown_module_move_database): shutdown_module_move_database()
   when declared(shutdown_module_command_service): shutdown_module_command_service()
   when declared(shutdown_module_register): shutdown_module_register()
+  when declared(shutdown_module_treesitter): shutdown_module_treesitter()
+  when declared(shutdown_module_wasm_engine): shutdown_module_wasm_engine()
   when declared(shutdown_module_log): shutdown_module_log()
   when declared(shutdown_module_status_line): shutdown_module_status_line()
   when declared(shutdown_module_session): shutdown_module_session()
@@ -177,6 +180,8 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("session")
   loadModule("status_line")
   loadModule("log")
+  loadModule("wasm_engine")
+  loadModule("treesitter")
   loadModule("register")
   loadModule("command_service")
   loadModule("move_database")
@@ -187,7 +192,6 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("command_server")
   loadModule("stats")
   loadModule("plugin_service")
-  loadModule("wasm_engine")
   loadModule("language_server_component")
   loadModule("command_component")
   loadModule("hover_component")

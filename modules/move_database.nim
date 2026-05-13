@@ -1,4 +1,4 @@
-#use theme
+#use theme treesitter
 import std/[strutils, sequtils, sugar, strformat, tables, json]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as sca import nil
