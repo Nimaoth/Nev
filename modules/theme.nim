@@ -1,9 +1,12 @@
 import std/[json, tables, strutils, options]
 import chroma, results
+import nimsumtree/arc
 import misc/[custom_logger, myjsonutils, util, custom_async, event]
 import service
+import vfs
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type
   FontStyle* = enum Italic, Underline, Bold
@@ -28,7 +31,7 @@ type
 
 func serviceName*(_: typedesc[ThemeService]): string = "ThemeService"
 
-{.push apprtl, gcsafe, raises: [], noSideEffect.}
+{.push modrtl, gcsafe, raises: [], noSideEffect.}
 proc themeColor(theme: Theme, name: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color
 proc themeColor2(theme: Theme, names: seq[string], default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color
 proc themeTokenColor(theme: Theme, name: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color
@@ -41,6 +44,9 @@ proc themeTokenFontStylec(theme: Theme, name: cstring): set[FontStyle]
 proc themeTokenFontStyle2(theme: Theme, names: seq[string]): set[FontStyle]
 proc themeTokenFontScale(theme: Theme, name: string): float
 proc themeTokenFontScalec(theme: Theme, name: cstring): float
+{.pop.}
+{.push modrtl, gcsafe.}
+proc themeLoadFromFile(vfs: Arc[VFS2], path: string): Future[Option[Theme]] {.async: (raises: []).}
 {.pop.}
 
 proc color*(theme: Theme, name: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color = themeColor(theme, name, default)
@@ -55,9 +61,13 @@ proc tokenFontStyle*(theme: Theme, name: cstring): set[FontStyle] = themeTokenFo
 proc tokenFontStyle*(theme: Theme, names: seq[string]): set[FontStyle] = themeTokenFontStyle2(theme, names)
 proc tokenFontScale*(theme: Theme, name: string): float = themeTokenFontScale(theme, name)
 proc tokenFontScale*(theme: Theme, name: cstring): float = themeTokenFontScalec(theme, name)
+proc loadFromFile*(vfs: Arc[VFS2], path: string): Future[Option[Theme]] {.async: (raises: []).} = await themeLoadFromFile(vfs, path)
+
+proc setTheme*(self: ThemeService, theme: Theme) =
+  self.theme = theme
+  self.onThemeChanged.invoke(theme)
 
 when implModule:
-  import vfs
 
   addBuiltinService(ThemeService)
 
@@ -65,10 +75,6 @@ when implModule:
 
   {.push gcsafe.}
   {.push raises: [].}
-
-  proc setTheme*(self: ThemeService, theme: Theme) =
-    self.theme = theme
-    self.onThemeChanged.invoke(theme)
 
   func parseHexVar*(text: string): Result[Color, string] =
     try:
@@ -279,7 +285,7 @@ when implModule:
       debugf"{getCurrentException().getStackTrace()}"
       return Theme.none
 
-  proc loadFromFile*(vfs: VFS, path: string): Future[Option[Theme]] {.async: (raises: []).} =
+  proc themeLoadFromFile(vfs: Arc[VFS2], path: string): Future[Option[Theme]] {.async: (raises: []).} =
     try:
       let jsonText = await vfs.read(path)
       return loadFromString(jsonText, path)
@@ -288,10 +294,7 @@ when implModule:
       debugf"{getCurrentException().getStackTrace()}"
       return Theme.none
 
-  # let theme = loadFromFile("themes/Monokai Pro.json")
-  # print theme
-
-  proc defaultTheme*(): Theme =
+  proc defaultTheme(): Theme =
     new result
     result.name = "default"
     result.typ = "dark"
@@ -778,3 +781,6 @@ when implModule:
     result.colors["widget.shadow"] = parseHexVarTemp "19181a"
 
     result.tokenColors["comment"] = Style(foreground: some(parseHexVarTemp "727072"), fontStyle: {Italic})
+
+  proc init_module_theme*() {.cdecl, exportc, dynlib.} =
+    getServices().addService(ThemeService(theme: defaultTheme()))

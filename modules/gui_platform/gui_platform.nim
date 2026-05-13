@@ -1,3 +1,4 @@
+#use theme
 import platform/platform
 import compilation_config
 

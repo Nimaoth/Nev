@@ -2556,6 +2556,8 @@ when implModule:
     self.themes = self.services.getService(ThemeService).get
     self.registers = self.services.getService(Registers).get
     self.commands = self.services.getService(CommandService).get
+    if self.themes.theme.isNotNil:
+      self.handleThemeChanged(self.themes.theme)
     discard self.themes.onThemeChanged.subscribe proc(theme: Theme) = self.handleThemeChanged(theme)
 
     self.settings = TerminalSettings.new(self.config.runtime)

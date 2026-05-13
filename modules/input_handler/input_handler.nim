@@ -1,4 +1,4 @@
-#use
+#use theme
 import std/[tables, json, options]
 import input, service, config_provider
 

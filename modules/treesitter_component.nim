@@ -1,3 +1,4 @@
+#use theme
 import std/[options, tables]
 import nimsumtree/[arc]
 import misc/[custom_async]

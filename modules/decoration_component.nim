@@ -1,4 +1,4 @@
-#use input_handler
+#use input_handler theme
 import std/[options, tables]
 import chroma, vmath
 import nimsumtree/rope

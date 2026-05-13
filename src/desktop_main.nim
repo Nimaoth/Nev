@@ -419,10 +419,9 @@ defineSetAllDefaultSettings()
 
 import service
 gServices.addBuiltinServices()
+gServices.getService(PlatformService).get.setPlatform(plat)
 
 plat.vfs = gServices.getService(VFSService).get.vfs2
-plat.init(gAppOptions)
-gServices.getService(PlatformService).get.setPlatform(plat)
 
 import module_imports
 when defined(useDynlib):
@@ -456,6 +455,7 @@ else:
   log lvlInfo, "Load static modules"
   initModules()
 
+plat.init(gAppOptions)
 gServices.waitForServices()
 
 import misc/event

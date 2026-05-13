@@ -1,4 +1,4 @@
-#use input_handler
+#use input_handler theme
 import platform/platform
 
 const currentSourcePath2 = currentSourcePath()

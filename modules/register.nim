@@ -1,3 +1,4 @@
+#use theme
 import std/[strutils, tables, options]
 import nimsumtree/rope
 import misc/custom_async

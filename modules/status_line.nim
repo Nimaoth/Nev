@@ -1,3 +1,4 @@
+#use theme
 import std/[tables, options]
 import service
 import ui/node

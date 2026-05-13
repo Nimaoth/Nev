@@ -13,7 +13,7 @@ type
     path: string
     dirty: bool
     files: Table[string, FileInfo]
-    dependencies: seq[tuple[module: string, features: seq[string]]]
+    dependencies: Table[string, seq[string]]
 
 var dry = false
 var force = false
@@ -82,7 +82,7 @@ proc toCamelCase(str: string): string =
 proc toPascalCase(str: string): string =
   return str.splitCase.parts.joinCase(Pascal)
 
-proc readDependencies(str: string, modules: Table[string, ModuleInfo]): seq[tuple[module: string, features: seq[string]]] =
+proc readDependencies(str: string, modules: Table[string, ModuleInfo]): Table[string, seq[string]] =
   try:
     let f = readFile(str)
     for l in f.splitLines:
@@ -93,7 +93,7 @@ proc readDependencies(str: string, modules: Table[string, ModuleInfo]): seq[tupl
           let features = parts[1..^1]
           if not modules.contains(name):
             echo &"Unknown module dependency '{name}' for module '{str}'"
-          result.incl (name, features)
+          result[name] = features
       if l.startsWith("import ") or l.startsWith("  import "):
         let i = l.find("import")
         if l.contains("std/"):
@@ -101,11 +101,10 @@ proc readDependencies(str: string, modules: Table[string, ModuleInfo]): seq[tupl
         for dep in l[(i + 6)..^1].split({',', '[', ']'}):
           let name = dep.strip
           if name != "" and modules.contains(name):
-            result.incl (name, @[])
+            discard result.mgetOrPut(name, @[])
 
   except CatchableError as e:
     echo &"Failed to read file dependencies from '{str}': {e.msg}"
-    return @[]
 
 proc gatherModules(): Table[string, ModuleInfo] =
   try:
@@ -145,6 +144,20 @@ proc gatherModules(): Table[string, ModuleInfo] =
     for module in result.keys:
       let dependencies = readDependencies(result[module].path, result)
       result[module].dependencies = dependencies
+
+    # Collect recursive dependencies for each module
+    for module in result.keys:
+      var queue = @[module]
+      var visited = initHashSet[string]()
+      while queue.len > 0:
+        let m = queue.pop()
+        if m in visited:
+          continue
+        visited.incl m
+        if m in result:
+          for dep in result[m].dependencies.pairs:
+            queue.add dep[0]
+            result[module].dependencies.mgetOrPut(dep[0], @[]).incl(dep[1])
 
   except OSError as e:
     echo &"Failed to gather modules: {e.msg}"
@@ -214,21 +227,24 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
       continue
 
     try:
-      echo &"Build {name} ({m.path}) {m.dependencies.mapIt(it.module & \" \" & it.features.join(\":\")).join(\", \")}"
+      # echo &"Build {name} ({m.path}) {m.dependencies.mapIt(it.module & \" \" & it.features.join(\":\")).join(\", \")}"
+      echo &"Build {name} ({m.path}) {m.dependencies}"
 
       if logVerbose:
         for (file, info) in m.files.pairs:
           echo &"  {file} {info}"
 
-      let builtinDeps = @["log"]
-      let dependencies = (m.dependencies.mapIt(it.module) & builtinDeps).join(",")
+      var dependencies = @["log"]
+      for module in m.dependencies.keys:
+        dependencies.add module
+      let dependenciesStr = dependencies.join(",")
       let features = collect:
-        for dep in m.dependencies:
-          for f in dep.features:
+        for features in m.dependencies.values:
+          for f in features:
             &"-d:feat{f}"
       let allFeatures = features.join(" ")
       let opt = if not debug or name == "text": "speed" else: "none"
-      let cmd = &"nim c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependencies} {allFeatures} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:{opt} --lineDir:off -d:mallocImport -d:exposeScriptingApi=true {m.path}"
+      let cmd = &"nim c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependenciesStr} {allFeatures} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:{opt} --lineDir:off -d:mallocImport -d:exposeScriptingApi=true {m.path}"
       if parallel:
         while cmds.len >= 10:
           for i in countdown(cmds.high, 0):
@@ -299,10 +315,10 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
         inDegree[name] = 0
         graph[name] = @[]
       for (name, m) in modules.pairs:
-        for dep in m.dependencies:
-          if dep.module in modules:
-            graph[name].add(dep.module)
-            inc inDegree, dep.module
+        for module in m.dependencies.keys:
+          if module in modules:
+            graph[name].add(module)
+            inc inDegree, module
       var queue: seq[string] = @[]
       for name in modules.keys:
         if name in inDegree and inDegree[name] > 0:
@@ -320,11 +336,11 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
     var sortedNames = topoSort(modules)
     if sortedNames.toSet().len != modules.len:
       proc printCycles(modules: Table[string, ModuleInfo], path: seq[string]) =
-        for dep in modules[path[^1]].dependencies:
-          if dep.module in path:
-            echo &"Cycle ", path & dep.module
+        for module in modules[path[^1]].dependencies.keys:
+          if module in path:
+            echo &"Cycle ", path & module
             continue
-          printCycles(modules, path & dep.module)
+          printCycles(modules, path & module)
 
       for module in modules.keys:
         printCycles(modules, @[module])

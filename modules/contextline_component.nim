@@ -1,4 +1,4 @@
-#use text_editor_component treesitter_component input_handler
+#use text_editor_component treesitter_component input_handler theme
 import std/[options]
 import misc/[delayed_task, id, myjsonutils, jsonex]
 import nimsumtree/[rope]

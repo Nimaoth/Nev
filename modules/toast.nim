@@ -1,3 +1,4 @@
+#use theme
 import platform/platform
 import misc/[custom_async, custom_logger, util, timer]
 import service, platform_service, config_provider

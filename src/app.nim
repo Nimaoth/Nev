@@ -15,7 +15,7 @@ import compilation_config, vfs, vfs_service
 import service, layout/layout, session, command_service, command_line, toast, plugin_service
 import event_service, vcs/vcs
 import search_component, decoration_component, move_component, command_component
-import nimsumtree/[rope]
+import nimsumtree/[arc, rope]
 import selector_popup/selector_popup
 
 import misc/async_process
@@ -100,6 +100,7 @@ type
 
     workspace*: Workspace
     vfs*: VFS
+    vfs2*: Arc[VFS2]
 
     logNextFrameTime*: bool = false
     disableLogFrameTime*: bool = true
@@ -181,7 +182,7 @@ proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: [
   if not force and self.themes.theme.isNotNil and self.themes.theme.path == path:
     return
   self.reloadThemeFromConfig = false
-  let theme = theme.loadFromFile(self.vfs, path).await
+  let theme = theme.loadFromFile(self.vfs2, path).await
   if theme.isSome:
     log(lvlInfo, fmt"Loaded theme {path}")
     self.themes.setTheme(theme.get)
@@ -741,6 +742,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.toast = services.getServiceChecked(ToastService)
   self.themes = services.getServiceChecked(ThemeService)
   self.vfs = self.vfsService.vfs
+  self.vfs2 = self.vfsService.vfs2
 
   self.platform.fontSize = 14
   self.platform.lineDistance = 1
@@ -753,7 +755,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.setupDefaultKeybindings()
   self.applySettingsFromAppOptions()
-  self.themes.setTheme(defaultTheme())
   self.runEarlyCommandsFromAppOptions()
 
   # Load settings files
@@ -1341,19 +1342,19 @@ proc chooseTheme*(self: App) {.expose("editor").} =
   popup.scale.x = 0.35
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    if theme.loadFromFile(self.vfs, item.data).waitFor.getSome(theme):
+    if theme.loadFromFile(self.vfs2, item.data).waitFor.getSome(theme):
       self.themes.setTheme(theme)
       self.platform.requestRender(true)
 
       return true
 
   popup.handleItemSelected = proc(item: FinderItem) =
-    if theme.loadFromFile(self.vfs, item.data).waitFor.getSome(theme):
+    if theme.loadFromFile(self.vfs2, item.data).waitFor.getSome(theme):
       self.themes.setTheme(theme)
       self.platform.requestRender(true)
 
   popup.handleCanceled = proc() =
-    if theme.loadFromFile(self.vfs, originalTheme).waitFor.getSome(theme):
+    if theme.loadFromFile(self.vfs2, originalTheme).waitFor.getSome(theme):
       self.themes.setTheme(theme)
       self.platform.requestRender(true)
 
