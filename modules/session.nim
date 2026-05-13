@@ -53,7 +53,7 @@ when implModule:
 
   proc sessionServiceGetRecentSessions(self: SessionService): Future[seq[string]] {.async: (raises: []).} =
     let vfsService = self.services.getService(VFSService).getOr: return @[]
-    let vfs = vfsService.vfs2
+    let vfs = vfsService.vfs
     try:
       let lastSessionsJson = await vfs.read(homeConfigDir // "sessions.json")
       let lastSessions = lastSessionsJson.parseJson()

@@ -626,7 +626,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   let prevLanguageId = self.languageId
   let pathOverride = self.settings.treesitter.path.get()
   let treesitterLanguageName = self.settings.treesitter.language.get().get(self.languageId)
-  var language = await getTreesitterLanguage(self.vfs2, treesitterLanguageName, pathOverride)
+  var language = await getTreesitterLanguage(self.vfs, treesitterLanguageName, pathOverride)
   if not self.isInitialized:
     return
 
@@ -642,7 +642,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   # todo: this awaits, check if still current request afterwards
   # todo: allow specifying queries in home and workspace config
   let highlightQueryPath = &"app://languages/{treesitterLanguageName}/queries/highlights.scm"
-  let highlightQuery = language.get.queryFile(self.vfs2, "highlights", highlightQueryPath).await
+  let highlightQuery = language.get.queryFile(self.vfs, "highlights", highlightQueryPath).await
   if not self.isInitialized:
     return
   if highlightQuery.isSome:
@@ -652,7 +652,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     self.treesitterComponent.highlightQuery = highlightQuery.get
 
   let textObjectsQueryPath = &"app://languages/{treesitterLanguageName}/queries/textobjects.scm"
-  let textObjectsQuery = language.get.queryFile(self.vfs2, "textobjects", textObjectsQueryPath).await
+  let textObjectsQuery = language.get.queryFile(self.vfs, "textobjects", textObjectsQueryPath).await
   if not self.isInitialized:
     return
   if textObjectsQuery.isSome:
@@ -662,7 +662,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     self.treesitterComponent.textObjectsQuery = textObjectsQuery.get
 
   let tagsQueryPath = &"app://languages/{treesitterLanguageName}/queries/tags.scm"
-  let tagsQuery = language.get.queryFile(self.vfs2, "tags", tagsQueryPath).await
+  let tagsQuery = language.get.queryFile(self.vfs, "tags", tagsQueryPath).await
   if not self.isInitialized:
     return
   if tagsQuery.isSome:
@@ -675,7 +675,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     return
 
   let errorQueryPath = &"app://languages/{treesitterLanguageName}/queries/errors.scm"
-  var errorQuery = language.get.queryFile(self.vfs2, "error", errorQueryPath, cacheOnFail = false).await
+  var errorQuery = language.get.queryFile(self.vfs, "error", errorQueryPath, cacheOnFail = false).await
   if not self.isInitialized:
     return
   if errorQuery.isSome:
@@ -694,7 +694,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     return
 
   let injectionQueryPath = &"app://languages/{treesitterLanguageName}/queries/injections.scm"
-  let injectionQuery = language.get.queryFile(self.vfs2, "injections", injectionQueryPath, cacheOnFail = false).await
+  let injectionQuery = language.get.queryFile(self.vfs, "injections", injectionQueryPath, cacheOnFail = false).await
   if not self.isInitialized:
     return
   if prevLanguageId != self.languageId:
@@ -713,7 +713,7 @@ proc tsQuery*(self: TextDocument, name: string): Future[Option[TSQuery]] {.async
   let prevLanguageId = self.languageId
   let treesitterLanguageName = self.settings.treesitter.language.get().get(self.languageId)
   let path = &"app://languages/{treesitterLanguageName}/queries/{name}.scm"
-  let query = self.tsLanguage.queryFile(self.vfs2, name, path).await
+  let query = self.tsLanguage.queryFile(self.vfs, name, path).await
   if prevLanguageId != self.languageId:
     return TSQuery.none
 
@@ -818,12 +818,12 @@ proc newTextDocument*(
   self.workspace = services.getService(Workspace).get
   self.services = services
   self.configService = services.getService(ConfigService).get
-  self.vfs2 = services.getService(VFSService).get.vfs2
+  self.vfs = services.getService(VFSService).get.vfs
   self.editors = services.getService(DocumentEditorService).get
   self.eventBus = self.services.getService(EventService).get
   self.moveDatabase = self.services.getService(MoveDatabase).get
   self.createLanguageServer = createLanguageServer
-  self.filename = self.vfs2.normalize(filename)
+  self.filename = self.vfs.normalize(filename)
   self.isBackedByFile = load
   self.requiresLoad = load
   self.deinitImpl = textDocumentDeinit
@@ -861,13 +861,13 @@ proc newTextDocument*(
     self.setFileAndContent(filename, content)
   self.addComponent(self.textComponent)
 
-  self.treesitterComponent = newTreesitterComponent(self.vfs2)
+  self.treesitterComponent = newTreesitterComponent(self.vfs)
   self.addComponent(self.treesitterComponent)
   discard self.treesitterComponent.syntaxMap.onParsed.subscribe(proc() =
     self.notifyRequestRerender()
   )
 
-  self.formattingComponent = newFormattingComponent(services.getService(VFSService).get.vfs2, self.config)
+  self.formattingComponent = newFormattingComponent(services.getService(VFSService).get.vfs, self.config)
   self.addComponent(self.formattingComponent)
 
   self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =
@@ -948,7 +948,7 @@ proc saveAsync*(self: TextDocument) {.async.} =
       log lvlWarn, &"Don't trim whitespace"
 
     var newFile = false
-    if self.vfs2.getFileKind(self.filename).await.isNone:
+    if self.vfs.getFileKind(self.filename).await.isNone:
       newFile = true
     if not self.isInitialized:
       return
@@ -956,7 +956,7 @@ proc saveAsync*(self: TextDocument) {.async.} =
     discard self.buffer.endTransaction()
 
     self.lastSavedTimer = startTimer()
-    await self.vfs2.write(self.filename, self.rope.slice())
+    await self.vfs.write(self.filename, self.rope.slice())
     self.lastSavedTimer = startTimer()
 
     if not self.isInitialized:
@@ -978,7 +978,7 @@ proc saveAsync*(self: TextDocument) {.async.} =
 
 proc textDocumentSave(self: Document, filename: string = ""): Future[void] {.async: (raises: []).} =
   let self = self.TextDocument
-  self.filename = if filename.len > 0: self.vfs2.normalize(filename) else: self.filename
+  self.filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
 
   if self.filename.len == 0:
     log lvlError, &"save: Missing filename"
@@ -1063,11 +1063,11 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]
         when defined(appCheckDiffReload):
           if $self.rope != $rope:
             log lvlError, &"Failed diff: {self.rope.len} != {rope.len}: {selections}, {texts}"
-            await self.vfs2.write("app://failed_diffs/old.txt", oldRope)
+            await self.vfs.write("app://failed_diffs/old.txt", oldRope)
             returnIfInvalid()
-            await self.vfs2.write("app://failed_diffs/new-edit.txt", self.rope)
+            await self.vfs.write("app://failed_diffs/new-edit.txt", self.rope)
             returnIfInvalid()
-            await self.vfs2.write("app://failed_diffs/new.txt", rope)
+            await self.vfs.write("app://failed_diffs/new.txt", rope)
             returnIfInvalid()
             self.replaceAll(rope.move)
             return @[((0, 0), (self.rope.endPoint.toCursor))]
@@ -1094,7 +1094,7 @@ proc loadAsync*(self: TextDocument, isReload: bool, filename: string, temp: bool
 
   var rope: Rope = Rope.new()
   try:
-    await self.vfs2.readRope(filename, rope.addr)
+    await self.vfs.readRope(filename, rope.addr)
 
     if not self.isInitialized:
       return
@@ -1125,7 +1125,7 @@ proc loadAsync*(self: TextDocument, isReload: bool, filename: string, temp: bool
   else:
     self.fileWatchHandle.unwatch()
 
-  if self.vfs2.getFileAttributes(filename).await.mapIt(it.writable).get(true):
+  if self.vfs.getFileAttributes(filename).await.mapIt(it.writable).get(true):
     self.readOnly = false
 
   if not self.isInitialized:
@@ -1144,7 +1144,7 @@ proc enableAutoReload*(self: TextDocument, enabled: bool) =
   self.settings.autoReload.set(enabled)
   if enabled and (not self.fileWatchHandle.isBound or self.fileWatchHandle.path != self.filename):
     self.fileWatchHandle.unwatch()
-    self.fileWatchHandle = self.vfs2.watch(self.filename, proc(events: seq[PathEvent]) =
+    self.fileWatchHandle = self.vfs.watch(self.filename, proc(events: seq[PathEvent]) =
       if not self.isInitialized or not self.settings.autoReload.get():
         return
       if self.lastSavedTimer.elapsed.ms < 1000:
@@ -1171,7 +1171,7 @@ proc enableAutoReload*(self: TextDocument, enabled: bool) =
     self.fileWatchHandle.unwatch()
 
 proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, content: sink S) =
-  let filename = if filename.len > 0: self.vfs2.normalize(filename) else: self.filename
+  let filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
   if filename.len == 0:
     log lvlError, &"save: Missing filename"
     return
@@ -1198,7 +1198,7 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
 
 proc textDocumentLoad(self: Document, filename: string = "", temp: bool = false) =
   let self = self.TextDocument
-  let filename = if filename.len > 0: self.vfs2.normalize(filename) else: self.filename
+  let filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
   if filename.len == 0:
     log lvlError, &"save: Missing filename"
     return

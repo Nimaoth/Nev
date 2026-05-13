@@ -38,7 +38,7 @@ type
     onWorkspaceFolderAdded*: Event[string]
     onWorkspaceFolderRemoved*: Event[string]
     isCacheUpdateInProgress: bool = false
-    vfs2*: Arc[VFS2]
+    vfs*: VFS
 
 func serviceName*(_: typedesc[Workspace]): string = "Workspace"
 
@@ -133,7 +133,7 @@ when implModule:
 
   method init*(self: Workspace): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"Workspace.init"
-    self.vfs2 = self.services.getService(VFSService).get.vfs2
+    self.vfs = self.services.getService(VFSService).get.vfs
 
     return ok()
 
@@ -328,7 +328,7 @@ when implModule:
       var res: seq[SearchResult]
 
       var currentFile = ""
-      if self.vfs2.getFileKind(root).await == FileKind.File.some:
+      if self.vfs.getFileKind(root).await == FileKind.File.some:
         currentFile = root
       for line in output:
         if currentFile == "":
@@ -478,14 +478,14 @@ when implModule:
       log lvlError, &"Can't remove last workspace folder '{path}'"
       return
 
-    let (wsVfs2, _) = self.vfs2.getVFS("ws://")
-    self.vfs2.unmount(&"ws{self.additionalPaths.len + 1}://")
+    let (wsVfs2, _) = self.vfs.getVFS("ws://")
+    self.vfs.unmount(&"ws{self.additionalPaths.len + 1}://")
     wsVfs2.unmount(&"{self.additionalPaths.len + 1}")
 
-    # rebuild vfs2
+    # rebuild vfs
     for i, path in @[self.path] & self.additionalPaths:
-      self.vfs2.mount(&"ws{i}://", newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
-      wsVfs2.mount($i, newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
+      self.vfs.mount(&"ws{i}://", newVFSLink(self.vfs.getVFS("").vfs, path & "/"))
+      wsVfs2.mount($i, newVFSLink(self.vfs.getVFS("").vfs, path & "/"))
 
     self.onWorkspaceFolderRemoved.invoke(path)
     getServiceChecked(EventService).emit("workspace/removed", path)
@@ -500,12 +500,12 @@ when implModule:
     else:
       self.additionalPaths.add path
 
-    self.vfs2.mount(&"ws{self.additionalPaths.len}://", newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
+    self.vfs.mount(&"ws{self.additionalPaths.len}://", newVFSLink(self.vfs.getVFS("").vfs, path & "/"))
 
     let index = $self.additionalPaths.len
 
-    let (wsVfs2, _) = self.vfs2.getVFS("ws://")
-    wsVfs2.mount($index, newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
+    let (wsVfs2, _) = self.vfs.getVFS("ws://")
+    wsVfs2.mount($index, newVFSLink(self.vfs.getVFS("").vfs, path & "/"))
 
     self.onWorkspaceFolderAdded.invoke(path)
     getServiceChecked(EventService).emit("workspace/added", path)
@@ -514,10 +514,10 @@ when implModule:
 
   proc workspaceSetWorkspaceFolder(self: Workspace, path: string) =
     let allPaths = @[self.path] & self.additionalPaths
-    let (wsVfs2, _) = self.vfs2.getVFS("ws://")
+    let (wsVfs2, _) = self.vfs.getVFS("ws://")
     for i, p in allPaths:
       self.onWorkspaceFolderRemoved.invoke(p)
-      self.vfs2.unmount(&"ws{i}://")
+      self.vfs.unmount(&"ws{i}://")
       wsVfs2.unmount(&"{i}")
 
     self.additionalPaths = @[]

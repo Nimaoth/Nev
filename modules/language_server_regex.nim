@@ -15,7 +15,7 @@ type
     services: Services
     config: ConfigStore
     documents: DocumentEditorService
-    vfs*: Arc[VFS2]
+    vfs*: VFS
     files: Table[string, string]
     commandHistory*: seq[string]
     workspace*: Workspace
@@ -202,7 +202,7 @@ when implModule:
     result.name = "regex"
     result.services = services
     result.documents = services.getService(DocumentEditorService).get
-    result.vfs = services.getService(VFSService).get.vfs2
+    result.vfs = services.getService(VFSService).get.vfs
     result.config = services.getService(ConfigService).get.runtime
     result.workspace = services.getService(Workspace).get
     result.refetchWorkspaceSymbolsOnQueryChange = false

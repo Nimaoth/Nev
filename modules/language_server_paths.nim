@@ -23,7 +23,7 @@ when implModule:
       config: ConfigStore
       documents: DocumentEditorService
       eventBus: EventService
-      vfs: Arc[VFS2]
+      vfs: VFS
       files: Table[string, string]
       commandHistory*: seq[string]
       pathRegex: Regex
@@ -178,7 +178,7 @@ when implModule:
     result.services = services
     result.documents = services.getService(DocumentEditorService).get
     result.eventBus = services.getService(EventService).get
-    result.vfs = services.getService(VFSService).get.vfs2
+    result.vfs = services.getService(VFSService).get.vfs
     result.config = services.getService(ConfigService).get.runtime
     result.capabilities.completionProvider = lsp_types.CompletionOptions().some
     result.refetchWorkspaceSymbolsOnQueryChange = false

@@ -2076,7 +2076,7 @@ when implModule:
           raise newException(IOError, "SSH session handshake failed: " & $rc)
 
         # Authenticate. Try with empty password first, if that fails then prompt user for password.
-        let vfs = self.services.getService(VFSService).get.vfs2
+        let vfs = self.services.getService(VFSService).get.vfs
         let privateKeyPath = vfs.localize(options.privateKeyPath)
         let publicKeyPath = vfs.localize(options.publicKeyPath)
         if privateKeyPath != "" or publicKeyPath != "":
@@ -2906,7 +2906,7 @@ when implModule:
       self.terminal.onRope.unsubscribe(handle)
 
       let path = &"ed://{self.terminal.id}.terminal-output"
-      await self.terminals.services.getService(VFSService).get.vfs2.write(path, rope)
+      await self.terminals.services.getService(VFSService).get.vfs.write(path, rope)
 
       if self.terminals.layout.openFile(path).getSome(editor):
         let numLines = rope.lines

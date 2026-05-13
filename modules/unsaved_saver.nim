@@ -42,7 +42,7 @@ when implModule:
       log lvlWarn, &"Failed to run deleteOldUnsavedFiles: no services found"
       return
 
-    let vfs = services.getService(VFSService).get.vfs2
+    let vfs = services.getService(VFSService).get.vfs
     const unsavedDir = "ws0://.nev/unsaved"
 
     try:
@@ -80,7 +80,7 @@ when implModule:
       return
 
     let layout = services.getService(LayoutService).get
-    let vfs = services.getService(VFSService).get.vfs2
+    let vfs = services.getService(VFSService).get.vfs
 
     try:
       var docs: seq[Document] = @[]
@@ -148,7 +148,7 @@ when implModule:
     let config = services.getService(ConfigService).get
     let events = services.getService(EventService).get
     let documents = services.getService(DocumentEditorService).get
-    let vfs = services.getService(VFSService).get.vfs2
+    let vfs = services.getService(VFSService).get.vfs
     let settings = UnsavedSettings.new(config.runtime)
 
     var first = true

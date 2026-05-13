@@ -10,9 +10,9 @@ from text/language/lsp_types import WorkspaceEdit
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-proc workspaceEditApplyWorkspaceEdit(editors: DocumentEditorService, vfs: Arc[VFS2], wsEdit: WorkspaceEdit): Future[bool] {.rtl, async: (raises: []).}
+proc workspaceEditApplyWorkspaceEdit(editors: DocumentEditorService, vfs: VFS, wsEdit: WorkspaceEdit): Future[bool] {.rtl, async: (raises: []).}
 
-proc applyWorkspaceEdit*(editors: DocumentEditorService, vfs: Arc[VFS2], wsEdit: WorkspaceEdit): Future[bool] {.async: (raises: []).} = workspaceEditApplyWorkspaceEdit(editors, vfs, wsEdit).await
+proc applyWorkspaceEdit*(editors: DocumentEditorService, vfs: VFS, wsEdit: WorkspaceEdit): Future[bool] {.async: (raises: []).} = workspaceEditApplyWorkspaceEdit(editors, vfs, wsEdit).await
 
 proc runeCursorToCursor*(rope: Rope, cursor: RuneCursor): Cursor =
   if cursor.line < 0:
@@ -41,7 +41,7 @@ when implModule:
 
   logCategory "workspace-edit"
 
-  proc workspaceEditApplyWorkspaceEdit(editors: DocumentEditorService, vfs: Arc[VFS2], wsEdit: WorkspaceEdit): Future[bool] {.async: (raises: []).} =
+  proc workspaceEditApplyWorkspaceEdit(editors: DocumentEditorService, vfs: VFS, wsEdit: WorkspaceEdit): Future[bool] {.async: (raises: []).} =
     let editors = if editors != nil:
       editors
     else:
@@ -49,9 +49,9 @@ when implModule:
     let vfs = if not vfs.isNil:
       vfs
     else:
-      ({.gcsafe.}: getServices()).getService(VFSService).get.vfs2
+      ({.gcsafe.}: getServices()).getService(VFSService).get.vfs
 
-    proc lspPathToVfsPath(self: Arc[VFS2], lspPath: string): string =
+    proc lspPathToVfsPath(self: VFS, lspPath: string): string =
       let localVfs = self.getVFS("local://").vfs # todo
       let localPath = lspPath.decodeUrl.parseUri.path.normalizePathUnix
       return localVfs.normalize(localPath)

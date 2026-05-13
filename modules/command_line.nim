@@ -247,7 +247,7 @@ when implModule:
       self.shellCommandOutput.add("\n")
       self.shellCommandOutput.add(value)
       let vfsService = getServiceChecked(VFSService)
-      vfsService.vfs2.write(filename, self.shellCommandOutput).thenIt:
+      vfsService.vfs.write(filename, self.shellCommandOutput).thenIt:
         let layout = self.services.getService(LayoutService).get
         discard layout.openFile(filename)
 
@@ -255,7 +255,7 @@ when implModule:
     let self = self.CommandLineServiceImpl
     self.shellCommandOutput = Rope.new("")
     let vfsService = getServiceChecked(VFSService)
-    asyncSpawn vfsService.vfs2.write("ed://.shell-command-results", self.shellCommandOutput)
+    asyncSpawn vfsService.vfs.write("ed://.shell-command-results", self.shellCommandOutput)
 
   proc executeCommandLine*(self: CommandLineService): bool {.expose("commands").} =
     let self = self.CommandLineServiceImpl
@@ -379,7 +379,7 @@ when implModule:
       var flushOutputTask = startDelayedAsync(100, false):
         if self.services.getService(VFSService).getSome(vfsService):
           try:
-            await vfsService.vfs2.write(options.filename, self.shellCommandOutput)
+            await vfsService.vfs.write(options.filename, self.shellCommandOutput)
           except CatchableError:
             discard
 

@@ -190,7 +190,7 @@ when implModule:
       editors: DocumentEditorService
       session: SessionService
       commands: CommandService
-      vfs2: Arc[VFS2]
+      vfs: VFS
       mPopups: seq[Popup]
       layout*: Layout
       layoutName*: string = "default"
@@ -311,7 +311,7 @@ when implModule:
     assert self.platform != nil
     self.config = self.services.getService(ConfigService).get
     self.editors = self.services.getService(DocumentEditorService).get
-    self.vfs2 = self.services.getService(VFSService).get.vfs2
+    self.vfs = self.services.getService(VFSService).get.vfs
     self.layout = HorizontalLayout()
     self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
     self.workspace = self.services.getService(Workspace).get
@@ -928,7 +928,7 @@ when implModule:
     defer:
       self.platform.requestRender()
 
-    let path = self.vfs2.normalize(path)
+    let path = self.vfs.normalize(path)
 
     log lvlInfo, fmt"[openFile] Open file '{path}'"
     if self.tryOpenExisting(path, slot = slot).getSome(ed):
@@ -1391,7 +1391,7 @@ when implModule:
     ## `slot` - Where in the layout to put the opened file. If not specified the default slot is used.
     let self = self.LayoutServiceImpl
     var path = path
-    let vfs = self.vfs2.getVFS(path, maxDepth = 1).vfs
+    let vfs = self.vfs.getVFS(path, maxDepth = 1).vfs
     if vfs.isNotNil and vfs.get.prefix == "" and not path.isAbsolute:
       path = self.workspace.getAbsolutePath(path)
     discard self.openFile(path, slot)

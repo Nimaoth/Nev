@@ -36,7 +36,7 @@ type
     formatters: Table[string, Formatter]
 
   FormattingComponent* = ref object of Component
-    vfs: Arc[VFS2]
+    vfs: VFS
     config: ConfigStore
     settings: FormatSettings
 
@@ -45,7 +45,7 @@ func serviceName*(_: typedesc[FormattingService]): string = "FormattingService"
 # DLL API
 
 proc getFormattingComponent*(self: ComponentOwner): Option[FormattingComponent] {.rtl, gcsafe, raises: [].}
-proc newFormattingComponent*(vfs: Arc[VFS2], config: ConfigStore): FormattingComponent {.rtl, gcsafe, raises: [].}
+proc newFormattingComponent*(vfs: VFS, config: ConfigStore): FormattingComponent {.rtl, gcsafe, raises: [].}
 
 proc formattingComponentFormat(self: FormattingComponent): Future[void] {.rtl, gcsafe, async: (raises: []).}
 
@@ -74,7 +74,7 @@ when implModule:
   proc getFormattingComponent*(self: ComponentOwner): Option[FormattingComponent] {.gcsafe, raises: [].} =
     return self.getComponent(FormattingComponentId).mapIt(it.FormattingComponent)
 
-  proc newFormattingComponent*(vfs: Arc[VFS2], config: ConfigStore): FormattingComponent =
+  proc newFormattingComponent*(vfs: VFS, config: ConfigStore): FormattingComponent =
     return FormattingComponentImpl(
       typeId: FormattingComponentId,
       vfs: vfs,

@@ -26,23 +26,23 @@ when implModule:
     VFSGit* = object
       vcsService: VCSService
 
-  proc vfsGitName*(self: Arc[VFS2]): string = &"VFSGit({self.get.prefix})"
+  proc vfsGitName*(self: VFS): string = &"VFSGit({self.get.prefix})"
 
-  proc vfsGitRead*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.gcsafe, async: (raises: [IOError]).}
-  proc vfsGitReadRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).}
-  proc vfsGitGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).}
+  proc vfsGitRead*(self: VFS, path: string, flags: set[ReadFlag]): Future[string] {.gcsafe, async: (raises: [IOError]).}
+  proc vfsGitReadRope*(self: VFS, path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).}
+  proc vfsGitGetDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).}
 
-  proc newVFSGit*(vcsService: VCSService): Arc[VFS2] =
+  proc newVFSGit*(vcsService: VCSService): VFS =
     let local = create(VFSGit)
     local.vcsService = vcsService
-    result = Arc[VFS2].new()
+    result = VFS.new()
     result.getMutUnsafe.impl = local
     result.getMutUnsafe.nameImpl = vfsGitName
     result.getMutUnsafe.readImpl = vfsGitRead
     result.getMutUnsafe.readRopeImpl = vfsGitReadRope
     result.getMutUnsafe.getDirectoryListingImpl = vfsGitGetDirectoryListing
 
-  proc parsePath*(self: Arc[VFS2], inPath: string): tuple[root, path: string, staged: bool, commit: string] =
+  proc parsePath*(self: VFS, inPath: string): tuple[root, path: string, staged: bool, commit: string] =
     ## Parses a path and returns the raw path plus some flags/extra info.
     ## If staged is `true` then the path refers to the staged content of a file.
     ## Otherwise if `commit` is not empty then the path refers to a directory/file in a specific commit. `commit` can be either a commit hash
@@ -79,7 +79,7 @@ when implModule:
           result = vcs.some
           longestMatch = vcs.root.len
 
-  proc vfsGitRead*(self: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.gcsafe, async: (raises: [IOError]).} =
+  proc vfsGitRead*(self: VFS, path: string, flags: set[ReadFlag]): Future[string] {.gcsafe, async: (raises: [IOError]).} =
     let git = cast[ptr VFSGit](self.getMutUnsafe.impl)
     let vcsService = git.vcsService
     let (root, relPath, staged, commit) = self.parsePath(path)
@@ -98,11 +98,11 @@ when implModule:
 
     return lines.join("\n")
 
-  proc vfsGitReadRope*(self: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).} =
+  proc vfsGitReadRope*(self: VFS, path: string, rope: ptr Rope): Future[void] {.gcsafe, async: (raises: [IOError]).} =
     let content = await self.vfsGitRead(path, {})
     rope[] = Rope.new(content)
 
-  proc vfsGitGetDirectoryListing*(self: Arc[VFS2], path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).} =
+  proc vfsGitGetDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.gcsafe, async: (raises: []).} =
     let git = cast[ptr VFSGit](self.getMutUnsafe.impl)
 
     var listing = DirectoryListing(files: @[], folders: @[])
@@ -566,4 +566,4 @@ when implModule:
     vcs.detectors["git"] = detectGit
 
     let vfsService = getServiceChecked(VFSService)
-    vfsService.vfs2.mount("git://", newVFSGit(vcs))
+    vfsService.vfs.mount("git://", newVFSGit(vcs))

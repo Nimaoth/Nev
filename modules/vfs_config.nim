@@ -17,13 +17,13 @@ type
     config: ConfigService
 
 {.push modrtl, gcsafe, raises: [].}
-proc newVFSConfig*(): Arc[VFS2]
+proc newVFSConfig*(): VFS
 {.pop.}
 
 when implModule:
   import service
 
-  proc vfsConfigReadImpl*(vfs: Arc[VFS2], path: string, flags: set[ReadFlag]): Future[string] {.async: (raises: [IOError]).} =
+  proc vfsConfigReadImpl*(vfs: VFS, path: string, flags: set[ReadFlag]): Future[string] {.async: (raises: [IOError]).} =
     let self = cast[ptr VFSConfig2](vfs.getMutUnsafe.impl)
     try:
       let value = self.config.getByPath(path)
@@ -33,7 +33,7 @@ when implModule:
     except:
       raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
-  proc vfsConfigReadRopeImpl*(vfs: Arc[VFS2], path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).} =
+  proc vfsConfigReadRopeImpl*(vfs: VFS, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).} =
     let self = cast[ptr VFSConfig2](vfs.getMutUnsafe.impl)
     try:
       let value = self.config.getByPath(path)
@@ -44,7 +44,7 @@ when implModule:
     except:
       raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
-  proc vfsConfigWriteImpl*(vfs: Arc[VFS2], path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
+  proc vfsConfigWriteImpl*(vfs: VFS, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
     let self = cast[ptr VFSConfig2](vfs.getMutUnsafe.impl)
     try:
       let (store, key) = self.config.getStoreForPath(path)
@@ -55,7 +55,7 @@ when implModule:
     except:
       raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
-  proc vfsConfigWriteRopeImpl*(vfs: Arc[VFS2], path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).} =
+  proc vfsConfigWriteRopeImpl*(vfs: VFS, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).} =
     let self = cast[ptr VFSConfig2](vfs.getMutUnsafe.impl)
     try:
       let (store, key) = self.config.getStoreForPath(path)
@@ -66,7 +66,7 @@ when implModule:
     except:
       raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
-  proc vfsConfigGetFileKindImpl*(vfs: Arc[VFS2], path: string): Future[Option[FileKind]] {.async: (raises: []).} =
+  proc vfsConfigGetFileKindImpl*(vfs: VFS, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
     let self = cast[ptr VFSConfig2](vfs.getMutUnsafe.impl)
     let value = self.config.getByPath(path)
     if value == nil:
@@ -75,11 +75,11 @@ when implModule:
       return FileKind.Directory.some
     return FileKind.File.some
 
-  proc vfsConfigGetFileAttributesImpl*(vfs: Arc[VFS2], path: string): Future[Option[FileAttributes]] {.async: (raises: []).} =
+  proc vfsConfigGetFileAttributesImpl*(vfs: VFS, path: string): Future[Option[FileAttributes]] {.async: (raises: []).} =
     let self = cast[ptr VFSConfig2](vfs.getMutUnsafe.impl)
     return FileAttributes(writable: true, readable: true).some
 
-  proc vfsConfigGetDirectoryListingImpl*(vfs: Arc[VFS2], path: string): Future[DirectoryListing] {.async: (raises: []).} =
+  proc vfsConfigGetDirectoryListingImpl*(vfs: VFS, path: string): Future[DirectoryListing] {.async: (raises: []).} =
     let self = cast[ptr VFSConfig2](vfs.getMutUnsafe.impl)
     if path == "":
       var res = DirectoryListing()
@@ -105,12 +105,12 @@ when implModule:
           res.files.add key
     return res
 
-  proc vfsConfigName*(self: Arc[VFS2]): string = &"VFSConfig({self.get.prefix})"
+  proc vfsConfigName*(self: VFS): string = &"VFSConfig({self.get.prefix})"
 
-  proc newVFSConfig*(): Arc[VFS2] =
+  proc newVFSConfig*(): VFS =
     let vfs = create(VFSConfig2)
     vfs.config = getServiceChecked(ConfigService)
-    result = Arc[VFS2].new()
+    result = VFS.new()
     result.getMutUnsafe.impl = vfs
     result.getMutUnsafe.nameImpl = vfsConfigName
     result.getMutUnsafe.readImpl = vfsConfigReadImpl

@@ -39,8 +39,8 @@ when implModule:
 
       errors: seq[string]
 
-      vfs: Arc[VFS2]
-      localVfs: Arc[VFS2]
+      vfs: VFS
+      localVfs: VFS
       editors: DocumentEditorService
 
     LanguageServerLspService* = ref object of DynamicService
@@ -923,7 +923,7 @@ when implModule:
 
       lsp.initializedFuture = newFuture[bool]("lsp.initializedFuture")
       self.languageServers[name] = lsp
-      lsp.vfs = self.services.getService(VFSService).get.vfs2
+      lsp.vfs = self.services.getService(VFSService).get.vfs
       lsp.localVfs = lsp.vfs.getVFS("local://").vfs # todo
       lsp.editors = self.services.getService(DocumentEditorService).get
       lsp.refetchWorkspaceSymbolsOnQueryChange = true

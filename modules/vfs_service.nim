@@ -11,7 +11,7 @@ include module_base
 
 type
   VFSService* = ref object of DynamicService
-    vfs2*: Arc[VFS2]
+    vfs*: VFS
 
 func serviceName*(_: typedesc[VFSService]): string = "VFSService"
 
@@ -33,17 +33,17 @@ when implModule:
 
     let localVfs2 = newVFSLocal()
 
-    self.vfs2 = newVFS()
-    self.vfs2.mount("", newVFS())
-    self.vfs2.mount("local://", localVfs2)
-    self.vfs2.mount("", newVFSLink(localVfs2, ""))
-    self.vfs2.mount("app://", newVFSLink(localVfs2, getAppDir().normalizeNativePath))
-    self.vfs2.mount("unsaved://", newVFSLink(self.vfs2.getVFS("app://", 1).vfs, "unsaved"))
-    self.vfs2.mount("temp://", newVFSLink(localVfs2, getTempDir().normalizeNativePath))
-    self.vfs2.mount("settings://", newVFSConfig())
+    self.vfs = newVFS()
+    self.vfs.mount("", newVFS())
+    self.vfs.mount("local://", localVfs2)
+    self.vfs.mount("", newVFSLink(localVfs2, ""))
+    self.vfs.mount("app://", newVFSLink(localVfs2, getAppDir().normalizeNativePath))
+    self.vfs.mount("unsaved://", newVFSLink(self.vfs.getVFS("app://", 1).vfs, "unsaved"))
+    self.vfs.mount("temp://", newVFSLink(localVfs2, getTempDir().normalizeNativePath))
+    self.vfs.mount("settings://", newVFSConfig())
     let edVFs = newVFSInMemory()
-    self.vfs2.mount("ed://", edVFs)
-    self.vfs2.mount("ws://", newVFS())
+    self.vfs.mount("ed://", edVFs)
+    self.vfs.mount("ws://", newVFS())
 
     var ignore = parseGlobs """
   *
@@ -56,7 +56,7 @@ when implModule:
       log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
       ""
     if homeDir != "":
-      self.vfs2.mount("home://", newVFSLink(localVfs2, homeDir & "/"))
+      self.vfs.mount("home://", newVFSLink(localVfs2, homeDir & "/"))
       localVfs2.cacheDir(self.localizePath("home://.nev"), ignore)
 
     try:
@@ -70,8 +70,8 @@ when implModule:
 
     return self
 
-  proc createVfs2*(self: VFSService, config: JsonNode): Option[Arc[VFS2]] =
-    result = Arc[VFS2].none
+  proc createVfs2*(self: VFSService, config: JsonNode): Option[VFS] =
+    result = VFS.none
     if config.kind != JObject:
       log lvlError, &"Invalid config, expected object, got {config}"
       return
@@ -94,13 +94,13 @@ when implModule:
         log lvlError, "Invalid config, target must be string or null: " & config.pretty
         return
       let (target, sub) = if targetName.getSome(t):
-        self.vfs2.getVFS(t, targetMaxDepth)
+        self.vfs.getVFS(t, targetMaxDepth)
       else:
-        (self.vfs2, "")
+        (self.vfs, "")
 
       if sub != "":
         log lvlError, &"Unknown target '{targetName}', unmatched: '{sub}'"
-        return Arc[VFS2].none
+        return VFS.none
 
       let targetPrefix = config.fields.getOrDefault("targetPrefix", newJString("")).getStr.expect("string 'targetPrefix'", $config)
 
@@ -109,7 +109,7 @@ when implModule:
 
     else:
       log lvlError, &"Invalid VFS config, unknown type '{typ}'"
-      return Arc[VFS2].none
+      return VFS.none
 
   ###########################################################################
 
@@ -123,43 +123,43 @@ when implModule:
 
   proc mountVfs*(self: VFSService, parentPath: Option[string], prefix: string, config: JsonNode) {.expose("vfs").} =
     log lvlInfo, &"Mount VFS '{parentPath}', '{prefix}', {config}"
-    let vfs2 = if parentPath.getSome(p):
-      self.vfs2.getVFS(p).vfs
+    let vfs = if parentPath.getSome(p):
+      self.vfs.getVFS(p).vfs
     else:
-      self.vfs2
+      self.vfs
 
     if self.createVfs2(config).getSome(newVFS):
-      vfs2.mount(prefix, newVFS)
+      vfs.mount(prefix, newVFS)
 
   proc normalizePath*(self: VFSService, path: string): string {.expose("vfs").} =
-    return self.vfs2.normalize(path)
+    return self.vfs.normalize(path)
 
   proc localizePath*(self: VFSService, path: string): string {.expose("vfs").} =
-    return self.vfs2.localize(path)
+    return self.vfs.localize(path)
 
   proc writeFileSync*(self: VFSService, path: string, content: string) {.expose("vfs").} =
     try:
-      waitFor self.vfs2.write(path, content)
+      waitFor self.vfs.write(path, content)
     except IOError as e:
       log lvlError, &"Failed to write file '{path}': {e.msg}"
 
   proc readFileSync*(self: VFSService, path: string): string {.expose("vfs").} =
     try:
-      return waitFor self.vfs2.read(path)
+      return waitFor self.vfs.read(path)
     except IOError as e:
       log lvlError, &"Failed to read file '{path}': {e.msg}"
 
   proc deleteFileSync*(self: VFSService, path: string) {.expose("vfs").} =
     try:
-      discard waitFor self.vfs2.delete(path)
+      discard waitFor self.vfs.delete(path)
     except IOError as e:
       log lvlError, &"Failed to delete file '{path}': {e.msg}"
 
   proc genTempPath*(self: VFSService, prefix: string, suffix: string, dir: string = "temp://", randLen: int = 8, checkExists: bool = true): string {.expose("vfs").} =
-    self.vfs2.genTempPath(prefix, suffix, dir, randLen, checkExists).waitFor
+    self.vfs.genTempPath(prefix, suffix, dir, randLen, checkExists).waitFor
 
   # proc dumpVfsHierarchy*(self: VFSService) {.expose("vfs").} =
-  #   log lvlInfo, "\n" & self.vfs2.prettyHierarchy()
+  #   log lvlInfo, "\n" & self.vfs.prettyHierarchy()
 
   addGlobalDispatchTable "vfs", genDispatchTable("vfs")
 

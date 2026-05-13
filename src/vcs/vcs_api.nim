@@ -33,7 +33,7 @@ proc getChangedFilesFromGitAsync(self: VCSService, workspace: Workspace, all: bo
           var info = info
           let (directory, name) = info.path.splitPath
           var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
-          info.path = self.vfs2.normalize(info.path)
+          info.path = self.vfs.normalize(info.path)
 
           if relativeDirectory == ".":
             relativeDirectory = ""
@@ -65,7 +65,7 @@ proc stageSelectedFileAsync(popup: ISelectorPopup, self: VCSService,
     return
   debugf"staged selected {fileInfo}"
 
-  let localizedPath = self.vfs2.localize(fileInfo.path)
+  let localizedPath = self.vfs.localize(fileInfo.path)
   if self.getVcsForFile(localizedPath).getSome(vcs):
     let res = await vcs.stageFile(localizedPath)
     if popup.closed():
@@ -85,7 +85,7 @@ proc unstageSelectedFileAsync(popup: ISelectorPopup, self: VCSService,
     return
   debugf"unstaged selected {fileInfo}"
 
-  let localizedPath = self.vfs2.localize(fileInfo.path)
+  let localizedPath = self.vfs.localize(fileInfo.path)
   if self.getVcsForFile(localizedPath).getSome(vcs):
     let res = await vcs.unstageFile(localizedPath)
     if popup.closed():
@@ -105,7 +105,7 @@ proc revertSelectedFileAsync(popup: ISelectorPopup, self: VCSService,
     return
   debugf"revert-selected {fileInfo}"
 
-  let localizedPath = self.vfs2.localize(fileInfo.path)
+  let localizedPath = self.vfs.localize(fileInfo.path)
   if self.getVcsForFile(localizedPath).getSome(vcs):
     let res = await vcs.revertFile(localizedPath)
     if popup.closed():
@@ -139,7 +139,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
   let source = newAsyncCallbackDataSource () => self.getChangedFilesFromGitAsync(workspace, all)
   var finder = newFinder(source, filterAndSort=true)
 
-  let previewer = newFilePreviewer(self.vfs2, self.services, openNewDocuments=true)
+  let previewer = newFilePreviewer(self.vfs, self.services, openNewDocuments=true)
 
   var popup = SelectorPopupBuilder()
   popup.scope = "git".some
@@ -160,7 +160,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
       return true
 
     if fileInfo.stagedStatus != None:
-      asyncSpawn self.diffStagedFileAsync(workspace, self.vfs2.localize(fileInfo.path))
+      asyncSpawn self.diffStagedFileAsync(workspace, self.vfs.localize(fileInfo.path))
 
     else:
       let currentVersionEditor = self.services.getService(LayoutService).get.openFile(fileInfo.path)
@@ -204,7 +204,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
       return true
     debugf"diff-staged {fileInfo}"
 
-    asyncSpawn self.diffStagedFileAsync(workspace, self.vfs2.localize(fileInfo.path))
+    asyncSpawn self.diffStagedFileAsync(workspace, self.vfs.localize(fileInfo.path))
     return true
 
   popup.customActions["prev-change"] = proc(popup: ISelectorPopup, args: JsonNode): bool =

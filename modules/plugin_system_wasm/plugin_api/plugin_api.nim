@@ -63,7 +63,7 @@ type
     vfsService*: VFSService
     events*: EventService
     sessions*: SessionService
-    vfs*: Arc[VFS2]
+    vfs*: VFS
     moves*: MoveDatabase
     timer*: Timer
 
@@ -76,7 +76,7 @@ type
     instance: InstanceT
     store: ptr StoreT
     host: HostContext
-    vfs: Arc[VFS2]
+    vfs: VFS
     permissions: PluginPermissions
     commands: seq[CommandId]
     customRenderers: seq[tuple[editor: DocumentEditor, id: CustomRendererId]]
@@ -225,7 +225,7 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host.vfsService = services.getService(VFSService).get
   self.host.events = services.getService(EventService).get
   self.host.sessions = services.getService(SessionService).get
-  self.host.vfs = self.host.vfsService.vfs2
+  self.host.vfs = self.host.vfsService.vfs
   self.host.moves = services.getService(MoveDatabase).get
   self.host.timer = startTimer()
 
@@ -1052,7 +1052,7 @@ proc typesFindAll*(instance: ptr InstanceData; self: var RopeResource; regex: si
   except RegexError:
     discard
 
-proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: Arc[VFS2]): bool =
+proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): bool =
   if permissions.disallowAll.get(false):
     return false
   for prefix in permissions.disallow:

@@ -39,7 +39,7 @@ type
     config: ConfigStore
     documents: DocumentEditorService
     eventBus: EventService
-    vfs: Arc[VFS2]
+    vfs: VFS
     commandHistory*: seq[string]
 
     importMap: Table[string, HashSet[string]]    # Map from import name to file paths
@@ -305,7 +305,7 @@ when implModule:
     result.name = "ctags"
     result.services = services
     result.documents = services.getService(DocumentEditorService).get
-    result.vfs = services.getService(VFSService).get.vfs2
+    result.vfs = services.getService(VFSService).get.vfs
     result.config = services.getService(ConfigService).get.runtime
     result.eventBus = services.getService(EventService).get
     result.refetchWorkspaceSymbolsOnQueryChange = false

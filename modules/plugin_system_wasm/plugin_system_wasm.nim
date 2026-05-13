@@ -28,7 +28,7 @@ when implModule:
   type
     PluginSystemWasm* = ref object of PluginSystem
       engine: ptr WasmEngineT
-      vfs*: Arc[VFS2]
+      vfs*: VFS
       services*: Services
 
       v0: PluginApiBase
@@ -78,7 +78,7 @@ when implModule:
     self.dispatchDynamicImpl = wasmDispatchDynamic
 
     self.services = services
-    self.vfs = services.getService(VFSService).get.vfs2
+    self.vfs = services.getService(VFSService).get.vfs
 
     self.initWasm()
 

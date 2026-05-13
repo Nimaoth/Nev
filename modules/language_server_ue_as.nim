@@ -47,7 +47,7 @@ when implModule and defined(appLspUeAs):
       clangd: LanguageServer
       angelLs: LanguageServer
       regexLs: LanguageServerRegex
-      vfs*: Arc[VFS2]
+      vfs*: VFS
       workspace*: Workspace
 
   proc getClangd(self: LanguageServer): Future[Option[LanguageServer]] {.async.} =
@@ -298,7 +298,7 @@ when implModule and defined(appLspUeAs):
     result.documents = services.getService(DocumentEditorService).get
     result.eventBus = services.getService(EventService).get
     result.config = services.getService(ConfigService).get.runtime
-    result.vfs = services.getService(VFSService).get.vfs2
+    result.vfs = services.getService(VFSService).get.vfs
     result.workspace = services.getService(Workspace).get
     result.refetchWorkspaceSymbolsOnQueryChange = true
     result.connectImpl = ueConnect

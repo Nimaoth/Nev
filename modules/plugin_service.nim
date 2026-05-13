@@ -180,7 +180,7 @@ when implModule:
 
     PluginServiceImpl* = ref object of PluginService
       events: EventHandlerService
-      vfs: Arc[VFS2]
+      vfs: VFS
       commands*: CommandService
       configService*: ConfigService
       settings*: ConfigStore
@@ -203,7 +203,7 @@ when implModule:
 
   proc initPluginService(self: PluginServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     self.events = self.services.getService(EventHandlerService).get
-    self.vfs = self.services.getService(VFSService).get.vfs2
+    self.vfs = self.services.getService(VFSService).get.vfs
     self.commands = self.services.getService(CommandService).get
     self.configService = self.services.getService(ConfigService).get
     self.settings = self.configService.runtime

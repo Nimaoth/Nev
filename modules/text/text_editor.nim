@@ -222,7 +222,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   moveDatabase: MoveDatabase
   eventBus: EventService
   vfsService: VFSService
-  vfs2*: Arc[VFS2]
+  vfs*: VFS
   commands*: CommandService
   configService*: ConfigService
   configChanged: bool = false
@@ -1245,7 +1245,7 @@ proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): f
     return 0
 
 proc evaluateExpressionAsync(self: TextDocumentEditor, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) {.async.} =
-  let l = self.vfs2.getTreesitterLanguage("javascript").await
+  let l = self.vfs.getTreesitterLanguage("javascript").await
   if l.getSome(l):
     withParser(p):
       if not p.setLanguage(l):
@@ -2275,7 +2275,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool = false, for
 
     if self.diffTarget != "":
       var diffContent = Rope.new("")
-      await self.vfs2.readRope(self.diffTarget, diffContent.addr)
+      await self.vfs.readRope(self.diffTarget, diffContent.addr)
 
       if self.document.isNil or self.diffRevision > revision or not self.showDiff:
         return
@@ -2499,28 +2499,28 @@ proc unstageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false)
     let backupPath = &"ws0://temp/git/backup.{filename}"
     let originalPath = self.document.filename
     let originalPathLocalized = self.document.localizedPath
-    let backupPathLocalized = self.vfs2.localize(backupPath)
+    let backupPathLocalized = self.vfs.localize(backupPath)
     if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
       log lvlInfo, &"backup {originalPath} to {backupPath}"
-      await self.vfs2.copyFile(originalPathLocalized, backupPathLocalized)
-      if self.vfs2.isNil:
+      await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
+      if self.vfs.isNil:
         return
 
-      await self.vfs2.write(originalPath, new)
-      if self.vfs2.isNil:
+      await self.vfs.write(originalPath, new)
+      if self.vfs.isNil:
         return
 
       discard await vcs.stageFile(originalPathLocalized)
-      if self.vfs2.isNil:
+      if self.vfs.isNil:
         return
 
       log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
-      await self.vfs2.copyFile(backupPathLocalized, originalPathLocalized)
-      if self.vfs2.isNil:
+      await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
+      if self.vfs.isNil:
         return
 
-      discard await self.vfs2.delete(backupPath)
-      if self.vfs2.isNil:
+      discard await self.vfs.delete(backupPath)
+      if self.vfs.isNil:
         return
 
       asyncSpawn self.updateDiffAsync()
@@ -2584,28 +2584,28 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
     let backupPath = &"ws0://temp/git/backup.{filename}"
     let originalPath = self.document.filename
     let originalPathLocalized = self.document.localizedPath
-    let backupPathLocalized = self.vfs2.localize(backupPath)
+    let backupPathLocalized = self.vfs.localize(backupPath)
     if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
       log lvlInfo, &"backup {originalPath} to {backupPath}"
-      await self.vfs2.copyFile(originalPathLocalized, backupPathLocalized)
-      if self.vfs2.isNil:
+      await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
+      if self.vfs.isNil:
         return
 
-      await self.vfs2.write(originalPath, new)
-      if self.vfs2.isNil:
+      await self.vfs.write(originalPath, new)
+      if self.vfs.isNil:
         return
 
       discard await vcs.stageFile(originalPathLocalized)
-      if self.vfs2.isNil:
+      if self.vfs.isNil:
         return
 
       log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
-      await self.vfs2.copyFile(backupPathLocalized, originalPathLocalized)
-      if self.vfs2.isNil:
+      await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
+      if self.vfs.isNil:
         return
 
-      discard await self.vfs2.delete(backupPath)
-      if self.vfs2.isNil:
+      discard await self.vfs.delete(backupPath)
+      if self.vfs.isNil:
         return
 
       asyncSpawn self.updateDiffAsync()
@@ -2618,13 +2618,13 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
   # let stagedPath = &"ws0://temp/git/staged.{filename}"
   # let newPath = &"ws0://temp/git/new.{filename}"
   # let diffPath = &"ws0://temp/git/{filename}.diff"
-  # await self.vfs2.write(stagedPath, self.diffDocument.rope.clone())
-  # await self.vfs2.write(newPath, new)
+  # await self.vfs.write(stagedPath, self.diffDocument.rope.clone())
+  # await self.vfs.write(newPath, new)
 
-  # let workspaceRoot = self.vfs2.localize("ws0://")
+  # let workspaceRoot = self.vfs.localize("ws0://")
 
-  # let pathA = self.vfs2.localize(stagedPath)
-  # let pathB = self.vfs2.localize(newPath)
+  # let pathA = self.vfs.localize(stagedPath)
+  # let pathB = self.vfs.localize(newPath)
   # let gitDiff = await runProcessAsyncOutput("git", @["diff", "--no-index", "-U0", pathA, pathB])
 
   # let originalPath = self.document.localizedPath.relativePath(workspaceRoot).catch(self.document.localizedPath)
@@ -2633,9 +2633,9 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
   # let nl2 = patch.find("\n", nl1 + 1)
   # if nl2 > 0:
   #   patch = patch[nl2+1..^1]
-  # await self.vfs2.write(diffPath, patch)
+  # await self.vfs.write(diffPath, patch)
 
-  # let gitApply = await runProcessAsyncOutput("git", @["apply", "--cached", "-v", self.vfs2.localize(diffPath)])
+  # let gitApply = await runProcessAsyncOutput("git", @["apply", "--cached", "-v", self.vfs.localize(diffPath)])
   # echo &"git apply -> \n{gitApply.output}\n--------\n{gitApply.err}\n=============="
   # asyncSpawn self.updateDiffAsync()
 
@@ -2676,7 +2676,7 @@ proc checkoutFileAsync*(self: TextDocumentEditor, saveAfterwards: bool = false) 
 
   log lvlInfo, &"Checkout result: {res}"
 
-  self.document.setReadOnly(self.vfs2.getFileAttributes(path).await.mapIt(not it.writable).get(false))
+  self.document.setReadOnly(self.vfs.getFileAttributes(path).await.mapIt(not it.writable).get(false))
   asyncSpawn self.document.save()
   self.markDirty()
 
@@ -3226,7 +3226,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
         data: encodeFileLocationForFinderItem(definition.filename, definition.location.some),
       )
 
-    builder.previewer = newFilePreviewer(self.vfs2, self.services).Previewer.some
+    builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
 
     let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
     builder.finder = finder.some
@@ -3387,7 +3387,7 @@ proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool
         data: encodeFileLocationForFinderItem(self.document.filename, (i, 0).some),
       )
 
-  builder.previewer = newFilePreviewer(self.vfs2, self.services).Previewer.some
+  builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true, minScore=minScore, sort=sort)
   builder.finder = finder.some
 
@@ -3414,7 +3414,7 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
       data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
     )
 
-  builder.previewer = newFilePreviewer(self.vfs2, self.services).Previewer.some
+  builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
   builder.finder = finder.some
 
@@ -3521,7 +3521,7 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     builder.scaleX = 0.85
     builder.scaleY = 0.8
 
-    builder.previewer = newFilePreviewer(self.vfs2, self.services).Previewer.some
+    builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
     let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, self.workspace, self.getFileName()), filterAndSort=true)
     builder.finder = finder.some
 
@@ -3627,7 +3627,7 @@ proc renameAsync(self: TextDocumentEditor) {.async.} =
         if it.isSuccess and it.result.len > 0:
           log lvlInfo, &"Apply workspace edit for rename:\n{it.result[0]}"
           # todo: handle multiple workspace edits by allowing to choose one.
-          asyncSpawn asyncDiscard applyWorkspaceEdit(self.editors, self.vfs2, it.result[0])
+          asyncSpawn asyncDiscard applyWorkspaceEdit(self.editors, self.vfs, it.result[0])
         elif it.isError:
           log lvlError, &"Failed to rename to '{name}': {it.error}"
 
@@ -4054,7 +4054,7 @@ proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeA
 
     of CodeActionKind.CodeAction:
       if commandOrAction.action.edit.getSome(edit):
-        discard await applyWorkspaceEdit(self.editors, self.vfs2, edit)
+        discard await applyWorkspaceEdit(self.editors, self.vfs, edit)
         if self.document.isNil:
           return
 
@@ -4788,7 +4788,7 @@ proc newTextEditor*(document: TextDocument, services: Services, initialSettings:
   self.workspace = self.services.getService(Workspace).get
   self.moveDatabase = self.services.getService(MoveDatabase).get
   self.eventBus = self.services.getService(EventService).get
-  self.vfs2 = self.services.getService(VFSService).get.vfs2
+  self.vfs = self.services.getService(VFSService).get.vfs
   self.commands = self.services.getService(CommandService).get
   self.displayMap = DisplayMap.new()
   self.diffDisplayMap = DisplayMap.new()

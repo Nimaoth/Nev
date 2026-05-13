@@ -39,7 +39,7 @@ type
     editors*: DocumentEditorService
     layout*: LayoutService
     commands*: CommandService
-    vfs*: Arc[VFS2]
+    vfs*: VFS
     client*: Option[DapClient]
     lastConfiguration*: Option[string]
     activeView*: ActiveView = ActiveView.Variables

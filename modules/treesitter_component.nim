@@ -27,7 +27,7 @@ type
 # DLL API
 
 {.push rtl, gcsafe, raises: [].}
-proc newTreesitterComponent*(vfs: Arc[VFS2]): TreesitterComponent
+proc newTreesitterComponent*(vfs: VFS): TreesitterComponent
 proc getTreesitterComponent*(self: ComponentOwner): Option[TreesitterComponent]
 proc treesitterComponentQuery*(self: TreesitterComponent, name: string, language: string = ""): Future[Option[TSQuery]]
 proc treesitterComponentClear(self: TreeSitterComponent)
@@ -49,7 +49,7 @@ when implModule:
 
   type
     TreesitterComponentImpl* = ref object of TreesitterComponent
-      vfs: Arc[VFS2]
+      vfs: VFS
       requestedLanguages: seq[string]
 
   proc treesitterComponentClear(self: TreeSitterComponent) =
@@ -83,7 +83,7 @@ when implModule:
     # Retrigger parsing now that the language (and its queries) are available
     self.syntaxMap.reparse()
 
-  proc newTreesitterComponent*(vfs: Arc[VFS2]): TreesitterComponent =
+  proc newTreesitterComponent*(vfs: VFS): TreesitterComponent =
     let sm = newSyntaxMap()
     let comp = TreesitterComponentImpl(
       typeId: TreesitterComponentId,

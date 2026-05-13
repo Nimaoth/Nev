@@ -76,7 +76,7 @@ when implModule and defined(appLspServer):
       layout: LayoutService
       editors: DocumentEditorService
       workspace: Workspace
-      vfs: Arc[VFS2]
+      vfs: VFS
       debugLogStdin: Arc[BaseChannel]
       debugLogStdout: Arc[BaseChannel]
       diagnosticsHandle: Id
@@ -223,7 +223,7 @@ when implModule and defined(appLspServer):
       conn.logChannel.logLine(lvlError, &"[readMessage] {e.msg}")
       return newJNull()
 
-  proc uriToPath(uri: string, vfs: Arc[VFS2]): string =
+  proc uriToPath(uri: string, vfs: VFS): string =
     ## Converts a LSP file:// URI to a native filesystem path.
     ## e.g. "file:///C:/foo/bar.nim" -> "C:/foo/bar.nim" (Windows)
     ##      "file:///home/user/foo.nim" -> "/home/user/foo.nim" (Unix)
@@ -243,7 +243,7 @@ when implModule and defined(appLspServer):
       else:
         return parseUri("file:///" & path.encodePathUri)
 
-  proc textDocumentUriToPath(params: JsonNode, vfs: Arc[VFS2]): string =
+  proc textDocumentUriToPath(params: JsonNode, vfs: VFS): string =
     ## Extracts the URI from a textDocument params node and converts it to a path.
     ## Returns "" if the URI is missing or empty.
     let uri = params{"textDocument"}{"uri"}.getStr
@@ -733,7 +733,7 @@ when implModule and defined(appLspServer):
     self.layout = self.services.getService(LayoutService).get
     self.editors = self.services.getService(DocumentEditorService).get(nil)
     self.workspace = self.services.getService(Workspace).get(nil)
-    self.vfs = self.services.getService(VFSService).get.vfs2
+    self.vfs = self.services.getService(VFSService).get.vfs
 
     let commands = self.services.getService(CommandService).get
 

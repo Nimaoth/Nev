@@ -46,7 +46,7 @@ proc themeTokenFontScale(theme: Theme, name: string): float
 proc themeTokenFontScalec(theme: Theme, name: cstring): float
 {.pop.}
 {.push modrtl, gcsafe.}
-proc themeLoadFromFile(vfs: Arc[VFS2], path: string): Future[Option[Theme]] {.async: (raises: []).}
+proc themeLoadFromFile(vfs: VFS, path: string): Future[Option[Theme]] {.async: (raises: []).}
 {.pop.}
 
 proc color*(theme: Theme, name: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color = themeColor(theme, name, default)
@@ -61,7 +61,7 @@ proc tokenFontStyle*(theme: Theme, name: cstring): set[FontStyle] = themeTokenFo
 proc tokenFontStyle*(theme: Theme, names: seq[string]): set[FontStyle] = themeTokenFontStyle2(theme, names)
 proc tokenFontScale*(theme: Theme, name: string): float = themeTokenFontScale(theme, name)
 proc tokenFontScale*(theme: Theme, name: cstring): float = themeTokenFontScalec(theme, name)
-proc loadFromFile*(vfs: Arc[VFS2], path: string): Future[Option[Theme]] {.async: (raises: []).} = await themeLoadFromFile(vfs, path)
+proc loadFromFile*(vfs: VFS, path: string): Future[Option[Theme]] {.async: (raises: []).} = await themeLoadFromFile(vfs, path)
 
 proc setTheme*(self: ThemeService, theme: Theme) =
   self.theme = theme
@@ -285,7 +285,7 @@ when implModule:
       debugf"{getCurrentException().getStackTrace()}"
       return Theme.none
 
-  proc themeLoadFromFile(vfs: Arc[VFS2], path: string): Future[Option[Theme]] {.async: (raises: []).} =
+  proc themeLoadFromFile(vfs: VFS, path: string): Future[Option[Theme]] {.async: (raises: []).} =
     try:
       let jsonText = await vfs.read(path)
       return loadFromString(jsonText, path)

@@ -127,7 +127,7 @@ when implModule and enableGui:
   proc initGuiPlatform(self: GuiPlatform, options: AppOptions) =
     log lvlInfo, "Init GUI platform"
     try:
-      self.vfs = getServiceChecked(VFSService).vfs2
+      self.vfs = getServiceChecked(VFSService).vfs
       self.glyphCache = newLruCache[ImageKey, ImageKey](5000, true)
       self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=true)
       self.window.runeInputEnabled = true
@@ -339,7 +339,7 @@ when implModule and enableGui:
     self.requestedRender = true
     self.redrawEverything = self.redrawEverything or redrawEverything
 
-  proc readTypeface(vfs: Arc[VFS2], filePath: string): Future[Typeface] {.async: (raises: [IOError]).} =
+  proc readTypeface(vfs: VFS, filePath: string): Future[Typeface] {.async: (raises: [IOError]).} =
     try:
       case splitFile(filePath).ext.toLowerAscii():
       of ".ttf":

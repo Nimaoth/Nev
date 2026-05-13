@@ -61,7 +61,7 @@ type
     layoutOptions*: WLayoutOptions
     logNextFrameTime*: bool
     lastEventTime*: Timer
-    vfs*: Arc[VFS2]
+    vfs*: VFS
     backend*: Backend
     currentModifiers*: Modifiers
 

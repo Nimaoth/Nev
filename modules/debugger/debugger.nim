@@ -328,7 +328,7 @@ when implModule:
     self.languageServer = newLanguageServerDebugger(self)
     self.editors = self.services.getServiceChecked(DocumentEditorService)
     self.layout = self.services.getServiceChecked(LayoutService)
-    self.vfs = self.services.getServiceChecked(VFSService).vfs2
+    self.vfs = self.services.getServiceChecked(VFSService).vfs
     self.events = self.services.getServiceChecked(EventHandlerService)
     self.config = self.services.getServiceChecked(ConfigService)
     self.platform = self.services.getServiceChecked(PlatformService).platform

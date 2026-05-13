@@ -9,7 +9,7 @@ import nimsumtree/[rope, arc]
 include dynlib_export
 
 {.push apprtl, gcsafe, raises: [].}
-proc newFilePreviewer*(vfs: Arc[VFS2], services: Services, openNewDocuments: bool = false, reuseExistingDocuments: bool = true): Previewer
+proc newFilePreviewer*(vfs: VFS, services: Services, openNewDocuments: bool = false, reuseExistingDocuments: bool = true): Previewer
 proc filePreviewerEditor(self: Previewer): DocumentEditor
 {.pop.}
 
@@ -27,7 +27,7 @@ when implModule:
     FilePreviewer* = ref object of Previewer
       services*: Services
       editors*: DocumentEditorService
-      vfs: Arc[VFS2]
+      vfs: VFS
       editor*: DocumentEditor
       tempDocument: Document
       reuseExistingDocuments: bool
@@ -48,7 +48,7 @@ when implModule:
   proc filePreviewerDelayPreview*(self: Previewer) {.gcsafe, raises: [].}
   proc filePreviewerPreviewItem*(self: Previewer, item: FinderItem, editor: DocumentEditor) {.gcsafe, raises: [].}
 
-  proc newFilePreviewer*(vfs: Arc[VFS2], services: Services, openNewDocuments: bool = false, reuseExistingDocuments: bool = true): Previewer =
+  proc newFilePreviewer*(vfs: VFS, services: Services, openNewDocuments: bool = false, reuseExistingDocuments: bool = true): Previewer =
     let res = FilePreviewer()
     res.services = services
     res.editors = services.getService(DocumentEditorService).get

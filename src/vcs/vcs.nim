@@ -63,7 +63,7 @@ type
     config*: ConfigService
     workspace*: Workspace
     versionControlSystems*: seq[VersionControlSystem]
-    vfs2*: Arc[VFS2]
+    vfs*: VFS
     detectors*: Table[string, VCSDetector]
 
 func serviceName*(_: typedesc[VCSService]): string = "VCSService"
@@ -145,7 +145,7 @@ when implModule:
   method init*(self: VCSService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"VCSService.init"
     self.config = self.services.getService(ConfigService).get
-    self.vfs2 = self.services.getService(VFSService).get.vfs2
+    self.vfs = self.services.getService(VFSService).get.vfs
     self.workspace = self.services.getService(Workspace).get
     discard self.workspace.onWorkspaceFolderAdded.subscribe (path: string) => asyncSpawn(self.handleWorkspaceFolderAdded(path))
 
