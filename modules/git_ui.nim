@@ -21,7 +21,7 @@ when implModule:
   import theme
   import misc/[render_command]
   import input_handler/input_handler
-  import document_editor_render, toast
+  import toast
 
   logCategory "git-ui"
 
@@ -397,7 +397,7 @@ when implModule:
             separator()
             if self.editCommit:
               if self.commitEditor != nil:
-                discard documentEditorRender(self.commitEditor, builder)
+                discard self.commitEditor.render(builder)
               separator()
               self.renderGitUiCommand(builder, "gitui.commit-edit-cancel", "Cancel", "gitui.message")
               self.renderGitUiCommand(builder, "gitui.commit-edit-confirm", "Confirm", "gitui.message")

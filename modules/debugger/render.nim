@@ -4,7 +4,7 @@ import misc/[util, custom_logger, array_set]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
 import ui/[widget_library]
-import theme, view, document_editor, document_editor_render, layout/layout, service
+import theme, view, document_editor, layout/layout, service
 import types_impl, debugger, dap_client
 
 import ui/node
@@ -402,7 +402,7 @@ proc createUI*(self: OutputView, builder: UINodeBuilder, debugger: Debugger): se
     proc(): seq[OverlayFunction] =
       if debugger.outputEditor != nil:
         debugger.outputEditor.active = self.active
-        return documentEditorRender(debugger.outputEditor, builder)
+        return debugger.outputEditor.render(builder)
     ,
     proc(): seq[OverlayFunction] =
       builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Output")

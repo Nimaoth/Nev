@@ -4,7 +4,7 @@ import misc/[custom_logger, rect_utils, jsonex]
 import ui/node
 import platform/platform, platform_service
 import ui/[widget_library]
-import document_editor, theme, view, layout/layout, config_provider, command_line, toast, document_editor_render
+import document_editor, theme, view, layout/layout, config_provider, command_line, toast
 import popup
 import render_view, dynamic_view, status_line
 from scripting_api import nil
@@ -20,9 +20,6 @@ type BorderFlags = object
   right: bool
   top: bool
   bottom: bool
-
-renderEditorImpl = proc(self: DocumentEditor, builder: UINodeBuilder): seq[document_editor_render.OverlayRenderFunc] =
-  self.render(builder)
 
 proc none(_: typedesc[BorderFlags]): BorderFlags = BorderFlags()
 
