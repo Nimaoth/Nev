@@ -85,10 +85,9 @@ when implModule:
 
   addGlobalDispatchTable "toast", genDispatchTable("toast")
 
-  proc init_module_angelscript_formatter*() {.cdecl, exportc, dynlib.} =
+  proc init_module_toast*() {.cdecl, exportc, dynlib.} =
     getServices().addService(ToastService(
       initImpl: proc(self: Service): Future[Result[void, ref CatchableError]] {.gcsafe, async: (raises: []).} =
         initToastService(self.ToastService)
+        return ok()
     ))
-
-  # addBuiltinService(ToastService, ConfigService, PlatformService)
