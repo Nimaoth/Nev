@@ -23,7 +23,7 @@ logger().enableConsoleLogger()
 
 gServices = Services()
 gServices.addBuiltinServices()
-gServices.getService(PlatformService).get.setPlatform(NilPlatform())
+gServices.getServiceChecked(PlatformService).setPlatform(NilPlatform())
 
 init_module_input_handler()
 init_module_session()

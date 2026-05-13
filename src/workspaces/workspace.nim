@@ -133,7 +133,7 @@ when implModule:
 
   method init*(self: Workspace): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"Workspace.init"
-    self.vfs = self.services.getService(VFSService).get.vfs
+    self.vfs = self.services.getServiceChecked(VFSService).vfs
 
     return ok()
 

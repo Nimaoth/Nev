@@ -144,9 +144,9 @@ when implModule:
 
   method init*(self: VCSService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"VCSService.init"
-    self.config = self.services.getService(ConfigService).get
-    self.vfs = self.services.getService(VFSService).get.vfs
-    self.workspace = self.services.getService(Workspace).get
+    self.config = self.services.getServiceChecked(ConfigService)
+    self.vfs = self.services.getServiceChecked(VFSService).vfs
+    self.workspace = self.services.getServiceChecked(Workspace)
     discard self.workspace.onWorkspaceFolderAdded.subscribe (path: string) => asyncSpawn(self.handleWorkspaceFolderAdded(path))
 
     return ok()

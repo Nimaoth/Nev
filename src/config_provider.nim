@@ -953,7 +953,7 @@ when implModule:
 
     self.runtime.set(option, value.toJsonEx(defaultToJsonOptions))
     self.onConfigChanged.invoke()
-    self.services.getService(PlatformService).get.platform.requestRender(true)
+    self.services.getServiceChecked(PlatformService).platform.requestRender(true)
 
   proc cycleOption*(self: ConfigService, path: string, values: JsonNode) {.expose("config").} =
     if self.isNil:
@@ -967,13 +967,13 @@ when implModule:
           let value = values.elems[nextIndex]
           self.runtime.set(path, value.toJsonEx(defaultToJsonOptions))
           self.onConfigChanged.invoke()
-          self.services.getService(PlatformService).get.platform.requestRender(true)
+          self.services.getServiceChecked(PlatformService).platform.requestRender(true)
           return
       if values.elems.len > 0:
         let value = values.elems[0]
         self.runtime.set(path, value.toJsonEx(defaultToJsonOptions))
         self.onConfigChanged.invoke()
-        self.services.getService(PlatformService).get.platform.requestRender(true)
+        self.services.getServiceChecked(PlatformService).platform.requestRender(true)
 
   proc getOptionJson*(self: ConfigService, path: string, default: JsonNode = newJNull()): JsonNode {.expose("editor").} =
     return self.runtime.get(path, default)

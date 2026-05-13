@@ -44,9 +44,9 @@ when implModule:
 
   proc initToastService(self: ToastService) =
     log lvlInfo, &"ToastService.init"
-    self.platform = self.services.getService(PlatformService).get.platform
+    self.platform = self.services.getServiceChecked(PlatformService).platform
     assert self.platform != nil
-    self.config = self.services.getService(ConfigService).get
+    self.config = self.services.getServiceChecked(ConfigService)
     self.uiSettings = UiSettings.new(self.config.runtime)
 
   proc updateToasts(self: ToastService) {.async.} =

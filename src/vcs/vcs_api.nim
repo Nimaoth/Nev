@@ -125,7 +125,7 @@ proc diffStagedFileAsync(self: VCSService, workspace: Workspace, path: string): 
   })
   stagedDocument.readOnly = true
 
-  let layout = self.services.getService(LayoutService).get
+  let layout = self.services.getServiceChecked(LayoutService)
   if layout.createAndAddView(stagedDocument).getSome(editor):
     editor.getCommandComponent().get.executeCommand(&"""update-diff""")
 
@@ -163,7 +163,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
       asyncSpawn self.diffStagedFileAsync(workspace, self.vfs.localize(fileInfo.path))
 
     else:
-      let currentVersionEditor = self.services.getService(LayoutService).get.openFile(fileInfo.path)
+      let currentVersionEditor = self.services.getServiceChecked(LayoutService).openFile(fileInfo.path)
       if currentVersionEditor.getSome(editor):
         if editor.getCommandComponent().getSome(commands):
           commands.executeCommand(&"""update-diff""")
@@ -229,7 +229,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
       commands.executeCommand("revert-selected")
     return true
 
-  let layout = self.services.getService(LayoutService).get
+  let layout = self.services.getServiceChecked(LayoutService)
   discard layout.pushSelectorPopup popup
 
 addGlobalDispatchTable "vcs", genDispatchTable("vcs")

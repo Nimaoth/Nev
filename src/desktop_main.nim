@@ -419,7 +419,7 @@ defineSetAllDefaultSettings()
 
 import service
 gServices.addBuiltinServices()
-gServices.getService(PlatformService).get.setPlatform(plat)
+gServices.getServiceChecked(PlatformService).setPlatform(plat)
 
 import module_imports
 when defined(useDynlib):

@@ -307,16 +307,16 @@ when implModule:
 
   proc layoutServiceInit(self: LayoutServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"LayoutService.init"
-    self.platform = self.services.getService(PlatformService).get.platform
+    self.platform = self.services.getServiceChecked(PlatformService).platform
     assert self.platform != nil
-    self.config = self.services.getService(ConfigService).get
-    self.editors = self.services.getService(DocumentEditorService).get
-    self.vfs = self.services.getService(VFSService).get.vfs
+    self.config = self.services.getServiceChecked(ConfigService)
+    self.editors = self.services.getServiceChecked(DocumentEditorService)
+    self.vfs = self.services.getServiceChecked(VFSService).vfs
     self.layout = HorizontalLayout()
     self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
-    self.workspace = self.services.getService(Workspace).get
-    self.session = self.services.getService(SessionService).get
-    self.commands = self.services.getService(CommandService).get
+    self.workspace = self.services.getServiceChecked(Workspace)
+    self.session = self.services.getServiceChecked(SessionService)
+    self.commands = self.services.getServiceChecked(CommandService)
     self.uiSettings = UiSettings.new(self.config.runtime)
 
     discard self.platform.onPreRender.subscribe (_: Platform) => self.preRender()

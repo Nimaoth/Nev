@@ -30,9 +30,9 @@ when implModule and defined(appCommandServer):
   proc listenForIpc(id: int) {.async.} =
     try:
       let services = getServices()
-      let layout = services.getService(LayoutService).get
-      let commands = services.getService(CommandService).get
-      let config = services.getService(ConfigService).get
+      let layout = services.getServiceChecked(LayoutService)
+      let commands = services.getServiceChecked(CommandService)
+      let config = services.getServiceChecked(ConfigService)
 
       if not config.runtime.get("ipc-server.enable", true):
         log lvlInfo, &"Don't start ipc server"
@@ -132,7 +132,7 @@ when implModule and defined(appCommandServer):
       log lvlInfo, &"[server] Client connected to collaborative editing session {transp.remoteAddress}"
 
       let services: Services = ({.gcsafe.}: getServices())
-      let commands = services.getService(CommandService).get
+      let commands = services.getServiceChecked(CommandService)
 
       var reader = newAsyncStreamReader(transp)
 

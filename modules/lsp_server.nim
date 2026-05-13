@@ -710,7 +710,7 @@ when implModule and defined(appLspServer):
 
   proc createLogTerminal(self: LspServerService) =
     self.terminals = self.services.getService(TerminalService).get(nil)
-    self.layout = self.services.getService(LayoutService).get
+    self.layout = self.services.getServiceChecked(LayoutService)
     if self.terminals == nil or self.layout == nil:
       return
     self.debugLogStdin = newInMemoryChannel()
@@ -730,12 +730,12 @@ when implModule and defined(appLspServer):
 
   proc initService(self: LspServerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     self.terminals = self.services.getService(TerminalService).get(nil)
-    self.layout = self.services.getService(LayoutService).get
+    self.layout = self.services.getServiceChecked(LayoutService)
     self.editors = self.services.getService(DocumentEditorService).get(nil)
     self.workspace = self.services.getService(Workspace).get(nil)
-    self.vfs = self.services.getService(VFSService).get.vfs
+    self.vfs = self.services.getServiceChecked(VFSService).vfs
 
-    let commands = self.services.getService(CommandService).get
+    let commands = self.services.getServiceChecked(CommandService)
 
     discard commands.registerCommand(command_service.Command(
       namespace: "",

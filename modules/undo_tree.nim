@@ -537,8 +537,8 @@ when implModule:
       log lvlWarn, "Failed to initialize init_module_undo_tree: no services found"
       return
 
-    let layout = services.getService(LayoutService).get
-    let commands = services.getService(CommandService).get
+    let layout = services.getServiceChecked(LayoutService)
+    let commands = services.getServiceChecked(CommandService)
 
     var view: UndoTreeView = newUndoTreeView()
 

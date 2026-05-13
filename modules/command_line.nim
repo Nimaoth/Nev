@@ -111,7 +111,7 @@ when implModule:
 
   proc commands(self: CommandLineServiceImpl): CommandService =
     if self.mCommands == nil:
-      self.mCommands = getService(CommandService).get
+      self.mCommands = getServiceChecked(CommandService)
     return self.mCommands
 
   proc registers(self: CommandLineServiceImpl): Registers =
@@ -120,7 +120,7 @@ when implModule:
     return self.mRegisters
 
   proc config(self: CommandLineServiceImpl): ConfigStore =
-    return getService(ConfigService).get.runtime
+    return getServiceChecked(ConfigService).runtime
 
   proc commandServiceHandleCommand(self: CommandLineService, command: string): Option[string] =
     let self = self.CommandLineServiceImpl
@@ -248,7 +248,7 @@ when implModule:
       self.shellCommandOutput.add(value)
       let vfsService = getServiceChecked(VFSService)
       vfsService.vfs.write(filename, self.shellCommandOutput).thenIt:
-        let layout = self.services.getService(LayoutService).get
+        let layout = self.services.getServiceChecked(LayoutService)
         discard layout.openFile(filename)
 
   proc clearCommandLineResults*(self: CommandLineService) {.expose("commands").} =
@@ -395,7 +395,7 @@ when implModule:
           self.shellCommandOutput.add(line)
           flushOutputTask.schedule()
 
-      let layout = self.services.getService(LayoutService).get
+      let layout = self.services.getServiceChecked(LayoutService)
       discard layout.openFile(options.filename)
 
       let start = startTimer()

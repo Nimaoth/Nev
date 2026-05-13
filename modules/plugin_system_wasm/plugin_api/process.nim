@@ -16,10 +16,10 @@ proc runProcessImpl(self: PluginService, process: string, args: seq[string], wor
   type ResultType = tuple[output: string, err: string]
 
   let workingDir = if workingDir.getSome(wd):
-    let vfs = self.services.getService(VFSService).get.vfs
+    let vfs = self.services.getServiceChecked(VFSService).vfs
     vfs.localize(wd)
   else:
-    let workspace = self.services.getService(Workspace).get
+    let workspace = self.services.getServiceChecked(Workspace)
     workspace.path
 
   try:

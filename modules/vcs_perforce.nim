@@ -442,7 +442,7 @@ when implModule:
     if services == nil:
       return
 
-    let config = services.getService(ConfigService).get.runtime
+    let config = services.getServiceChecked(ConfigService).runtime
     self.settings = config
 
     asyncSpawn self.perforceUpdateStatus()
@@ -462,5 +462,5 @@ when implModule:
       log lvlWarn, &"Failed to initialize init_module_vcs_perforce: no services found"
       return
 
-    let vcs = services.getService(VCSService).get
+    let vcs = services.getServiceChecked(VCSService)
     vcs.detectors["perforce"] = detectPerforce

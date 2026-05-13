@@ -304,10 +304,10 @@ when implModule:
     result = new LanguageServerCTags
     result.name = "ctags"
     result.services = services
-    result.documents = services.getService(DocumentEditorService).get
-    result.vfs = services.getService(VFSService).get.vfs
-    result.config = services.getService(ConfigService).get.runtime
-    result.eventBus = services.getService(EventService).get
+    result.documents = services.getServiceChecked(DocumentEditorService)
+    result.vfs = services.getServiceChecked(VFSService).vfs
+    result.config = services.getServiceChecked(ConfigService).runtime
+    result.eventBus = services.getServiceChecked(EventService)
     result.refetchWorkspaceSymbolsOnQueryChange = false
     result.capabilities.completionProvider = lsp_types.CompletionOptions().some
 
@@ -523,7 +523,7 @@ when implModule:
     var ls: LanguageServerCTags = newLanguageServerCTags(services)
 
     let events = services.getService(EventService)
-    let documents = services.getService(DocumentEditorService).get
+    let documents = services.getServiceChecked(DocumentEditorService)
 
     proc handleDocumentSaved(event, payload: string) {.gcsafe, raises: [].} =
       try:

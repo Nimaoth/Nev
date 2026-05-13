@@ -295,11 +295,11 @@ when implModule and defined(appLspUeAs):
     result.regexLs = newLanguageServerRegex(services)
     result.name = "ue-as"
     result.services = services
-    result.documents = services.getService(DocumentEditorService).get
-    result.eventBus = services.getService(EventService).get
-    result.config = services.getService(ConfigService).get.runtime
-    result.vfs = services.getService(VFSService).get.vfs
-    result.workspace = services.getService(Workspace).get
+    result.documents = services.getServiceChecked(DocumentEditorService)
+    result.eventBus = services.getServiceChecked(EventService)
+    result.config = services.getServiceChecked(ConfigService).runtime
+    result.vfs = services.getServiceChecked(VFSService).vfs
+    result.workspace = services.getServiceChecked(Workspace)
     result.refetchWorkspaceSymbolsOnQueryChange = true
     result.connectImpl = ueConnect
     result.disconnectImpl = ueDisconnect
@@ -340,7 +340,7 @@ when implModule and defined(appLspUeAs):
       gls = ls
 
     let events = services.getService(EventService)
-    let documents = services.getService(DocumentEditorService).get
+    let documents = services.getServiceChecked(DocumentEditorService)
 
     proc handleEditorRegistered(event, payload: string) {.gcsafe, raises: [].} =
       try:

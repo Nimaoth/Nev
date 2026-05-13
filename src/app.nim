@@ -722,7 +722,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.timer = startTimer()
   self.frameTimer = startTimer()
 
-  self.config = services.getService(ConfigService).get
+  self.config = services.getServiceChecked(ConfigService)
   self.uiSettings = UiSettings.new(self.config.runtime)
   self.generalSettings = GeneralSettings.new(self.config.runtime)
   self.debugSettings = DebugSettings.new(self.config.runtime)

@@ -54,7 +54,7 @@ when implModule:
   proc initWasm(self: PluginSystemWasm) =
     self.engine = getGlobalWasmEngine()
 
-    if self.services.getService(ConfigService).get.runtime.get("plugins.debug", false):
+    if self.services.getServiceChecked(ConfigService).runtime.get("plugins.debug", false):
       log lvlError, &"Enable debug info for wasm plugins"
       let config = newConfig()
       config.debugInfoSet(true)
@@ -78,7 +78,7 @@ when implModule:
     self.dispatchDynamicImpl = wasmDispatchDynamic
 
     self.services = services
-    self.vfs = services.getService(VFSService).get.vfs
+    self.vfs = services.getServiceChecked(VFSService).vfs
 
     self.initWasm()
 
@@ -90,7 +90,7 @@ when implModule:
           if name.startsWith("!"):
             let args = args.mapIt($it).join(" ")
             let command = name[1..^1] & " " & args
-            if self.services.getService(CommandService).get.executeCommand(command).getSome(res):
+            if self.services.getServiceChecked(CommandService).executeCommand(command).getSome(res):
               return newString(res)
             return newNil()
           if self.currentNamedArgs == nil:
@@ -112,7 +112,7 @@ when implModule:
       return nil
     )
 
-    self.services.getService(CommandService).get.addPrefixCommandHandler "(", proc(command: Option[string]): Option[string] =
+    self.services.getServiceChecked(CommandService).addPrefixCommandHandler "(", proc(command: Option[string]): Option[string] =
       try:
         if command.isNone:
           return

@@ -201,10 +201,10 @@ when implModule:
     result = new LanguageServerRegex
     result.name = "regex"
     result.services = services
-    result.documents = services.getService(DocumentEditorService).get
-    result.vfs = services.getService(VFSService).get.vfs
-    result.config = services.getService(ConfigService).get.runtime
-    result.workspace = services.getService(Workspace).get
+    result.documents = services.getServiceChecked(DocumentEditorService)
+    result.vfs = services.getServiceChecked(VFSService).vfs
+    result.config = services.getServiceChecked(ConfigService).runtime
+    result.workspace = services.getServiceChecked(Workspace)
     result.refetchWorkspaceSymbolsOnQueryChange = false
 
     result.getDefinitionImpl = regexGetDefinition
@@ -224,7 +224,7 @@ when implModule:
     var ls = newLanguageServerRegex(services)
 
     let events = services.getService(EventService)
-    let documents = services.getService(DocumentEditorService).get
+    let documents = services.getServiceChecked(DocumentEditorService)
 
     proc handleEditorRegistered(event, payload: string) {.gcsafe, raises: [].} =
       try:

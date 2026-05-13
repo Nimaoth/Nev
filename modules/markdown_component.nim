@@ -754,7 +754,7 @@ when implModule:
       return
 
     let events = services.getService(EventService)
-    let documents = services.getService(DocumentEditorService).get
+    let documents = services.getServiceChecked(DocumentEditorService)
 
     proc handleEditorRegistered(event, payload: string) {.gcsafe, raises: [].} =
       try:

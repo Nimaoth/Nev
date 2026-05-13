@@ -121,7 +121,7 @@ when implModule:
     # todo: this function is quite slow (up to 100ms)
 
     {.gcsafe.}:
-      let config = getServices().getService(ConfigService).get
+      let config = getServices().getServiceChecked(ConfigService)
       let workspaceConfigName = config.runtime.get("lsp." & self.name & ".workspace-configuration-name", "settings")
 
       for item in params.items:
@@ -923,9 +923,9 @@ when implModule:
 
       lsp.initializedFuture = newFuture[bool]("lsp.initializedFuture")
       self.languageServers[name] = lsp
-      lsp.vfs = self.services.getService(VFSService).get.vfs
+      lsp.vfs = self.services.getServiceChecked(VFSService).vfs
       lsp.localVfs = lsp.vfs.getVFS("local://").vfs # todo
-      lsp.editors = self.services.getService(DocumentEditorService).get
+      lsp.editors = self.services.getServiceChecked(DocumentEditorService)
       lsp.refetchWorkspaceSymbolsOnQueryChange = true
 
       asyncSpawn lsp.handleWorkspaceConfigurationRequests()
@@ -1020,14 +1020,14 @@ Server Capabilities: {lsp.serverCapabilities.toJson.pretty}"""
       return
 
     let lspService = LanguageServerLspService()
-    lspService.documents = services.getService(DocumentEditorService).get
-    lspService.workspace = services.getService(Workspace).get
-    lspService.config = services.getService(ConfigService).get
+    lspService.documents = services.getServiceChecked(DocumentEditorService)
+    lspService.workspace = services.getServiceChecked(Workspace)
+    lspService.config = services.getServiceChecked(ConfigService)
 
     services.addService(lspService)
 
     let events = services.getService(EventService)
-    let documents = services.getService(DocumentEditorService).get
+    let documents = services.getServiceChecked(DocumentEditorService)
 
     proc handleEditorRegistered(event, payload: string) {.gcsafe, raises: [].} =
       try:
@@ -1070,7 +1070,7 @@ Server Capabilities: {lsp.serverCapabilities.toJson.pretty}"""
 
   proc shutdown_module_language_server_lsp*() {.cdecl, exportc, dynlib.} =
     log lvlInfo, &"shutdown_module_language_server_lsp"
-    let service = getServices().getService(LanguageServerLspService).get
+    let service = getServices().getServiceChecked(LanguageServerLspService)
     for languageServer in service.languageServers.values:
       if languageServer.client == nil:
         continue

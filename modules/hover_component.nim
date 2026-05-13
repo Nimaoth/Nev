@@ -90,7 +90,7 @@ when implModule:
       settings: settings,
       initializeImpl: (proc(self: Component, owner: ComponentOwner) =
         let self = self.HoverComponent
-        let platform = getServices().getService(PlatformService).get.platform
+        let platform = getServices().getServiceChecked(PlatformService).platform
         self.onModsChangedHandle = platform.onModifiersChanged.subscribe proc(change: tuple[old: Modifiers, new: Modifiers]) {.gcsafe.} =
           self.handleModsChanged(change.old, change.new)
 
@@ -113,7 +113,7 @@ when implModule:
           self.showHoverTask.pause()
         if self.hideHoverTask.isNotNil:
           self.hideHoverTask.pause()
-        let platform = getServices().getService(PlatformService).get.platform
+        let platform = getServices().getServiceChecked(PlatformService).platform
         platform.onModifiersChanged.unsubscribe self.onModsChangedHandle
       ),
     )

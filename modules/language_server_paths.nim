@@ -176,10 +176,10 @@ when implModule:
     result = new LanguageServerPaths
     result.name = "paths"
     result.services = services
-    result.documents = services.getService(DocumentEditorService).get
-    result.eventBus = services.getService(EventService).get
-    result.vfs = services.getService(VFSService).get.vfs
-    result.config = services.getService(ConfigService).get.runtime
+    result.documents = services.getServiceChecked(DocumentEditorService)
+    result.eventBus = services.getServiceChecked(EventService)
+    result.vfs = services.getServiceChecked(VFSService).vfs
+    result.config = services.getServiceChecked(ConfigService).runtime
     result.capabilities.completionProvider = lsp_types.CompletionOptions().some
     result.refetchWorkspaceSymbolsOnQueryChange = false
     try:
@@ -202,7 +202,7 @@ when implModule:
     var ls = newLanguageServerPaths(services)
 
     let events = services.getService(EventService)
-    let documents = services.getService(DocumentEditorService).get
+    let documents = services.getServiceChecked(DocumentEditorService)
 
     proc handleEditorRegistered(event, payload: string) {.gcsafe, raises: [].} =
       try:

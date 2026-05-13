@@ -162,7 +162,7 @@ when implModule:
       if gCurrentVariablesView != nil:
         return gCurrentVariablesView.some
       if getServices().isNil: return VariablesView.none
-      if getServices().getService(LayoutService).get.tryGetCurrentView().getSome(view) and view of VariablesView:
+      if getServices().getServiceChecked(LayoutService).tryGetCurrentView().getSome(view) and view of VariablesView:
         return view.VariablesView.some
       return VariablesView.none
 
@@ -393,7 +393,7 @@ when implModule:
       except Exception as e:
         log lvlError, &"Failed to restore debugger state from session: {e.msg}\n{data.pretty}"
 
-    let session = self.services.getService(SessionService).get
+    let session = self.services.getServiceChecked(SessionService)
     session.addSaveHandler "debugger", save, load
 
     let events = self.services.getService(EventService)

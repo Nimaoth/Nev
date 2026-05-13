@@ -2076,7 +2076,7 @@ when implModule:
           raise newException(IOError, "SSH session handshake failed: " & $rc)
 
         # Authenticate. Try with empty password first, if that fails then prompt user for password.
-        let vfs = self.services.getService(VFSService).get.vfs
+        let vfs = self.services.getServiceChecked(VFSService).vfs
         let privateKeyPath = vfs.localize(options.privateKeyPath)
         let publicKeyPath = vfs.localize(options.publicKeyPath)
         if privateKeyPath != "" or publicKeyPath != "":
@@ -2550,12 +2550,12 @@ when implModule:
   proc initService*(self: TerminalServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"TerminalServiceImpl.init"
 
-    self.events = self.services.getService(EventHandlerService).get
-    self.layout = self.services.getService(LayoutService).get
-    self.config = self.services.getService(ConfigService).get
-    self.themes = self.services.getService(ThemeService).get
-    self.registers = self.services.getService(Registers).get
-    self.commands = self.services.getService(CommandService).get
+    self.events = self.services.getServiceChecked(EventHandlerService)
+    self.layout = self.services.getServiceChecked(LayoutService)
+    self.config = self.services.getServiceChecked(ConfigService)
+    self.themes = self.services.getServiceChecked(ThemeService)
+    self.registers = self.services.getServiceChecked(Registers)
+    self.commands = self.services.getServiceChecked(CommandService)
     if self.themes.theme.isNotNil:
       self.handleThemeChanged(self.themes.theme)
     discard self.themes.onThemeChanged.subscribe proc(theme: Theme) = self.handleThemeChanged(theme)
@@ -2906,7 +2906,7 @@ when implModule:
       self.terminal.onRope.unsubscribe(handle)
 
       let path = &"ed://{self.terminal.id}.terminal-output"
-      await self.terminals.services.getService(VFSService).get.vfs.write(path, rope)
+      await self.terminals.services.getServiceChecked(VFSService).vfs.write(path, rope)
 
       if self.terminals.layout.openFile(path).getSome(editor):
         let numLines = rope.lines
@@ -3158,7 +3158,7 @@ when implModule:
     if services == nil:
       return
 
-    let self = services.getService(TerminalServiceImpl).get
+    let self = services.getServiceChecked(TerminalServiceImpl)
     let terms = self.terminals
     for term in terms.values:
       term.close()

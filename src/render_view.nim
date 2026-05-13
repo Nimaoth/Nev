@@ -70,10 +70,10 @@ proc bindPlatformEvents(self: RenderView) =
 
 proc newRenderView*(services: Services): RenderView =
   result = RenderView(services: services)
-  result.platform = services.getService(PlatformService).get.platform
-  result.commandService = services.getService(CommandService).get
-  result.events = services.getService(EventHandlerService).get
-  result.layout = services.getService(LayoutService).get
+  result.platform = services.getServiceChecked(PlatformService).platform
+  result.commandService = services.getServiceChecked(CommandService)
+  result.events = services.getServiceChecked(EventHandlerService)
+  result.layout = services.getServiceChecked(LayoutService)
   result.bindPlatformEvents()
 
 proc setRenderInterval*(self: RenderView, ms: int)

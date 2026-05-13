@@ -815,13 +815,13 @@ proc newTextDocument*(
   else:
     self.uniqueId = newId()
   self.isInitialized = true
-  self.workspace = services.getService(Workspace).get
+  self.workspace = services.getServiceChecked(Workspace)
   self.services = services
-  self.configService = services.getService(ConfigService).get
-  self.vfs = services.getService(VFSService).get.vfs
-  self.editors = services.getService(DocumentEditorService).get
-  self.eventBus = self.services.getService(EventService).get
-  self.moveDatabase = self.services.getService(MoveDatabase).get
+  self.configService = services.getServiceChecked(ConfigService)
+  self.vfs = services.getServiceChecked(VFSService).vfs
+  self.editors = services.getServiceChecked(DocumentEditorService)
+  self.eventBus = self.services.getServiceChecked(EventService)
+  self.moveDatabase = self.services.getServiceChecked(MoveDatabase)
   self.createLanguageServer = createLanguageServer
   self.filename = self.vfs.normalize(filename)
   self.isBackedByFile = load
@@ -867,7 +867,7 @@ proc newTextDocument*(
     self.notifyRequestRerender()
   )
 
-  self.formattingComponent = newFormattingComponent(services.getService(VFSService).get.vfs, self.config)
+  self.formattingComponent = newFormattingComponent(services.getServiceChecked(VFSService).vfs, self.config)
   self.addComponent(self.formattingComponent)
 
   self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =
@@ -1972,12 +1972,12 @@ import layout/layout
 
 proc addFileVcsAsync*(self: TextDocument, prompt: bool = true) {.async.} =
   let path = self.localizedPath
-  let vcsService = self.services.getService(VCSService).get
+  let vcsService = self.services.getServiceChecked(VCSService)
   let vcs = vcsService.getVcsForFile(path).getOr:
     return
 
   if prompt:
-    let layoutService = self.services.getService(LayoutService).get
+    let layoutService = self.services.getServiceChecked(LayoutService)
     let text = await layoutService.prompt(@["Yes", "No"], "VCS: Add " & path)
     if not self.isInitialized:
       return

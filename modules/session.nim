@@ -82,7 +82,7 @@ when implModule:
 
     self.hasSession = true
     self.onSessionRestored.invoke(self)
-    let events = self.services.getService(EventService).get
+    let events = self.services.getServiceChecked(EventService)
     events.emit("session/restored", "")
 
   proc sessionServiceAddSaveHandler(self: SessionService, key: string,
@@ -92,7 +92,7 @@ when implModule:
 
   proc sessionSaveSession(self: SessionService): JsonNode =
     log lvlInfo, &"SessionService.saveSession"
-    let events = self.services.getService(EventService).get
+    let events = self.services.getServiceChecked(EventService)
     events.emit("session/save", "")
     result = self.sessionData.shallowCopy()
     if result == nil:

@@ -51,7 +51,7 @@ when implModule:
   proc newFilePreviewer*(vfs: VFS, services: Services, openNewDocuments: bool = false, reuseExistingDocuments: bool = true): Previewer =
     let res = FilePreviewer()
     res.services = services
-    res.editors = services.getService(DocumentEditorService).get
+    res.editors = services.getServiceChecked(DocumentEditorService)
     res.vfs = vfs
 
     res.openNewDocuments = openNewDocuments

@@ -202,10 +202,10 @@ when implModule:
   proc registerPluginCommands(self: PluginServiceImpl, plugin: Plugin)
 
   proc initPluginService(self: PluginServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-    self.events = self.services.getService(EventHandlerService).get
-    self.vfs = self.services.getService(VFSService).get.vfs
-    self.commands = self.services.getService(CommandService).get
-    self.configService = self.services.getService(ConfigService).get
+    self.events = self.services.getServiceChecked(EventHandlerService)
+    self.vfs = self.services.getServiceChecked(VFSService).vfs
+    self.commands = self.services.getServiceChecked(CommandService)
+    self.configService = self.services.getServiceChecked(ConfigService)
     self.settings = self.configService.runtime
     self.pluginSettings = PluginSettings.new(self.settings)
 
@@ -383,7 +383,7 @@ when implModule:
 
     # todo: reimplement this once cacheFile works with any VFS. Don't depend on local vfs here.
     # if plugin.manifest.autoLoad:
-    #   self.services.getService(VFSService).get.localVfs.cacheFile(self.vfs.localize(plugin.manifest.wasm))
+    #   self.services.getServiceChecked(VFSService).localVfs.cacheFile(self.vfs.localize(plugin.manifest.wasm))
 
     # todo: maybe this should be just subscribed once when the service starts and then loop over all loaded plugins
     discard self.settings.onConfigChanged.subscribe proc(key: string) =

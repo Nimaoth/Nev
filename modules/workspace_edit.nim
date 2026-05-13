@@ -45,11 +45,11 @@ when implModule:
     let editors = if editors != nil:
       editors
     else:
-      ({.gcsafe.}: getServices()).getService(DocumentEditorService).get
+      ({.gcsafe.}: getServices()).getServiceChecked(DocumentEditorService)
     let vfs = if not vfs.isNil:
       vfs
     else:
-      ({.gcsafe.}: getServices()).getService(VFSService).get.vfs
+      ({.gcsafe.}: getServices()).getServiceChecked(VFSService).vfs
 
     proc lspPathToVfsPath(self: VFS, lspPath: string): string =
       let localVfs = self.getVFS("local://").vfs # todo

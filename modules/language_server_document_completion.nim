@@ -116,9 +116,9 @@ when implModule:
     result.capabilities.completionProvider = lsp_types.CompletionOptions().some
     result.name = "document-completion"
     result.services = services
-    result.documents = services.getService(DocumentEditorService).get
-    result.eventBus = services.getService(EventService).get
-    result.config = services.getService(ConfigService).get.runtime
+    result.documents = services.getServiceChecked(DocumentEditorService)
+    result.eventBus = services.getServiceChecked(EventService)
+    result.config = services.getServiceChecked(ConfigService).runtime
     result.getCompletionsImpl = getCompletionsImpl
 
   var gls: LanguageServerDocumentCompletion = nil
@@ -138,7 +138,7 @@ when implModule:
       gls = ls
 
     let events = services.getService(EventService)
-    let documents = services.getService(DocumentEditorService).get
+    let documents = services.getServiceChecked(DocumentEditorService)
 
     proc handleEditorRegistered(event, payload: string) {.gcsafe, raises: [].} =
       try:

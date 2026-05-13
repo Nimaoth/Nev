@@ -29,7 +29,7 @@ proc newLanguageServerCommandLineService*(): LanguageServerCommandLineService =
   let self = LanguageServerCommandLineService()
   self.services = getServices()
   self.languageServer = newLanguageServerCommandLine(self.services)
-  self.config = self.services.getService(ConfigService).get.runtime
+  self.config = self.services.getServiceChecked(ConfigService).runtime
   discard self.languageServer.documents.onEditorRegistered.subscribe proc(editor: DocumentEditor) =
     let doc = editor.currentDocument
     let language = doc.getLanguageComponent().getOr:
@@ -59,7 +59,7 @@ proc lspCommandLineGetDefinition*(self: LanguageServer, filename: string, locati
 
 proc lspCommandLineGetCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
   let self = self.LanguageServerCommandLine
-  let layout = self.services.getService(LayoutService).get
+  let layout = self.services.getServiceChecked(LayoutService)
 
   var completions = newSeq[CompletionItem]()
 
@@ -160,9 +160,9 @@ proc newLanguageServerCommandLine(services: Services): LanguageServerCommandLine
   var server = new LanguageServerCommandLine
   server.name = "command-line"
   server.services = services
-  server.commands = services.getService(CommandService).get
-  server.events = services.getService(EventHandlerService).get
-  server.documents = services.getService(DocumentEditorService).get
+  server.commands = services.getServiceChecked(CommandService)
+  server.events = services.getServiceChecked(EventHandlerService)
+  server.documents = services.getServiceChecked(DocumentEditorService)
   server.capabilities.completionProvider = lsp_types.CompletionOptions().some
   server.getDefinitionImpl = lspCommandLineGetDefinition
   server.getCompletionsImpl = lspCommandLineGetCompletions

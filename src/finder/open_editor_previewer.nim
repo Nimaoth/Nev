@@ -43,7 +43,7 @@ proc previewItemImpl(self: OpenEditorPreviewer, item: FinderItem, editor: Docume
 proc newOpenEditorPreviewer*(services: Services): OpenEditorPreviewer =
   new result
   result.services = services
-  result.editors = services.getService(DocumentEditorService).get
+  result.editors = services.getServiceChecked(DocumentEditorService)
   result.previewItemImpl = proc(self: Previewer, item: FinderItem, editor: DocumentEditor) = previewItemImpl(self.OpenEditorPreviewer, item, editor)
   result.deinitImpl = proc(self: Previewer) = deinitImpl(self.OpenEditorPreviewer)
   result.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =

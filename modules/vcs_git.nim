@@ -562,7 +562,7 @@ when implModule:
       log lvlWarn, &"Failed to initialize init_module_vcs_git: no services found"
       return
 
-    let vcs = services.getService(VCSService).get
+    let vcs = services.getServiceChecked(VCSService)
     vcs.detectors["git"] = detectGit
 
     let vfsService = getServiceChecked(VFSService)

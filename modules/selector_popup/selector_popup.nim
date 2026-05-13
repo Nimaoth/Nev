@@ -133,7 +133,7 @@ when implModule:
   proc selectorPopupDeinit*(self: SelectorPopupImpl) {.gcsafe, raises: [].} =
     logScope lvlInfo, &"[deinit] Destroying selector popup"
 
-    let config = self.services.getService(ConfigService).get.runtime
+    let config = self.services.getServiceChecked(ConfigService).runtime
     config.onConfigChanged.unsubscribe(self.configChangedHandle)
 
     if self.finder.isNotNil:
@@ -215,7 +215,7 @@ when implModule:
   proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopupImpl] {.gcsafe, raises: [].} =
     {.gcsafe.}:
       if getServices().isNil: return SelectorPopupImpl.none
-      let layout = getServices().getService(LayoutService).get
+      let layout = getServices().getServiceChecked(LayoutService)
       if layout.getPopupForId(wrapper.id).getSome(editor):
         if editor of SelectorPopupImpl:
           return editor.SelectorPopupImpl.some
@@ -498,11 +498,11 @@ when implModule:
 
     var popup = SelectorPopupImpl()
     popup.services = services
-    popup.layout = services.getService(LayoutService).get
-    popup.events = services.getService(EventHandlerService).get
-    popup.editors = services.getService(DocumentEditorService).get
-    popup.commands = services.getService(CommandService).get
-    popup.settings = SelectorSettings.new(services.getService(ConfigService).get.runtime)
+    popup.layout = services.getServiceChecked(LayoutService)
+    popup.events = services.getServiceChecked(EventHandlerService)
+    popup.editors = services.getServiceChecked(DocumentEditorService)
+    popup.commands = services.getServiceChecked(CommandService)
+    popup.settings = SelectorSettings.new(services.getServiceChecked(ConfigService).runtime)
     popup.scale = vec2(0.5, 0.5)
     popup.scope = scopeName.get("")
     popup.initImpl = proc(self: Popup) = selectorPopupInit(self.SelectorPopupImpl)
@@ -561,7 +561,7 @@ when implModule:
       discard popup.finder.onItemsChanged.subscribe () => popup.handleItemsUpdated()
       popup.finder.setQuery("")
 
-    let config = services.getService(ConfigService).get.runtime
+    let config = services.getServiceChecked(ConfigService).runtime
     popup.configChangedHandle = config.onConfigChanged.subscribe proc(key: string) =
       if popup.finder.isNil:
         return

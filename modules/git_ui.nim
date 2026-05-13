@@ -543,19 +543,19 @@ when implModule:
       log lvlWarn, "Failed to initialize init_module_git_ui: no services found"
       return
 
-    let layout = services.getService(LayoutService).get
-    let commands = services.getService(CommandService).get
+    let layout = services.getServiceChecked(LayoutService)
+    let commands = services.getServiceChecked(CommandService)
     let vcsService = services.getService(VCSService).getOr:
       log lvlWarn, "Failed to get VCSService for git_ui"
       return
 
     let events = getServiceChecked(EventHandlerService)
-    let platform = services.getService(PlatformService).get.platform
+    let platform = services.getServiceChecked(PlatformService).platform
 
     var view: GitUiView = newGitUiView()
     view.vcsService = vcsService
     view.events = events
-    view.editors = services.getService(DocumentEditorService).get
+    view.editors = services.getServiceChecked(DocumentEditorService)
     view.platform = platform
 
     let eventService = getServiceChecked(EventService)

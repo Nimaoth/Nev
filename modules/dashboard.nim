@@ -154,7 +154,7 @@ when implModule:
     self.resetDirty()
 
     let services = getServices()
-    let configService = services.getService(ConfigService).get
+    let configService = services.getServiceChecked(ConfigService)
     let configStore = configService.runtime
 
     let minTwoColChars = configStore.get("dashboard.min-two-col-chars", 160)
@@ -350,7 +350,7 @@ when implModule:
     var activeModes: seq[string] = @["editor"]
     let services = getServices()
     if services != nil:
-      let configService = services.getService(ConfigService).get
+      let configService = services.getServiceChecked(ConfigService)
       activeModes = configService.runtime.get("editor.base-modes", seq[string], @["editor"])
 
     var commandToKeys: Table[string, seq[string]]
@@ -692,7 +692,7 @@ when implModule:
     }
 
     let services = getServices()
-    let configService = services.getService(ConfigService).get
+    let configService = services.getServiceChecked(ConfigService)
     let sectionsConfig = configService.runtime.get("dashboard.sections", JsonNodeEx, defaultSectionsConfig)
 
     var sections = buildSectionsFromConfig(sectionsConfig)
@@ -724,7 +724,7 @@ when implModule:
     view.kindImpl = proc(self: View): string = kind(self.DashboardView)
     view.displayImpl = proc(self: View): string = display(self.DashboardView)
 
-    let platformService = services.getService(PlatformService).get
+    let platformService = services.getServiceChecked(PlatformService)
     discard view.onMarkedDirty.subscribe proc() =
       platformService.platform.requestedRender = true
 
@@ -766,6 +766,6 @@ when implModule:
       log lvlWarn, "Failed to get CommandService for dashboard"
       return
 
-    let layout = services.getService(LayoutService).get
+    let layout = services.getServiceChecked(LayoutService)
     let view = createDashboardView(events, commandService)
     layout.fallbackView = view
