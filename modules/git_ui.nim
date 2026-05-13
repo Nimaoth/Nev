@@ -772,9 +772,6 @@ when implModule:
         view.setError("Finish editing first")
         return
       let msg = view.commitMessage
-      if msg.strip().len == 0:
-        view.setError("No commit message")
-        return
       runGitAsync(@["commit", "--amend", "-m", msg.strip()]):
         view.commitMessage = ""
         asyncSpawn view.refreshStatusAsync()
