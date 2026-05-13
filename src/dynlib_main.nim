@@ -54,7 +54,6 @@ when enableAst:
   import ast/model_document
 import text/text_editor
 import text/language/debugger
-import collab
 import wasm3, wasm3/[wasm3c, wasmconversions]
 import ui/node
 import plugin_service
