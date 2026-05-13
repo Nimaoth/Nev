@@ -5,7 +5,8 @@ import component
 
 export component
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 declareSettings InlayHintSettings, "":
   ## Whether inlay hints are enabled.
@@ -16,7 +17,7 @@ type InlayHintComponent* = ref object of Component
 
 # DLL API
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newInlayHintComponent*(settings: InlayHintSettings, displayMap: DisplayMap): InlayHintComponent
 proc inlayHintComponentUpdateInlayHints(self: InlayHintComponent, now: bool = false)
 proc inlayHintComponentPreRender(self: InlayHintComponent)
@@ -182,3 +183,6 @@ when implModule:
     let bufferRange = self.lastInlayHintBufferRange
     if visibleRange.a < bufferRange.a or visibleRange.b > bufferRange.b:
       self.inlayHintComponentUpdateInlayHints()
+
+  proc init_module_inlay_hint_component*() {.cdecl, exportc, dynlib.} =
+    discard

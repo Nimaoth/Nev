@@ -27,6 +27,7 @@ when not defined(useDynlib):
   import "../modules/selector_popup/selector_popup.nim"
   import "../modules/workspace_edit.nim"
   import "../modules/snippet_component.nim"
+  import "../modules/inlay_hint_component.nim"
   import "../modules/formatting_component.nim"
   import "../modules/toast.nim"
   import "../modules/text/text.nim"
@@ -82,6 +83,7 @@ proc initModules*() =
   when declared(init_module_selector_popup): init_module_selector_popup()
   when declared(init_module_workspace_edit): init_module_workspace_edit()
   when declared(init_module_snippet_component): init_module_snippet_component()
+  when declared(init_module_inlay_hint_component): init_module_inlay_hint_component()
   when declared(init_module_formatting_component): init_module_formatting_component()
   when declared(init_module_toast): init_module_toast()
   when declared(init_module_text): init_module_text()
@@ -134,6 +136,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_text): shutdown_module_text()
   when declared(shutdown_module_toast): shutdown_module_toast()
   when declared(shutdown_module_formatting_component): shutdown_module_formatting_component()
+  when declared(shutdown_module_inlay_hint_component): shutdown_module_inlay_hint_component()
   when declared(shutdown_module_snippet_component): shutdown_module_snippet_component()
   when declared(shutdown_module_workspace_edit): shutdown_module_workspace_edit()
   when declared(shutdown_module_selector_popup): shutdown_module_selector_popup()
@@ -192,6 +195,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("selector_popup")
   loadModule("workspace_edit")
   loadModule("snippet_component")
+  loadModule("inlay_hint_component")
   loadModule("formatting_component")
   loadModule("toast")
   loadModule("text")
