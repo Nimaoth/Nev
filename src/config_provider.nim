@@ -164,6 +164,8 @@ proc configStoreSetParent(self: ConfigStore, parent: ConfigStore)
 proc configServiceGetLanguageStore(self: ConfigService, languageId: string): ConfigStore
 proc configServiceAddStore(self: ConfigService, name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore
 proc configServiceRemoveStore(self: ConfigService, store: ConfigStore)
+proc configServiceGetByPath(self: ConfigService, path: string): JsonNodeEx
+proc configServiceGetStoreForPath(self: ConfigService, path: string): (ConfigStore, string)
 {.pop.}
 
 proc set*[T](self: ConfigStore, key: string, value: T) =
@@ -175,6 +177,8 @@ proc setParent*(self: ConfigStore, parent: ConfigStore) = configStoreSetParent(s
 proc getLanguageStore*(self: ConfigService, languageId: string): ConfigStore = configServiceGetLanguageStore(self, languageId)
 proc addStore*(self: ConfigService, name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore = configServiceAddStore(self, name, filename, parent, settings)
 proc removeStore*(self: ConfigService, store: ConfigStore) = configServiceRemoveStore(self, store)
+proc getByPath*(self: ConfigService, path: string): JsonNodeEx = configServiceGetByPath(self, path)
+proc getStoreForPath*(self: ConfigService, path: string): (ConfigStore, string) = configServiceGetStoreForPath(self, path)
 
 proc getValue*(self: ConfigStore, key: string): JsonNodeEx =
   result = self.configStoreGet(key)
@@ -895,7 +899,7 @@ when implModule:
 
     return nil
 
-  proc getStoreForPath*(self: ConfigService, path: string): (ConfigStore, string) =
+  proc configServiceGetStoreForPath(self: ConfigService, path: string): (ConfigStore, string) =
     for store in self.runtime.parentStores:
       if path.startsWith(store.name):
         return (store, path[store.name.len..^1].strip(chars = {'/'}).replace("/", "."))
@@ -909,7 +913,7 @@ when implModule:
     log lvlWarn, &"getStoreForPath '{path}' not found"
     return (nil, "")
 
-  proc getByPath*(self: ConfigService, path: string): JsonNodeEx =
+  proc configServiceGetByPath(self: ConfigService, path: string): JsonNodeEx =
     let (store, key) = self.getStoreForPath(path)
     if store == nil:
       return nil

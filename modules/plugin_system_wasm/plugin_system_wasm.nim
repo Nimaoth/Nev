@@ -28,7 +28,7 @@ when implModule:
   type
     PluginSystemWasm* = ref object of PluginSystem
       engine: ptr WasmEngineT
-      vfs*: VFS
+      vfs*: Arc[VFS2]
       services*: Services
 
       v0: PluginApiBase
@@ -78,7 +78,7 @@ when implModule:
     self.dispatchDynamicImpl = wasmDispatchDynamic
 
     self.services = services
-    self.vfs = services.getService(VFSService).get.vfs
+    self.vfs = services.getService(VFSService).get.vfs2
 
     self.initWasm()
 
@@ -154,21 +154,31 @@ when implModule:
 
     plugin.state = PluginState.Loading
     let module = if plugin.manifest.wasm.endsWith(".wasm"):
-      let wasmBytes = self.vfs.read(plugin.manifest.wasm, {Binary}).await
-      self.engine.newModule(wasmBytes).okOr(err):
-        log lvlError, &"[host] Failed to create wasm module: {err.msg}"
+      try:
+        let wasmBytes = self.vfs.read(plugin.manifest.wasm, {Binary}).await
+        self.engine.newModule(wasmBytes).okOr(err):
+          log lvlError, &"[host] Failed to create wasm module: {err.msg}"
+          plugin.state = PluginState.Failed
+          return
+      except CatchableError as e:
+        log lvlError, &"[host] Failed to create wasm module: {e.msg}"
         plugin.state = PluginState.Failed
         return
     else:
-      let wat = self.vfs.read(plugin.manifest.wasm).await
-      var wasmBytes: WasmByteVecT
-      let err = wat2wasm(cast[ptr UncheckedArray[char]](wat[0].addr), wat.len.csize_t, wasmBytes.addr)
-      if err != nil:
-        log lvlError, &"[host] Failed to convert wat to wasm module: {err.msg}"
-        return
+      try:
+        let wat = self.vfs.read(plugin.manifest.wasm).await
+        var wasmBytes: WasmByteVecT
+        let err = wat2wasm(cast[ptr UncheckedArray[char]](wat[0].addr), wat.len.csize_t, wasmBytes.addr)
+        if err != nil:
+          log lvlError, &"[host] Failed to convert wat to wasm module: {err.msg}"
+          return
 
-      self.engine.newModule(cast[ptr UncheckedArray[uint8]](wasmBytes.data).toOpenArray(0, wasmBytes.size.int - 1)).okOr(err):
-        log lvlError, &"[host] Failed to create wasm module: {err.msg}"
+        self.engine.newModule(cast[ptr UncheckedArray[uint8]](wasmBytes.data).toOpenArray(0, wasmBytes.size.int - 1)).okOr(err):
+          log lvlError, &"[host] Failed to create wasm module: {err.msg}"
+          plugin.state = PluginState.Failed
+          return
+      except CatchableError as e:
+        log lvlError, &"[host] Failed to create wasm module: {e.msg}"
         plugin.state = PluginState.Failed
         return
 

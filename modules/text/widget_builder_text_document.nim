@@ -8,7 +8,7 @@ import ui/[widget_library]
 import document_editor, theme, config_provider, layout/layout
 import text/language/[lsp_types]
 import text/[diff, syntax_map, overlay_map, wrap_map, diff_map, display_map]
-import view, treesitter
+import view, treesitter/treesitter
 import scroll_box, treesitter_component, decoration_component, hover_component, contextline_component
 
 import ui/node

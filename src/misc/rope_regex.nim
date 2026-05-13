@@ -2,7 +2,8 @@ import std/[options, tables]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import custom_async, custom_unicode, util, treesitter, regex, timer
+import custom_async, custom_unicode, util, regex, timer
+import treesitter/treesitter
 
 import regex/common
 import regex/nodematch

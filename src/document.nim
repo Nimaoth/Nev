@@ -26,7 +26,6 @@ type Document* = ref object of ComponentOwner
   revision*: int
   undoableRevision*: int
   lastSavedRevision*: int               ## Undobale revision at the time we saved the last time
-  vfs*: VFS
   vfs2*: Arc[VFS2]
   usage*: string
   preSaveHandlers*: seq[proc (self: Document): Future[void] {.async: (raises: []).}]
@@ -76,7 +75,7 @@ proc setReadOnly*(self: Document, readOnly: bool) =
 proc setFileReadOnlyAsync*(self: Document, readOnly: bool): Future[bool] {.async.} =
   ## Tries to set the underlying file permissions
   try:
-    await self.vfs.setFileAttributes(self.filename, FileAttributes(writable: not readOnly, readable: true))
+    await self.vfs2.setFileAttributes(self.filename, FileAttributes(writable: not readOnly, readable: true))
     self.readOnly = readOnly
     return true
   except IOError:
@@ -92,7 +91,7 @@ func `$`*(document: Document): string {.gcsafe, raises: [].} =
     &"Document({document.id}, {document.filename})"
 
 proc normalizedPath*(self: Document): string {.gcsafe, raises: [].} =
-  return self.vfs.normalize(self.filename)
+  return self.vfs2.normalize(self.filename)
 
 when implModule:
-  proc documentLocalizedPath*(self: Document): string {.gcsafe, raises: [].} = self.vfs.localize(self.filename)
+  proc documentLocalizedPath*(self: Document): string {.gcsafe, raises: [].} = self.vfs2.localize(self.filename)

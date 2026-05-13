@@ -13,7 +13,7 @@ when implModule and enableGui:
   import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer, generational_seq]
   import ui/node
   import nimsumtree/[arc]
-  import monitors, lrucache, compilation_config, vfs, app_options, theme, service
+  import monitors, lrucache, compilation_config, vfs, vfs_service, app_options, theme, service
 
   {.push raises: [].}
   {.push gcsafe.}
@@ -127,6 +127,7 @@ when implModule and enableGui:
   proc initGuiPlatform(self: GuiPlatform, options: AppOptions) =
     log lvlInfo, "Init GUI platform"
     try:
+      self.vfs = getServiceChecked(VFSService).vfs2
       self.glyphCache = newLruCache[ImageKey, ImageKey](5000, true)
       self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=true)
       self.window.runeInputEnabled = true

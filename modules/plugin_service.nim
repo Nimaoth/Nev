@@ -160,8 +160,9 @@ proc desc*(self: Plugin): string = &"'{self.manifest.name}' ({self.manifest.path
 when implModule:
   import std/[macros, os, sugar, strutils]
   import misc/[custom_logger, util, myjsonutils]
+  import nimsumtree/[arc]
   import scripting/expose
-  import vfs_service, vfs, vfs_local, dispatch_tables, input_handler/input_handler
+  import vfs_service, vfs, dispatch_tables, input_handler/input_handler
 
   logCategory "plugins"
 
@@ -179,7 +180,7 @@ when implModule:
 
     PluginServiceImpl* = ref object of PluginService
       events: EventHandlerService
-      vfs: VFS
+      vfs: Arc[VFS2]
       commands*: CommandService
       configService*: ConfigService
       settings*: ConfigStore
@@ -202,7 +203,7 @@ when implModule:
 
   proc initPluginService(self: PluginServiceImpl): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     self.events = self.services.getService(EventHandlerService).get
-    self.vfs = self.services.getService(VFSService).get.vfs
+    self.vfs = self.services.getService(VFSService).get.vfs2
     self.commands = self.services.getService(CommandService).get
     self.configService = self.services.getService(ConfigService).get
     self.settings = self.configService.runtime
@@ -380,8 +381,9 @@ when implModule:
     self.idToPlugin[plugin.manifest.id] = plugin
     self.registerPluginCommands(plugin)
 
-    if plugin.manifest.autoLoad:
-      self.services.getService(VFSService).get.localVfs.cacheFile(self.vfs.localize(plugin.manifest.wasm))
+    # todo: reimplement this once cacheFile works with any VFS. Don't depend on local vfs here.
+    # if plugin.manifest.autoLoad:
+    #   self.services.getService(VFSService).get.localVfs.cacheFile(self.vfs.localize(plugin.manifest.wasm))
 
     # todo: maybe this should be just subscribed once when the service starts and then loop over all loaded plugins
     discard self.settings.onConfigChanged.subscribe proc(key: string) =

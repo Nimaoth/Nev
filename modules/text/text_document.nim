@@ -7,7 +7,7 @@ import workspaces/[workspace]
 import text/language/[languages, language_server_base]
 import text/[syntax_map, display_map, diff, indent]
 import document, document_editor, config_provider, service, vfs, vfs_service, language_server_list
-import vcs/vcs, event_service, toast, treesitter
+import vcs/vcs, event_service, toast, treesitter/treesitter
 import language_server_component, config_component, move_database, move_component, text_component, treesitter_component,
   language_component, formatting_component
 
@@ -818,7 +818,6 @@ proc newTextDocument*(
   self.workspace = services.getService(Workspace).get
   self.services = services
   self.configService = services.getService(ConfigService).get
-  self.vfs = services.getService(VFSService).get.vfs
   self.vfs2 = services.getService(VFSService).get.vfs2
   self.editors = services.getService(DocumentEditorService).get
   self.eventBus = self.services.getService(EventService).get

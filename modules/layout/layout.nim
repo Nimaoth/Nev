@@ -190,7 +190,6 @@ when implModule:
       editors: DocumentEditorService
       session: SessionService
       commands: CommandService
-      vfs: VFS
       vfs2: Arc[VFS2]
       mPopups: seq[Popup]
       layout*: Layout
@@ -312,7 +311,6 @@ when implModule:
     assert self.platform != nil
     self.config = self.services.getService(ConfigService).get
     self.editors = self.services.getService(DocumentEditorService).get
-    self.vfs = self.services.getService(VFSService).get.vfs
     self.vfs2 = self.services.getService(VFSService).get.vfs2
     self.layout = HorizontalLayout()
     self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)

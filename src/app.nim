@@ -98,7 +98,6 @@ type
     themes*: ThemeService
 
     workspace*: Workspace
-    vfs*: VFS
     vfs2*: Arc[VFS2]
 
     logNextFrameTime*: bool = false
@@ -280,13 +279,13 @@ proc addSessionToRecentSessions(self: App, session: string) {.async.} =
       recentSessions.removeShift(i)
     recentSessions.add(session)
     log lvlInfo, &"Add session to recent sessions: {session} -> {recentSessions.toJson.pretty}"
-    await self.vfs.write(homeConfigDir // "sessions.json", recentSessions.toJson().pretty)
+    await self.vfs2.write(homeConfigDir // "sessions.json", recentSessions.toJson().pretty)
   except:
     log lvlError, &"Failed to update recent sessions: {getCurrentExceptionMsg()}"
 
 proc loadSession*(self: App) {.async: (raises: []).} =
   try:
-    let stateJson = self.vfs.read(self.sessionFile).await.parseJson
+    let stateJson = self.vfs2.read(self.sessionFile).await.parseJson
     if self.generalSettings.keepSessionHistory.get():
       asyncSpawn self.addSessionToRecentSessions(self.sessionFile)
 
@@ -328,7 +327,7 @@ proc loadSession*(self: App) {.async: (raises: []).} =
 
     if self.generalSettings.watchWorkspaceConfig.get():
       log lvlInfo, &"Watch workspace config files: {workspaceConfigDir}"
-      discard self.vfs.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
+      discard self.vfs2.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
         let changedFiles = events.mapIt(it.name)
         asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace", changedFiles)
       )
@@ -337,7 +336,7 @@ proc loadSession*(self: App) {.async: (raises: []).} =
     if self.appOptions.fileToOpen.getSome(filePath):
       try:
         let path = os.absolutePath(filePath).normalizePathUnix
-        let kind = self.vfs.getFileKind(path).await
+        let kind = self.vfs2.getFileKind(path).await
         if kind.isSome and kind.get == FileKind.File:
           discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
       except CatchableError as e:
@@ -557,7 +556,7 @@ proc loadKeybindings*(self: App, directory: string,
 proc loadConfigFileFrom(self: App, context: string, path: string):
     Future[Option[string]] {.async.} =
   try:
-    let content = await self.vfs.read(path)
+    let content = await self.vfs2.read(path)
     log lvlInfo, &"Loaded {context} from '{path}'"
     return content.some
   except FileNotFoundError:
@@ -740,7 +739,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.commandLine = services.getServiceChecked(CommandLineService)
   self.toast = services.getServiceChecked(ToastService)
   self.themes = services.getServiceChecked(ThemeService)
-  self.vfs = self.vfsService.vfs
   self.vfs2 = self.vfsService.vfs2
 
   self.platform.fontSize = 14
@@ -784,7 +782,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     self.platform.requestRender()
 
   if self.generalSettings.watchTheme.get():
-    discard self.vfs.watch("app://themes", proc(events: seq[PathEvent]) =
+    discard self.vfs2.watch("app://themes", proc(events: seq[PathEvent]) =
       for e in events:
         case e.action
         of Modify:
@@ -797,14 +795,14 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   if self.generalSettings.watchAppConfig.get():
     log lvlInfo, &"Watch app config files: {appConfigDir}"
-    discard self.vfs.watch(appConfigDir, proc(events: seq[PathEvent]) =
+    discard self.vfs2.watch(appConfigDir, proc(events: seq[PathEvent]) =
       let changedFiles = events.mapIt(it.name)
       asyncSpawn self.loadConfigFrom(appConfigDir, "app", changedFiles)
     )
 
   if not self.appOptions.skipUserSettings and self.generalSettings.watchUserConfig.get():
     log lvlInfo, &"Watch user config files: {homeConfigDir}"
-    discard self.vfs.watch(homeConfigDir, proc(events: seq[PathEvent]) =
+    discard self.vfs2.watch(homeConfigDir, proc(events: seq[PathEvent]) =
       let changedFiles = events.mapIt(it.name)
       asyncSpawn self.loadConfigFrom(homeConfigDir, "home", changedFiles)
     )
@@ -828,7 +826,7 @@ proc setupSessionAndWorkspace*(self: App) {.async.} =
       self.sessionFile = os.absolutePath(session).normalizePathUnix
     elif self.appOptions.fileToOpen.getSome(file):
       let path = os.absolutePath(file).normalizePathUnix
-      let kind = self.vfs.getFileKind(path).await
+      let kind = self.vfs2.getFileKind(path).await
       if kind.isSome:
         case kind.get
         of FileKind.File:
@@ -864,7 +862,7 @@ proc setupSessionAndWorkspace*(self: App) {.async.} =
 
       if self.generalSettings.watchWorkspaceConfig.get():
         log lvlInfo, &"Watch workspace config files: {workspaceConfigDir}"
-        discard self.vfs.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
+        discard self.vfs2.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
           let changedFiles = events.mapIt(it.name)
           asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace", changedFiles)
         )
@@ -872,7 +870,7 @@ proc setupSessionAndWorkspace*(self: App) {.async.} =
       if self.appOptions.fileToOpen.getSome(filePath):
         try:
           let path = os.absolutePath(filePath).normalizePathUnix
-          let kind = self.vfs.getFileKind(path).await
+          let kind = self.vfs2.getFileKind(path).await
           if kind.isSome and kind.get == FileKind.File:
             discard self.layout.openFile(path)
         except CatchableError as e:
@@ -888,7 +886,7 @@ proc setupSessionAndWorkspace*(self: App) {.async.} =
 
       if self.generalSettings.watchWorkspaceConfig.get():
         log lvlInfo, &"Watch workspace config files: {workspaceConfigDir}"
-        discard self.vfs.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
+        discard self.vfs2.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
           let changedFiles = events.mapIt(it.name)
           asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace", changedFiles)
         )
@@ -896,7 +894,7 @@ proc setupSessionAndWorkspace*(self: App) {.async.} =
     if self.appOptions.fileToOpen.getSome(filePath):
       try:
         let path = os.absolutePath(filePath).normalizePathUnix
-        let kind = self.vfs.getFileKind(path).await
+        let kind = self.vfs2.getFileKind(path).await
         if kind.isSome and kind.get == FileKind.File:
           discard self.layout.openFile(path)
       except CatchableError as e:
@@ -1036,7 +1034,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
   if self.sessionFile != "":
     try:
       let serialized = state.toJson
-      waitFor self.vfs.write(self.sessionFile, serialized.pretty)
+      waitFor self.vfs2.write(self.sessionFile, serialized.pretty)
     except IOError as e:
       log lvlError, &"Failed to save app state: {e.msg}\n{e.getStackTrace()}"
 
@@ -1177,7 +1175,7 @@ proc loadTheme*(self: App, name: string, force: bool = false) {.expose("editor")
 
 proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
   try:
-    let path = self.vfs.localize(session)
+    let path = self.vfs2.localize(session)
     let exe = paramStr(0)
     log lvlInfo, &"loadSessionAsync '{path}', close = {close}, exe = '{exe}'"
     var (args, workingDir) = if path.endsWith(sessionExtension):
@@ -1230,7 +1228,7 @@ proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
 
 proc openSession*(self: App, newWindow: bool = false, root: string = "home://", preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
-    let sessions = await self.vfs.findFiles(root, r".nev-session$", options = FindFilesOptions(maxDepth: 2))
+    let sessions = await self.vfs2.findFiles(root, r".nev-session$", options = FindFilesOptions(maxDepth: 2))
     var items = newSeq[FinderItem]()
 
     for file in sessions:
@@ -1315,7 +1313,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
     var items = newSeq[FinderItem]()
     let themesDir = "app://themes"
     try:
-      let files = self.vfs.getDirectoryListingRec(Globs(), themesDir).await
+      let files = self.vfs2.getDirectoryListingRec(Globs(), themesDir).await
       for file in files:
         if file.endsWith(".json"):
           let (relativeDirectory, name, _) = file.splitFile
@@ -1614,7 +1612,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
       return false
 
     let store = state.stores[state.index]
-    self.vfs.read(store.filename).thenItOrElse:
+    self.vfs2.read(store.filename).thenItOrElse:
       if popup.textEditor.isNil:
         return
 
@@ -2061,7 +2059,7 @@ proc searchGlobalInteractive*(self: App, path: string = "") {.expose("editor").}
   let workspace = self.workspace
 
   let maxResults = self.generalSettings.maxSearchResults.get()
-  let source = newWorkspaceSearchDataSource(workspace, maxResults, self.vfs.localize(path))
+  let source = newWorkspaceSearchDataSource(workspace, maxResults, self.vfs2.localize(path))
   var finder = newFinder(source, filterAndSort=true, skipFirstQuery=true)
 
   var popup = newSelectorPopup("search".some, finder.some,
@@ -2153,7 +2151,7 @@ proc installTreesitterParserAsync*(self: App, languageOrRepoName: string, host: 
       log lvlError, &"Invalid value for languages.{language}.treesitter: '{repo}'. Expected 'user/repo'"
       return
 
-    let languagesRoot = self.vfs.localize("app://languages")
+    let languagesRoot = self.vfs2.localize("app://languages")
     let userName = parts[0]
     let repoName = parts[1]
     let subFolder = parts[2..^1].join("/")
@@ -2178,16 +2176,16 @@ proc installTreesitterParserAsync*(self: App, languageOrRepoName: string, host: 
       let queryDirs = if queriesSubDir != "":
         @[repoPath // queriesSubDir]
       else:
-        let highlightQueries = await self.vfs.findFiles(repoPath, r"highlights.scm$")
+        let highlightQueries = await self.vfs2.findFiles(repoPath, r"highlights.scm$")
         highlightQueries.mapIt(repoPath // it.splitPath.head)
 
       for path in queryDirs:
-        let list = await self.vfs.getDirectoryListing(path)
+        let list = await self.vfs2.getDirectoryListing(path)
         for f in list.files:
           if f.endsWith(".scm"):
             let fileName = f.splitPath.tail
             log lvlInfo, &"Copy '{f}' to '{queryDir}'"
-            await self.vfs.copyFile(path // f, queryDir // fileName)
+            await self.vfs2.copyFile(path // f, queryDir // fileName)
 
     block:
       let (output, err) = await runProcessAsyncOutput("tree-sitter", @["build", "--wasm", grammarPath],
@@ -2230,8 +2228,8 @@ proc installTreesitterParserPrebuiltAsync*(self: App, language: string) {.async.
   try:
     let urlTemplate = self.generalSettings.treesitterWasmDownloadUrl.get("https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/download/v0.3/{language}.tar.gz")
     let url = urlTemplate.replace("{language}", language)
-    let outputPath = self.vfs.localize(&"app://languages")
-    let tarPath = self.vfs.localize(&"app://languages/{language}.tar.gz")
+    let outputPath = self.vfs2.localize(&"app://languages")
+    let tarPath = self.vfs2.localize(&"app://languages/{language}.tar.gz")
     var cmd: string
     when defined(windows):
       cmd = "powershell -Command \"Invoke-WebRequest -Uri '" & url.quoteShell & "' -OutFile '" & tarPath.quoteShell & "'\""
@@ -2589,7 +2587,7 @@ proc dumpKeymapGraphViz*(self: App, context: string = "") {.expose("editor").} =
   for handler in self.currentEventHandlers():
     if context == "" or handler.config.context == context:
       try:
-        waitFor self.vfs.write("app://input_dots" // handler.config.context & ".dot", handler.dfa.dumpGraphViz)
+        waitFor self.vfs2.write("app://input_dots" // handler.config.context & ".dot", handler.dfa.dumpGraphViz)
       except IOError as e:
         log lvlError, &"Failed to dump keymap graph: {e.msg}\n{e.getStackTrace()}"
 

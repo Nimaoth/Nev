@@ -14,7 +14,7 @@ import config_provider, service, layout/layout, platform_service, vfs, vfs_servi
 import move_database, event_service
 import workspaces/workspace
 import finder/[previewer, finder]
-import vcs/vcs, treesitter
+import vcs/vcs, treesitter/treesitter
 import text/[overlay_map, tab_map, wrap_map, diff_map, display_map, snippet, indent, diff]
 import text/[completion_provider_document, completion_provider_lsp, completion_provider_snippet, completion]
 import lisp
@@ -222,7 +222,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   moveDatabase: MoveDatabase
   eventBus: EventService
   vfsService: VFSService
-  vfs*: VFS
   vfs2*: Arc[VFS2]
   commands*: CommandService
   configService*: ConfigService
@@ -2500,28 +2499,28 @@ proc unstageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false)
     let backupPath = &"ws0://temp/git/backup.{filename}"
     let originalPath = self.document.filename
     let originalPathLocalized = self.document.localizedPath
-    let backupPathLocalized = self.vfs.localize(backupPath)
+    let backupPathLocalized = self.vfs2.localize(backupPath)
     if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
       log lvlInfo, &"backup {originalPath} to {backupPath}"
-      await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
-      if self.vfs.isNil:
+      await self.vfs2.copyFile(originalPathLocalized, backupPathLocalized)
+      if self.vfs2.isNil:
         return
 
-      await self.vfs.write(originalPath, new)
-      if self.vfs.isNil:
+      await self.vfs2.write(originalPath, new)
+      if self.vfs2.isNil:
         return
 
       discard await vcs.stageFile(originalPathLocalized)
-      if self.vfs.isNil:
+      if self.vfs2.isNil:
         return
 
       log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
-      await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
-      if self.vfs.isNil:
+      await self.vfs2.copyFile(backupPathLocalized, originalPathLocalized)
+      if self.vfs2.isNil:
         return
 
-      discard await self.vfs.delete(backupPath)
-      if self.vfs.isNil:
+      discard await self.vfs2.delete(backupPath)
+      if self.vfs2.isNil:
         return
 
       asyncSpawn self.updateDiffAsync()
@@ -2585,28 +2584,28 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
     let backupPath = &"ws0://temp/git/backup.{filename}"
     let originalPath = self.document.filename
     let originalPathLocalized = self.document.localizedPath
-    let backupPathLocalized = self.vfs.localize(backupPath)
+    let backupPathLocalized = self.vfs2.localize(backupPath)
     if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
       log lvlInfo, &"backup {originalPath} to {backupPath}"
-      await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
-      if self.vfs.isNil:
+      await self.vfs2.copyFile(originalPathLocalized, backupPathLocalized)
+      if self.vfs2.isNil:
         return
 
-      await self.vfs.write(originalPath, new)
-      if self.vfs.isNil:
+      await self.vfs2.write(originalPath, new)
+      if self.vfs2.isNil:
         return
 
       discard await vcs.stageFile(originalPathLocalized)
-      if self.vfs.isNil:
+      if self.vfs2.isNil:
         return
 
       log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
-      await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
-      if self.vfs.isNil:
+      await self.vfs2.copyFile(backupPathLocalized, originalPathLocalized)
+      if self.vfs2.isNil:
         return
 
-      discard await self.vfs.delete(backupPath)
-      if self.vfs.isNil:
+      discard await self.vfs2.delete(backupPath)
+      if self.vfs2.isNil:
         return
 
       asyncSpawn self.updateDiffAsync()
@@ -2619,13 +2618,13 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
   # let stagedPath = &"ws0://temp/git/staged.{filename}"
   # let newPath = &"ws0://temp/git/new.{filename}"
   # let diffPath = &"ws0://temp/git/{filename}.diff"
-  # await self.vfs.write(stagedPath, self.diffDocument.rope.clone())
-  # await self.vfs.write(newPath, new)
+  # await self.vfs2.write(stagedPath, self.diffDocument.rope.clone())
+  # await self.vfs2.write(newPath, new)
 
-  # let workspaceRoot = self.vfs.localize("ws0://")
+  # let workspaceRoot = self.vfs2.localize("ws0://")
 
-  # let pathA = self.vfs.localize(stagedPath)
-  # let pathB = self.vfs.localize(newPath)
+  # let pathA = self.vfs2.localize(stagedPath)
+  # let pathB = self.vfs2.localize(newPath)
   # let gitDiff = await runProcessAsyncOutput("git", @["diff", "--no-index", "-U0", pathA, pathB])
 
   # let originalPath = self.document.localizedPath.relativePath(workspaceRoot).catch(self.document.localizedPath)
@@ -2634,9 +2633,9 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
   # let nl2 = patch.find("\n", nl1 + 1)
   # if nl2 > 0:
   #   patch = patch[nl2+1..^1]
-  # await self.vfs.write(diffPath, patch)
+  # await self.vfs2.write(diffPath, patch)
 
-  # let gitApply = await runProcessAsyncOutput("git", @["apply", "--cached", "-v", self.vfs.localize(diffPath)])
+  # let gitApply = await runProcessAsyncOutput("git", @["apply", "--cached", "-v", self.vfs2.localize(diffPath)])
   # echo &"git apply -> \n{gitApply.output}\n--------\n{gitApply.err}\n=============="
   # asyncSpawn self.updateDiffAsync()
 
@@ -2677,7 +2676,7 @@ proc checkoutFileAsync*(self: TextDocumentEditor, saveAfterwards: bool = false) 
 
   log lvlInfo, &"Checkout result: {res}"
 
-  self.document.setReadOnly(self.vfs.getFileAttributes(path).await.mapIt(not it.writable).get(false))
+  self.document.setReadOnly(self.vfs2.getFileAttributes(path).await.mapIt(not it.writable).get(false))
   asyncSpawn self.document.save()
   self.markDirty()
 
@@ -4789,7 +4788,6 @@ proc newTextEditor*(document: TextDocument, services: Services, initialSettings:
   self.workspace = self.services.getService(Workspace).get
   self.moveDatabase = self.services.getService(MoveDatabase).get
   self.eventBus = self.services.getService(EventService).get
-  self.vfs = self.services.getService(VFSService).get.vfs
   self.vfs2 = self.services.getService(VFSService).get.vfs2
   self.commands = self.services.getService(CommandService).get
   self.displayMap = DisplayMap.new()

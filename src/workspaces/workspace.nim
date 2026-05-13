@@ -38,7 +38,6 @@ type
     onWorkspaceFolderAdded*: Event[string]
     onWorkspaceFolderRemoved*: Event[string]
     isCacheUpdateInProgress: bool = false
-    vfs*: VFS
     vfs2*: Arc[VFS2]
 
 func serviceName*(_: typedesc[Workspace]): string = "Workspace"
@@ -78,16 +77,62 @@ proc getWorkspacePath*(self: Workspace): string =
 
 # Implementation
 when implModule:
-  import std/[json, strutils]
+  import std/[json, strutils, unicode]
   import malebolgia
-  import misc/[timer, async_process]
-  import vfs_local, compilation_config, event_service
+  import misc/[timer, async_process, static_array]
+  import compilation_config, event_service
+
+  when defined(windows):
+    import winlean
+    const
+      UNI_REPLACEMENT_CHAR = Utf16Char(0xFFFD'i16)
+      UNI_MAX_BMP = 0x0000FFFF
+      UNI_MAX_UTF16 = 0x0010FFFF
+      # UNI_MAX_UTF32 = 0x7FFFFFFF
+      # UNI_MAX_LEGAL_UTF32 = 0x0010FFFF
+
+      halfShift = 10
+      halfBase = 0x0010000
+      halfMask = 0x3FF
+
+      UNI_SUR_HIGH_START = 0xD800
+      UNI_SUR_LOW_START = 0xDC00
+      UNI_SUR_LOW_END = 0xDFFF
+
+    proc skipFindData(f: winlean.WIN32_FIND_DATA): bool {.inline.} =
+      # Note - takes advantage of null delimiter in the cstring
+      const dot = ord('.')
+      result = f.cFileName[0].int == dot and (f.cFileName[1].int == 0 or
+               f.cFileName[1].int == dot and f.cFileName[2].int == 0)
+
+    template getFilename*(f: untyped): untyped =
+      $cast[WideCString](addr(f.cFileName[0]))
+
+    iterator toWideChars(str: openArray[char]): Utf16Char =
+      var d = 0
+      for r in str.runes:
+        let ch = r.int
+        if ch <= UNI_MAX_BMP:
+          if ch >= UNI_SUR_HIGH_START and ch <= UNI_SUR_LOW_END:
+            yield UNI_REPLACEMENT_CHAR
+          else:
+            yield cast[Utf16Char](uint16(ch))
+        elif ch > UNI_MAX_UTF16:
+          yield UNI_REPLACEMENT_CHAR
+        else:
+          let ch = ch - halfBase
+          yield cast[Utf16Char](uint16((ch shr halfShift) + UNI_SUR_HIGH_START))
+          inc d
+          yield cast[Utf16Char](uint16((ch and halfMask) + UNI_SUR_LOW_START))
+        inc d
+  else:
+    import std/posix
+    import std/private/oscommon
 
   addBuiltinService(Workspace, VFSService)
 
   method init*(self: Workspace): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"Workspace.init"
-    self.vfs = self.services.getService(VFSService).get.vfs
     self.vfs2 = self.services.getService(VFSService).get.vfs2
 
     return ok()
@@ -110,7 +155,110 @@ when implModule:
 
   proc clearDirectoryCache*(self: Workspace) = discard
 
-  proc collectFiles(dir: vfs_local.Directory, files: var openArray[FinderItem], startIndex: int) =
+  iterator walkDirCustom(dir: string, relative = false, checkDir = false, skipSpecial = false): tuple[kind: PathComponent, path: string] {.tags: [ReadDirEffect], raises: [OSError].} =
+    when defined(windows):
+      var buffer = initArray(Utf16Char, 300)
+      for c in dir.toWideChars:
+        buffer.add c
+      for c in "/*".toWideChars:
+        buffer.add c
+      var f: winlean.WIN32_FIND_DATA
+      var h = findFirstFileW(buffer.toOpenArray().data, f)
+      if h == -1:
+        if checkDir:
+          raiseOSError(osLastError(), dir)
+      else:
+        defer: findClose(h)
+        while true:
+          var k = pcFile
+          if not skipFindData(f):
+            if (f.dwFileAttributes and FILE_ATTRIBUTE_DIRECTORY) != 0'i32:
+              k = pcDir
+            if (f.dwFileAttributes and FILE_ATTRIBUTE_REPARSE_POINT) != 0'i32:
+              k = succ(k)
+            var filename = cast[WideCString](addr(f.cFileName[0]))
+            yield (k, $filename)
+          if findNextFileW(h, f) == 0'i32:
+            let errCode = getLastError()
+            if errCode == winlean.ERROR_NO_MORE_FILES: break
+            else: raiseOSError(errCode.OSErrorCode)
+    else:
+      var d = opendir(dir.cstring)
+      if d == nil:
+        if checkDir:
+          raiseOSError(osLastError(), dir)
+      else:
+        defer: discard closedir(d)
+        while true:
+          var x = readdir(d)
+          if x == nil: break
+          var y = $cast[cstring](addr x.d_name)
+          if y != "." and y != "..":
+            var s: Stat
+            let path = dir / y
+            var k = pcFile
+
+            template resolveSymlink() =
+              var isSpecial: bool
+              (k, isSpecial) = getSymlinkFileKind(path)
+              if skipSpecial and isSpecial: continue
+
+            template kSetGeneric() =  # pure Posix component `k` resolution
+              if lstat(path.cstring, s) < 0'i32: continue  # don't yield
+              elif S_ISDIR(s.st_mode):
+                k = pcDir
+              elif S_ISLNK(s.st_mode):
+                resolveSymlink()
+              elif skipSpecial and not S_ISREG(s.st_mode): continue
+
+            when defined(linux) or defined(macosx) or
+                 defined(bsd) or defined(genode) or defined(nintendoswitch):
+              case x.d_type
+              of DT_DIR: k = pcDir
+              of DT_LNK:
+                resolveSymlink()
+              of DT_UNKNOWN:
+                kSetGeneric()
+              else: # DT_REG or special "files" like FIFOs
+                if skipSpecial and x.d_type != DT_REG: continue
+                else: discard # leave it as pcFile
+            else:  # assuming that field `d_type` is not present
+              kSetGeneric()
+
+            yield (k, y)
+
+  proc scanDirectoryImpl(ignore: ptr Globs, res: ptr Directory) {.gcsafe, raises: [].} =
+    try:
+      var m = createMaster()
+      for kind, fileName in walkDirCustom(res.path, relative = true):
+        if ignore[].ignorePath(res.path.toOpenArray(), fileName):
+          continue
+
+        if kind == pcFile:
+          res.files.add(fileName)
+          res.totalFiles += 1
+        elif kind == pcDir:
+
+          var path = newStringOfCap(res.path.len + fileName.len + 1)
+          path.add res.path
+          path.add "/"
+          path.add fileName
+          res.children.add(Directory(path: path.ensureMove))
+
+      m.awaitAll:
+        for i in 0..res.children.high:
+          m.spawn scanDirectoryImpl(ignore, res.children[i].addr)
+
+      for c in res.children:
+        res.totalFiles += c.totalFiles
+    except CatchableError:
+      discard
+
+  proc scanDirectory*(path: string, ignore: ptr Globs): Directory =
+    result.path = path
+    scanDirectoryImpl(ignore, result.addr)
+
+  proc collectFiles(dir: Directory, files: var openArray[FinderItem], startIndex: int) =
     for i, fileName in dir.files:
       var path = dir.path & "/" & fileName
       files[startIndex + i] = FinderItem(
@@ -130,7 +278,7 @@ when implModule:
       let t = startTimer()
 
       var m = createMaster()
-      var dirs = newSeq[vfs_local.Directory](args.roots.len)
+      var dirs = newSeq[Directory](args.roots.len)
       m.awaitAll:
         for i in 0..args.roots.high:
           m.spawn scanDirectory(args.roots[i], args.ignore.addr) -> dirs[i]
@@ -180,7 +328,7 @@ when implModule:
       var res: seq[SearchResult]
 
       var currentFile = ""
-      if self.vfs.getFileKind(root).await == FileKind.File.some:
+      if self.vfs2.getFileKind(root).await == FileKind.File.some:
         currentFile = root
       for line in output:
         if currentFile == "":
@@ -330,15 +478,6 @@ when implModule:
       log lvlError, &"Can't remove last workspace folder '{path}'"
       return
 
-    let (wsVfs, _) = self.vfs.getVFS("ws://")
-    self.vfs.unmount(&"ws{self.additionalPaths.len + 1}://")
-    wsVfs.unmount(&"{self.additionalPaths.len + 1}")
-
-    # rebuild vfs
-    for i, path in @[self.path] & self.additionalPaths:
-      self.vfs.mount(&"ws{i}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
-      wsVfs.mount($i, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
-
     let (wsVfs2, _) = self.vfs2.getVFS("ws://")
     self.vfs2.unmount(&"ws{self.additionalPaths.len + 1}://")
     wsVfs2.unmount(&"{self.additionalPaths.len + 1}")
@@ -361,13 +500,9 @@ when implModule:
     else:
       self.additionalPaths.add path
 
-    self.vfs.mount(&"ws{self.additionalPaths.len}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
     self.vfs2.mount(&"ws{self.additionalPaths.len}://", newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
 
     let index = $self.additionalPaths.len
-
-    let (wsVfs, _) = self.vfs.getVFS("ws://")
-    wsVfs.mount($index, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
 
     let (wsVfs2, _) = self.vfs2.getVFS("ws://")
     wsVfs2.mount($index, newVFSLink(self.vfs2.getVFS("").vfs, path & "/"))
@@ -379,11 +514,11 @@ when implModule:
 
   proc workspaceSetWorkspaceFolder(self: Workspace, path: string) =
     let allPaths = @[self.path] & self.additionalPaths
-    let (wsVfs, _) = self.vfs.getVFS("ws://")
+    let (wsVfs2, _) = self.vfs2.getVFS("ws://")
     for i, p in allPaths:
       self.onWorkspaceFolderRemoved.invoke(p)
-      self.vfs.unmount(&"ws{i}://")
-      wsVfs.unmount(&"{i}")
+      self.vfs2.unmount(&"ws{i}://")
+      wsVfs2.unmount(&"{i}")
 
     self.additionalPaths = @[]
     self.path = ""

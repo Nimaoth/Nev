@@ -68,7 +68,6 @@ proc newDataPreviewer*(services: Services, language = string.none,
   if document == nil:
     return
   document.usage = "data-previewer-temp"
-  document.setReadOnly(true)
   if language.isSome:
     document.getLanguageComponent().get.setLanguageId(language.get)
   result.tempDocument = document

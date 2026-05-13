@@ -421,8 +421,6 @@ import service
 gServices.addBuiltinServices()
 gServices.getService(PlatformService).get.setPlatform(plat)
 
-plat.vfs = gServices.getService(VFSService).get.vfs2
-
 import module_imports
 when defined(useDynlib):
   import std/dynlib
