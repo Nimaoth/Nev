@@ -4773,7 +4773,7 @@ proc createTextEditorInstance(): TextDocumentEditor =
     allTextEditors.add editor
   return editor
 
-import ui/widget_builder_text_document
+import widget_builder_text_document
 
 proc newTextEditor*(document: TextDocument, services: Services, initialSettings: JsonNodeEx): TextDocumentEditor =
   var self = createTextEditorInstance()
