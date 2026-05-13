@@ -5,7 +5,7 @@ import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_p
 import text/language/[language_server_base, lsp_types]
 import nimsumtree/[arc, rope]
 import service, event_service, document_editor, document, config_provider, vfs, vfs_service
-import text/[treesitter_type_conv]
+import treesitter/[treesitter_type_conv]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
 const currentSourcePath2 = currentSourcePath()

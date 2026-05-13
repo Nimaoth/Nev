@@ -2,7 +2,7 @@ import std/[options, json, tables, locks]
 import nimsumtree/[arc]
 import misc/[custom_logger, custom_async, util, custom_unicode, jsonex, arena, array_view]
 import vfs
-import text/treesitter_type_conv
+import treesitter_type_conv
 export treesitter_type_conv
 
 from scripting_api import Cursor, Selection, byteIndexToCursor
@@ -13,7 +13,7 @@ from scripting_api import Cursor, Selection, byteIndexToCursor
 logCategory "treesitter"
 
 from treesitter/api as ts import nil
-import text/treesitter_types
+import treesitter_types
 export treesitter_types
 
 const currentSourcePath2 = currentSourcePath()

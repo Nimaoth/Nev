@@ -17,7 +17,7 @@ when implModule:
   import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap, arena, array_view, rope_utils, array_set]
   import dap_client, config_provider, selector_popup/builder, input_handler/input_handler, dynamic_view, document, document_editor, layout/layout, platform_service, session
   import text/language/[language_server_base]
-  import text/[treesitter_type_conv]
+  import treesitter/[treesitter_type_conv]
   import platform/platform
   import finder/[previewer, finder]
   import workspaces/workspace, vfs, vfs_service

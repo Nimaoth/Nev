@@ -1,9 +1,9 @@
-#use theme
+#use theme treesitter
 import std/[options, tables]
 import nimsumtree/[arc]
 import misc/[custom_async]
 import component
-import text/treesitter_types
+import treesitter/treesitter_types
 import text/syntax_map
 import vfs
 
@@ -41,7 +41,7 @@ proc clear*(self: TreeSitterComponent) = treesitterComponentClear(self)
 when implModule:
   import std/[strformat]
   import misc/[util, custom_logger]
-  import treesitter
+  import treesitter/treesitter
 
   logCategory "treesitter-component"
 

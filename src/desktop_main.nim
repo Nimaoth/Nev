@@ -17,7 +17,7 @@ let startupTimer = startTimer()
 import std/[parseopt, options, macros, strutils, os, strformat]
 import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
-import treesitter
+import treesitter/treesitter
 
 when enableGui:
   static:

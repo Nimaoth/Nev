@@ -7,7 +7,7 @@ when not defined(useDynlib):
   import "../modules/status_line.nim"
   import "../modules/log.nim"
   import "../modules/wasm_engine.nim"
-  import "../modules/treesitter.nim"
+  import "../modules/treesitter/treesitter.nim"
   import "../modules/register.nim"
   import "../modules/command_service.nim"
   import "../modules/move_database.nim"

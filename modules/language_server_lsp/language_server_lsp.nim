@@ -18,7 +18,7 @@ when implModule:
   import workspaces/workspace as ws
   import lsp_client
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-  import text/[treesitter_type_conv]
+  import treesitter/[treesitter_type_conv]
   import service, event_service, document_editor, document, config_provider, vfs, vfs_service, selector_popup/builder
   import nimsumtree/[arc, rope, buffer]
   import layout/layout, command_service, toast
