@@ -7,6 +7,7 @@ when not defined(useDynlib):
   import "../modules/event_service.nim"
   import "../modules/session.nim"
   import "../modules/status_line.nim"
+  import "../modules/workspace.nim"
   import "../modules/log.nim"
   import "../modules/wasm_engine.nim"
   import "../modules/treesitter/treesitter.nim"
@@ -67,6 +68,7 @@ proc initModules*() =
   when declared(init_module_event_service): init_module_event_service()
   when declared(init_module_session): init_module_session()
   when declared(init_module_status_line): init_module_status_line()
+  when declared(init_module_workspace): init_module_workspace()
   when declared(init_module_log): init_module_log()
   when declared(init_module_wasm_engine): init_module_wasm_engine()
   when declared(init_module_treesitter): init_module_treesitter()
@@ -169,6 +171,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_treesitter): shutdown_module_treesitter()
   when declared(shutdown_module_wasm_engine): shutdown_module_wasm_engine()
   when declared(shutdown_module_log): shutdown_module_log()
+  when declared(shutdown_module_workspace): shutdown_module_workspace()
   when declared(shutdown_module_status_line): shutdown_module_status_line()
   when declared(shutdown_module_session): shutdown_module_session()
   when declared(shutdown_module_event_service): shutdown_module_event_service()
@@ -187,6 +190,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("event_service")
   loadModule("session")
   loadModule("status_line")
+  loadModule("workspace")
   loadModule("log")
   loadModule("wasm_engine")
   loadModule("treesitter")

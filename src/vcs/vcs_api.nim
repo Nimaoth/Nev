@@ -2,7 +2,7 @@ import std/[options, os, json, sugar, tables]
 import vmath
 import misc/[custom_async, custom_logger, util, myjsonutils, disposable_ref, jsonex, rope_utils]
 import scripting/expose
-import workspaces/workspace
+import workspace
 import finder/[finder, previewer, file_previewer]
 import platform/[platform]
 import service, dispatch_tables, platform_service

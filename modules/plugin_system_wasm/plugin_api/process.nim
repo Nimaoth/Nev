@@ -2,7 +2,7 @@ import std/[options, json, strutils]
 import results
 import misc/[custom_async, custom_logger, myjsonutils, util, async_process]
 import scripting/[expose]
-import workspaces/workspace
+import workspace
 import service, dispatch_tables, vfs, vfs_service, plugin_service
 
 {.push gcsafe.}

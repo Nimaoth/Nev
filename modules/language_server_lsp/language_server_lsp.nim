@@ -15,7 +15,7 @@ proc getOrCreateLanguageServerLSP*(name: string): Future[Option[LanguageServer]]
 when implModule:
   import language_server_component, text_component, treesitter_component, language_component
   import workspace_edit
-  import workspaces/workspace as ws
+  import workspace as ws
   import lsp_client
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import treesitter/[treesitter_type_conv]

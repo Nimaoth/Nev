@@ -2,7 +2,7 @@ import std/[options, tables]
 import misc/[custom_async, custom_logger, util]
 import text/diff
 import nimsumtree/[arc]
-import workspaces/workspace
+import workspace
 import service, config_provider, vfs, vfs_service
 
 include dynlib_export

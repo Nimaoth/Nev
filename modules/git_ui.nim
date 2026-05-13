@@ -16,7 +16,7 @@ when implModule:
   import text_component, event_service, document_editor, document, dynamic_view, view, layout/layout, command_component, platform_service
   import nimsumtree/[buffer, clock, rope]
   import ui/node
-  import command_service, workspaces/workspace, config_component, text_editor_component
+  import command_service, workspace, config_component, text_editor_component
   import vmath, chroma
   import theme
   import misc/[render_command]

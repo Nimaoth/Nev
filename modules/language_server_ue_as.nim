@@ -31,7 +31,7 @@ when implModule and defined(appLspUeAs):
   import text/language/[language_server_base, lsp_types]
   import service, event_service, document_editor, config_provider
   import language_server_lsp/language_server_lsp, language_server_regex
-  import workspaces/workspace
+  import workspace
   import vfs, vfs_service
   import document, language_server_component, config_component, language_component, move_component, text_component
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor

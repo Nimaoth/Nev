@@ -38,7 +38,7 @@ when implModule and defined(appLspUeCpp):
   import std/[options, json, strutils]
   import nimsumtree/[arc, rope]
   import misc/[custom_logger, util, event, custom_async, response, rope_utils, jsonex]
-  import workspaces/workspace
+  import workspace
   import vfs, vfs_service
   import document, language_server_component, config_component, language_component, move_component, text_component
   import language_server_lsp/language_server_lsp, language_server_regex

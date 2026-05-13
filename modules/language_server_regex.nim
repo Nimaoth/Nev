@@ -5,7 +5,7 @@ import text/language/[language_server_base]
 import nimsumtree/[arc, rope]
 import service, event_service, document_editor, document, config_provider, vfs, vfs_service
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import workspaces/workspace
+import workspace
 
 const currentSourcePath2 = currentSourcePath()
 include module_base

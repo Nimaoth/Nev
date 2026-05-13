@@ -20,7 +20,7 @@ when implModule:
   import treesitter/[treesitter_type_conv]
   import platform/platform
   import finder/[previewer, finder]
-  import workspaces/workspace, vfs, vfs_service
+  import workspace, vfs, vfs_service
   import ui/node
   import nimsumtree/[rope, buffer]
   import text_component, text_editor_component, language_server_component, decoration_component, inlay_hint_component, treesitter_component

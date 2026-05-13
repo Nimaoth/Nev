@@ -2,7 +2,7 @@ import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequt
 import misc/[util, myjsonutils, custom_async, response]
 import text/language/[language_server_base, lsp_types]
 import scripting/expose
-from workspaces/workspace as ws import nil
+from workspace as ws import nil
 import dispatch_tables, vfs
 import channel
 

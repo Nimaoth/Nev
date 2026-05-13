@@ -12,7 +12,7 @@ import document, document_editor, input_handler/input_handler, vmath, bumpy, tex
 import selector_popup/builder, dispatch_tables, register
 import config_provider, service, layout/layout, platform_service, vfs, vfs_service, command_service, toast
 import move_database, event_service
-import workspaces/workspace
+import workspace
 import finder/[previewer, finder]
 import vcs/vcs, treesitter/treesitter
 import text/[overlay_map, tab_map, wrap_map, diff_map, display_map, snippet, indent, diff]

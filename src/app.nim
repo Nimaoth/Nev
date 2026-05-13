@@ -5,7 +5,7 @@ import misc/[id, util, timer, event, myjsonutils, rect_utils, custom_logger, cus
 import ui/node
 import scripting/[expose]
 import platform/[platform]
-import workspaces/[workspace]
+import workspace
 import config_provider
 import input_handler/input_handler, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
 import text_component, text_editor_component

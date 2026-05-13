@@ -3,7 +3,7 @@ import pkg/[chroma, results]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, rope_utils, jsonex]
-import workspaces/[workspace]
+import workspace
 import text/language/[languages, language_server_base]
 import text/[syntax_map, display_map, diff, indent]
 import document, document_editor, config_provider, service, vfs, vfs_service, language_server_list

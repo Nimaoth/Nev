@@ -1,15 +1,15 @@
-import std/[options, sequtils, os]
-import misc/[custom_async, id, util, regex, custom_logger, event]
+#use vfs_service
+import std/[options, sequtils, os, json]
+import misc/[custom_async, id, util, regex, event]
 import nimsumtree/arc
 import vfs, vfs_service, service
 import finder/finder
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 {.push gcsafe.}
 {.push raises: [].}
-
-logCategory "workspace"
 
 type
   WorkspaceInfo* = object
@@ -26,7 +26,7 @@ type
     column*: int
     text*: string
 
-  Workspace* = ref object of Service
+  Workspace* = ref object of DynamicService
     name*: string
     path*: string
     additionalPaths*: seq[string]
@@ -43,7 +43,7 @@ type
 func serviceName*(_: typedesc[Workspace]): string = "Workspace"
 
 # DLL API
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc workspaceSearchPaths*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]]
 proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]]
 proc workspaceSetWorkspaceFolder*(self: Workspace, path: string)
@@ -51,6 +51,7 @@ proc workspaceAddWorkspaceFolder(self: Workspace, path: string, recomputeFileCac
 proc workspaceGetAbsolutePath(self: Workspace, path: string): string
 proc getRelativePathAndWorkspaceSync*(self: Workspace, absolutePath: string): Option[tuple[root, path: string]]
 proc workspaceGetRelativePathSync(self: Workspace, absolutePath: string): Option[string]
+proc workspaceRestore(self: Workspace, settings: JsonNode)
 {.pop.}
 
 # Nice wrappers
@@ -61,6 +62,7 @@ proc setWorkspaceFolder*(self: Workspace, path: string) {.inline.} = workspaceSe
 proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) = workspaceAddWorkspaceFolder(self, path, recomputeFileCache)
 proc getAbsolutePath*(self: Workspace, path: string): string = workspaceGetAbsolutePath(self, path)
 proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string] = workspaceGetRelativePathSync(self, absolutePath)
+proc restore*(self: Workspace, settings: JsonNode) = workspaceRestore(self, settings)
 
 proc info*(self: Workspace): WorkspaceInfo =
   try:
@@ -79,8 +81,10 @@ proc getWorkspacePath*(self: Workspace): string =
 when implModule:
   import std/[json, strutils, unicode]
   import malebolgia
-  import misc/[timer, async_process, static_array]
+  import misc/[timer, async_process, static_array, custom_logger]
   import compilation_config, event_service
+
+  logCategory "workspace"
 
   when defined(windows):
     import winlean
@@ -128,14 +132,6 @@ when implModule:
   else:
     import std/posix
     import std/private/oscommon
-
-  addBuiltinService(Workspace, VFSService)
-
-  method init*(self: Workspace): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-    log lvlInfo, &"Workspace.init"
-    self.vfs = self.services.getServiceChecked(VFSService).vfs
-
-    return ok()
 
   proc ignorePath*(workspace: Workspace, path: string): bool =
     if workspace.ignore.excludePath(path) or workspace.ignore.excludePath(path.extractFilename):
@@ -525,7 +521,7 @@ when implModule:
 
     self.addWorkspaceFolder(path)
 
-  proc restore*(self: Workspace, settings: JsonNode) =
+  proc workspaceRestore(self: Workspace, settings: JsonNode) =
     try:
       let path = settings["path"].getStr
       let additionalPaths = settings["additionalPaths"].elems.mapIt(it.getStr)
@@ -538,3 +534,8 @@ when implModule:
 
     except CatchableError as e:
       log lvlError, &"Failed to restore workspace from settings: {e.msg}\n{settings.pretty}"
+
+  proc init_module_angelscript_formatter*() {.cdecl, exportc, dynlib.} =
+    getServices().addService(Workspace(
+      vfs: getServiceChecked(VFSService).vfs,
+    ))

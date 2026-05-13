@@ -32,7 +32,7 @@ when implModule and defined(appLspServer):
   import text/language/lsp_types as lsp_types
   import text/language/language_server_base
   import language_server_lsp/language_server_lsp
-  import workspaces/workspace
+  import workspace
 
   proc toJsonHook*(item: lsp_types.CompletionItem): JsonNode =
     result = newJObject()
