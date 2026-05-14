@@ -34,15 +34,13 @@ proc handleCommand*(self: CommandLineService, command: string): Option[string] {
 
 # Implementation
 when implModule:
-  import std/[strformat, tables, sugar, json, streams, hashes, sequtils]
-  import misc/[util, custom_async, custom_unicode, myjsonutils, parsejsonex, timer, rope_utils, async_process, delayed_task, jsonex]
+  import std/[strformat, tables, sugar, json, streams, sequtils]
+  import misc/[util, custom_async, custom_unicode, myjsonutils, timer, rope_utils, async_process, delayed_task, jsonex]
   import nimsumtree/[rope, sumtree]
   import misc/[expose]
   import platform
   import layout/layout
-  import language_server
-  import text/[display_map, overlay_map]
-  import config_provider, dispatch_tables, misc/input_api, input_handler/input_handler
+  import config_provider, dispatch_tables, input_handler/input_handler
   import decoration_component, document, vfs_service, vfs, register
   import language_server_command_line, command_component, text_editor_component, text_component
   import scripting_api, event_service
