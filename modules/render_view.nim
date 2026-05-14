@@ -2,14 +2,13 @@
 import std/[strformat, tables, sets]
 import misc/[custom_logger, util, delayed_task, timer, render_command]
 import view, service
-import dynamic_view
 import ui/node
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
 type
-  RenderView* = ref object of DynamicView
+  RenderView* = ref object of View
     userId*: string
     onRender*: proc(view: RenderView) {.gcsafe, raises: [].}
     bounds*: Rect
@@ -197,7 +196,7 @@ when implModule:
     view.layout = services.getServiceChecked(LayoutService)
     view.bindPlatformEvents()
 
-    view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] =
+    view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] =
       render(self.RenderViewImpl, builder)
     view.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
       getEventHandlers(self.RenderViewImpl, inject)

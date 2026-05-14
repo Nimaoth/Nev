@@ -14,7 +14,7 @@ when implModule:
   import std/[options, json, tables, sugar, strtabs, streams, sets, sequtils, enumerate, osproc, macros, genasts]
   import vmath, bumpy, chroma
   import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap, arena, array_view, rope_utils, array_set, tui]
-  import dap_client, config_provider, selector_popup/builder, input_handler/input_handler, dynamic_view, document, document_editor, layout/layout, session
+  import dap_client, config_provider, selector_popup/builder, input_handler/input_handler, document, document_editor, layout/layout, session
   import text/language/[language_server_base]
   import treesitter/[treesitter_type_conv]
   import platform
@@ -121,11 +121,11 @@ when implModule:
       if getServices().isNil: return Debugger.none
       return getServices().getService(Debugger)
 
-  proc renderView(self: StacktraceView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc]
-  proc renderView(self: ThreadsView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc]
-  proc renderView(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc]
-  proc renderView(self: OutputView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc]
-  proc renderView(self: ToolbarView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc]
+  proc renderView(self: StacktraceView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
+  proc renderView(self: ThreadsView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
+  proc renderView(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
+  proc renderView(self: OutputView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
+  proc renderView(self: ToolbarView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
   proc getEventHandlers(view: ThreadsView, inject: Table[string, EventHandler]): seq[EventHandler]
   proc getEventHandlers(view: StacktraceView, inject: Table[string, EventHandler]): seq[EventHandler]
   proc getEventHandlers(view: VariablesView, inject: Table[string, EventHandler]): seq[EventHandler]
@@ -142,10 +142,10 @@ when implModule:
     view.saveStateImpl = proc(self: View): JsonNode = saveState(self.T)
     view.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] = getEventHandlers(self.T, inject)
 
-    proc renderDebuggerView(view: T, builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].} =
+    proc renderDebuggerView(view: T, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].} =
       return view.renderView(builder, debugger)
 
-    view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] = renderDebuggerView(self.T, builder)
+    view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = renderDebuggerView(self.T, builder)
     return view
 
   var gCurrentVariablesView: VariablesView = nil
@@ -2664,13 +2664,13 @@ when implModule:
 
   import render
 
-  proc renderView(self: StacktraceView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc] =
+  proc renderView(self: StacktraceView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
     return self.createUI(builder, debugger)
-  proc renderView(self: ThreadsView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc] =
+  proc renderView(self: ThreadsView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
     return self.createUI(builder, debugger)
-  proc renderView(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc] =
+  proc renderView(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
     return self.createUI(builder, debugger)
-  proc renderView(self: OutputView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc] =
+  proc renderView(self: OutputView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
     return self.createUI(builder, debugger)
-  proc renderView(self: ToolbarView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayRenderFunc] =
+  proc renderView(self: ToolbarView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
     return self.createUI(builder, debugger)

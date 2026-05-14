@@ -1,7 +1,7 @@
 import std/[options, tables, sets]
 import vmath, bumpy
 import misc/[id, custom_logger, util, event, response]
-import dap_client, config_provider, command_service, input_handler/input_handler, dynamic_view, document, document_editor, layout/layout
+import dap_client, config_provider, command_service, input_handler/input_handler, view, document, document_editor, layout/layout
 import platform
 import finder/[previewer]
 import workspace, vfs, vfs_service
@@ -77,15 +77,15 @@ type
 
     languageServer*: LanguageServerDebugger
 
-  ThreadsView* = ref object of DynamicView
+  ThreadsView* = ref object of View
     targetSelectionIndex*: Option[int]
     baseIndex*: int
     scrollOffset*: float
-  StacktraceView* = ref object of DynamicView
+  StacktraceView* = ref object of View
     targetSelectionIndex*: Option[int]
     baseIndex*: int
     scrollOffset*: float
-  VariablesView* = ref object of DynamicView
+  VariablesView* = ref object of View
     sizeOffset*: Vec2
     renderHeader*: bool = true
     targetSelectionIndex*: Option[int]
@@ -102,8 +102,8 @@ type
     evaluationName*: string
     eventHandler*: EventHandler
 
-  OutputView* = ref object of DynamicView
-  ToolbarView* = ref object of DynamicView
+  OutputView* = ref object of View
+  ToolbarView* = ref object of View
 
   LanguageServerDebugger* = ref object of LanguageServer
     debugger*: Debugger

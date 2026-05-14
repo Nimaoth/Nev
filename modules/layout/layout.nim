@@ -2,7 +2,7 @@
 # text_editor_component is needed for OpenEditorPreviewer. todo: OpenEditorPreviewer shouldn't care about text editors treesitter
 import std/[options, json]
 import misc/[custom_async, id]
-import service, view, popup, selector_popup/builder, dynamic_view
+import service, view, popup, selector_popup/builder
 import document, document_editor
 import ui/node
 from scripting_api import EditorId
@@ -17,7 +17,7 @@ type
     commandLineEditor*: DocumentEditor
     pushSelectorPopupImpl*: PushSelectorPopupImpl
 
-  EditorView* = ref object of DynamicView
+  EditorView* = ref object of View
     path: string
     document*: Document # todo: remove
     editor*: DocumentEditor
@@ -459,7 +459,7 @@ when implModule:
         self.platform.requestRender()
         self.platform.logNextFrameTime = true
 
-  proc editorViewRender(self: EditorView, builder: UINodeBuilder): seq[OverlayRenderFunc] =
+  proc editorViewRender(self: EditorView, builder: UINodeBuilder): seq[OverlayFunction] =
     self.resetDirty()
     self.editor.render(builder)
 
@@ -507,7 +507,7 @@ when implModule:
     if id.isSome:
       self.mId = id.get
 
-    self.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] = editorViewRender(self.EditorView, builder)
+    self.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = editorViewRender(self.EditorView, builder)
     # self.closeImpl = proc(self: View) = editorViewClose(self.EditorView)
     self.activateImpl = proc(self: View) = editorViewActivate(self.EditorView)
     self.deactivateImpl = proc(self: View) = editorViewDeactivate(self.EditorView)

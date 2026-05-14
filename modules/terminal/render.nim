@@ -2,7 +2,7 @@ import std/[options, tables, strutils]
 import vmath, bumpy, chroma
 import pixie
 import misc/[util, custom_logger, custom_unicode, tui]
-import theme, view, dynamic_view, config_provider
+import theme, view, config_provider
 import types_impl
 
 from std/colors as colors import nil
@@ -48,7 +48,7 @@ proc drawImages(self: TerminalView, builder: UINodeBuilder, renderCommands: var 
       # echo &"render image {s.textureId.int} {bounds}, cell size: {builder.charWidth}x{builder.lineHeight}"
       drawImage(bounds, s.textureId)
 
-proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHeight, outCellWidth, outCellHeight: var int): seq[OverlayRenderFunc] =
+proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHeight, outCellWidth, outCellHeight: var int): seq[OverlayFunction] =
   self.resetDirty()
 
   let config = self.terminals.config.runtime

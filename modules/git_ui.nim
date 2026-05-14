@@ -13,7 +13,7 @@ include module_base
 when implModule:
   import std/[sets, math, sequtils]
   import misc/[custom_logger, util, id, myjsonutils, jsonex, rope_utils, async_process, custom_async]
-  import text_component, event_service, document_editor, document, dynamic_view, view, layout/layout, command_component, platform
+  import text_component, event_service, document_editor, document, view, layout/layout, command_component, platform
   import nimsumtree/[buffer, clock, rope]
   import ui/node
   import command_service, workspace, config_component, text_editor_component
@@ -37,7 +37,7 @@ when implModule:
       of Branches:
         branchIndex: int
 
-    GitUiView* = ref object of DynamicView
+    GitUiView* = ref object of View
       eventHandlers*: Table[string, EventHandler]
       events*: EventHandlerService
       editors*: DocumentEditorService
@@ -493,7 +493,7 @@ when implModule:
   proc newGitUiView*(): GitUiView =
     result = GitUiView()
     result.uiId = newId()
-    result.renderImpl = proc(view: View, builder: UINodeBuilder): seq[dynamic_view.OverlayRenderFunc] =
+    result.renderImpl = proc(view: View, builder: UINodeBuilder): seq[OverlayFunction] =
       let gitUiView = view.GitUiView
       renderGitUi(gitUiView, builder)
 

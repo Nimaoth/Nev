@@ -1,6 +1,6 @@
 #use command_component layout command_service input_handler
 import std/[options, algorithm, strutils, times, tables, json]
-import service, dynamic_view
+import service, view
 import component
 
 export component
@@ -31,7 +31,7 @@ when implModule:
       nodeIdx*: int32 = -1
     LineSeq* = seq[SeqLine]
 
-    UndoTreeView* = ref object of DynamicView
+    UndoTreeView* = ref object of View
       lastEditor: Option[DocumentEditor]
       eventHandlers*: Table[string, EventHandler]
       cachedLines: LineSeq
@@ -517,7 +517,7 @@ when implModule:
 
   proc newUndoTreeView*(): UndoTreeView =
     result = UndoTreeView()
-    result.renderImpl = proc(view: View, builder: UINodeBuilder): seq[OverlayRenderFunc] =
+    result.renderImpl = proc(view: View, builder: UINodeBuilder): seq[OverlayFunction] =
       let undoView = view.UndoTreeView
       renderUndoTree(undoView, builder)
 

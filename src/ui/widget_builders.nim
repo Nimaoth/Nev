@@ -6,7 +6,7 @@ import platform
 import ui/[widget_library]
 import document_editor, theme, view, layout/layout, config_provider, command_line, toast
 import popup
-import dynamic_view, status_line
+import status_line
 from scripting_api import nil
 import vcs/vcs, service
 
@@ -29,7 +29,7 @@ proc resetBorderFlags() {.gcsafe.} =
   {.gcsafe.}:
     borderFlagStack = @[BorderFlags.none()]
 
-method createUI*(self: DynamicView, builder: UINodeBuilder): seq[OverlayFunction] =
+method createUI*(self: View, builder: UINodeBuilder): seq[OverlayFunction] =
   if self.renderImpl != nil:
     return self.renderImpl(self, builder)
   else:

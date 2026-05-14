@@ -8,7 +8,7 @@ when implModule:
   import std/[tables]
   import nimsumtree/[arc]
   import misc/[util, custom_async]
-  import dynamic_view, terminal/terminal, service, layout/layout
+  import view, terminal/terminal, service, layout/layout
   from scripting_api import CreateTerminalOptions
   import misc/channel
   import log

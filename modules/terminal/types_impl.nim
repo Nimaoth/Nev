@@ -3,7 +3,7 @@ import std/[os, typedthreads, tables, hashes, macros, deques, genasts]
 import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, tui]
 import ui/node
 import nimsumtree/[rope, arc]
-import dynamic_view, input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, misc/channel, register
+import view, input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, misc/channel, register
 from scripting_api import SshOptions, RunInTerminalOptions, CreateTerminalOptions
 import types
 
@@ -298,7 +298,7 @@ type
       sshChannel*: SSHChannel
       sshClient*: SSHClient
 
-  TerminalView* = ref object of DynamicView
+  TerminalView* = ref object of View
     terminals*: TerminalServiceImpl
     eventHandlers*: Table[string, EventHandler]
     modeEventHandler*: EventHandler

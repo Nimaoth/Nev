@@ -60,7 +60,7 @@ when implModule:
   import vmath, chroma
   import misc/[custom_logger, util, custom_async, custom_unicode, jsonex, myjsonutils, timer]
   import ui/node
-  import view, dynamic_view, layout/layout, service, input_handler/input_handler, command_service
+  import view, layout/layout, service, input_handler/input_handler, command_service
   import theme
   import vcs/vcs
   import platform, stats
@@ -131,7 +131,7 @@ when implModule:
   type
     SectionRenderFunc* = proc(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].}
 
-    DashboardView* = ref object of DynamicView
+    DashboardView* = ref object of View
       events*: EventHandlerService
       commandService*: CommandService
       eventHandlers*: Table[string, EventHandler]
@@ -150,7 +150,7 @@ when implModule:
       if section.border:
         builder.panel(&{FillX, FillY, DrawBorder, DrawBorderTerminal}, border = border(1), borderColor = textColor, backgroundColor = sectionColor)
 
-  proc renderDashboard(self: DashboardView, builder: UINodeBuilder): seq[OverlayRenderFunc] =
+  proc renderDashboard(self: DashboardView, builder: UINodeBuilder): seq[OverlayFunction] =
     self.resetDirty()
 
     let services = getServices()
@@ -716,7 +716,7 @@ when implModule:
     view.sectionRenderers["commitHistory"] = renderCommitHistory
     view.sectionRenderers["stats"] = renderStats
 
-    view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] =
+    view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] =
       renderDashboard(self.DashboardView, builder)
     view.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
       getEventHandlers(self.DashboardView, inject)

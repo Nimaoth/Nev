@@ -33,7 +33,7 @@ when implModule:
   import ui/node
   import platform
   import finder/[finder, previewer]
-  import dynamic_view, input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, selector_popup/builder, vfs, vfs_service
+  import input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, selector_popup/builder, vfs, vfs_service
   import text_editor_component, config_component, register, service, command_service
   import types_impl
   import render
@@ -2646,7 +2646,7 @@ when implModule:
         slot: options.slot,
       )
 
-      proc renderTerminal(self: TerminalView, builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].} =
+      proc renderTerminal(self: TerminalView, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].} =
         if view.isInPreview and builder.currentParent.tag != "preview":
           return
         var
@@ -2657,7 +2657,7 @@ when implModule:
         result = renderTerminal(view, builder, width, height, cellWidth, cellHeight)
         view.setSize(width, height, cellWidth, cellHeight)
 
-      view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] = renderTerminal(self.TerminalView, builder)
+      view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = renderTerminal(self.TerminalView, builder)
       view.closeImpl = proc(self: View) = closeTerminalView(self.TerminalView)
       view.activateImpl = proc(self: View) = activateTerminalView(self.TerminalView)
       view.deactivateImpl = proc(self: View) = deactivateTerminalView(self.TerminalView)
@@ -2711,7 +2711,7 @@ when implModule:
         slot: options.slot,
       )
 
-      proc renderTerminal(self: TerminalView, builder: UINodeBuilder): seq[OverlayRenderFunc] {.gcsafe, raises: [].} =
+      proc renderTerminal(self: TerminalView, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].} =
         if view.isInPreview and builder.currentParent.tag != "preview":
           return
         var
@@ -2722,7 +2722,7 @@ when implModule:
         result = renderTerminal(view, builder, width, height, cellWidth, cellHeight)
         view.setSize(width, height, cellWidth, cellHeight)
 
-      view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] = renderTerminal(self.TerminalView, builder)
+      view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = renderTerminal(self.TerminalView, builder)
       view.closeImpl = proc(self: View) = closeTerminalView(self.TerminalView)
       view.activateImpl = proc(self: View) = activateTerminalView(self.TerminalView)
       view.deactivateImpl = proc(self: View) = deactivateTerminalView(self.TerminalView)
