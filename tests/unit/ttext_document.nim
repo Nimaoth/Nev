@@ -10,7 +10,7 @@ import std/[unittest, options, json, sequtils]
 import misc/[util, custom_logger]
 import text/text_document
 import config_provider, scripting_api, service
-import platform/platform, platform_service, event_service, move_database, vfs_service
+import platform/platform, platform_service, event_service, move_database, vfs_service, workspace
 
 defineSetAllDefaultSettings()
 
@@ -22,6 +22,7 @@ gServices.addBuiltinServices()
 gServices.getServiceChecked(PlatformService).setPlatform(NilPlatform())
 
 init_module_vfs_service()
+init_module_workspace()
 init_module_event_service()
 init_module_move_database()
 gServices.waitForServices()
