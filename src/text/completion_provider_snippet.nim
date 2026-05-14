@@ -1,94 +1,104 @@
-import std/[json, tables]
-import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching, jsonex, rope_utils]
-import nimsumtree/rope
-import language/[lsp_types]
-import completion, document, text_component, move_component, language_component
+import completion, document
 import config_provider
 
-logCategory "Comp-Snip"
+include misc/dynlib_export
 
-type
-  CompletionProviderSnippet* = ref object of CompletionProvider
-    document: Document
-    unfilteredCompletions: seq[CompletionItem]
-    didCacheCompletionItems: bool = false
-    configStore: ConfigStore
-    onConfigChangedHandle: Id
+{.push apprtl, gcsafe, raises: [].}
+proc newCompletionProviderSnippet*(configStore: ConfigStore, document: Document): CompletionProvider
+{.pop.}
 
-proc invalidateCompletionItemCache(self: CompletionProviderSnippet) =
-  self.unfilteredCompletions.setLen 0
-  self.didCacheCompletionItems = false
+when implModule:
+  import std/[json, tables]
+  import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching, jsonex, rope_utils]
+  import nimsumtree/rope
+  import language/[lsp_types]
+  import completion, document, text_component, move_component, language_component
 
-proc cacheCompletionItems(self: CompletionProviderSnippet) =
-  self.didCacheCompletionItems = true
-  let languageId = self.document.getLanguageComponent().mapIt(it.languageId).get("")
-  try:
-    let snippets = self.configStore.get("snippets." & languageId, newJexObject())
-    for (name, definition) in snippets.fields.pairs:
-      # todo: handle language scope
-      # let scopes = definition["scope"].getStr.split(",")
-      let prefix = definition["prefix"].getStr
-      let body = definition["body"].elems
-      var text = ""
-      for i, line in body:
-        if text.len > 0:
-          text.add "\n"
-        text.add line.getStr
+  logCategory "Comp-Snip"
 
-      let edit = lsp_types.TextEdit(`range`: lsp_types.Range(start: Position(line: -1, character: -1), `end`: Position(line: -1, character: -1)), newText: text)
-      self.unfilteredCompletions.add(CompletionItem(label: prefix, detail: name.some, insertTextFormat: InsertTextFormat.Snippet.some, textEdit: lsp_types.init(lsp_types.CompletionItemTextEditVariant, edit).some))
+  type
+    CompletionProviderSnippet* = ref object of CompletionProvider
+      document: Document
+      unfilteredCompletions: seq[CompletionItem]
+      didCacheCompletionItems: bool = false
+      configStore: ConfigStore
+      onConfigChangedHandle: Id
 
-  except:
-    log lvlError, fmt"Failed to get snippets for language {languageId}"
+  proc invalidateCompletionItemCache(self: CompletionProviderSnippet) =
+    self.unfilteredCompletions.setLen 0
+    self.didCacheCompletionItems = false
 
-proc refilterCompletions(self: CompletionProviderSnippet) =
-  # debugf"[Snip.refilterCompletions] {self.location}: '{self.currentFilterText}'"
-  let timer = startTimer()
+  proc cacheCompletionItems(self: CompletionProviderSnippet) =
+    self.didCacheCompletionItems = true
+    let languageId = self.document.getLanguageComponent().mapIt(it.languageId).get("")
+    try:
+      let snippets = self.configStore.get("snippets." & languageId, newJexObject())
+      for (name, definition) in snippets.fields.pairs:
+        # todo: handle language scope
+        # let scopes = definition["scope"].getStr.split(",")
+        let prefix = definition["prefix"].getStr
+        let body = definition["body"].elems
+        var text = ""
+        for i, line in body:
+          if text.len > 0:
+            text.add "\n"
+          text.add line.getStr
 
-  if not self.didCacheCompletionItems:
-    self.cacheCompletionItems()
+        let edit = lsp_types.TextEdit(`range`: lsp_types.Range(start: Position(line: -1, character: -1), `end`: Position(line: -1, character: -1)), newText: text)
+        self.unfilteredCompletions.add(CompletionItem(label: prefix, detail: name.some, insertTextFormat: InsertTextFormat.Snippet.some, textEdit: lsp_types.init(lsp_types.CompletionItemTextEditVariant, edit).some))
 
-  # todo: make this configurable
-  let config = defaultCompletionMatchingConfig
+    except:
+      log lvlError, fmt"Failed to get snippets for language {languageId}"
 
-  self.filteredCompletions.setLen 0
-  for item in self.unfilteredCompletions:
-    let text = item.filterText.get(item.label)
-    let score = matchFuzzy(self.currentFilterText, text, config).score.float
+  proc refilterCompletions(self: CompletionProviderSnippet) =
+    # debugf"[Snip.refilterCompletions] {self.location}: '{self.currentFilterText}'"
+    let timer = startTimer()
 
-    if score < 0:
-      continue
+    if not self.didCacheCompletionItems:
+      self.cacheCompletionItems()
 
-    self.filteredCompletions.add Completion(
-      item: item,
-      filterText: self.currentFilterText,
-      score: score,
-      source: "SNP",
-    )
+    # todo: make this configurable
+    let config = defaultCompletionMatchingConfig
 
-  if timer.elapsed.ms > 2:
-    log lvlInfo, &"[Comp-Snippet] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.unfilteredCompletions.len})"
-  self.onCompletionsUpdated.invoke (self)
+    self.filteredCompletions.setLen 0
+    for item in self.unfilteredCompletions:
+      let text = item.filterText.get(item.label)
+      let score = matchFuzzy(self.currentFilterText, text, config).score.float
 
-proc updateFilterText(self: CompletionProviderSnippet) =
-  let text = self.document.getTextComponent().getOr:
-    return
-  let moves = self.document.getMoveComponent().getOr:
-    return
-  let selection = moves.applyMove(self.location.toPoint.toRange, "completion-selection")
-  self.currentFilterText = text.content(selection)
+      if score < 0:
+        continue
 
-method forceUpdateCompletions*(provider: CompletionProviderSnippet) =
-  provider.updateFilterText()
-  provider.refilterCompletions()
+      self.filteredCompletions.add Completion(
+        item: item,
+        filterText: self.currentFilterText,
+        score: score,
+        source: "SNP",
+      )
 
-proc newCompletionProviderSnippet*(configStore: ConfigStore, document: Document):
-    CompletionProviderSnippet =
+    if timer.elapsed.ms > 2:
+      log lvlInfo, &"[Comp-Snippet] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.unfilteredCompletions.len})"
+    self.onCompletionsUpdated.invoke (self)
 
-  let self = CompletionProviderSnippet(configStore: configStore, document: document)
+  proc updateFilterText(self: CompletionProviderSnippet) =
+    let text = self.document.getTextComponent().getOr:
+      return
+    let moves = self.document.getMoveComponent().getOr:
+      return
+    let selection = moves.applyMove(self.location.toPoint.toRange, "completion-selection")
+    self.currentFilterText = text.content(selection)
 
-  # todo: unsubscribe
-  self.onConfigChangedHandle = configStore.onConfigChanged.subscribe proc(key: string) =
-    self.invalidateCompletionItemCache()
+  proc forceUpdateCompletions(provider: CompletionProviderSnippet) =
+    provider.updateFilterText()
+    provider.refilterCompletions()
 
-  self
+  proc newCompletionProviderSnippet*(configStore: ConfigStore, document: Document): CompletionProvider =
+
+    let self = CompletionProviderSnippet(configStore: configStore, document: document)
+
+    # todo: unsubscribe
+    self.onConfigChangedHandle = configStore.onConfigChanged.subscribe proc(key: string) =
+      self.invalidateCompletionItemCache()
+
+    self.forceUpdateCompletionsImpl = proc(self: CompletionProvider) = self.CompletionProviderSnippet.forceUpdateCompletions()
+
+    self
