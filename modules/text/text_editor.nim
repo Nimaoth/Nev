@@ -16,7 +16,7 @@ import workspace
 import finder/[previewer, finder]
 import vcs, treesitter/treesitter
 import text/[overlay_map, tab_map, wrap_map, diff_map, display_map, snippet, indent, diff]
-import text/[completion_provider_document, completion_provider_lsp, completion_provider_snippet, completion]
+import completion_provider_document, completion_provider_lsp, completion_provider_snippet, completion
 import lisp
 import view
 import scroll_box, component, treesitter_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, snippet_component, text_component, contextline_component
