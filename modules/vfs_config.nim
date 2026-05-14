@@ -1,3 +1,4 @@
+#use lisp
 import std/[options, tables]
 import nimsumtree/[arc, rope]
 import misc/[custom_async, custom_logger, util, jsonex]

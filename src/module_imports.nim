@@ -1,5 +1,6 @@
 when not defined(useDynlib):
   import "../modules/theme.nim"
+  import "../modules/lisp.nim"
   import "../modules/input_handler/input_handler.nim"
   import "../modules/terminal_platform/terminal_platform.nim"
   import "../modules/vfs_config.nim"
@@ -67,6 +68,7 @@ when not defined(useDynlib):
 
 proc initModules*() =
   when declared(init_module_theme): init_module_theme()
+  when declared(init_module_lisp): init_module_lisp()
   when declared(init_module_input_handler): init_module_input_handler()
   when declared(init_module_terminal_platform): init_module_terminal_platform()
   when declared(init_module_vfs_config): init_module_vfs_config()
@@ -197,10 +199,12 @@ proc shutdownModules*() =
   when declared(shutdown_module_vfs_config): shutdown_module_vfs_config()
   when declared(shutdown_module_terminal_platform): shutdown_module_terminal_platform()
   when declared(shutdown_module_input_handler): shutdown_module_input_handler()
+  when declared(shutdown_module_lisp): shutdown_module_lisp()
   when declared(shutdown_module_theme): shutdown_module_theme()
 
 proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("theme")
+  loadModule("lisp")
   loadModule("input_handler")
   loadModule("terminal_platform")
   loadModule("vfs_config")

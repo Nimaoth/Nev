@@ -1,3 +1,4 @@
+#use lisp
 import nimsumtree/[arc]
 import service, vfs
 

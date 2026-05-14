@@ -1,4 +1,4 @@
-#use theme treesitter
+#use theme treesitter lisp
 import std/[strutils, tables, options]
 import nimsumtree/rope
 import misc/custom_async

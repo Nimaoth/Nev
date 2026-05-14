@@ -1,3 +1,4 @@
+#use lisp
 import text/language/[language_server_base]
 import config_provider
 

@@ -1,4 +1,4 @@
-#use theme
+#use theme lisp
 import platform
 import misc/[custom_async, custom_logger, util, timer]
 import service, config_provider

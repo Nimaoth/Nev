@@ -1,4 +1,4 @@
-#use input_handler theme treesitter
+#use input_handler theme treesitter lisp
 import std/[options, tables]
 import chroma, vmath
 import nimsumtree/rope

@@ -1,4 +1,4 @@
-#use theme treesitter
+#use theme treesitter lisp
 import std/[options, tables]
 import nimsumtree/[arc]
 import misc/[custom_async]

@@ -1,7 +1,8 @@
-import std/[json, sequtils, strutils, strformat, lexbase, unicode, streams, tables, math, os]
-import misc/[util, myjsonutils, custom_logger]
+import std/[json, sequtils, strutils, strformat, tables]
+import misc/[util, myjsonutils]
 
-include misc/dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type
   LispValKind* = enum
@@ -43,7 +44,7 @@ type
       body*: LispVal
       env*: Env
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc lispParseLispSingle(str: openArray[char]): (LispVal, int) {.raises: [LispParsingError].}
 proc lispParseLisp(str: string): LispVal {.raises: [LispParsingError].}
 proc lispParseLispValues(str: string): seq[LispVal] {.raises: [LispParsingError].}
@@ -232,6 +233,8 @@ proc fromJsonHook*(val: var LispVal, jsonNode: JsonNode, opt = Joptions()) {.rai
     val = newArray(jsonNode.elems.mapIt(it.jsonTo(LispVal)))
 
 when implModule:
+  import misc/[custom_logger]
+  import std/[lexbase, unicode, streams, math, os]
   logCategory "lisp"
 
   type

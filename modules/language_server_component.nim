@@ -1,3 +1,4 @@
+#use lisp
 import std/[options, json]
 import misc/[event, custom_async, response]
 import component

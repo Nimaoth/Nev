@@ -1,4 +1,4 @@
-#use theme
+#use theme lisp
 import std/[tables, json, options]
 import input, service, config_provider
 

@@ -1,3 +1,4 @@
+#use lisp
 import std/[options, json, tables, locks]
 import nimsumtree/[arc]
 import misc/[custom_logger, custom_async, util, custom_unicode, jsonex, arena, array_view]

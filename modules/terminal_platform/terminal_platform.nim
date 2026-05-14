@@ -1,4 +1,4 @@
-#use input_handler theme
+#use input_handler theme lisp
 import platform
 
 const currentSourcePath2 = currentSourcePath()

@@ -1,4 +1,4 @@
-#use workspace
+#use workspace lisp
 import std/[strutils, strformat, options]
 import misc/[async_process, custom_async, util, custom_logger]
 import vfs, vfs_service
