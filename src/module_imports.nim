@@ -28,6 +28,7 @@ when not defined(useDynlib):
   import "../modules/hover_component.nim"
   import "../modules/treesitter_component.nim"
   import "../modules/contextline_component.nim"
+  import "../modules/file_previewer.nim"
   import "../modules/decoration_component.nim"
   import "../modules/language_server_command_line.nim"
   import "../modules/command_line.nim"
@@ -94,6 +95,7 @@ proc initModules*() =
   when declared(init_module_hover_component): init_module_hover_component()
   when declared(init_module_treesitter_component): init_module_treesitter_component()
   when declared(init_module_contextline_component): init_module_contextline_component()
+  when declared(init_module_file_previewer): init_module_file_previewer()
   when declared(init_module_decoration_component): init_module_decoration_component()
   when declared(init_module_language_server_command_line): init_module_language_server_command_line()
   when declared(init_module_command_line): init_module_command_line()
@@ -166,6 +168,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_command_line): shutdown_module_command_line()
   when declared(shutdown_module_language_server_command_line): shutdown_module_language_server_command_line()
   when declared(shutdown_module_decoration_component): shutdown_module_decoration_component()
+  when declared(shutdown_module_file_previewer): shutdown_module_file_previewer()
   when declared(shutdown_module_contextline_component): shutdown_module_contextline_component()
   when declared(shutdown_module_treesitter_component): shutdown_module_treesitter_component()
   when declared(shutdown_module_hover_component): shutdown_module_hover_component()
@@ -226,6 +229,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("hover_component")
   loadModule("treesitter_component")
   loadModule("contextline_component")
+  loadModule("file_previewer")
   loadModule("decoration_component")
   loadModule("language_server_command_line")
   loadModule("command_line")

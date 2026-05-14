@@ -1,4 +1,4 @@
-#use layout text_editor_component command_service search_component input_handler treesitter
+#use layout text_editor_component command_service search_component input_handler treesitter file_previewer
 import std/[options]
 import vmath
 import misc/[myjsonutils]

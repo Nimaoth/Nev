@@ -23,7 +23,7 @@ import scroll_box, component, treesitter_component, config_component, decoration
 import move_component
 import text_editor_component
 import ui/node
-import command_line
+import command_line, file_previewer
 
 import workspace_edit, search_component
 
@@ -3184,8 +3184,6 @@ proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Sel
 
     else:
       log lvlError, fmt"Failed to open file '{filename}' at {location}"
-
-import finder/[file_previewer]
 
 proc openLocationFromFinderItem(self: TextDocumentEditor, item: FinderItem) =
   try:

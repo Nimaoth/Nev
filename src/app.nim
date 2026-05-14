@@ -16,6 +16,7 @@ import event_service, vcs
 import search_component, decoration_component, move_component, command_component
 import nimsumtree/[arc, rope]
 import selector_popup/selector_popup
+import file_previewer
 
 import misc/async_process
 
@@ -167,8 +168,6 @@ proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
 proc handleModsChanged*(self: App, old: Modifiers, new: Modifiers)
 proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
-
-import finder/[file_previewer]
 
 # todo: remove this function
 proc setLocationList(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none) =

@@ -126,12 +126,13 @@ proc getStashes*(self: VersionControlSystem, maxCount: int = 50, filter: string 
   if self.getStashesImpl != nil:
     return await self.getStashesImpl(self, maxCount, filter)
 
+func isUntracked*(fileInfo: VCSFileInfo): bool = fileInfo.unstagedStatus == Untracked
+
 when implModule:
   import std/[strutils, sugar]
   import misc/[event]
-  addBuiltinService(VCSService, Workspace, ConfigService, VFSService)
 
-  func isUntracked*(fileInfo: VCSFileInfo): bool = fileInfo.unstagedStatus == Untracked
+  addBuiltinService(VCSService, Workspace, ConfigService, VFSService)
 
   proc handleWorkspaceFolderAdded(self: VCSService, path: string) {.async: (raises: []).} =
     try:
