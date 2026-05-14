@@ -17,7 +17,7 @@ proc editor*(self: Previewer): DocumentEditor = filePreviewerEditor(self)
 
 when implModule:
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-  import vcs/vcs, finder
+  import vcs, finder
   import document, text_component, move_component, text_editor_component, command_component
   import ui/node
 

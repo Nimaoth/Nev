@@ -8,7 +8,7 @@ import document_editor, theme, view, layout/layout, config_provider, command_lin
 import popup
 import status_line
 from scripting_api import nil
-import vcs/vcs, service
+import vcs, service
 
 {.push gcsafe.}
 {.push raises: [].}

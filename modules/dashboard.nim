@@ -62,7 +62,7 @@ when implModule:
   import ui/node
   import view, layout/layout, service, input_handler/input_handler, command_service
   import theme
-  import vcs/vcs
+  import vcs
   import platform, stats
   import session
   import config_provider

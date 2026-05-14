@@ -2,7 +2,7 @@
 import std/[strutils, strformat, options]
 import misc/[async_process, custom_async, util, custom_logger]
 import vfs
-import vcs/vcs
+import vcs
 
 const currentSourcePath2 = currentSourcePath()
 include module_base

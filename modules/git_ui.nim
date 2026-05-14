@@ -2,7 +2,7 @@
 import std/[options, algorithm, strutils, times, tables, json]
 import service
 import component
-import vcs/vcs
+import vcs
 
 export component
 

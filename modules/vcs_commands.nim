@@ -11,7 +11,7 @@ when implModule:
   import finder/[finder, previewer, file_previewer]
   import platform
   import service, dispatch_tables
-  import selector_popup/builder, vcs/vcs, layout/layout, vfs, config_provider
+  import selector_popup/builder, vcs, layout/layout, vfs, config_provider
   from scripting_api import SelectionCursor, ScrollSnapBehaviour, toSelection
   import document_editor, text_editor_component, move_component, command_component
   import command_service

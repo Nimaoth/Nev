@@ -12,7 +12,7 @@ import text_component, text_editor_component
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
 import service, layout/layout, session, command_service, command_line, toast, plugin_service
-import event_service, vcs/vcs
+import event_service, vcs
 import search_component, decoration_component, move_component, command_component
 import nimsumtree/[arc, rope]
 import selector_popup/selector_popup
