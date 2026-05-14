@@ -4,7 +4,7 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 from scripting_api as api import nil
 import treesitter/treesitter
 import custom_async, custom_unicode, util, regex, timer
-import text/diff
+import misc/diff
 
 export Bias
 

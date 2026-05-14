@@ -12,7 +12,7 @@ include module_base
 
 when implModule:
   import std/[tables, uri, algorithm]
-  import text/diff
+  import misc/diff
   import service, config_provider
   import misc/[delayed_task]
   import nimsumtree/[arc, rope]

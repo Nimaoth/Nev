@@ -1,7 +1,7 @@
 import std/[options, atomics, strformat, tables]
 import nimsumtree/[rope, buffer, clock]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
-import text/diff, syntax_map, overlay_map, wrap_map
+import misc/diff, syntax_map, overlay_map, wrap_map
 import nimsumtree/sumtree except mapIt
 import theme
 import malebolgia

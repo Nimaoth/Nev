@@ -1,13 +1,13 @@
 import std/[strformat, tables, strutils, math, options, json, algorithm]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer, generational_seq, render_command, arena, array_view]
+import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer, generational_seq, render_command, arena, array_view, diff]
 import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform
 import ui/[widget_library]
 import document_editor, theme, config_provider, layout/layout
 import text/language/[lsp_types]
-import text/[diff, syntax_map, overlay_map, wrap_map, diff_map, display_map]
+import text/[syntax_map, overlay_map, wrap_map, diff_map, display_map]
 import view, treesitter/treesitter
 import scroll_box, treesitter_component, decoration_component, hover_component, contextline_component
 

@@ -98,7 +98,7 @@ when implModule:
   import std/[sequtils, unicode]
   import misc/[util, custom_logger, rope_utils, timer]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-  import text/diff
+  import misc/diff
 
   logCategory "text-component"
 

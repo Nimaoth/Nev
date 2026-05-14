@@ -1,6 +1,6 @@
 import std/[strutils, math]
 import misc/timer
-import text/diff
+import misc/diff
 import std/strformat
 
 {.push gcsafe.}

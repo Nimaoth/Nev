@@ -13,7 +13,7 @@ include module_base
 when implModule:
   import std/[tables]
   import misc/[delayed_task]
-  import text/diff
+  import misc/diff
   import service, config_provider
 
   logCategory "vsc-perforce"
