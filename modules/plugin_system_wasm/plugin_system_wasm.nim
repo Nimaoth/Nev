@@ -1,4 +1,4 @@
-#use plugin_service command_service layout stats command_line register move_database event_service terminal decoration_component text text_editor_component command_component snippet_component search_component wasm_engine session input_handler move_component
+#use plugin_service command_service layout stats command_line register move_database event_service terminal decoration_component text text_editor_component command_component snippet_component search_component wasm_engine session input_handler move_component render_view
 
 const currentSourcePath2 = currentSourcePath()
 include module_base

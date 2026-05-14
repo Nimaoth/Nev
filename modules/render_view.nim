@@ -1,80 +1,85 @@
+#use input_handler layout
 import std/[strformat, tables, sets]
 import misc/[custom_logger, util, delayed_task, timer, render_command]
 import view, service
 import dynamic_view
+import ui/node
 
-include misc/dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
-{.push apprtl, gcsafe, raises: [].}
-proc newRenderView*(services: Services): DynamicView
-proc rvSetRenderWhenInactive(self: DynamicView, enabled: bool)
-proc rvSetRenderInterval(self: DynamicView, ms: int)
+type
+  RenderView* = ref object of DynamicView
+    userId*: string
+    onRender*: proc(view: RenderView) {.gcsafe, raises: [].}
+    bounds*: Rect
+
+    keyStates*: HashSet[int64]
+    mouseStates*: HashSet[int64]
+    mousePos*: Vec2
+    scrollDelta*: Vec2
+    renderWhenInactive*: bool = false
+    preventThrottling*: bool = false
+
+    modes*: seq[string]
+
+    commands*: RenderCommands
+
+{.push modrtl, gcsafe, raises: [].}
+proc newRenderView*(services: Services): RenderView
+proc rvSetRenderWhenInactive(self: RenderView, enabled: bool)
+proc rvSetRenderInterval(self: RenderView, ms: int)
 {.pop.}
 
-proc setRenderWhenInactive(self: DynamicView, enabled: bool) = rvSetRenderWhenInactive(self, enabled)
-proc setRenderInterval(self: DynamicView, ms: int) = rvSetRenderInterval(self, ms)
+proc setRenderWhenInactive*(self: RenderView, enabled: bool) = rvSetRenderWhenInactive(self, enabled)
+proc setRenderInterval*(self: RenderView, ms: int) = rvSetRenderInterval(self, ms)
 
 when implModule:
   import platform
   import layout/layout, input_handler/input_handler, command_service
-  import ui/node
 
   type
-    RenderView* = ref object of DynamicView
+    RenderViewImpl* = ref object of RenderView
       services: Services
       commandService: CommandService
       events: EventHandlerService
       layout*: LayoutService
       platform: Platform
 
-      commands*: RenderCommands
-      userId*: string
-
-      bounds*: Rect
       interval: int = -1
-      onRender*: proc(view: RenderView) {.gcsafe, raises: [].}
       renderTask: DelayedTask
-      renderWhenInactive*: bool = false
-      preventThrottling*: bool = false
 
       eventHandlers: Table[string, EventHandler]
-
-      modes*: seq[string]
-
-      keyStates*: HashSet[int64]
-      mouseStates*: HashSet[int64]
-      mousePos*: Vec2
-      scrollDelta*: Vec2
 
   {.push gcsafe, raises: [].}
 
   logCategory "custom-view"
 
-  proc handleAction(self: RenderView, action: string, arg: string): Option[string]
-  proc handleInput(self: RenderView, text: string)
+  proc handleAction(self: RenderViewImpl, action: string, arg: string): Option[string]
+  proc handleInput(self: RenderViewImpl, text: string)
 
-  proc handleKeyPress*(self: RenderView, input: int64, modifiers: Modifiers) =
+  proc handleKeyPress*(self: RenderViewImpl, input: int64, modifiers: Modifiers) =
     self.keyStates.incl(input)
 
-  proc handleKeyRelease*(self: RenderView, input: int64, modifiers: Modifiers) =
+  proc handleKeyRelease*(self: RenderViewImpl, input: int64, modifiers: Modifiers) =
     self.keyStates.excl(input)
 
-  proc handleRune*(self: RenderView, input: int64, modifiers: Modifiers) =
+  proc handleRune*(self: RenderViewImpl, input: int64, modifiers: Modifiers) =
     self.keyStates.incl(input)
 
-  proc handleMousePress(self: RenderView, button: MouseButton, modifiers: Modifiers, pos: Vec2) =
+  proc handleMousePress(self: RenderViewImpl, button: MouseButton, modifiers: Modifiers, pos: Vec2) =
     self.mouseStates.incl(button.int64)
 
-  proc handleMouseRelease(self: RenderView, button: MouseButton, modifiers: Modifiers, pos: Vec2) =
+  proc handleMouseRelease(self: RenderViewImpl, button: MouseButton, modifiers: Modifiers, pos: Vec2) =
     self.mouseStates.excl(button.int64)
 
-  proc handleMouseMove(self: RenderView, pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
+  proc handleMouseMove(self: RenderViewImpl, pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
     self.mousePos = pos - self.bounds.xy
 
-  proc handleScroll(self: RenderView, pos: Vec2, scroll: Vec2, modifiers: Modifiers) =
+  proc handleScroll(self: RenderViewImpl, pos: Vec2, scroll: Vec2, modifiers: Modifiers) =
     self.scrollDelta = scroll
 
-  proc bindPlatformEvents(self: RenderView) =
+  proc bindPlatformEvents(self: RenderViewImpl) =
     discard self.platform.onKeyPress.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyPress(event.input, event.modifiers)
     discard self.platform.onKeyRelease.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyRelease(event.input, event.modifiers)
     discard self.platform.onRune.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleRune(event.input, event.modifiers)
@@ -83,45 +88,39 @@ when implModule:
     discard self.platform.onMouseMove.subscribe proc(event: tuple[pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]]): void {.gcsafe, raises: [].} = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
     discard self.platform.onScroll.subscribe proc(event: tuple[pos: Vec2, scroll: Vec2, modifiers: Modifiers]): void {.gcsafe, raises: [].} = self.handleScroll(event.pos, event.scroll, event.modifiers)
 
-  proc desc*(self: RenderView): string =
-    &"RenderView({self.id2}, interval = {self.interval}, renderWhenInactive = {self.renderWhenInactive}, preventThrottling = {self.preventThrottling})"
+  proc desc*(self: RenderViewImpl): string =
+    &"RenderViewImpl({self.id2}, interval = {self.interval}, renderWhenInactive = {self.renderWhenInactive}, preventThrottling = {self.preventThrottling})"
 
-  proc kind*(self: RenderView): string = "custom"
+  proc kind*(self: RenderViewImpl): string = "custom"
 
-  proc display*(self: RenderView): string = self.desc()
+  proc display*(self: RenderViewImpl): string = self.desc()
 
-  proc renderViewFromUserId*(layout: LayoutService, id: string): Option[RenderView] =
-    for v in layout.allViews:
-      if v of RenderView and v.RenderView.userId == id:
-        return v.RenderView.some
-    return RenderView.none
-
-  proc activate(self: RenderView) =
+  proc activate(self: RenderViewImpl) =
     self.active = true
     self.setRenderInterval(self.interval)
 
-  proc deactivate(self: RenderView) =
+  proc deactivate(self: RenderViewImpl) =
     self.active = false
     if not self.renderWhenInactive and self.renderTask != nil:
       self.renderTask.pause()
 
-  proc setRenderCommands*(self: RenderView, commands: RenderCommands) =
+  proc setRenderCommands*(self: RenderViewImpl, commands: RenderCommands) =
     self.commands = commands
     self.markDirty()
 
-  proc checkDirty(self: RenderView) =
+  proc checkDirty(self: RenderViewImpl) =
     ## checkDirty is called for every visible view every frame
     if self.interval == 0 and (self.active or self.renderWhenInactive):
       self.markDirty()
 
-  proc rvSetRenderWhenInactive(self: DynamicView, enabled: bool) =
-    let self = self.RenderView
+  proc rvSetRenderWhenInactive(self: RenderView, enabled: bool) =
+    let self = self.RenderViewImpl
     self.renderWhenInactive = enabled
     if not self.active and enabled:
       self.setRenderInterval(self.interval)
 
-  proc rvSetRenderInterval(self: DynamicView, ms: int) =
-    let self = self.RenderView
+  proc rvSetRenderInterval(self: RenderView, ms: int) =
+    let self = self.RenderViewImpl
     self.interval = ms
     if ms <= 0:
       if self.renderTask != nil:
@@ -139,7 +138,7 @@ when implModule:
         self.renderTask.interval = ms
         self.renderTask.reschedule()
 
-  proc getEventHandler(self: RenderView, context: string): EventHandler =
+  proc getEventHandler(self: RenderViewImpl, context: string): EventHandler =
     if context notin self.eventHandlers:
       var eventHandler: EventHandler
       assignEventHandler(eventHandler, self.events.getEventHandlerConfig(context)):
@@ -158,11 +157,11 @@ when implModule:
 
     return self.eventHandlers[context]
 
-  proc getEventHandlers*(self: RenderView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  proc getEventHandlers*(self: RenderViewImpl, inject: Table[string, EventHandler]): seq[EventHandler] =
     for mode in self.modes:
       result.add self.getEventHandler(mode)
 
-  proc render(self: RenderView, builder: UINodeBuilder): seq[OverlayFunction] =
+  proc render(self: RenderViewImpl, builder: UINodeBuilder): seq[OverlayFunction] =
     builder.panel(&{FillX, FillY, FillBackground, MaskContent}, backgroundColor = color(0, 0, 0)):
       onClickAny btn:
         self.layout.tryActivateView(self)
@@ -184,29 +183,28 @@ when implModule:
 
     self.resetDirty()
 
-  proc handleAction(self: RenderView, action: string, arg: string): Option[string] =
+  proc handleAction(self: RenderViewImpl, action: string, arg: string): Option[string] =
     return self.commandService.executeCommand(action & " " & arg)
 
-  proc handleInput(self: RenderView, text: string) =
+  proc handleInput(self: RenderViewImpl, text: string) =
     discard
 
-  proc newRenderView*(services: Services): DynamicView =
-    let view = RenderView(services: services)
+  proc newRenderView*(services: Services): RenderView =
+    let view = RenderViewImpl(services: services)
     view.platform = services.getServiceChecked(PlatformService).platform
     view.commandService = services.getServiceChecked(CommandService)
     view.events = services.getServiceChecked(EventHandlerService)
     view.layout = services.getServiceChecked(LayoutService)
     view.bindPlatformEvents()
 
-
     view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] =
-      render(self.RenderView, builder)
+      render(self.RenderViewImpl, builder)
     view.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
-      getEventHandlers(self.RenderView, inject)
-    view.descImpl = proc(self: View): string = desc(self.RenderView)
-    view.kindImpl = proc(self: View): string = kind(self.RenderView)
-    view.displayImpl = proc(self: View): string = display(self.RenderView)
-    view.activateImpl = proc(self: View) = activate(self.RenderView)
-    view.deactivateImpl = proc(self: View) = deactivate(self.RenderView)
-    view.checkDirtyImpl = proc(self: View) = checkDirty(self.RenderView)
+      getEventHandlers(self.RenderViewImpl, inject)
+    view.descImpl = proc(self: View): string = desc(self.RenderViewImpl)
+    view.kindImpl = proc(self: View): string = kind(self.RenderViewImpl)
+    view.displayImpl = proc(self: View): string = display(self.RenderViewImpl)
+    view.activateImpl = proc(self: View) = activate(self.RenderViewImpl)
+    view.deactivateImpl = proc(self: View) = deactivate(self.RenderViewImpl)
+    view.checkDirtyImpl = proc(self: View) = checkDirty(self.RenderViewImpl)
     return view

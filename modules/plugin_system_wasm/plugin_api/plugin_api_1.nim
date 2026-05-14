@@ -1329,8 +1329,9 @@ proc layoutCloseActiveView*(instance: ptr InstanceData; closeOpenPopup: bool; re
   instance.host.layout.closeActiveView(closeOpenPopup, restoreHidden)
 
 proc renderRenderViewFromUserId*(instance: ptr InstanceData; id: sink string): Option[RenderViewResource] =
-  if renderViewFromUserId(instance.host.layout, id).getSome(view):
-    return RenderViewResource(view: view).some
+  for view in instance.host.layout.allViews:
+    if view of RenderView and view.RenderView.userId == id:
+      return RenderViewResource(view: rv.RenderView(view)).some
   return RenderViewResource.none
 
 proc renderRenderViewFromView*(instance: ptr InstanceData; v: View): Option[RenderViewResource] =

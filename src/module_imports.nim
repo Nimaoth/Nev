@@ -38,6 +38,7 @@ when not defined(useDynlib):
   import "../modules/formatting_component.nim"
   import "../modules/toast.nim"
   import "../modules/text/text.nim"
+  import "../modules/render_view.nim"
   import "../modules/terminal/terminal.nim"
   import "../modules/plugin_system_wasm/plugin_system_wasm.nim"
   import "../modules/unsaved_saver.nim"
@@ -101,6 +102,7 @@ proc initModules*() =
   when declared(init_module_formatting_component): init_module_formatting_component()
   when declared(init_module_toast): init_module_toast()
   when declared(init_module_text): init_module_text()
+  when declared(init_module_render_view): init_module_render_view()
   when declared(init_module_terminal): init_module_terminal()
   when declared(init_module_plugin_system_wasm): init_module_plugin_system_wasm()
   when declared(init_module_unsaved_saver): init_module_unsaved_saver()
@@ -147,6 +149,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_unsaved_saver): shutdown_module_unsaved_saver()
   when declared(shutdown_module_plugin_system_wasm): shutdown_module_plugin_system_wasm()
   when declared(shutdown_module_terminal): shutdown_module_terminal()
+  when declared(shutdown_module_render_view): shutdown_module_render_view()
   when declared(shutdown_module_text): shutdown_module_text()
   when declared(shutdown_module_toast): shutdown_module_toast()
   when declared(shutdown_module_formatting_component): shutdown_module_formatting_component()
@@ -227,6 +230,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("formatting_component")
   loadModule("toast")
   loadModule("text")
+  loadModule("render_view")
   loadModule("terminal")
   loadModule("plugin_system_wasm")
   loadModule("unsaved_saver")
