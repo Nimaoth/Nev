@@ -463,7 +463,6 @@ when implModule:
     return ""
 
   proc init_module_command_line*() {.cdecl, exportc, dynlib.} =
-    getServices().addService(newLanguageServerCommandLineService())
     getServices().addService(newCommandLineService())
     let commands = getServiceChecked(CommandService)
     let table = genDispatchTable("commands")
