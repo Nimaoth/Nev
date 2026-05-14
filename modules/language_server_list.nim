@@ -1,28 +1,23 @@
-import std/[options, tables, json, sequtils, algorithm, sugar]
-import nimsumtree/rope
-import misc/[custom_logger, custom_async, util, response, event]
-import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import text/language/[language_server_base, lsp_types]
+import text/language/[language_server_base]
 import config_provider
 
 export language_server_base
 
-include dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 declareSettings LspMergeSettings, "lsp-merge":
   ## Timeout for LSP requests in milliseconds
   declare timeout, int, 10000
 
 type
-  # todo
-  MergeStrategy* = enum First, All, FirstThenTimeout, AnyThenTimeout
   LanguageServerList* = ref object of LanguageServer
     config: ConfigStore
     mergeConfig: LspMergeSettings
     languageServers*: seq[LanguageServer]
     timeout: int
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newLanguageServerList*(config: ConfigStore): LanguageServerList
 proc lspListAddLanguageServer(self: LanguageServerList, languageServer: LanguageServer): bool
 proc lspListRemoveLanguageServer(self: LanguageServerList, languageServer: LanguageServer): bool
@@ -34,6 +29,11 @@ proc removeLanguageServer*(self: LanguageServerList, languageServer: LanguageSer
 proc hasLanguageServer*(self: LanguageServerList, languageServer: LanguageServer): bool = lspListHasLanguageServer(self, languageServer)
 
 when implModule:
+  import std/[options, tables, json, sequtils, algorithm, sugar]
+  import misc/[custom_logger, custom_async, util, response, event]
+  import nimsumtree/rope
+  import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
+  import text/language/[lsp_types]
   import document
 
   logCategory "language-server-list"

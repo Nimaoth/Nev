@@ -22,6 +22,7 @@ when not defined(useDynlib):
   import "../modules/command_server.nim"
   import "../modules/stats.nim"
   import "../modules/plugin_service.nim"
+  import "../modules/language_server_list.nim"
   import "../modules/language_server_component.nim"
   import "../modules/command_component.nim"
   import "../modules/hover_component.nim"
@@ -84,6 +85,7 @@ proc initModules*() =
   when declared(init_module_command_server): init_module_command_server()
   when declared(init_module_stats): init_module_stats()
   when declared(init_module_plugin_service): init_module_plugin_service()
+  when declared(init_module_language_server_list): init_module_language_server_list()
   when declared(init_module_language_server_component): init_module_language_server_component()
   when declared(init_module_command_component): init_module_command_component()
   when declared(init_module_hover_component): init_module_hover_component()
@@ -160,6 +162,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_hover_component): shutdown_module_hover_component()
   when declared(shutdown_module_command_component): shutdown_module_command_component()
   when declared(shutdown_module_language_server_component): shutdown_module_language_server_component()
+  when declared(shutdown_module_language_server_list): shutdown_module_language_server_list()
   when declared(shutdown_module_plugin_service): shutdown_module_plugin_service()
   when declared(shutdown_module_stats): shutdown_module_stats()
   when declared(shutdown_module_command_server): shutdown_module_command_server()
@@ -208,6 +211,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("command_server")
   loadModule("stats")
   loadModule("plugin_service")
+  loadModule("language_server_list")
   loadModule("language_server_component")
   loadModule("command_component")
   loadModule("hover_component")
