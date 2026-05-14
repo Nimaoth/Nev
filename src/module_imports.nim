@@ -29,6 +29,7 @@ when not defined(useDynlib):
   import "../modules/treesitter_component.nim"
   import "../modules/contextline_component.nim"
   import "../modules/decoration_component.nim"
+  import "../modules/language_server_command_line.nim"
   import "../modules/command_line.nim"
   import "../modules/search_component.nim"
   import "../modules/selector_popup/selector_popup.nim"
@@ -94,6 +95,7 @@ proc initModules*() =
   when declared(init_module_treesitter_component): init_module_treesitter_component()
   when declared(init_module_contextline_component): init_module_contextline_component()
   when declared(init_module_decoration_component): init_module_decoration_component()
+  when declared(init_module_language_server_command_line): init_module_language_server_command_line()
   when declared(init_module_command_line): init_module_command_line()
   when declared(init_module_search_component): init_module_search_component()
   when declared(init_module_selector_popup): init_module_selector_popup()
@@ -162,6 +164,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_selector_popup): shutdown_module_selector_popup()
   when declared(shutdown_module_search_component): shutdown_module_search_component()
   when declared(shutdown_module_command_line): shutdown_module_command_line()
+  when declared(shutdown_module_language_server_command_line): shutdown_module_language_server_command_line()
   when declared(shutdown_module_decoration_component): shutdown_module_decoration_component()
   when declared(shutdown_module_contextline_component): shutdown_module_contextline_component()
   when declared(shutdown_module_treesitter_component): shutdown_module_treesitter_component()
@@ -224,6 +227,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("treesitter_component")
   loadModule("contextline_component")
   loadModule("decoration_component")
+  loadModule("language_server_command_line")
   loadModule("command_line")
   loadModule("search_component")
   loadModule("selector_popup")

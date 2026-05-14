@@ -1,8 +1,10 @@
+#use input_handler layout
 import std/[options, tables, strutils, json]
 import text/language/[language_server_base]
 import service
 
-include misc/dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type
   LanguageServerCommandLine* = ref object of LanguageServer
@@ -29,7 +31,8 @@ when implModule:
   proc newLanguageServerCommandLineService(): LanguageServerCommandLineService =
     let self = LanguageServerCommandLineService()
     self.languageServer = newLanguageServerCommandLine()
-    discard self.languageServer.documents.onEditorRegistered.subscribe proc(editor: DocumentEditor) =
+    let documents = getServiceChecked(DocumentEditorService)
+    discard documents.onEditorRegistered.subscribe proc(editor: DocumentEditor) =
       let doc = editor.currentDocument
       let language = doc.getLanguageComponent().getOr:
         return
@@ -65,7 +68,7 @@ when implModule:
     var completions = newSeq[CompletionItem]()
 
     var useActive = false
-    if self.documents.getDocumentByPath(filename).getSome(document):
+    if documents.getDocumentByPath(filename).getSome(document):
       let text = document.getTextComponent().getOr:
         return CompletionList(items: completions).success
 

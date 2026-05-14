@@ -57,7 +57,7 @@ when implModule:
       mRegisters*: Registers
       commandHandler*: command_service.CommandHandler
       mCommandLineEditor*: DocumentEditor
-      mLanguageServerCommandLine: LanguageServer
+      mLanguageServerCommandLine: LanguageServerCommandLine
 
       currentHistoryEntry*: int = 0
       eventHandler*: EventHandler
@@ -104,7 +104,7 @@ when implModule:
 
     return self
 
-  proc languageServerCommandLine*(self: CommandLineServiceImpl): LanguageServer =
+  proc languageServerCommandLine*(self: CommandLineServiceImpl): LanguageServerCommandLine =
     if self.mLanguageServerCommandLine == nil:
       self.mLanguageServerCommandLine = getService(LanguageServerCommandLineService).mapIt(it.languageServer).get(nil)
     return self.mLanguageServerCommandLine
@@ -146,9 +146,9 @@ when implModule:
       let editor = self.commandLineEditor
       if editor.currentDocument.getTextComponent().getSome(text):
         text.content = initialValue
-      if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
-        self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
-      self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[0] = ""
+      if self.languageServerCommandLine.commandHistory.len == 0:
+        self.languageServerCommandLine.commandHistory.add ""
+      self.languageServerCommandLine.commandHistory[0] = ""
       self.currentHistoryEntry = 0
       self.commandLineInputMode = true
       self.commandLineResultMode = false
@@ -221,9 +221,9 @@ when implModule:
     if showInCommandLine:
       if editor.currentDocument.getTextComponent().getSome(text):
         text.content = value
-      if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
-        self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
-      self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[0] = ""
+      if self.languageServerCommandLine.commandHistory.len == 0:
+        self.languageServerCommandLine.commandHistory.add ""
+      self.languageServerCommandLine.commandHistory[0] = ""
       self.currentHistoryEntry = 0
       self.commandLineInputMode = false
       self.commandLineResultMode = true
@@ -282,18 +282,18 @@ when implModule:
     let commands = input.split("\n")
 
     for command in commands:
-      if (let i = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.find(command); i >= 0):
-        self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.delete i
+      if (let i = self.languageServerCommandLine.commandHistory.find(command); i >= 0):
+        self.languageServerCommandLine.commandHistory.delete i
 
-    if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
-      self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
+    if self.languageServerCommandLine.commandHistory.len == 0:
+      self.languageServerCommandLine.commandHistory.add ""
 
     for command in commands:
-      self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.insert command, 1
+      self.languageServerCommandLine.commandHistory.insert command, 1
 
     let maxHistorySize = self.config.get("editor.command-line.history-size", 100)
-    if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len > maxHistorySize:
-      self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.setLen maxHistorySize
+    if self.languageServerCommandLine.commandHistory.len > maxHistorySize:
+      self.languageServerCommandLine.commandHistory.setLen maxHistorySize
 
     var allResults = ""
     for command in commands:
@@ -318,22 +318,22 @@ when implModule:
   proc selectPreviousCommandInHistory*(self: CommandLineService) {.expose("commands").} =
     let self = self.CommandLineServiceImpl
     let editor = self.commandLineEditor
-    if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
-      self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
+    if self.languageServerCommandLine.commandHistory.len == 0:
+      self.languageServerCommandLine.commandHistory.add ""
 
     var command = ""
     if editor.currentDocument.getTextComponent().getSome(text):
       command = $text.content
-    if command != self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]:
+    if command != self.languageServerCommandLine.commandHistory[self.currentHistoryEntry]:
       self.currentHistoryEntry = 0
-      self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[0] = command
+      self.languageServerCommandLine.commandHistory[0] = command
 
     self.currentHistoryEntry += 1
-    if self.currentHistoryEntry >= self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len:
+    if self.currentHistoryEntry >= self.languageServerCommandLine.commandHistory.len:
       self.currentHistoryEntry = 0
 
     if editor.currentDocument.getTextComponent().getSome(text):
-      text.content = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]
+      text.content = self.languageServerCommandLine.commandHistory[self.currentHistoryEntry]
     if self.prefix != "":
       if editor.getDecorationComponent().getSome(decos):
         if self.prefixOverlayId.isSome:
@@ -343,22 +343,22 @@ when implModule:
   proc selectNextCommandInHistory*(self: CommandLineService) {.expose("commands").} =
     let self = self.CommandLineServiceImpl
     let editor = self.commandLineEditor
-    if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
-      self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
+    if self.languageServerCommandLine.commandHistory.len == 0:
+      self.languageServerCommandLine.commandHistory.add ""
 
     var command = ""
     if editor.currentDocument.getTextComponent().getSome(text):
       command = $text.content
-    if command != self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]:
+    if command != self.languageServerCommandLine.commandHistory[self.currentHistoryEntry]:
       self.currentHistoryEntry = 0
-      self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[0] = command
+      self.languageServerCommandLine.commandHistory[0] = command
 
     self.currentHistoryEntry -= 1
     if self.currentHistoryEntry < 0:
-      self.currentHistoryEntry = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.high
+      self.currentHistoryEntry = self.languageServerCommandLine.commandHistory.high
 
     if editor.currentDocument.getTextComponent().getSome(textComponent):
-      textComponent.content = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]
+      textComponent.content = self.languageServerCommandLine.commandHistory[self.currentHistoryEntry]
     if self.prefix != "":
       if editor.getDecorationComponent().getSome(decos):
         if self.prefixOverlayId.isSome:
