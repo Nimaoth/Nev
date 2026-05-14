@@ -110,7 +110,7 @@ when implModule:
 
   proc languageServerComponentHasLanguageServer*(self: LanguageServerComponent, languageServer: LanguageServer): bool =
     let self = self.LanguageServerComponentImpl
-    return self.languageServerList.languageServers.find(languageServer) != -1
+    return self.languageServerList.hasLanguageServer(languageServer)
 
   proc getLanguageServerComponent*(self: ComponentOwner): Option[LanguageServerComponent] {.gcsafe, raises: [].} =
     return self.getComponent(LanguageServerComponentId).mapIt(it.LanguageServerComponent)

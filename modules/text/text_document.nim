@@ -1395,7 +1395,7 @@ proc handleLanguageServerDetached*(self: TextDocument, languageServer: LanguageS
   self.onLanguageServerDetached.invoke (self, languageServer)
 
 proc hasLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
-  self.languageServerList.languageServers.find(languageServer) != -1
+  self.languageServerList.hasLanguageServer(languageServer)
 
 proc getLanguageServer*(self: TextDocument): Option[LanguageServer] =
   if self.languageServerList.languageServers.len > 0:
