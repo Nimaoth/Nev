@@ -4,16 +4,17 @@ import component
 
 export component
 
-include misc/dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type LanguageComponent* = ref object of Component
   mLanguageId: string
   onLanguageChanged*: Event[LanguageComponent]
 
-var LanguageComponentId* {.apprtlvar.}: ComponentTypeId
+var LanguageComponentId* {.modrtlvar.}: ComponentTypeId
 
 # DLL API
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newLanguageComponent*(languageId: string = ""): LanguageComponent
 proc languageComponentLanguageId*(self: LanguageComponent): string
 proc languageComponentSetLanguageId*(self: LanguageComponent, languageId: string)

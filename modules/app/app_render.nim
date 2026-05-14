@@ -101,7 +101,7 @@ proc updateWidgetTree*(self: App, builder: UINodeBuilder, frameIndex: int) =
 
               of "vcs.status":
                 let vcss: VCSService = getServiceChecked(VCSService)
-                for vcs in vcss.getAllVersionControlSystems():
+                for vcs in vcss.versionControlSystems:
                   section(&"[{vcs.name}: {vcs.status}]")
                   break
 

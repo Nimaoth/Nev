@@ -221,7 +221,7 @@ if not disableLogging: ## Enable loggers
 
 import misc/[custom_async]
 import platform
-import app
+import app/app
 
 when enableTerminal:
   import "../modules/terminal_platform"/terminal_platform
@@ -237,9 +237,10 @@ when enableGui:
 # Do this after every import
 # Don't remove those imports, they are needed by generatePluginBindings
 {.push warning[UnusedImport]:off.}
+import malebolgia # required for dll exported global vars
+import view # required for dll exported global vars
+import vcs # required for dll exported global vars
 import service
-import document_editor, input_handler/input_handler, vfs_service, toast
-import misc/expose
 import config_provider
 import config_component # todo: make these modules
 {.pop.}
@@ -535,5 +536,3 @@ when defined(windows) and copyWasmtimeDll:
     const dllOut = querySetting(SingleValueSetting.outDir) / "wasmtime.dll"
     echo "[desktop_main.nim] run tools/copy_wasmtime_dll.nims"
     echo staticExec &"nim \"-d:inDir={dllIn}\" \"-d:outDir={dllOut}\" --hints:off --skipUserCfg --skipProjCfg --skipParentCfg ../tools/copy_wasmtime_dll.nims"
-
-printDispatchStats()

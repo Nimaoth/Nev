@@ -3,7 +3,8 @@ import app_options, service, platform
 import ui/node
 from scripting_api import Backend
 
-include misc/dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type AppBase* = ref object of RootObj
   closeRequested*: bool
@@ -12,19 +13,20 @@ type AppBase* = ref object of RootObj
   logNextFrameTime*: bool = false
   disableLogFrameTime*: bool = true
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newApp*(backend: Backend, platform: Platform, services: Services, options = AppOptions()): AppBase
 proc appLoadPlugins(self: AppBase)
 proc appShutdown(self: AppBase)
-proc appRender(self: AppBase, builder: UINodeBuilder, frameIndex: int)
+proc appRenderImpl(self: AppBase, builder: UINodeBuilder, frameIndex: int)
 {.pop.}
 
 proc loadPlugins*(self: AppBase) = appLoadPlugins(self)
 proc shutdown*(self: AppBase) = appShutdown(self)
-proc render*(self: AppBase, builder: UINodeBuilder, frameIndex: int) = appRender(self, builder, frameIndex)
+proc render*(self: AppBase, builder: UINodeBuilder, frameIndex: int) = appRenderImpl(self, builder, frameIndex)
 
 when implModule:
   import std/[sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
+  import nimsumtree/[rope]
   import misc/[id, util, event, myjsonutils, rect_utils, custom_logger, custom_async,
     delayed_task, regex, custom_unicode, jsonex, generational_seq, fuzzy_matching, rope_utils]
   import misc/[expose]
@@ -34,11 +36,10 @@ when implModule:
   import text_component, text_editor_component
   import finder/[finder, previewer, data_previewer]
   import compilation_config, vfs, vfs_service
-  import layout/layout, session, command_service, command_line, toast, plugin_service
+  import layout/[layout], session, command_service, command_line, toast, plugin_service
   import event_service, vcs
   import decoration_component, move_component, command_component
-  import nimsumtree/[rope]
-  import selector_popup/selector_popup
+  import selector_popup/[selector_popup]
   import file_previewer
 
   import misc/async_process
@@ -1161,9 +1162,9 @@ when implModule:
     defer:
       self.platform.requestRender()
 
-    if self.getActiveEditor().getSome(editor) and editor.getDocument().isNotNil:
+    if self.getActiveEditor().getSome(editor) and editor.currentDocument.isNotNil:
       try:
-        discard editor.getDocument().save(path)
+        discard editor.currentDocument.save(path)
       except CatchableError:
         log(lvlError, fmt"Failed to write file '{path}': {getCurrentExceptionMsg()}")
         log(lvlError, getCurrentException().getStackTrace())
@@ -1172,9 +1173,9 @@ when implModule:
     defer:
       self.platform.requestRender()
 
-    if self.getActiveEditor().getSome(editor) and editor.getDocument().isNotNil:
+    if self.getActiveEditor().getSome(editor) and editor.currentDocument.isNotNil:
       try:
-        editor.getDocument().load(path)
+        editor.currentDocument.load(path)
       except CatchableError:
         log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
         log(lvlError, getCurrentException().getStackTrace())
@@ -1780,7 +1781,7 @@ when implModule:
     proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
       var items = newSeq[FinderItem]()
       for document in self.editors.documents:
-        if document == self.commandLine.commandLineEditor.getDocument():
+        if document == self.commandLine.commandLineEditor.currentDocument:
           continue
 
         let path = document.filename
@@ -1806,7 +1807,7 @@ when implModule:
     popup.scale.x = 0.35
 
     popup.handleItemConfirmed = proc(item: FinderItem): bool =
-      if self.editors.getDocument(item.data).getSome(document):
+      if self.editors.getDocumentByPath(item.data).getSome(document):
         discard self.layout.createAndAddView(document)
       else:
         log lvlError, fmt"Failed to open location {item}"
@@ -1818,7 +1819,7 @@ when implModule:
         return false
 
       if popup.getSelectedItem().getSome(item):
-        if self.editors.getDocument(item.data).getSome(document):
+        if self.editors.getDocumentByPath(item.data).getSome(document):
           discard self.layout.tryCloseDocument(document, force=true)
           source.retrigger()
 
@@ -3056,7 +3057,7 @@ when implModule:
     log lvlError, fmt"Unknown command '{action}'"
     return string.none
 
-  import ui/widget_builders
+  import app_render
 
-  proc appRender(self: AppBase, builder: UINodeBuilder, frameIndex: int) =
+  proc appRenderImpl(self: AppBase, builder: UINodeBuilder, frameIndex: int) =
     self.App.updateWidgetTree(builder, frameIndex)

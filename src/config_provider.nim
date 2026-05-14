@@ -119,6 +119,30 @@ proc decodeRegex*(value: JsonNodeEx, default: string = ""): string =
 proc decodeRegex*(value: RegexSetting, default: string = ""): string =
   return value.impl.decodeRegex(default)
 
+proc desc*(self: ConfigStore, pretty = false): string =
+  result = &"CS({self.name}@{self.revision}"
+  if not self.parent.isNil:
+    if pretty:
+      result.add "\n"
+      result.add self.parent.desc(pretty).indent(2)
+    else:
+      result.add ", "
+      result.add self.parent.desc
+  result.add ")"
+
+proc `$`*(self: ConfigStore): string =
+  result = self.desc
+  result.add "\n"
+  result.add self.settings.pretty().indent(2)
+
+iterator parentStores*(self: ConfigStore, includeSelf: bool = true): ConfigStore =
+  var it = self
+  if not includeSelf:
+    it = it.parent
+  while not it.isNil:
+    yield it
+    it = it.parent
+
 proc setting*(self: ConfigStore, key: string, T: typedesc, def: JsonNodeEx = nil): Setting[T] {.gcsafe.} =
   # if def != nil:
   #   echo &"setting '{key}' with def {def}"
@@ -166,6 +190,13 @@ proc configServiceAddStore(self: ConfigService, name, filename: string, parent: 
 proc configServiceRemoveStore(self: ConfigService, store: ConfigStore)
 proc configServiceGetByPath(self: ConfigService, path: string): JsonNodeEx
 proc configServiceGetStoreForPath(self: ConfigService, path: string): (ConfigStore, string)
+proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx)
+proc configReconnectGroups(self: ConfigService)
+proc configMergedSettings(self: ConfigStore): JsonNodeEx
+proc configClear(self: ConfigStore, key: string)
+proc configGetAllKeys(self: JsonNodeEx): seq[tuple[key: string, value: JsonNodeEx]]
+proc configGetStoreForId(self: ConfigService, id: int): ConfigStore
+proc configGetSettingDescription(self: ConfigService, key: string): Option[SettingDescription]
 {.pop.}
 
 proc set*[T](self: ConfigStore, key: string, value: T) =
@@ -179,6 +210,12 @@ proc addStore*(self: ConfigService, name, filename: string, parent: ConfigStore 
 proc removeStore*(self: ConfigService, store: ConfigStore) = configServiceRemoveStore(self, store)
 proc getByPath*(self: ConfigService, path: string): JsonNodeEx = configServiceGetByPath(self, path)
 proc getStoreForPath*(self: ConfigService, path: string): (ConfigStore, string) = configServiceGetStoreForPath(self, path)
+proc reconnectGroups*(self: ConfigService) = configReconnectGroups(self)
+proc mergedSettings*(self: ConfigStore): JsonNodeEx = configMergedSettings(self)
+proc clear*(self: ConfigStore, key: string) = configClear(self, key)
+proc getAllKeys*(self: JsonNodeEx): seq[tuple[key: string, value: JsonNodeEx]] = configGetAllKeys(self)
+proc getStoreForId*(self: ConfigService, id: int): ConfigStore = configGetStoreForId(self, id)
+proc getSettingDescription*(self: ConfigService, key: string): Option[SettingDescription] = configGetSettingDescription(self, key)
 
 proc getValue*(self: ConfigStore, key: string): JsonNodeEx =
   result = self.configStoreGet(key)
@@ -219,6 +256,30 @@ proc get*(self: ConfigStore, key: string, T: typedesc): T {.inline.} =
 
 proc get*[T](self: ConfigStore, key: string, defaultValue: T): T {.inline.} =
   self.get(key, T, defaultValue)
+
+proc setUserData(node: JsonNodeEx, userData: int) =
+  node.userData = userData
+  if node.kind == JObject:
+    for value in node.fields.values:
+      value.setUserData(userData)
+  elif node.kind == JArray:
+    for value in node.elems:
+      value.setUserData(userData)
+
+var nextConfigStoreId {.apprtlvar.} = 1
+proc new*(_: typedesc[ConfigStore], name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore {.gcsafe.} =
+  let id = block:
+    {.gcsafe.}:
+      let id = nextConfigStoreId
+      inc nextConfigStoreId
+      id
+
+  result = ConfigStore(id: id, name: name, filename: filename, settings: newJexObject())
+  result.settings.setUserData(id)
+  settings.setUserData(id)
+  result.settings.evaluateSettingsRec(settings)
+  result.settings.extend = true
+  result.setParent(parent)
 
 proc get*[T](self: Setting[T], default: T): lent T =
   if self.cache.isSome and self.revision == self.store.revision:
@@ -469,25 +530,7 @@ when implModule:
   {.push gcsafe.}
   {.push raises: [].}
 
-  proc setUserData(node: JsonNodeEx, userData: int)
-  proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx)
-
   addBuiltinService(ConfigService)
-
-  var nextConfigStoreId = 1
-  proc new*(_: typedesc[ConfigStore], name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore {.gcsafe.} =
-    let id = block:
-      {.gcsafe.}:
-        let id = nextConfigStoreId
-        inc nextConfigStoreId
-        id
-
-    result = ConfigStore(id: id, name: name, filename: filename, settings: newJexObject())
-    result.settings.setUserData(id)
-    settings.setUserData(id)
-    result.settings.evaluateSettingsRec(settings)
-    result.settings.extend = true
-    result.setParent(parent)
 
   method init*(self: ConfigService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"ConfigService.init"
@@ -503,7 +546,7 @@ when implModule:
     self.runtime.setParent(self.base)
     return ok()
 
-  proc getSettingDescription*(self: ConfigService, key: string): Option[SettingDescription] =
+  proc configGetSettingDescription(self: ConfigService, key: string): Option[SettingDescription] =
     self.settingDescriptionsIndices.withValue(key, val):
       return self.settingDescriptions[val[]].some
     for desc in self.settingDescriptions:
@@ -556,17 +599,6 @@ when implModule:
 
     return store
 
-  proc desc*(self: ConfigStore, pretty = false): string =
-    result = &"CS({self.name}@{self.revision}"
-    if not self.parent.isNil:
-      if pretty:
-        result.add "\n"
-        result.add self.parent.desc(pretty).indent(2)
-      else:
-        result.add ", "
-        result.add self.parent.desc
-    result.add ")"
-
   proc firstGroupConfigStore*(self: ConfigService): ConfigStore =
     for group in self.groups:
       if group notin self.storeGroups:
@@ -590,7 +622,7 @@ when implModule:
 
     return nil
 
-  proc reconnectGroups*(self: ConfigService) =
+  proc configReconnectGroups(self: ConfigService) =
     var lastGroup = self.groups[0]
     for i in 1..self.groups.high:
       let childGroup = self.groups[i]
@@ -615,20 +647,6 @@ when implModule:
 
     else:
       self.runtime.setParent(self.base)
-
-  proc `$`*(self: ConfigStore): string =
-    result = self.desc
-    result.add "\n"
-    result.add self.settings.pretty().indent(2)
-
-  proc setUserData(node: JsonNodeEx, userData: int) =
-    node.userData = userData
-    if node.kind == JObject:
-      for value in node.fields.values:
-        value.setUserData(userData)
-    elif node.kind == JArray:
-      for value in node.elems:
-        value.setUserData(userData)
 
   proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx) =
     proc findSep(str: string, start: int): int =
@@ -730,15 +748,7 @@ when implModule:
     inc self.revision
     self.onConfigChanged.invoke("")
 
-  iterator parentStores*(self: ConfigStore, includeSelf: bool = true): ConfigStore =
-    var it = self
-    if not includeSelf:
-      it = it.parent
-    while not it.isNil:
-      yield it
-      it = it.parent
-
-  proc mergedSettings*(self: ConfigStore): JsonNodeEx =
+  proc configMergedSettings(self: ConfigStore): JsonNodeEx =
     if self.parent != nil:
       var parentMergedSettings = self.parent.mergedSettings
       let a = cast[ptr JsonNodeEx](parentMergedSettings)
@@ -754,7 +764,7 @@ when implModule:
     else:
       return self.settings
 
-  proc clear*(self: ConfigStore, key: string) =
+  proc configClear(self: ConfigStore, key: string) =
     log lvlInfo, &"Clear setting '{key}' in {self.desc()}"
 
     inc self.revision
@@ -886,13 +896,13 @@ when implModule:
     else:
       res.add (prefix, node)
 
-  proc getAllKeys*(self: JsonNodeEx): seq[tuple[key: string, value: JsonNodeEx]] =
+  proc configGetAllKeys(self: JsonNodeEx): seq[tuple[key: string, value: JsonNodeEx]] =
     self.getAllConfigKeys("", result)
 
   proc getAllConfigKeys*(self: ConfigStore): seq[tuple[key: string, value: JsonNodeEx]] =
     self.settings.getAllConfigKeys("", result)
 
-  proc getStoreForId*(self: ConfigService, id: int): ConfigStore =
+  proc configGetStoreForId(self: ConfigService, id: int): ConfigStore =
     for store in self.runtime.parentStores:
       if store.id == id:
         return store

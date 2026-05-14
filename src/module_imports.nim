@@ -32,6 +32,7 @@ when not defined(useDynlib):
   import "../modules/decoration_component.nim"
   import "../modules/language_server_list.nim"
   import "../modules/language_server_component.nim"
+  import "../modules/language_component.nim"
   import "../modules/language_server_command_line.nim"
   import "../modules/command_line.nim"
   import "../modules/search_component.nim"
@@ -72,6 +73,7 @@ when not defined(useDynlib):
   import "../modules/gui_platform/gui_platform.nim"
   import "../modules/markdown_component.nim"
   import "../modules/vcs_commands.nim"
+  import "../modules/app/app.nim"
   import "../modules/git_ui.nim"
 
 proc initModules*() =
@@ -104,6 +106,7 @@ proc initModules*() =
   when declared(init_module_decoration_component): init_module_decoration_component()
   when declared(init_module_language_server_list): init_module_language_server_list()
   when declared(init_module_language_server_component): init_module_language_server_component()
+  when declared(init_module_language_component): init_module_language_component()
   when declared(init_module_language_server_command_line): init_module_language_server_command_line()
   when declared(init_module_command_line): init_module_command_line()
   when declared(init_module_search_component): init_module_search_component()
@@ -144,10 +147,12 @@ proc initModules*() =
   when declared(init_module_gui_platform): init_module_gui_platform()
   when declared(init_module_markdown_component): init_module_markdown_component()
   when declared(init_module_vcs_commands): init_module_vcs_commands()
+  when declared(init_module_app): init_module_app()
   when declared(init_module_git_ui): init_module_git_ui()
 
 proc shutdownModules*() =
   when declared(shutdown_module_git_ui): shutdown_module_git_ui()
+  when declared(shutdown_module_app): shutdown_module_app()
   when declared(shutdown_module_vcs_commands): shutdown_module_vcs_commands()
   when declared(shutdown_module_markdown_component): shutdown_module_markdown_component()
   when declared(shutdown_module_gui_platform): shutdown_module_gui_platform()
@@ -188,6 +193,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_search_component): shutdown_module_search_component()
   when declared(shutdown_module_command_line): shutdown_module_command_line()
   when declared(shutdown_module_language_server_command_line): shutdown_module_language_server_command_line()
+  when declared(shutdown_module_language_component): shutdown_module_language_component()
   when declared(shutdown_module_language_server_component): shutdown_module_language_server_component()
   when declared(shutdown_module_language_server_list): shutdown_module_language_server_list()
   when declared(shutdown_module_decoration_component): shutdown_module_decoration_component()
@@ -248,6 +254,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("decoration_component")
   loadModule("language_server_list")
   loadModule("language_server_component")
+  loadModule("language_component")
   loadModule("language_server_command_line")
   loadModule("command_line")
   loadModule("search_component")
@@ -288,5 +295,6 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("gui_platform")
   loadModule("markdown_component")
   loadModule("vcs_commands")
+  loadModule("app")
   loadModule("git_ui")
 

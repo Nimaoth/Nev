@@ -162,6 +162,3 @@ when implModule:
         if vcs.root.len > longestMatch:
           result = vcs.some
           longestMatch = vcs.root.len
-
-  proc getAllVersionControlSystems*(self: VCSService): seq[VersionControlSystem] =
-    return self.versionControlSystems
