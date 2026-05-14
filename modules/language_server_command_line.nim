@@ -21,7 +21,7 @@ when implModule:
   import misc/[custom_logger, custom_async, util, response, rope_utils, event, myjsonutils]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import dispatch_tables, document_editor, layout/layout, input_handler/input_handler, config_provider, command_service
-  import document, text_component, move_component, language_component, language_server_component, session
+  import document, text_component, language_component, language_server_component, session
 
   logCategory "language-server-command-line"
 
@@ -55,7 +55,6 @@ when implModule:
     return self
 
   proc lspCommandLineGetDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
-    let self = self.LanguageServerCommandLine
     return newSeq[Definition]()
 
   proc lspCommandLineGetCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
@@ -144,20 +143,16 @@ when implModule:
     return CompletionList(items: completions).success
 
   proc lspCommandLineGetSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.async.} =
-    let self = self.LanguageServerCommandLine
     var completions: seq[Symbol]
     return completions
 
   proc lspCommandLineGetHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.async.} =
-    let self = self.LanguageServerCommandLine
     return string.none
 
   proc lspCommandLineGetInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server.InlayHint]]] {.async.} =
-    let self = self.LanguageServerCommandLine
     return success[seq[language_server.InlayHint]](@[])
 
   proc lspCommandLineGetDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[language_server.LspDiagnostic]]] {.async.} =
-    let self = self.LanguageServerCommandLine
     return success[seq[language_server.LspDiagnostic]](@[])
 
   proc newLanguageServerCommandLine(): LanguageServerCommandLine =

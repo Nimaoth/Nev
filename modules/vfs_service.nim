@@ -1,5 +1,4 @@
 #use lisp
-import nimsumtree/[arc]
 import service, vfs
 
 export vfs
@@ -17,12 +16,12 @@ type
 func serviceName*(_: typedesc[VFSService]): string = "VFSService"
 
 when implModule:
-  import std/[tables, options, json, os]
+  import std/[tables, options, json]
   import results
   import misc/[custom_async, custom_logger, myjsonutils, util, regex]
   import misc/expose
-  import dispatch_tables, vfs_config, config_provider, app_options
-  import fsnotify, vfs_local
+  import dispatch_tables, vfs_config, app_options
+  import vfs_local
 
   logCategory "vfs-service"
 

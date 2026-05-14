@@ -234,7 +234,7 @@ proc fromJsonHook*(val: var LispVal, jsonNode: JsonNode, opt = Joptions()) {.rai
 
 when implModule:
   import misc/[custom_logger]
-  import std/[lexbase, unicode, streams, math, os]
+  import std/[lexbase, unicode, streams, math]
   logCategory "lisp"
 
   type

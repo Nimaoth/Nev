@@ -77,7 +77,6 @@ when implModule:
     return FileKind.File.some
 
   proc vfsConfigGetFileAttributesImpl*(vfs: VFS, path: string): Future[Option[FileAttributes]] {.async: (raises: []).} =
-    let self = cast[ptr VFSConfig2](vfs.getMutUnsafe.impl)
     return FileAttributes(writable: true, readable: true).some
 
   proc vfsConfigGetDirectoryListingImpl*(vfs: VFS, path: string): Future[DirectoryListing] {.async: (raises: []).} =

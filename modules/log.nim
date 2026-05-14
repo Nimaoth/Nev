@@ -42,28 +42,28 @@ template log*(level: LogLevel, channel: LogChannel, category: LogCategory, messa
 template logCategory*(name: string, defaultChannel: LogChannel) =
   let category = logAddCategory(name)
 
-  template log(level: LogLevel, message: string) =
+  template log(level: LogLevel, message: string) {.used.} =
     logImpl(defaultChannel, level, category, message)
 
-  template log(channel: LogChannel, level: LogLevel, message: string) =
+  template log(channel: LogChannel, level: LogLevel, message: string) {.used.} =
     logImpl(channel, level, category, message)
 
 template logCategory*(name: string) =
   let category = logAddCategory(name)
 
-  template log(level: LogLevel, message: string) =
+  template log(level: LogLevel, message: string) {.used.} =
     logImpl(nil, level, category, message)
 
-  template log(channel: LogChannel, level: LogLevel, message: string) =
+  template log(channel: LogChannel, level: LogLevel, message: string) {.used.} =
     logImpl(channel, level, category, message)
 
 template logCategory2*(name: string) =
   let category = logAddCategory(name)
 
-  template log2(level: LogLevel, message: string) =
+  template log2(level: LogLevel, message: string) {.used.} =
     logImpl(defaultChannel, level, category, message)
 
-  template log(channel: LogChannel, level: LogLevel, message: string) =
+  template log(channel: LogChannel, level: LogLevel, message: string) {.used.} =
     logImpl(channel, level, category, message)
 
 # Implementation

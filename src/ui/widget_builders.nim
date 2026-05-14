@@ -1,10 +1,10 @@
-import std/[sugar, os, strutils, sets]
+import std/[strutils]
 import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils, jsonex]
 import ui/node
 import platform
 import ui/[widget_library]
-import document_editor, theme, view, layout/layout, config_provider, command_line, toast
+import document_editor, theme, layout/layout, config_provider, command_line, toast
 import popup
 import status_line
 from scripting_api import nil
@@ -28,17 +28,6 @@ var borderFlagStack = newSeq[BorderFlags]()
 proc resetBorderFlags() {.gcsafe.} =
   {.gcsafe.}:
     borderFlagStack = @[BorderFlags.none()]
-
-method createUI*(self: View, builder: UINodeBuilder): seq[OverlayFunction] =
-  if self.renderImpl != nil:
-    return self.renderImpl(self, builder)
-  else:
-    self.resetDirty()
-  return @[]
-
-method createUI*(self: EditorView, builder: UINodeBuilder): seq[OverlayFunction] =
-  assert self.editor.renderImpl != nil
-  return self.editor.renderImpl(self.editor, builder)
 
 proc flushOverlays(builder: UINodeBuilder, overlays: var seq[OverlayFunction]) =
   for overlay in overlays:

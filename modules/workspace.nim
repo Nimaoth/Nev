@@ -1,7 +1,6 @@
 #use vfs_service
 import std/[options, sequtils, os, json]
 import misc/[custom_async, id, util, regex, event]
-import nimsumtree/arc
 import vfs, vfs_service, service
 import finder/finder
 
@@ -87,7 +86,7 @@ proc getWorkspacePath*(self: Workspace): string =
 
 # Implementation
 when implModule:
-  import std/[json, strutils, unicode]
+  import std/[unicode]
   import malebolgia
   import misc/[timer, async_process, static_array, custom_logger]
   import compilation_config, event_service

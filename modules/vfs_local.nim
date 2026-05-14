@@ -13,7 +13,6 @@ proc cacheDir*(self: VFS, path: string, ignore: Globs)
 {.pop.}
 
 when implModule:
-  import malebolgia
   import fsnotify
 
   when not defined(musl):

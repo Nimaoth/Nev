@@ -1,4 +1,4 @@
-import std/[options, strformat]
+import std/[options]
 import pixie, chroma
 import results
 import misc/[util, render_command]

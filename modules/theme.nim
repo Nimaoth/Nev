@@ -1,6 +1,6 @@
-import std/[json, tables, strutils, options]
+import std/[tables, strutils, options]
 import chroma, results
-import misc/[custom_logger, myjsonutils, util, custom_async, event]
+import misc/[custom_logger, util, custom_async, event]
 import service
 import vfs
 
@@ -67,8 +67,8 @@ proc setTheme*(self: ThemeService, theme: Theme) =
   self.onThemeChanged.invoke(theme)
 
 when implModule:
-
-  addBuiltinService(ThemeService)
+  import std/[json]
+  import misc/[myjsonutils]
 
   logCategory "theme"
 

@@ -3,7 +3,7 @@ import std/[options, tables]
 import chroma, vmath
 import nimsumtree/rope
 import misc/[event, myjsonutils, render_command, generational_seq]
-import text/[display_map, overlay_map]
+import text/[display_map]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import config_provider
 import component
@@ -91,6 +91,7 @@ when implModule:
   import std/[sequtils]
   import misc/[util, custom_logger, rope_utils]
   import document_editor
+  import text/overlay_map
 
   logCategory "decoration-component"
 

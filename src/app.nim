@@ -1,7 +1,6 @@
-import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
+import std/[sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
 import misc/[id, util, timer, event, myjsonutils, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, generational_seq, fuzzy_matching,
-  rope_utils]
+  delayed_task, regex, custom_unicode, jsonex, generational_seq, fuzzy_matching, rope_utils]
 import ui/node
 import misc/[expose]
 import platform
@@ -13,8 +12,8 @@ import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
 import service, layout/layout, session, command_service, command_line, toast, plugin_service
 import event_service, vcs
-import search_component, decoration_component, move_component, command_component
-import nimsumtree/[arc, rope]
+import decoration_component, move_component, command_component
+import nimsumtree/[rope]
 import selector_popup/selector_popup
 import file_previewer
 
@@ -1240,7 +1239,7 @@ proc openSession*(self: App, newWindow: bool = false, root: string = "home://", 
   finder.filterThreshold = float.low
 
   let previewer = if preview:
-    newFilePreviewer(self.vfsService.vfs, self.services, reuseExistingDocuments = false).Previewer.some
+    newFilePreviewer(self.vfsService.vfs, self.services, reuseExistingDocuments = false).some
   else:
     Previewer.none
 
@@ -1278,7 +1277,7 @@ proc openRecentSession*(self: App, preview: bool = true, scaleX: float = 0.9, sc
   finder.filterThreshold = float.low
 
   let previewer = if preview:
-    newFilePreviewer(self.vfsService.vfs, self.services, reuseExistingDocuments = false).Previewer.some
+    newFilePreviewer(self.vfsService.vfs, self.services, reuseExistingDocuments = false).some
   else:
     Previewer.none
 
@@ -1442,7 +1441,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
     return items
 
   let previewer = if preview:
-    newFilePreviewer(self.vfsService.vfs, self.services, reuseExistingDocuments = false).Previewer.some
+    newFilePreviewer(self.vfsService.vfs, self.services, reuseExistingDocuments = false).some
   else:
     Previewer.none
 
@@ -1476,7 +1475,6 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
     self.platform.requestRender()
 
   let dataPreviewer = newDataPreviewer(self.services, language="javascript".some)
-  let previewer = dataPreviewer.Previewer.some
 
   var state: ref tuple[
     index: int,
@@ -1552,7 +1550,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
 
   let source = newSyncDataSource(getItems)
   let finder = newFinder(source, filterAndSort=true)
-  var popup = newSelectorPopup("settings".some, finder.some, previewer)
+  var popup = newSelectorPopup("settings".some, finder.some, dataPreviewer.Previewer.some)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -1736,7 +1734,7 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     self.platform.requestRender()
 
   let previewer = if preview:
-    newFilePreviewer(self.vfsService.vfs, self.services).Previewer.some
+    newFilePreviewer(self.vfsService.vfs, self.services).some
   else:
     Previewer.none
 
@@ -2017,7 +2015,6 @@ proc getWorkspaceSearchResults(self: WorkspaceSearchDataSource): Future[void] {.
   if self.query.len < self.minQueryLen:
     return
 
-  let t = startTimer()
   let list = self.workspace.searchWorkspaceItemList(self.query, self.paths, self.maxResults, self.maxLen).await
   self.onItemsChanged.invoke list
 
@@ -2058,7 +2055,7 @@ proc searchGlobalInteractive*(self: App, path: string = "") {.expose("editor").}
   var finder = newFinder(source, filterAndSort=true, skipFirstQuery=true)
 
   var popup = newSelectorPopup("search".some, finder.some,
-    newFilePreviewer(self.vfsService.vfs, self.services).Previewer.some)
+    newFilePreviewer(self.vfsService.vfs, self.services).some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2093,7 +2090,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
 
   var popup = newSelectorPopup("search".some, finder.some,
-    newFilePreviewer(self.vfsService.vfs, self.services).Previewer.some)
+    newFilePreviewer(self.vfsService.vfs, self.services).some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2338,7 +2335,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
   finder.filterThreshold = float.low
 
   let filePreviewer = newFilePreviewer(vfs, self.services)
-  var popup = newSelectorPopup("file-explorer".some, finder.some, filePreviewer.Previewer.some)
+  var popup = newSelectorPopup("file-explorer".some, finder.some, filePreviewer.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
   popup.previewScale = previewScale

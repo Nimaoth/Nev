@@ -1,7 +1,6 @@
 import std/[options, tables]
 import misc/[custom_async, custom_logger, util]
 import misc/diff
-import nimsumtree/[arc]
 import workspace
 import service, config_provider, vfs, vfs_service
 

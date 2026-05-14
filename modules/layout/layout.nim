@@ -162,7 +162,7 @@ proc getViews*(self: LayoutService, T: typedesc): seq[T] =
 
 # Implementation
 when implModule:
-  import std/[tables, sugar, deques, sets, os]
+  import std/[tables, sugar, deques, sets]
   import results
   import platform
   import misc/[custom_logger, rect_utils, myjsonutils, util, jsonex]
@@ -761,8 +761,6 @@ when implModule:
         yield view.EditorView.editor
 
   ###########################################################################
-
-  template expose(name: static string, fun: untyped): untyped = fun
 
   proc changeSplitSize*(self: LayoutService, change: float, vertical: bool) =
     let self = self.LayoutServiceImpl

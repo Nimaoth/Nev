@@ -71,7 +71,6 @@ proc markDirtyBase*(self: View, notify: bool = true) =
   else:
     self.mDirty = true
 
-import std/[sets, json]
 proc dump*(self: View): string =
   if self.dumpImpl != nil:
     return self.dumpImpl(self)

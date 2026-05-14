@@ -1,7 +1,6 @@
 #use command_service layout text_editor_component register command_component decoration_component decoration_component event_service session language_server_component input_handler move_component treesitter
-import std/[options, strutils, sequtils, strformat, json, streams]
-import misc/[jsonex, myjsonutils]
-import service, lisp, document_editor, log, command_service
+import std/[options, strutils]
+import service, document_editor, log, command_service
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -35,7 +34,7 @@ proc handleCommand*(self: CommandLineService, command: string): Option[string] {
 
 # Implementation
 when implModule:
-  import std/[strformat, tables, sugar, json, streams, hashes]
+  import std/[strformat, tables, sugar, json, streams, hashes, sequtils]
   import misc/[util, custom_async, custom_unicode, myjsonutils, parsejsonex, timer, rope_utils, async_process, delayed_task, jsonex]
   import nimsumtree/[rope, sumtree]
   import misc/[expose]
@@ -45,7 +44,7 @@ when implModule:
   import text/[display_map, overlay_map]
   import config_provider, dispatch_tables, misc/input_api, input_handler/input_handler
   import decoration_component, document, vfs_service, vfs, register
-  import language_server_command_line, command_component, text_editor_component, text_component, document_editor
+  import language_server_command_line, command_component, text_editor_component, text_component
   import scripting_api, event_service
 
   {.push gcsafe.}

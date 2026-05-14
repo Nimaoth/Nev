@@ -416,7 +416,6 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, fra
 
 defineSetAllDefaultSettings()
 
-import service
 gServices.addBuiltinServices()
 gServices.getServiceChecked(PlatformService).setPlatform(plat)
 

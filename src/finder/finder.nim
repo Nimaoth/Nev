@@ -418,7 +418,7 @@ proc parsePathAndLocationFromItemData*(item: FinderItem):
 
     return (path.getStr, cursor, isFile, editorId).some
 
-  except:
+  except CatchableError:
     return
 
 proc newStaticDataSource*(items: sink seq[FinderItem]): StaticDataSource =

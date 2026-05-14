@@ -546,7 +546,7 @@ type LayerJob = object
   injectionQuery: TSQuery
   requestedLanguage: string
 
-proc parseInjection(text: ptr Rope, inj: ptr InjectionJob, oldSnapshot: SyntaxMapSnapshot, depth: int, parser: TSParser): LayerJob =
+proc parseInjection(text: ptr Rope, inj: ptr InjectionJob, oldSnapshot: SyntaxMapSnapshot, depth: int, parser: TSParser): LayerJob {.raises: [].} =
   let injLang = getLoadedLanguageSnapshot(inj.languageName)
 
   if injLang.isNone:
@@ -606,12 +606,13 @@ proc parseInjection(text: ptr Rope, inj: ptr InjectionJob, oldSnapshot: SyntaxMa
   )
 
 proc parseInjections(args: ParseArgs, injections: seq[InjectionJob], outJobs: var seq[LayerJob], oldSnapshot: SyntaxMapSnapshot, depth: int) =
+  {.push warning[BareExcept]:off.}
   try:
     var jobs = newSeq[LayerJob](injections.len)
     when true:
       proc parseInjectionHelper(chunkIndex: int, chunkSize: int, text: ptr Rope,
           injections: ptr seq[InjectionJob], oldSnapshot: SyntaxMapSnapshot, depth: int,
-          parser: TSParser, jobs: ptr seq[LayerJob]) =
+          parser: TSParser, jobs: ptr seq[LayerJob]) {.raises: [].} =
         for i in (chunkIndex * chunkSize)..<min((chunkIndex + 1) * chunkSize, injections[].len):
           jobs[][i] = parseInjection(text, injections[i].addr, oldSnapshot, depth, parser)
 
@@ -630,8 +631,9 @@ proc parseInjections(args: ParseArgs, injections: seq[InjectionJob], outJobs: va
           jobs[i] = parseInjection(args.text.addr, injections[i].addr, oldSnapshot, depth, parser)
 
     outJobs.add(jobs.ensureMove)
-  except CatchableError:
+  except Exception:
     discard
+  {.pop.}
 
 proc parseTreesitterThread(args: ParseArgs): bool =
   let oldSnapshot {.cursor.} = args.res[]

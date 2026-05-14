@@ -262,38 +262,27 @@ proc tabLayoutDump*(self: View): string =
   "TabLayout" & $(self[])
 
 proc layoutDesc*(self: View): string =
-  let self = self.Layout
   "Layout"
 proc centerLayoutDesc*(self: View): string =
-  let self = self.CenterLayout
   "CenterLayout"
 proc horizontalLayoutDesc*(self: View): string =
-  let self = self.HorizontalLayout
   "HorizontalLayout"
 proc verticalLayoutDesc*(self: View): string =
-  let self = self.VerticalLayout
   "VerticalLayout"
 proc alternatingLayoutDesc*(self: View): string =
-  let self = self.AlternatingLayout
   "AlternatingLayout"
 proc tabLayoutDesc*(self: View): string =
-  let self = self.TabLayout
   "TabLayout"
 
 proc centerLayoutKind*(self: View): string =
-  let self = self.CenterLayout
   "center"
 proc horizontalLayoutKind*(self: View): string =
-  let self = self.HorizontalLayout
   "horizontal"
 proc verticalLayoutKind*(self: View): string =
-  let self = self.VerticalLayout
   "vertical"
 proc alternatingLayoutKind*(self: View): string =
-  let self = self.AlternatingLayout
   "alternating"
 proc tabLayoutKind*(self: View): string =
-  let self = self.TabLayout
   "tab"
 
 proc copyNonNilChildren(self: Layout, src: Layout): Layout =

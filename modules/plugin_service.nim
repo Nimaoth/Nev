@@ -1,8 +1,8 @@
 #use command_service stats input_handler
 import std/[json, tables, options, strformat]
-import misc/[custom_async, event]
+import misc/[custom_async]
 import lisp
-import service, config_provider, stats, command_service
+import service, config_provider, command_service
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -159,10 +159,10 @@ proc desc*(self: Plugin): string = &"'{self.manifest.name}' ({self.manifest.path
 
 when implModule:
   import std/[macros, os, sugar, strutils]
-  import misc/[custom_logger, util, myjsonutils]
+  import misc/[custom_logger, util, myjsonutils, event]
   import nimsumtree/[arc]
   import misc/expose
-  import vfs_service, vfs, dispatch_tables, input_handler/input_handler
+  import vfs_service, vfs, dispatch_tables, input_handler/input_handler, stats
 
   logCategory "plugins"
 

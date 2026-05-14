@@ -44,9 +44,6 @@ when implModule:
         break
 
   proc lspListAddLanguageServer(self: LanguageServerList, languageServer: LanguageServer): bool =
-    if not (languageServer of LanguageServer):
-      return false
-    let languageServer = languageServer.LanguageServer
     if languageServer in self.languageServers:
       return false
 
@@ -59,9 +56,6 @@ when implModule:
     return true
 
   proc lspListRemoveLanguageServer(self: LanguageServerList, languageServer: LanguageServer): bool =
-    if not (languageServer of LanguageServer):
-      return false
-    let languageServer = languageServer.LanguageServer
     let index = self.languageServers.find(languageServer)
     if index != -1:
       self.languageServers.removeShift(index)

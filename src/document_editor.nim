@@ -203,10 +203,9 @@ proc anyUnsavedChanges*(self: DocumentEditorService): bool =
   return false
 
 when implModule:
-  import std/[json, algorithm]
+  import std/[algorithm]
   import misc/[array_set]
   import vmath
-  import dispatch_tables
 
   addBuiltinService(DocumentEditorService)
 

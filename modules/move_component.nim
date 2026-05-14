@@ -38,7 +38,6 @@ when implModule:
   import std/[tables, sequtils]
   import misc/[util, myjsonutils, custom_logger, rope_utils]
   import move_database
-  import lisp
 
   logCategory "move-component"
 

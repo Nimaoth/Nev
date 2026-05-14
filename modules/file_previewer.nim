@@ -1,11 +1,7 @@
 #use vfs_service workspace
-import std/[tables, json, options, strformat, strutils]
-import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils, array_set, jsonex, rope_utils]
 import document_editor
 import finder/previewer
 import vfs, service
-
-import nimsumtree/[rope, arc]
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -18,6 +14,9 @@ proc filePreviewerEditor(self: Previewer): DocumentEditor
 proc editor*(self: Previewer): DocumentEditor = filePreviewerEditor(self)
 
 when implModule:
+  import std/[tables, json, options, strformat, strutils]
+  import nimsumtree/[rope]
+  import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils, array_set, jsonex, rope_utils]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import vcs, finder/finder
   import document, text_component, move_component, text_editor_component, command_component

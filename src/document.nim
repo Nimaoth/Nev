@@ -1,6 +1,5 @@
 import std/[strformat, hashes, json]
 import misc/[util, event, custom_async, id]
-import nimsumtree/[arc]
 import vfs, component
 
 export component
