@@ -1,9 +1,7 @@
 import std/[json, sequtils, strutils, strformat, lexbase, unicode, streams, tables, math, os]
 import misc/[util, myjsonutils, custom_logger]
 
-{.push gcsafe.}
-
-logCategory "lisp"
+include misc/dynlib_export
 
 type
   LispValKind* = enum
@@ -15,6 +13,10 @@ type
     onUndefinedSymbol*: proc(env: Env, name: string): LispVal {.gcsafe, raises: [].}
 
   LispError* = object of CatchableError
+
+  LispKindError* = object of ValueError ## raised by the `to` macro if the
+                                        ## Lisp kind is incorrect.
+  LispParsingError* = object of ValueError ## is raised for a Lisp error
 
   LispVal* = ref object
     case kind*: LispValKind
@@ -40,6 +42,22 @@ type
       params*: seq[string]
       body*: LispVal
       env*: Env
+
+{.push apprtl, gcsafe, raises: [].}
+proc lispParseLispSingle(str: openArray[char]): (LispVal, int) {.raises: [LispParsingError].}
+proc lispParseLisp(str: string): LispVal {.raises: [LispParsingError].}
+proc lispParseLispValues(str: string): seq[LispVal] {.raises: [LispParsingError].}
+proc lispEval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].}
+proc lispBaseEnv(): Env
+{.pop.}
+
+proc parseLispSingle*(str: openArray[char]): (LispVal, int) = lispParseLispSingle(str)
+proc parseLisp*(str: string): LispVal = lispParseLisp(str)
+proc parseLispValues*(str: string): seq[LispVal] = lispParseLispValues(str)
+proc eval*(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} = lispEval(expr, env)
+proc baseEnv*(): Env = lispBaseEnv()
+
+{.push gcsafe.}
 
 proc `$`*(val: LispVal): string {.raises: [].} =
   if val == nil:
@@ -113,6 +131,20 @@ proc newLambda*(params: seq[string], body: LispVal, env: Env): LispVal =
 
 proc newMacro*(params: seq[string], body: LispVal, env: Env): LispVal =
   LispVal(kind: Macro, params: params, body: body, env: env)
+
+proc isTruthy*(val: LispVal): bool =
+  case val.kind
+  of Nil: false
+  of Number: val.num != 0
+  of Bool: val.bol
+  of Symbol: true
+  of String: true
+  of List: true
+  of Array: true
+  of Map: true
+  of Func: true
+  of Lambda: true
+  of Macro: true
 
 proc createChild*(env: Env): Env =
   result = Env(parents: @[env])
@@ -199,1108 +231,1070 @@ proc fromJsonHook*(val: var LispVal, jsonNode: JsonNode, opt = Joptions()) {.rai
   of JArray:
     val = newArray(jsonNode.elems.mapIt(it.jsonTo(LispVal)))
 
-type
-  LispEventKind* = enum ## enumeration of all events that may occur when parsing
-    lispError,          ## an error occurred during parsing
-    lispEof,            ## end of file reached
-    lispString,         ## a string literal
-    lispSymbol,         ## a symbol
-    lispInt,            ## an integer literal
-    lispFloat,          ## a float literal
-    lispTrue,           ## the value `true`
-    lispFalse,          ## the value `false`
-    lispNull,           ## the value `null`
-    lispObjectStart,    ## start of an object: the `{` token
-    lispObjectEnd,      ## end of an object: the `}` token
-    lispArrayStart,     ## start of an array: the `[` token
-    lispArrayEnd        ## end of an array: the `]` token
-    lispListStart,      ## start of an array: the `(` token
-    lispListEnd,        ## end of an array: the `)` token
-    lispListColon,      ## : in list
+when implModule:
+  logCategory "lisp"
 
-  TokKind* = enum # must be synchronized with TLispEventKind!
-    tkError,
-    tkEof,
-    tkString,
-    tkSymbol,
-    tkInt,
-    tkFloat,
-    tkTrue,
-    tkFalse,
-    tkNull,
-    tkParenLe,
-    tkParenRi,
-    tkCurlyLe,
-    tkCurlyRi,
-    tkBracketLe,
-    tkBracketRi,
-    tkColon,
-    tkComma,
-    tkCommaAt,
-    tkBacktick, # {()}@*789/?[<>]=+456-!#~|&.0123%;
+  type
+    LispEventKind* = enum ## enumeration of all events that may occur when parsing
+      lispError,          ## an error occurred during parsing
+      lispEof,            ## end of file reached
+      lispString,         ## a string literal
+      lispSymbol,         ## a symbol
+      lispInt,            ## an integer literal
+      lispFloat,          ## a float literal
+      lispTrue,           ## the value `true`
+      lispFalse,          ## the value `false`
+      lispNull,           ## the value `null`
+      lispObjectStart,    ## start of an object: the `{` token
+      lispObjectEnd,      ## end of an object: the `}` token
+      lispArrayStart,     ## start of an array: the `[` token
+      lispArrayEnd        ## end of an array: the `]` token
+      lispListStart,      ## start of an array: the `(` token
+      lispListEnd,        ## end of an array: the `)` token
+      lispListColon,      ## : in list
 
-  ParserState = enum
-    stateEof, stateStart, stateObject, stateArray, stateList, stateExpectArrayComma,
-    stateExpectObjectComma, stateExpectColon, stateExpectValue
+    TokKind* = enum # must be synchronized with TLispEventKind!
+      tkError,
+      tkEof,
+      tkString,
+      tkSymbol,
+      tkInt,
+      tkFloat,
+      tkTrue,
+      tkFalse,
+      tkNull,
+      tkParenLe,
+      tkParenRi,
+      tkCurlyLe,
+      tkCurlyRi,
+      tkBracketLe,
+      tkBracketRi,
+      tkColon,
+      tkComma,
+      tkCommaAt,
+      tkBacktick, # {()}@*789/?[<>]=+456-!#~|&.0123%;
 
-  LispParserError* = enum       ## enumeration that lists all errors that can occur
-    errNone,              ## no error
-    errInvalidToken,      ## invalid token
-    errStringExpected,    ## string expected
-    errColonExpected,     ## `:` expected
-    errCommaExpected,     ## `,` expected
-    errBracketRiExpected, ## `]` expected
-    errParenRiExpected,   ## `)` expected
-    errCurlyRiExpected,   ## `}` expected
-    errQuoteExpected,     ## `"` or `'` expected
-    errEOC_Expected,      ## `*/` expected
-    errEofExpected,       ## EOF expected
-    errExprExpected       ## expr expected
+    ParserState = enum
+      stateEof, stateStart, stateObject, stateArray, stateList, stateExpectArrayComma,
+      stateExpectObjectComma, stateExpectColon, stateExpectValue
 
-  LispParser* = object of BaseLexer ## the parser object.
-    a*: string
-    tok*: TokKind
-    kind: LispEventKind
-    err: LispParserError
-    state: seq[ParserState]
-    filename: string
-    rawStringLiterals: bool
-    lastBufpos*: int
+    LispParserError* = enum       ## enumeration that lists all errors that can occur
+      errNone,              ## no error
+      errInvalidToken,      ## invalid token
+      errStringExpected,    ## string expected
+      errColonExpected,     ## `:` expected
+      errCommaExpected,     ## `,` expected
+      errBracketRiExpected, ## `]` expected
+      errParenRiExpected,   ## `)` expected
+      errCurlyRiExpected,   ## `}` expected
+      errQuoteExpected,     ## `"` or `'` expected
+      errEOC_Expected,      ## `*/` expected
+      errEofExpected,       ## EOF expected
+      errExprExpected       ## expr expected
 
-  LispKindError* = object of ValueError ## raised by the `to` macro if the
-                                        ## Lisp kind is incorrect.
-  LispParsingError* = object of ValueError ## is raised for a Lisp error
+    LispParser* = object of BaseLexer ## the parser object.
+      a*: string
+      tok*: TokKind
+      kind: LispEventKind
+      err: LispParserError
+      state: seq[ParserState]
+      filename: string
+      rawStringLiterals: bool
+      lastBufpos*: int
 
-const
-  errorMessages*: array[LispParserError, string] = [
-    "no error",
-    "invalid token",
-    "string expected",
-    "':' expected",
-    "',' expected",
-    "']' expected",
-    "')' expected",
-    "'}' expected",
-    "'\"' or \"'\" expected",
-    "'*/' expected",
-    "EOF expected",
-    "expression expected"
-  ]
-  tokToStr: array[TokKind, string] = [
-    "invalid token",
-    "EOF",
-    "string literal",
-    "symbol",
-    "int literal",
-    "float literal",
-    "true",
-    "false",
-    "null",
-    "(", ")", "{", "}", "[", "]", ":", ",", ",@", "`"
-  ]
+  const
+    errorMessages*: array[LispParserError, string] = [
+      "no error",
+      "invalid token",
+      "string expected",
+      "':' expected",
+      "',' expected",
+      "']' expected",
+      "')' expected",
+      "'}' expected",
+      "'\"' or \"'\" expected",
+      "'*/' expected",
+      "EOF expected",
+      "expression expected"
+    ]
+    tokToStr: array[TokKind, string] = [
+      "invalid token",
+      "EOF",
+      "string literal",
+      "symbol",
+      "int literal",
+      "float literal",
+      "true",
+      "false",
+      "null",
+      "(", ")", "{", "}", "[", "]", ":", ",", ",@", "`"
+    ]
 
-proc open*(my: var LispParser, input: Stream, filename: string; rawStringLiterals = false) =
-  ## initializes the parser with an input stream. `Filename` is only used
-  ## for nice error messages. If `rawStringLiterals` is true, string literals
-  ## are kept with their surrounding quotes and escape sequences in them are
-  ## left untouched too.
-  lexbase.open(my, input)
-  my.filename = filename
-  my.state = @[stateStart]
-  my.kind = lispError
-  my.a = ""
-  my.rawStringLiterals = rawStringLiterals
+  proc open*(my: var LispParser, input: Stream, filename: string; rawStringLiterals = false) =
+    ## initializes the parser with an input stream. `Filename` is only used
+    ## for nice error messages. If `rawStringLiterals` is true, string literals
+    ## are kept with their surrounding quotes and escape sequences in them are
+    ## left untouched too.
+    lexbase.open(my, input)
+    my.filename = filename
+    my.state = @[stateStart]
+    my.kind = lispError
+    my.a = ""
+    my.rawStringLiterals = rawStringLiterals
 
-proc close*(my: var LispParser) {.inline.} =
-  ## closes the parser `my` and its associated input stream.
-  lexbase.close(my)
+  proc close*(my: var LispParser) {.inline.} =
+    ## closes the parser `my` and its associated input stream.
+    lexbase.close(my)
 
-proc str*(my: LispParser): string {.inline.} =
-  ## returns the character data for the events: `lispInt`, `lispFloat`,
-  ## `lispString`
-  assert(my.kind in {lispInt, lispFloat, lispString, lispSymbol})
-  return my.a
+  proc str*(my: LispParser): string {.inline.} =
+    ## returns the character data for the events: `lispInt`, `lispFloat`,
+    ## `lispString`
+    assert(my.kind in {lispInt, lispFloat, lispString, lispSymbol})
+    return my.a
 
-proc getInt*(my: LispParser): BiggestInt {.inline.} =
-  ## returns the number for the event: `lispInt`
-  assert(my.kind == lispInt)
-  return parseBiggestInt(my.a)
+  proc getInt*(my: LispParser): BiggestInt {.inline.} =
+    ## returns the number for the event: `lispInt`
+    assert(my.kind == lispInt)
+    return parseBiggestInt(my.a)
 
-proc getFloat*(my: LispParser): float {.inline.} =
-  ## returns the number for the event: `lispFloat`
-  assert(my.kind == lispFloat)
-  return parseFloat(my.a)
+  proc getFloat*(my: LispParser): float {.inline.} =
+    ## returns the number for the event: `lispFloat`
+    assert(my.kind == lispFloat)
+    return parseFloat(my.a)
 
-proc kind*(my: LispParser): LispEventKind {.inline.} =
-  ## returns the current event type for the Lisp parser
-  return my.kind
+  proc kind*(my: LispParser): LispEventKind {.inline.} =
+    ## returns the current event type for the Lisp parser
+    return my.kind
 
-proc getColumn*(my: LispParser): int {.inline.} =
-  ## get the current column the parser has arrived at.
-  result = getColNumber(my, my.bufpos)
+  proc getColumn*(my: LispParser): int {.inline.} =
+    ## get the current column the parser has arrived at.
+    result = getColNumber(my, my.bufpos)
 
-proc getLine*(my: LispParser): int {.inline.} =
-  ## get the current line the parser has arrived at.
-  result = my.lineNumber
+  proc getLine*(my: LispParser): int {.inline.} =
+    ## get the current line the parser has arrived at.
+    result = my.lineNumber
 
-proc getFilename*(my: LispParser): string {.inline.} =
-  ## get the filename of the file that the parser processes.
-  result = my.filename
+  proc getFilename*(my: LispParser): string {.inline.} =
+    ## get the filename of the file that the parser processes.
+    result = my.filename
 
-proc errorMsg*(my: LispParser): string =
-  ## returns a helpful error message for the event `lispError`
-  assert(my.kind == lispError)
-  result = "$1($2, $3) Error: $4" % [
-    my.filename, $getLine(my), $getColumn(my), errorMessages[my.err]]
+  proc errorMsg*(my: LispParser): string =
+    ## returns a helpful error message for the event `lispError`
+    assert(my.kind == lispError)
+    result = "$1($2, $3) Error: $4" % [
+      my.filename, $getLine(my), $getColumn(my), errorMessages[my.err]]
 
-proc errorMsgExpected*(my: LispParser, e: string): string =
-  ## returns an error message "`e` expected" in the same format as the
-  ## other error messages
-  result = "$1($2, $3) Error: $4" % [
-    my.filename, $getLine(my), $getColumn(my), e & " expected, got " & tokToStr[my.tok]]
+  proc errorMsgExpected*(my: LispParser, e: string): string =
+    ## returns an error message "`e` expected" in the same format as the
+    ## other error messages
+    result = "$1($2, $3) Error: $4" % [
+      my.filename, $getLine(my), $getColumn(my), e & " expected, got " & tokToStr[my.tok]]
 
-proc handleHexChar*(c: char, x: var int): bool {.inline.} =
-  ## Converts `%xx` hexadecimal to the ordinal number and adds the result to `x`.
-  ## Returns `true` if `c` is hexadecimal.
-  ##
-  ## When `c` is hexadecimal, the proc is equal to `x = x shl 4 + hex2Int(c)`.
-  result = true
-  case c
-  of '0'..'9': x = (x shl 4) or (ord(c) - ord('0'))
-  of 'a'..'f': x = (x shl 4) or (ord(c) - ord('a') + 10)
-  of 'A'..'F': x = (x shl 4) or (ord(c) - ord('A') + 10)
-  else:
-    result = false
-
-proc parseEscapedUTF16*(buf: cstring, pos: var int): int =
-  result = 0
-  #UTF-16 escape is always 4 bytes.
-  for _ in 0..3:
-    # if char in '0' .. '9', 'a' .. 'f', 'A' .. 'F'
-    if handleHexChar(buf[pos], result):
-      inc(pos)
-    else:
-      return -1
-
-proc isSymbolChar(c: char, first: bool): bool {.inline.} =
-  case c
-  of 'a'..'z', 'A'..'Z', '_', '!', '?', ':', '+', '*', '/', '%', '=', '<', '>', '&', '|', '~', '#', '.', '-':
-    return true
-  of '0'..'9':
-    return not first
-  else:
-    return false
-
-proc parseSymbol(my: var LispParser): TokKind =
-  result = tkSymbol
-  var pos = my.bufpos
-  var first = true
-  while pos < my.buf.len:
-    let c = my.buf[pos]
-    if not isSymbolChar(c, first):
-      break
-    add(my.a, c)
-    inc(pos)
-    first = false
-  my.bufpos = pos # store back
-
-proc parseString(my: var LispParser, endd: char): TokKind =
-  result = tkString
-  var pos = my.bufpos + 1
-  if my.rawStringLiterals:
-    add(my.a, endd)
-  while pos < my.buf.len:
-    let c = my.buf[pos]
+  proc handleHexChar*(c: char, x: var int): bool {.inline.} =
+    ## Converts `%xx` hexadecimal to the ordinal number and adds the result to `x`.
+    ## Returns `true` if `c` is hexadecimal.
+    ##
+    ## When `c` is hexadecimal, the proc is equal to `x = x shl 4 + hex2Int(c)`.
+    result = true
     case c
-    of '\0':
-      my.err = errQuoteExpected
-      result = tkError
-      break
-    of '\\':
-      if my.rawStringLiterals:
-        add(my.a, '\\')
-      case my.buf[pos+1]
-      of '\\', '"', '\'', '/':
-        add(my.a, my.buf[pos+1])
-        inc(pos, 2)
-      of 'b':
-        add(my.a, '\b')
-        inc(pos, 2)
-      of 'f':
-        add(my.a, '\f')
-        inc(pos, 2)
-      of 'n':
-        add(my.a, '\L')
-        inc(pos, 2)
-      of 'r':
-        add(my.a, '\C')
-        inc(pos, 2)
-      of 't':
-        add(my.a, '\t')
-        inc(pos, 2)
-      of 'v':
-        add(my.a, '\v')
-        inc(pos, 2)
-      of 'u':
-        if my.rawStringLiterals:
-          add(my.a, 'u')
-        inc(pos, 2)
-        var pos2 = pos
-        var r = parseEscapedUTF16(cstring(my.buf), pos)
-        if r < 0:
-          my.err = errInvalidToken
-          break
-        # Deal with surrogates
-        if (r and 0xfc00) == 0xd800:
-          if my.buf[pos] != '\\' or my.buf[pos+1] != 'u':
-            my.err = errInvalidToken
-            break
-          inc(pos, 2)
-          var s = parseEscapedUTF16(cstring(my.buf), pos)
-          if (s and 0xfc00) == 0xdc00 and s > 0:
-            r = 0x10000 + (((r - 0xd800) shl 10) or (s - 0xdc00))
-          else:
-            my.err = errInvalidToken
-            break
-        if my.rawStringLiterals:
-          let length = pos - pos2
-          for i in 1 .. length:
-            if my.buf[pos2] in {'0'..'9', 'A'..'F', 'a'..'f'}:
-              add(my.a, my.buf[pos2])
-              inc pos2
-            else:
-              break
-        else:
-          add(my.a, toUTF8(Rune(r)))
+    of '0'..'9': x = (x shl 4) or (ord(c) - ord('0'))
+    of 'a'..'f': x = (x shl 4) or (ord(c) - ord('a') + 10)
+    of 'A'..'F': x = (x shl 4) or (ord(c) - ord('A') + 10)
+    else:
+      result = false
+
+  proc parseEscapedUTF16*(buf: cstring, pos: var int): int =
+    result = 0
+    #UTF-16 escape is always 4 bytes.
+    for _ in 0..3:
+      # if char in '0' .. '9', 'a' .. 'f', 'A' .. 'F'
+      if handleHexChar(buf[pos], result):
+        inc(pos)
       else:
-        # don't bother with the error
+        return -1
+
+  proc isSymbolChar(c: char, first: bool): bool {.inline.} =
+    case c
+    of 'a'..'z', 'A'..'Z', '_', '!', '?', ':', '+', '*', '/', '%', '=', '<', '>', '&', '|', '~', '#', '.', '-':
+      return true
+    of '0'..'9':
+      return not first
+    else:
+      return false
+
+  proc parseSymbol(my: var LispParser): TokKind =
+    result = tkSymbol
+    var pos = my.bufpos
+    var first = true
+    while pos < my.buf.len:
+      let c = my.buf[pos]
+      if not isSymbolChar(c, first):
+        break
+      add(my.a, c)
+      inc(pos)
+      first = false
+    my.bufpos = pos # store back
+
+  proc parseString(my: var LispParser, endd: char): TokKind =
+    result = tkString
+    var pos = my.bufpos + 1
+    if my.rawStringLiterals:
+      add(my.a, endd)
+    while pos < my.buf.len:
+      let c = my.buf[pos]
+      case c
+      of '\0':
+        my.err = errQuoteExpected
+        result = tkError
+        break
+      of '\\':
+        if my.rawStringLiterals:
+          add(my.a, '\\')
+        case my.buf[pos+1]
+        of '\\', '"', '\'', '/':
+          add(my.a, my.buf[pos+1])
+          inc(pos, 2)
+        of 'b':
+          add(my.a, '\b')
+          inc(pos, 2)
+        of 'f':
+          add(my.a, '\f')
+          inc(pos, 2)
+        of 'n':
+          add(my.a, '\L')
+          inc(pos, 2)
+        of 'r':
+          add(my.a, '\C')
+          inc(pos, 2)
+        of 't':
+          add(my.a, '\t')
+          inc(pos, 2)
+        of 'v':
+          add(my.a, '\v')
+          inc(pos, 2)
+        of 'u':
+          if my.rawStringLiterals:
+            add(my.a, 'u')
+          inc(pos, 2)
+          var pos2 = pos
+          var r = parseEscapedUTF16(cstring(my.buf), pos)
+          if r < 0:
+            my.err = errInvalidToken
+            break
+          # Deal with surrogates
+          if (r and 0xfc00) == 0xd800:
+            if my.buf[pos] != '\\' or my.buf[pos+1] != 'u':
+              my.err = errInvalidToken
+              break
+            inc(pos, 2)
+            var s = parseEscapedUTF16(cstring(my.buf), pos)
+            if (s and 0xfc00) == 0xdc00 and s > 0:
+              r = 0x10000 + (((r - 0xd800) shl 10) or (s - 0xdc00))
+            else:
+              my.err = errInvalidToken
+              break
+          if my.rawStringLiterals:
+            let length = pos - pos2
+            for i in 1 .. length:
+              if my.buf[pos2] in {'0'..'9', 'A'..'F', 'a'..'f'}:
+                add(my.a, my.buf[pos2])
+                inc pos2
+              else:
+                break
+          else:
+            add(my.a, toUTF8(Rune(r)))
+        else:
+          # don't bother with the error
+          add(my.a, my.buf[pos])
+          inc(pos)
+      of '\c':
+        pos = lexbase.handleCR(my, pos)
+        add(my.a, '\c')
+      of '\L':
+        pos = lexbase.handleLF(my, pos)
+        add(my.a, '\L')
+      else:
+        if c == endd:
+          if my.rawStringLiterals:
+            add(my.a, endd)
+          inc(pos)
+          break
         add(my.a, my.buf[pos])
         inc(pos)
-    of '\c':
-      pos = lexbase.handleCR(my, pos)
-      add(my.a, '\c')
-    of '\L':
-      pos = lexbase.handleLF(my, pos)
-      add(my.a, '\L')
-    else:
-      if c == endd:
-        if my.rawStringLiterals:
-          add(my.a, endd)
-        inc(pos)
-        break
-      add(my.a, my.buf[pos])
-      inc(pos)
-  my.bufpos = pos # store back
+    my.bufpos = pos # store back
 
-proc skip(my: var LispParser) =
-  var pos = my.bufpos
-  while pos < my.buf.len:
-    case my.buf[pos]
-    of ';', '/':
-      if my.buf[pos] == ';' or (pos + 1 < my.buf.len and my.buf[pos+1] == '/'):
-        # skip line comment:
-        inc(pos, 2)
-        while true:
-          case my.buf[pos]
-          of '\0':
-            break
-          of '\c':
-            pos = lexbase.handleCR(my, pos)
-            break
-          of '\L':
-            pos = lexbase.handleLF(my, pos)
-            break
-          else:
-            inc(pos)
-      elif pos + 1 < my.buf.len and my.buf[pos+1] == '*':
-        # skip long comment:
-        inc(pos, 2)
-        while true:
-          case my.buf[pos]
-          of '\0':
-            my.err = errEOC_Expected
-            break
-          of '\c':
-            pos = lexbase.handleCR(my, pos)
-          of '\L':
-            pos = lexbase.handleLF(my, pos)
-          of '*':
-            inc(pos)
-            if my.buf[pos] == '/':
-              inc(pos)
+  proc skip(my: var LispParser) =
+    var pos = my.bufpos
+    while pos < my.buf.len:
+      case my.buf[pos]
+      of ';', '/':
+        if my.buf[pos] == ';' or (pos + 1 < my.buf.len and my.buf[pos+1] == '/'):
+          # skip line comment:
+          inc(pos, 2)
+          while true:
+            case my.buf[pos]
+            of '\0':
               break
-          else:
-            inc(pos)
+            of '\c':
+              pos = lexbase.handleCR(my, pos)
+              break
+            of '\L':
+              pos = lexbase.handleLF(my, pos)
+              break
+            else:
+              inc(pos)
+        elif pos + 1 < my.buf.len and my.buf[pos+1] == '*':
+          # skip long comment:
+          inc(pos, 2)
+          while true:
+            case my.buf[pos]
+            of '\0':
+              my.err = errEOC_Expected
+              break
+            of '\c':
+              pos = lexbase.handleCR(my, pos)
+            of '\L':
+              pos = lexbase.handleLF(my, pos)
+            of '*':
+              inc(pos)
+              if my.buf[pos] == '/':
+                inc(pos)
+                break
+            else:
+              inc(pos)
+        else:
+          break
+      of ' ', '\t':
+        inc(pos)
+      of '\c':
+        pos = lexbase.handleCR(my, pos)
+      of '\L':
+        pos = lexbase.handleLF(my, pos)
       else:
         break
-    of ' ', '\t':
-      inc(pos)
-    of '\c':
-      pos = lexbase.handleCR(my, pos)
-    of '\L':
-      pos = lexbase.handleLF(my, pos)
-    else:
-      break
-  my.bufpos = pos
+    my.bufpos = pos
 
-proc parseNumber(my: var LispParser) =
-  var pos = my.bufpos
-  if my.buf[pos] == '-':
-    add(my.a, '-')
-    inc(pos)
-  if my.buf[pos] == '.':
-    add(my.a, "0.")
-    inc(pos)
-  else:
-    while my.buf[pos] in Digits:
-      add(my.a, my.buf[pos])
+  proc parseNumber(my: var LispParser) =
+    var pos = my.bufpos
+    if my.buf[pos] == '-':
+      add(my.a, '-')
       inc(pos)
     if my.buf[pos] == '.':
-      add(my.a, '.')
+      add(my.a, "0.")
       inc(pos)
-  # digits after the dot:
-  while my.buf[pos] in Digits:
-    add(my.a, my.buf[pos])
-    inc(pos)
-  if my.buf[pos] in {'E', 'e'}:
-    add(my.a, my.buf[pos])
-    inc(pos)
-    if my.buf[pos] in {'+', '-'}:
-      add(my.a, my.buf[pos])
-      inc(pos)
+    else:
+      while my.buf[pos] in Digits:
+        add(my.a, my.buf[pos])
+        inc(pos)
+      if my.buf[pos] == '.':
+        add(my.a, '.')
+        inc(pos)
+    # digits after the dot:
     while my.buf[pos] in Digits:
       add(my.a, my.buf[pos])
       inc(pos)
-  my.bufpos = pos
+    if my.buf[pos] in {'E', 'e'}:
+      add(my.a, my.buf[pos])
+      inc(pos)
+      if my.buf[pos] in {'+', '-'}:
+        add(my.a, my.buf[pos])
+        inc(pos)
+      while my.buf[pos] in Digits:
+        add(my.a, my.buf[pos])
+        inc(pos)
+    my.bufpos = pos
 
-proc getTok(my: var LispParser): TokKind =
-  my.lastBufpos = my.bufpos
-  setLen(my.a, 0)
-  skip(my) # skip whitespace, comments
-  if my.bufpos >= my.buf.len:
-    return tkEof
-  case my.buf[my.bufpos]
-  of '-':
-    if my.bufpos + 1 < my.buf.len and my.buf[my.bufpos + 1] != ' ':
+  proc getTok(my: var LispParser): TokKind =
+    my.lastBufpos = my.bufpos
+    setLen(my.a, 0)
+    skip(my) # skip whitespace, comments
+    if my.bufpos >= my.buf.len:
+      return tkEof
+    case my.buf[my.bufpos]
+    of '-':
+      if my.bufpos + 1 < my.buf.len and my.buf[my.bufpos + 1] != ' ':
+        parseNumber(my)
+        if {'.', 'e', 'E'} in my.a:
+          result = tkFloat
+        else:
+          result = tkInt
+      else:
+          result = parseSymbol(my)
+    of '0'..'9':
       parseNumber(my)
       if {'.', 'e', 'E'} in my.a:
         result = tkFloat
       else:
         result = tkInt
-    else:
-        result = parseSymbol(my)
-  of '0'..'9':
-    parseNumber(my)
-    if {'.', 'e', 'E'} in my.a:
-      result = tkFloat
-    else:
-      result = tkInt
-  of '"':
-    result = parseString(my, '"')
-  of '\'':
-    result = parseString(my, '\'')
-  of '[':
-    inc(my.bufpos)
-    result = tkBracketLe
-  of '(':
-    inc(my.bufpos)
-    result = tkParenLe
-  of '{':
-    inc(my.bufpos)
-    result = tkCurlyLe
-  of ']':
-    inc(my.bufpos)
-    result = tkBracketRi
-  of ')':
-    inc(my.bufpos)
-    result = tkParenRi
-  of '}':
-    inc(my.bufpos)
-    result = tkCurlyRi
-  of ',':
-    inc(my.bufpos)
-    if my.bufpos < my.buf.len and my.buf[my.bufpos] == '@':
+    of '"':
+      result = parseString(my, '"')
+    of '\'':
+      result = parseString(my, '\'')
+    of '[':
       inc(my.bufpos)
-      result = tkCommaAt
+      result = tkBracketLe
+    of '(':
+      inc(my.bufpos)
+      result = tkParenLe
+    of '{':
+      inc(my.bufpos)
+      result = tkCurlyLe
+    of ']':
+      inc(my.bufpos)
+      result = tkBracketRi
+    of ')':
+      inc(my.bufpos)
+      result = tkParenRi
+    of '}':
+      inc(my.bufpos)
+      result = tkCurlyRi
+    of ',':
+      inc(my.bufpos)
+      if my.bufpos < my.buf.len and my.buf[my.bufpos] == '@':
+        inc(my.bufpos)
+        result = tkCommaAt
+      else:
+        result = tkComma
+    of '`':
+      inc(my.bufpos)
+      result = tkBacktick
+    of ':':
+      inc(my.bufpos)
+      result = tkColon
+    of '\0':
+      result = tkEof
     else:
-      result = tkComma
-  of '`':
-    inc(my.bufpos)
-    result = tkBacktick
-  of ':':
-    inc(my.bufpos)
-    result = tkColon
-  of '\0':
-    result = tkEof
-  else:
-    if isSymbolChar(my.buf[my.bufpos], first=true):
-      result = parseSymbol(my)
-      case my.a
-      of "nil", "null": result = tkNull
-      of "true": result = tkTrue
-      of "false": result = tkFalse
+      if isSymbolChar(my.buf[my.bufpos], first=true):
+        result = parseSymbol(my)
+        case my.a
+        of "nil", "null": result = tkNull
+        of "true": result = tkTrue
+        of "false": result = tkFalse
 
-  my.tok = result
+    my.tok = result
 
-proc raiseParseErr(p: LispParser, msg: string) {.noinline, noreturn.} =
-  ## raises an `ELispParsingError` exception.
-  raise newException(LispParsingError, errorMsgExpected(p, msg))
+  proc raiseParseErr(p: LispParser, msg: string) {.noinline, noreturn.} =
+    ## raises an `ELispParsingError` exception.
+    raise newException(LispParsingError, errorMsgExpected(p, msg))
 
-proc eat(p: var LispParser, tok: TokKind) =
-  if p.tok == tok: discard getTok(p)
-  else: raiseParseErr(p, tokToStr[tok])
+  proc eat(p: var LispParser, tok: TokKind) =
+    if p.tok == tok: discard getTok(p)
+    else: raiseParseErr(p, tokToStr[tok])
 
-proc parseLisp*(p: var LispParser; depth = 0, depthLimit = 1024): LispVal =
-  ## Parses JSON from a JSON Parser `p`.
-  case p.tok
-  of tkString:
-    result = newString(move p.a)
-    discard getTok(p)
-  of tkSymbol:
-    result = newSymbol(move p.a)
-    discard getTok(p)
-  of tkBacktick:
-    discard getTok(p)
-    result = newList(@[newSymbol("quasiquote"), parseLisp(p, depth + 1)])
-  of tkColon:
-    discard getTok(p)
-    result = newSymbol(":")
-  of tkComma:
-    discard getTok(p)
-    result = newList(@[newSymbol("unquote"), parseLisp(p, depth + 1)])
-  of tkCommaAt:
-    discard getTok(p)
-    result = newList(@[newSymbol("unquote-splicing"), parseLisp(p, depth + 1)])
-  of tkInt:
+  proc parseLisp(p: var LispParser; depth = 0, depthLimit = 1024): LispVal =
+    ## Parses JSON from a JSON Parser `p`.
+    case p.tok
+    of tkString:
+      result = newString(move p.a)
+      discard getTok(p)
+    of tkSymbol:
+      result = newSymbol(move p.a)
+      discard getTok(p)
+    of tkBacktick:
+      discard getTok(p)
+      result = newList(@[newSymbol("quasiquote"), parseLisp(p, depth + 1)])
+    of tkColon:
+      discard getTok(p)
+      result = newSymbol(":")
+    of tkComma:
+      discard getTok(p)
+      result = newList(@[newSymbol("unquote"), parseLisp(p, depth + 1)])
+    of tkCommaAt:
+      discard getTok(p)
+      result = newList(@[newSymbol("unquote-splicing"), parseLisp(p, depth + 1)])
+    of tkInt:
+      try:
+        result = newNumber(parseBiggestInt(p.a).float)
+      except ValueError:
+        raiseParseErr(p, "number too big")
+      discard getTok(p)
+    of tkFloat:
+      try:
+        result = newNumber(parseFloat(p.a))
+      except ValueError:
+        raiseParseErr(p, "number too big")
+      discard getTok(p)
+    of tkTrue:
+      result = newBool(true)
+      discard getTok(p)
+    of tkFalse:
+      result = newBool(false)
+      discard getTok(p)
+    of tkNull:
+      result = newNil()
+      discard getTok(p)
+    of tkCurlyLe:
+      if depth > depthLimit:
+        raiseParseErr(p, "}")
+      result = newMap()
+      discard getTok(p)
+      while p.tok != tkCurlyRi:
+        if p.tok notin {tkString, tkSymbol}:
+          raiseParseErr(p, "string literal as key")
+        var key = p.a
+        discard getTok(p)
+        eat(p, tkColon)
+        var val = parseLisp(p, depth+1)
+        result.fields[key] = val
+        if p.tok != tkComma: break
+        discard getTok(p)
+      eat(p, tkCurlyRi)
+    of tkBracketLe:
+      if depth > depthLimit:
+        raiseParseErr(p, "]")
+      result = newArray()
+      discard getTok(p)
+      while p.tok != tkBracketRi:
+        result.elems.add(parseLisp(p, depth+1))
+        if p.tok != tkComma: break
+        discard getTok(p)
+      eat(p, tkBracketRi)
+    of tkParenLe:
+      if depth > depthLimit:
+        raiseParseErr(p, ")")
+      result = newList()
+      discard getTok(p)
+      while p.tok != tkParenRi:
+        result.elems.add(parseLisp(p, depth+1))
+        if p.tok == tkParenRi: break
+      eat(p, tkParenRi)
+    else:
+      raiseParseErr(p, "{")
+
+  type
+    BufferStream* = ref BufferStreamObj
+      ## A stream that encapsulates a string.
+    BufferStreamObj* = object of StreamObj
+      ## A string stream object.
+      data*: ptr UncheckedArray[char] ## A string data.
+                                      ## This is updated when called `writeLine` etc.
+      len: int
+      pos: int
+
+  proc bsAtEnd(s: Stream): bool =
+    var s = BufferStream(s)
+    return s.pos >= s.len
+
+  proc bsSetPosition(s: Stream, pos: int) =
+    var s = BufferStream(s)
+    s.pos = clamp(pos, 0, s.len)
+
+  proc bsGetPosition(s: Stream): int =
+    var s = BufferStream(s)
+    return s.pos
+
+  proc bsReadDataStr(s: Stream, buffer: var string, slice: Slice[int]): int =
+    var s = BufferStream(s)
+    when nimvm:
+      discard
+    else:
+      when declared(prepareMutation):
+        prepareMutation(buffer) # buffer might potentially be a CoW literal with ARC
+    result = min(slice.b + 1 - slice.a, s.len - s.pos)
+    if result > 0:
+      copyMem(unsafeAddr buffer[slice.a], addr s.data[s.pos], result)
+      inc(s.pos, result)
+    else:
+      result = 0
+
+  proc bsReadData(s: Stream, buffer: pointer, bufLen: int): int =
+    var s = BufferStream(s)
+    result = min(bufLen, s.len - s.pos)
+    if result > 0:
+      copyMem(buffer, addr(s.data[s.pos]), result)
+      inc(s.pos, result)
+    else:
+      result = 0
+
+  proc bsPeekData(s: Stream, buffer: pointer, bufLen: int): int =
+    var s = BufferStream(s)
+    result = min(bufLen, s.len - s.pos)
+    if result > 0:
+      copyMem(buffer, addr(s.data[s.pos]), result)
+    else:
+      result = 0
+
+  proc bsWriteData(s: Stream, buffer: pointer, bufLen: int) = discard
+
+  proc bsClose(s: Stream) = discard
+
+  proc newBufferStream*(s: openArray[char]): owned BufferStream =
+    new(result)
+    result.data = s.data
+    result.len = s.len
+    result.pos = 0
+    result.closeImpl = bsClose
+    result.atEndImpl = bsAtEnd
+    result.setPositionImpl = bsSetPosition
+    result.getPositionImpl = bsGetPosition
+    result.readDataStrImpl = bsReadDataStr
+    result.readDataImpl = bsReadData
+    result.peekDataImpl = bsPeekData
+    result.writeDataImpl = bsWriteData
+
+  proc lispParseLispSingle(str: openArray[char]): (LispVal, int) {.raises: [LispParsingError].} =
+    var p: LispParser
     try:
-      result = newNumber(parseBiggestInt(p.a).float)
-    except ValueError:
-      raiseParseErr(p, "number too big")
-    discard getTok(p)
-  of tkFloat:
+      p.open(newBufferStream(str), "repl")
+      discard getTok(p) # read first token
+      while p.tok != tkEof:
+        result[0] = p.parseLisp()
+        result[1] = p.lastBufpos
+        return
+    except IOError, OSError, ValueError:
+      raise newException(LispParsingError, getCurrentExceptionMsg())
+
+  proc lispParseLisp(str: string): LispVal {.raises: [LispParsingError].} =
+    var p: LispParser
     try:
-      result = newNumber(parseFloat(p.a))
-    except ValueError:
-      raiseParseErr(p, "number too big")
-    discard getTok(p)
-  of tkTrue:
-    result = newBool(true)
-    discard getTok(p)
-  of tkFalse:
-    result = newBool(false)
-    discard getTok(p)
-  of tkNull:
-    result = newNil()
-    discard getTok(p)
-  of tkCurlyLe:
-    if depth > depthLimit:
-      raiseParseErr(p, "}")
-    result = newMap()
-    discard getTok(p)
-    while p.tok != tkCurlyRi:
-      if p.tok notin {tkString, tkSymbol}:
-        raiseParseErr(p, "string literal as key")
-      var key = p.a
-      discard getTok(p)
-      eat(p, tkColon)
-      var val = parseLisp(p, depth+1)
-      result.fields[key] = val
-      if p.tok != tkComma: break
-      discard getTok(p)
-    eat(p, tkCurlyRi)
-  of tkBracketLe:
-    if depth > depthLimit:
-      raiseParseErr(p, "]")
-    result = newArray()
-    discard getTok(p)
-    while p.tok != tkBracketRi:
-      result.elems.add(parseLisp(p, depth+1))
-      if p.tok != tkComma: break
-      discard getTok(p)
-    eat(p, tkBracketRi)
-  of tkParenLe:
-    if depth > depthLimit:
-      raiseParseErr(p, ")")
-    result = newList()
-    discard getTok(p)
-    while p.tok != tkParenRi:
-      result.elems.add(parseLisp(p, depth+1))
-      if p.tok == tkParenRi: break
-    eat(p, tkParenRi)
-  else:
-    raiseParseErr(p, "{")
+      p.open(newStringStream(str), "repl")
+      result = newList(@[newSymbol("list")])
+      discard getTok(p) # read first token
+      while p.tok != tkEof:
+        result.elems.add p.parseLisp()
+    except IOError, OSError, ValueError:
+      raise newException(LispParsingError, getCurrentExceptionMsg())
 
-iterator parseLispFragments*(s: Stream, filename: string = ""): LispVal =
-  var p: LispParser
-  p.open(s, filename)
-  try:
-    discard getTok(p) # read first token
-    while p.tok != tkEof:
-      yield p.parseLisp()
-  finally:
-    p.close()
+  proc lispParseLispValues(str: string): seq[LispVal] {.raises: [LispParsingError].} =
+    var p: LispParser
+    try:
+      p.open(newStringStream(str), "repl")
+      discard getTok(p) # read first token
+      while p.tok != tkEof:
+        result.add p.parseLisp()
+    except IOError, OSError, ValueError:
+      raise newException(LispParsingError, getCurrentExceptionMsg())
 
-proc parseLispSingle*(str: string): LispVal =
-  var p: LispParser
-  p.open(newStringStream(str), "repl")
-  try:
-    discard getTok(p) # read first token
-    while p.tok != tkEof:
-      result = p.parseLisp()
-      return
-  finally:
-    p.close()
-
-type
-  BufferStream* = ref BufferStreamObj
-    ## A stream that encapsulates a string.
-  BufferStreamObj* = object of StreamObj
-    ## A string stream object.
-    data*: ptr UncheckedArray[char] ## A string data.
-                                    ## This is updated when called `writeLine` etc.
-    len: int
-    pos: int
-
-proc bsAtEnd(s: Stream): bool =
-  var s = BufferStream(s)
-  return s.pos >= s.len
-
-proc bsSetPosition(s: Stream, pos: int) =
-  var s = BufferStream(s)
-  s.pos = clamp(pos, 0, s.len)
-
-proc bsGetPosition(s: Stream): int =
-  var s = BufferStream(s)
-  return s.pos
-
-proc bsReadDataStr(s: Stream, buffer: var string, slice: Slice[int]): int =
-  var s = BufferStream(s)
-  when nimvm:
-    discard
-  else:
-    when declared(prepareMutation):
-      prepareMutation(buffer) # buffer might potentially be a CoW literal with ARC
-  result = min(slice.b + 1 - slice.a, s.len - s.pos)
-  if result > 0:
-    copyMem(unsafeAddr buffer[slice.a], addr s.data[s.pos], result)
-    inc(s.pos, result)
-  else:
-    result = 0
-
-proc bsReadData(s: Stream, buffer: pointer, bufLen: int): int =
-  var s = BufferStream(s)
-  result = min(bufLen, s.len - s.pos)
-  if result > 0:
-    copyMem(buffer, addr(s.data[s.pos]), result)
-    inc(s.pos, result)
-  else:
-    result = 0
-
-proc bsPeekData(s: Stream, buffer: pointer, bufLen: int): int =
-  var s = BufferStream(s)
-  result = min(bufLen, s.len - s.pos)
-  if result > 0:
-    copyMem(buffer, addr(s.data[s.pos]), result)
-  else:
-    result = 0
-
-proc bsWriteData(s: Stream, buffer: pointer, bufLen: int) = discard
-
-proc bsClose(s: Stream) = discard
-
-proc newBufferStream*(s: openArray[char]): owned BufferStream =
-  new(result)
-  result.data = s.data
-  result.len = s.len
-  result.pos = 0
-  result.closeImpl = bsClose
-  result.atEndImpl = bsAtEnd
-  result.setPositionImpl = bsSetPosition
-  result.getPositionImpl = bsGetPosition
-  result.readDataStrImpl = bsReadDataStr
-  result.readDataImpl = bsReadData
-  result.peekDataImpl = bsPeekData
-  result.writeDataImpl = bsWriteData
-
-proc parseLispSingle*(str: openArray[char]): (LispVal, int) =
-  var p: LispParser
-  p.open(newBufferStream(str), "repl")
-  try:
-    discard getTok(p) # read first token
-    while p.tok != tkEof:
-      result[0] = p.parseLisp()
-      result[1] = p.lastBufpos
-      return
-  finally:
-    p.close()
-
-proc parseLisp*(str: string): LispVal =
-  var p: LispParser
-  p.open(newStringStream(str), "repl")
-  result = newList(@[newSymbol("list")])
-  try:
-    discard getTok(p) # read first token
-    while p.tok != tkEof:
-      result.elems.add p.parseLisp()
-  finally:
-    p.close()
-
-proc parseLispValues*(str: string): seq[LispVal] =
-  var p: LispParser
-  p.open(newStringStream(str), "repl")
-  try:
-    discard getTok(p) # read first token
-    while p.tok != tkEof:
-      result.add p.parseLisp()
-  finally:
-    p.close()
-
-proc isTruthy*(val: LispVal): bool =
-  case val.kind
-  of Nil: false
-  of Number: val.num != 0
-  of Bool: val.bol
-  of Symbol: true
-  of String: true
-  of List: true
-  of Array: true
-  of Map: true
-  of Func: true
-  of Lambda: true
-  of Macro: true
-
-proc eval*(expr: LispVal, env: var Env): LispVal {.raises: [LispError].}
-
-proc evalQuasiquote(expr: LispVal, env: var Env): LispVal =
-  if expr.kind == List and expr.elems.len > 0:
-    let head = expr.elems[0]
-    if head.kind == Symbol:
-      case head.sym
-      of "unquote":
-        if expr.elems.len < 2:
-          raise newException(LispError, "unquote requires an argument")
-        return eval(expr.elems[1], env)
-      of "unquote-splicing":
-        raise newException(LispError, "unquote-splicing not allowed here")  # must be handled inside list
-  if expr.kind in {List, Array}:
-    var resultElems: seq[LispVal] = @[]
-    for el in expr.elems:
-      if el.kind == List and el.elems.len > 0 and
-         el.elems[0].kind == Symbol and el.elems[0].sym == "unquote-splicing":
-        if el.elems.len < 2:
-          raise newException(LispError, "unquote-splicing requires an argument")
-        let spliceVal = eval(el.elems[1], env)
-        if spliceVal.kind != expr.kind:
-          raise newException(LispError, "unquote-splicing must return a list")
-        resultElems.add(spliceVal.elems)
-      else:
-        resultElems.add(evalQuasiquote(el, env))
-    return newList(resultElems)
-  elif expr.kind == Map:
-    result = newMap()
-    for key, el in expr.fields.pairs:
-      if el.kind == List and el.elems.len > 0 and
-         el.elems[0].kind == Symbol and el.elems[0].sym == "unquote-splicing":
-        if el.elems.len < 2:
-          raise newException(LispError, "unquote-splicing requires an argument")
-        let spliceVal = eval(el.elems[1], env)
-        if spliceVal.kind != Map:
-          raise newException(LispError, "unquote-splicing must return a map")
-        for key2, val in spliceVal.fields.pairs:
-          result.fields[key2] = val
-      else:
-        result.fields[key] = evalQuasiquote(el, env)
-    return result
-  else:
-    return expr
-
-proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
-
-  case expr.kind
-  of Nil, Number, Bool, String, Func, Lambda, Macro:
-    return expr
-  of Symbol:
-    if expr.sym.startsWith("@"):
-      return newSymbol(expr.sym[1..^1])
-    result = env[expr.sym]
-    if result == nil:
-      raise newException(LispError, "undefined symbol: '" & expr.sym & "'")
-
-  of Array:
-    return newArray(expr.elems.mapIt(eval(it, env)))
-
-  of Map:
-    result = newMap()
-    for key, value in expr.fields.pairs:
-      result.fields[key] = eval(value, env)
-
-  of List:
-    if expr.elems.len == 0:
+  proc evalQuasiquote(expr: LispVal, env: var Env): LispVal =
+    if expr.kind == List and expr.elems.len > 0:
+      let head = expr.elems[0]
+      if head.kind == Symbol:
+        case head.sym
+        of "unquote":
+          if expr.elems.len < 2:
+            raise newException(LispError, "unquote requires an argument")
+          return eval(expr.elems[1], env)
+        of "unquote-splicing":
+          raise newException(LispError, "unquote-splicing not allowed here")  # must be handled inside list
+    if expr.kind in {List, Array}:
+      var resultElems: seq[LispVal] = @[]
+      for el in expr.elems:
+        if el.kind == List and el.elems.len > 0 and
+           el.elems[0].kind == Symbol and el.elems[0].sym == "unquote-splicing":
+          if el.elems.len < 2:
+            raise newException(LispError, "unquote-splicing requires an argument")
+          let spliceVal = eval(el.elems[1], env)
+          if spliceVal.kind != expr.kind:
+            raise newException(LispError, "unquote-splicing must return a list")
+          resultElems.add(spliceVal.elems)
+        else:
+          resultElems.add(evalQuasiquote(el, env))
+      return newList(resultElems)
+    elif expr.kind == Map:
+      result = newMap()
+      for key, el in expr.fields.pairs:
+        if el.kind == List and el.elems.len > 0 and
+           el.elems[0].kind == Symbol and el.elems[0].sym == "unquote-splicing":
+          if el.elems.len < 2:
+            raise newException(LispError, "unquote-splicing requires an argument")
+          let spliceVal = eval(el.elems[1], env)
+          if spliceVal.kind != Map:
+            raise newException(LispError, "unquote-splicing must return a map")
+          for key2, val in spliceVal.fields.pairs:
+            result.fields[key2] = val
+        else:
+          result.fields[key] = evalQuasiquote(el, env)
+      return result
+    else:
       return expr
 
-    let first = expr.elems[0]
-    if first == nil:
-      raise newException(LispError, "Failed to evaluate first element of list: nil")
+  proc lispEval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
 
-    if first.kind == Symbol:
-      case first.sym
-      of "quote":
-        if expr.elems.len < 2:
-          raise newException(LispError, "quote requires an argument")
-        return expr.elems[1]
-      of "let":
-        if expr.elems.len < 3:
-          raise newException(LispError, "let requires 2 arguments: symbol, value")
-        let sym = expr.elems[1]
-        let value = eval(expr.elems[2], env)
-        env[sym.sym] = value
-        return value
-      of "set":
-        if expr.elems.len < 3:
-          raise newException(LispError, "set requires 2 arguments: symbol, value")
-        let sym = expr.elems[1]
-        if sym.kind != Symbol:
-          raise newException(LispError, "not a symbol: '" & $sym & "'")
+    case expr.kind
+    of Nil, Number, Bool, String, Func, Lambda, Macro:
+      return expr
+    of Symbol:
+      if expr.sym.startsWith("@"):
+        return newSymbol(expr.sym[1..^1])
+      result = env[expr.sym]
+      if result == nil:
+        raise newException(LispError, "undefined symbol: '" & expr.sym & "'")
 
-        let value = eval(expr.elems[2], env)
-        if not env.setValue(sym.sym, value):
-          raise newException(LispError, "undefined symbol: '" & sym.sym & "'")
+    of Array:
+      return newArray(expr.elems.mapIt(eval(it, env)))
 
-        return value
-      of "eval":
-        if expr.elems.len < 2:
-          raise newException(LispError, "eval requires an argument")
-        let sub = expr.elems[1]
-        let value = eval(sub, env)
-        return eval(value, env)
-      of "lambda":
-        if expr.elems.len < 3:
-          raise newException(LispError, "lambda requires 2 arguments: params, body")
-        let params = expr.elems[1].elems.mapIt(it.sym)
-        let body = expr.elems[2]
-        return newLambda(params, body, env)
-      of "defmacro":
-        if expr.elems.len < 4:
-          raise newException(LispError, "defmacro requires 3 arguments: name, params, body")
-        let name = expr.elems[1].sym
-        let params = expr.elems[2].elems.mapIt(it.sym)
-        let body = expr.elems[3]
-        env[name] = newMacro(params, body, env)
-        return env[name]
-      of "quasiquote":
-        if expr.elems.len < 2:
-          raise newException(LispError, "quasiquote requires an argument")
-        return evalQuasiquote(expr.elems[1], env)
-      of "if":
-        var i = 1
-        while i + 1 < expr.elems.len:
-          let cond = eval(expr.elems[i], env)
-          if cond.isTruthy:
-            return eval(expr.elems[i + 1], env)
-          i = i + 2
-        if i < expr.elems.len:
-          return eval(expr.elems[i], env)
-        return newNil()
-      of "floor":
-        if expr.elems.len < 2:
-          raise newException(LispError, "floor requires an argument")
-        let val = eval(expr.elems[1], env)
-        if val.kind != Number:
-          raise newException(LispError, "floor takes a number, got " & $val)
-        return newNumber(val.num.floor)
-      of "repeat":
-        if expr.elems.len < 4:
-          raise newException(LispError, "repeat requires 3 arguments: name, count, body")
-        let name = expr.elems[1].sym
-        let count = eval(expr.elems[2], env)
-        if count.kind != Number:
-          raise newException(LispError, "Count must be a number, got " & $count)
+    of Map:
+      result = newMap()
+      for key, value in expr.fields.pairs:
+        result.fields[key] = eval(value, env)
 
-        var res = newList()
-        for i in 0..<count.num.int:
-          if name != "":
-            env[name] = newNumber(i.float)
-          res.elems.add(eval(expr.elems[3], env))
-        return res
-      of "len":
-        if expr.elems.len < 2:
-          raise newException(LispError, "len requires an argument")
-        let container = eval(expr.elems[1], env)
-        if container.kind == Map:
-          return newNumber(container.fields.len.float)
-        if container.kind in {List, Array}:
-          return newNumber(container.elems.len.float)
-        if container.kind in {String}:
-          return newNumber(container.str.len.float)
-        return newNumber(0)
-      of ".=":
-        if expr.elems.len < 4:
-          raise newException(LispError, ".= requires at least 3 arguments: container, key, value")
-        let container = eval(expr.elems[1], env)
-        let value = eval(expr.elems[^1], env)  # last argument is the value
+    of List:
+      if expr.elems.len == 0:
+        return expr
 
-        var current = container
-        for i in 2..<(expr.elems.len - 2):
-          let key = eval(expr.elems[i], env)
+      let first = expr.elems[0]
+      if first == nil:
+        raise newException(LispError, "Failed to evaluate first element of list: nil")
+
+      if first.kind == Symbol:
+        case first.sym
+        of "quote":
+          if expr.elems.len < 2:
+            raise newException(LispError, "quote requires an argument")
+          return expr.elems[1]
+        of "let":
+          if expr.elems.len < 3:
+            raise newException(LispError, "let requires 2 arguments: symbol, value")
+          let sym = expr.elems[1]
+          let value = eval(expr.elems[2], env)
+          env[sym.sym] = value
+          return value
+        of "set":
+          if expr.elems.len < 3:
+            raise newException(LispError, "set requires 2 arguments: symbol, value")
+          let sym = expr.elems[1]
+          if sym.kind != Symbol:
+            raise newException(LispError, "not a symbol: '" & $sym & "'")
+
+          let value = eval(expr.elems[2], env)
+          if not env.setValue(sym.sym, value):
+            raise newException(LispError, "undefined symbol: '" & sym.sym & "'")
+
+          return value
+        of "eval":
+          if expr.elems.len < 2:
+            raise newException(LispError, "eval requires an argument")
+          let sub = expr.elems[1]
+          let value = eval(sub, env)
+          return eval(value, env)
+        of "lambda":
+          if expr.elems.len < 3:
+            raise newException(LispError, "lambda requires 2 arguments: params, body")
+          let params = expr.elems[1].elems.mapIt(it.sym)
+          let body = expr.elems[2]
+          return newLambda(params, body, env)
+        of "defmacro":
+          if expr.elems.len < 4:
+            raise newException(LispError, "defmacro requires 3 arguments: name, params, body")
+          let name = expr.elems[1].sym
+          let params = expr.elems[2].elems.mapIt(it.sym)
+          let body = expr.elems[3]
+          env[name] = newMacro(params, body, env)
+          return env[name]
+        of "quasiquote":
+          if expr.elems.len < 2:
+            raise newException(LispError, "quasiquote requires an argument")
+          return evalQuasiquote(expr.elems[1], env)
+        of "if":
+          var i = 1
+          while i + 1 < expr.elems.len:
+            let cond = eval(expr.elems[i], env)
+            if cond.isTruthy:
+              return eval(expr.elems[i + 1], env)
+            i = i + 2
+          if i < expr.elems.len:
+            return eval(expr.elems[i], env)
+          return newNil()
+        of "floor":
+          if expr.elems.len < 2:
+            raise newException(LispError, "floor requires an argument")
+          let val = eval(expr.elems[1], env)
+          if val.kind != Number:
+            raise newException(LispError, "floor takes a number, got " & $val)
+          return newNumber(val.num.floor)
+        of "repeat":
+          if expr.elems.len < 4:
+            raise newException(LispError, "repeat requires 3 arguments: name, count, body")
+          let name = expr.elems[1].sym
+          let count = eval(expr.elems[2], env)
+          if count.kind != Number:
+            raise newException(LispError, "Count must be a number, got " & $count)
+
+          var res = newList()
+          for i in 0..<count.num.int:
+            if name != "":
+              env[name] = newNumber(i.float)
+            res.elems.add(eval(expr.elems[3], env))
+          return res
+        of "len":
+          if expr.elems.len < 2:
+            raise newException(LispError, "len requires an argument")
+          let container = eval(expr.elems[1], env)
+          if container.kind == Map:
+            return newNumber(container.fields.len.float)
+          if container.kind in {List, Array}:
+            return newNumber(container.elems.len.float)
+          if container.kind in {String}:
+            return newNumber(container.str.len.float)
+          return newNumber(0)
+        of ".=":
+          if expr.elems.len < 4:
+            raise newException(LispError, ".= requires at least 3 arguments: container, key, value")
+          let container = eval(expr.elems[1], env)
+          let value = eval(expr.elems[^1], env)  # last argument is the value
+
+          var current = container
+          for i in 2..<(expr.elems.len - 2):
+            let key = eval(expr.elems[i], env)
+            if current.kind == Map:
+              if key.kind == String:
+                current = current.fields.getOrDefault(key.str)
+              elif key.kind == Symbol:
+                current = current.fields.getOrDefault(key.sym)
+              else:
+                raise newException(LispError, "Key must be string or symbol")
+            elif current.kind in {List, Array}:
+              if key.kind == Number:
+                let index = key.num.int
+                if index in 0..current.elems.high:
+                  current = current.elems[index]
+                else:
+                  raise newException(LispError, &"Index out of bounds: {index} notin {0}..<{current.elems.len}")
+              else:
+                raise newException(LispError, "Key must be int")
+            else:
+              raise newException(LispError, &"Can't use . with {current.kind}")
+
+          let finalKey = eval(expr.elems[^2], env)
           if current.kind == Map:
-            if key.kind == String:
-              current = current.fields.getOrDefault(key.str)
-            elif key.kind == Symbol:
-              current = current.fields.getOrDefault(key.sym)
+            if finalKey.kind == String:
+              current.fields[finalKey.str] = value
+            elif finalKey.kind == Symbol:
+              current.fields[finalKey.sym] = value
             else:
               raise newException(LispError, "Key must be string or symbol")
           elif current.kind in {List, Array}:
-            if key.kind == Number:
-              let index = key.num.int
+            if finalKey.kind == Number:
+              let index = finalKey.num.int
               if index in 0..current.elems.high:
-                current = current.elems[index]
+                current.elems[index] = value
               else:
                 raise newException(LispError, &"Index out of bounds: {index} notin {0}..<{current.elems.len}")
             else:
               raise newException(LispError, "Key must be int")
           else:
             raise newException(LispError, &"Can't use . with {current.kind}")
+          return value
+        of ".":
+          if expr.elems.len < 3:
+            raise newException(LispError, ". requires at least 2 arguments: container, key")
 
-        let finalKey = eval(expr.elems[^2], env)
-        if current.kind == Map:
-          if finalKey.kind == String:
-            current.fields[finalKey.str] = value
-          elif finalKey.kind == Symbol:
-            current.fields[finalKey.sym] = value
-          else:
-            raise newException(LispError, "Key must be string or symbol")
-        elif current.kind in {List, Array}:
-          if finalKey.kind == Number:
-            let index = finalKey.num.int
-            if index in 0..current.elems.high:
-              current.elems[index] = value
-            else:
-              raise newException(LispError, &"Index out of bounds: {index} notin {0}..<{current.elems.len}")
-          else:
-            raise newException(LispError, "Key must be int")
-        else:
-          raise newException(LispError, &"Can't use . with {current.kind}")
-        return value
-      of ".":
-        if expr.elems.len < 3:
-          raise newException(LispError, ". requires at least 2 arguments: container, key")
-
-        var current = eval(expr.elems[1], env)
-        for i in 2..<expr.elems.len:
-          let key = eval(expr.elems[i], env)
-          if current.kind == Map:
-            if key.kind == String:
-              current = current.fields.getOrDefault(key.str)
-            elif key.kind == Symbol:
-              current = current.fields.getOrDefault(key.sym)
-            else:
-              raise newException(LispError, "Key must be string or symbol")
-          elif current.kind in {List, Array}:
-            if key.kind == Number:
-              let index = key.num.int
-              if index in 0..current.elems.high:
-                current = current.elems[index]
+          var current = eval(expr.elems[1], env)
+          for i in 2..<expr.elems.len:
+            let key = eval(expr.elems[i], env)
+            if current.kind == Map:
+              if key.kind == String:
+                current = current.fields.getOrDefault(key.str)
+              elif key.kind == Symbol:
+                current = current.fields.getOrDefault(key.sym)
               else:
-                raise newException(LispError, &"Index out of bounds: {index} notin {0}..<{current.elems.len}")
+                raise newException(LispError, "Key must be string or symbol")
+            elif current.kind in {List, Array}:
+              if key.kind == Number:
+                let index = key.num.int
+                if index in 0..current.elems.high:
+                  current = current.elems[index]
+                else:
+                  raise newException(LispError, &"Index out of bounds: {index} notin {0}..<{current.elems.len}")
+              else:
+                raise newException(LispError, "Key must be int")
             else:
-              raise newException(LispError, "Key must be int")
+              raise newException(LispError, &"Can't use . with {current.kind}")
+          return current
+
+      # Evaluate macro if first is a macro
+      let fun = eval(first, env)
+      if fun == nil:
+        raise newException(LispError, "Failed to evaluate first element of list: nil")
+
+      case fun.kind
+      of Macro:
+        var newEnv = fun.env.createChild()
+        for i in 0..<fun.params.len:
+          let name = fun.params[i]
+          if name.endsWith("..."):
+            # capture remaining arguments
+            var list = newList()
+            for k in (i + 1)..<expr.elems.len:
+              list.elems.add expr.elems[k]
+            newEnv[name[0..^4]] = list
           else:
-            raise newException(LispError, &"Can't use . with {current.kind}")
-        return current
-
-    # Evaluate macro if first is a macro
-    let fun = eval(first, env)
-    if fun == nil:
-      raise newException(LispError, "Failed to evaluate first element of list: nil")
-
-    case fun.kind
-    of Macro:
-      var newEnv = fun.env.createChild()
-      for i in 0..<fun.params.len:
-        let name = fun.params[i]
-        if name.endsWith("..."):
-          # capture remaining arguments
-          var list = newList()
-          for k in (i + 1)..<expr.elems.len:
-            list.elems.add expr.elems[k]
-          newEnv[name[0..^4]] = list
+            if i + 1 >= expr.elems.len:
+              raise newException(LispError, &"Missing argument for parameter '{name}'")
+            newEnv[name] = expr.elems[i+1]  # unevaluated
+        let expanded = eval(fun.body, newEnv)
+        return eval(expanded, env)  # evaluate expanded result
+      of Func:
+        if fun.evalArgs:
+          var args = newSeqOfCap[LispVal](expr.elems.len)
+          for i in 1..expr.elems.high:
+            let v = eval(expr.elems[i], env)
+            if v != nil:
+              args.add v
+          return fun.fn(args)
         else:
-          if i + 1 >= expr.elems.len:
-            raise newException(LispError, &"Missing argument for parameter '{name}'")
-          newEnv[name] = expr.elems[i+1]  # unevaluated
-      let expanded = eval(fun.body, newEnv)
-      return eval(expanded, env)  # evaluate expanded result
-    of Func:
-      if fun.evalArgs:
+          let args = expr.elems[1..^1]
+          return fun.fn(args)
+      of Lambda:
         var args = newSeqOfCap[LispVal](expr.elems.len)
         for i in 1..expr.elems.high:
           let v = eval(expr.elems[i], env)
           if v != nil:
             args.add v
-        return fun.fn(args)
+        var newEnv = fun.env.createChild()
+        for i in 0..<fun.params.len:
+          if i >= args.len:
+            raise newException(LispError, &"Missing argument for parameter '{fun.params[i]}'")
+          newEnv[fun.params[i]] = args[i]
+        return eval(fun.body, newEnv)
       else:
-        let args = expr.elems[1..^1]
-        return fun.fn(args)
-    of Lambda:
-      var args = newSeqOfCap[LispVal](expr.elems.len)
-      for i in 1..expr.elems.high:
-        let v = eval(expr.elems[i], env)
-        if v != nil:
-          args.add v
-      var newEnv = fun.env.createChild()
-      for i in 0..<fun.params.len:
-        if i >= args.len:
-          raise newException(LispError, &"Missing argument for parameter '{fun.params[i]}'")
-        newEnv[fun.params[i]] = args[i]
-      return eval(fun.body, newEnv)
-    else:
-      raise newException(LispError, "not a function or macro")
+        raise newException(LispError, "not a function or macro")
 
-# Environment
-proc baseEnv*(): Env =
-  result = Env()
-  result["&"] = newFunc("join", proc(args: seq[LispVal]): LispVal =
-    newString(args.foldl(a & $b, "")))
-  result["+"] = newFunc("+", proc(args: seq[LispVal]): LispVal =
-    newNumber(args.foldl(a + b.num, 0.0)))
-  result["-"] = newFunc("-", proc(args: seq[LispVal]): LispVal =
-    if args.len < 2: raise newException(LispError, "- requires 2 arguments")
-    newNumber(args[0].num - args[1].num))
-  result["*"] = newFunc("*", proc(args: seq[LispVal]): LispVal =
-    newNumber(args.foldl(a * b.num, 1.0)))
-  result["/"] = newFunc("/", proc(args: seq[LispVal]): LispVal =
-    if args.len < 2: raise newException(LispError, "/ requires 2 arguments")
-    newNumber(args[0].num / args[1].num))
-  result["or"] = newFunc("or", proc(args: seq[LispVal]): LispVal =
-    for a in args:
-      if a.isTruthy:
-        return a
-    if args.len > 0:
-      return args.last
-    return newNil()
-  )
-  result["eq"] = newFunc("eq", proc(args: seq[LispVal]): LispVal =
-    if args.len < 2: raise newException(LispError, "eq requires 2 arguments")
-    newBool(args[0].kind == args[1].kind and $args[0] == $args[1])) # todo: don't use $
-  result[">"] = newFunc(">", proc(args: seq[LispVal]): LispVal =
-    if args.len < 2: raise newException(LispError, "> requires 2 arguments")
-    newBool(args[0].num > args[1].num))
-  result["<"] = newFunc("<", proc(args: seq[LispVal]): LispVal =
-    if args.len < 2: raise newException(LispError, "< requires 2 arguments")
-    newBool(args[0].num < args[1].num))
-  result["list"] = newFunc("list", proc(args: seq[LispVal]): LispVal =
-    newList(args))
-  result["do"] = newFunc("do", proc(args: seq[LispVal]): LispVal =
-    if args.len > 0:
-      args.last
-    else:
-      newNil())
-  result["head"] = newFunc("head", proc(args: seq[LispVal]): LispVal =
-    if args.len < 1 or args[0].kind != List: raise newException(LispError, "head needs a list")
-    if args[0].elems.len < 1: raise newException(LispError, "head: list is empty")
-    args[0].elems[0])
-  result["tail"] = newFunc("tail", proc(args: seq[LispVal]): LispVal =
-    if args.len < 1 or args[0].kind != List: raise newException(LispError, "tail needs a list")
-    newList(args[0].elems[1..^1]))
-  result["cons"] = newFunc("cons", proc(args: seq[LispVal]): LispVal =
-    if args.len < 2: raise newException(LispError, "cons requires 2 arguments")
-    if args[1].kind != List: raise newException(LispError, "cons needs list")
-    newList(@[args[0]] & args[1].elems))
-
-  result["add"] = newFunc("add", proc(args: seq[LispVal]): LispVal =
-    if args.len < 1 or args[0].kind notin {List, Array}: raise newException(LispError, "add needs list or array")
-    for i in 1..args.high:
-      args[0].elems.add args[i]
-  )
-
-  result["string.replace"] = newFunc("string.replace", proc(args: seq[LispVal]): LispVal =
-    if args.len < 3 or args[0].kind != String or args[1].kind != String or args[2].kind != String: raise newException(LispError, "string.replace needs 3 strings")
-    return newString(args[0].str.replace(args[1].str, args[2].str))
-  )
-
-  result["dump"] = newFunc("dump", proc(args: seq[LispVal]): LispVal =
-    if args.len == 0: raise newException(LispError, "dump needs an argument")
-    echo args[0]
-    return args[0]
-  )
-
-  result["parseJson"] = newFunc("parseJson", proc(args: seq[LispVal]): LispVal =
-    if args.len == 0 or args[0].kind != LispValKind.String: raise newException(LispError, "parseJson needs string")
-    try:
-      return args[0].str.parseJson().jsonTo(LispVal)
-    except CatchableError as e:
-      raise newException(LispError, e.msg, e)
-  )
-
-  result["toJson"] = newFunc("toJson", proc(args: seq[LispVal]): LispVal =
-    if args.len == 0: raise newException(LispError, "toJson needs an argument")
-    try:
-      return newString($args[0].toJson)
-    except CatchableError as e:
-      raise newException(LispError, e.msg, e)
-  )
-
-  result["append"] = newFunc("append", proc(args: seq[LispVal]): LispVal =
-    if args.len < 1 or args[0].kind notin {List, Array}: raise newException(LispError, "append needs list or array")
-    for i in 1..args.high:
-      if args[i].kind notin {List, Array}:
-        raise newException(LispError, "append needs list or array")
-      args[0].elems.add args[i].elems
-  )
-
-  # result["info"] = newFunc("info", proc(args: seq[LispVal]): LispVal =
-  #   var str = ""
-  #   for i, arg in args:
-  #     if i > 0:
-  #       str.add " "
-  #     str.add $arg
-  #   debugf"{str}"
-  # )
-
-  # result["echo"] = newFunc("echo", proc(args: seq[LispVal]): LispVal =
-  #   var str = ""
-  #   for i, arg in args:
-  #     if i > 0:
-  #       str.add " "
-  #     str.add $arg
-  #   debugf"lisp: {str}"
-  # )
-
-  result["path.split"] = newFunc("path.split", proc(args: seq[LispVal]): LispVal =
-    if args.len > 0 and args[0].kind == String:
-      let (path, name, ext) = args[0].str.splitFile
-      return newList(@[newString(path), newString(name), newString(ext)])
-    return newList()
-  )
-
-  result["path.split-dir"] = newFunc("path.split", proc(args: seq[LispVal]): LispVal =
-    if args.len > 0 and args[0].kind == String:
-      let (path, name) = args[0].str.splitPath
-      return newList(@[newString(path), newString(name)])
-    return newList()
-  )
-
-  result["string.append"] = newFunc("string.append", proc(args: seq[LispVal]): LispVal =
-    var str = ""
-    for i, arg in args:
-      if arg.kind == String:
-        str.add arg.str
+  # Environment
+  proc lispBaseEnv(): Env =
+    result = Env()
+    result["&"] = newFunc("join", proc(args: seq[LispVal]): LispVal =
+      newString(args.foldl(a & $b, "")))
+    result["+"] = newFunc("+", proc(args: seq[LispVal]): LispVal =
+      newNumber(args.foldl(a + b.num, 0.0)))
+    result["-"] = newFunc("-", proc(args: seq[LispVal]): LispVal =
+      if args.len < 2: raise newException(LispError, "- requires 2 arguments")
+      newNumber(args[0].num - args[1].num))
+    result["*"] = newFunc("*", proc(args: seq[LispVal]): LispVal =
+      newNumber(args.foldl(a * b.num, 1.0)))
+    result["/"] = newFunc("/", proc(args: seq[LispVal]): LispVal =
+      if args.len < 2: raise newException(LispError, "/ requires 2 arguments")
+      newNumber(args[0].num / args[1].num))
+    result["or"] = newFunc("or", proc(args: seq[LispVal]): LispVal =
+      for a in args:
+        if a.isTruthy:
+          return a
+      if args.len > 0:
+        return args.last
+      return newNil()
+    )
+    result["eq"] = newFunc("eq", proc(args: seq[LispVal]): LispVal =
+      if args.len < 2: raise newException(LispError, "eq requires 2 arguments")
+      newBool(args[0].kind == args[1].kind and $args[0] == $args[1])) # todo: don't use $
+    result[">"] = newFunc(">", proc(args: seq[LispVal]): LispVal =
+      if args.len < 2: raise newException(LispError, "> requires 2 arguments")
+      newBool(args[0].num > args[1].num))
+    result["<"] = newFunc("<", proc(args: seq[LispVal]): LispVal =
+      if args.len < 2: raise newException(LispError, "< requires 2 arguments")
+      newBool(args[0].num < args[1].num))
+    result["list"] = newFunc("list", proc(args: seq[LispVal]): LispVal =
+      newList(args))
+    result["do"] = newFunc("do", proc(args: seq[LispVal]): LispVal =
+      if args.len > 0:
+        args.last
       else:
-        str.add $arg
-    return newString(str)
-  )
+        newNil())
+    result["head"] = newFunc("head", proc(args: seq[LispVal]): LispVal =
+      if args.len < 1 or args[0].kind != List: raise newException(LispError, "head needs a list")
+      if args[0].elems.len < 1: raise newException(LispError, "head: list is empty")
+      args[0].elems[0])
+    result["tail"] = newFunc("tail", proc(args: seq[LispVal]): LispVal =
+      if args.len < 1 or args[0].kind != List: raise newException(LispError, "tail needs a list")
+      newList(args[0].elems[1..^1]))
+    result["cons"] = newFunc("cons", proc(args: seq[LispVal]): LispVal =
+      if args.len < 2: raise newException(LispError, "cons requires 2 arguments")
+      if args[1].kind != List: raise newException(LispError, "cons needs list")
+      newList(@[args[0]] & args[1].elems))
 
-  result["string.join"] = newFunc("string.join", proc(args: seq[LispVal]): LispVal =
-    if args.len < 1: raise newException(LispError, "string.join needs a seperator")
-    if args[0].kind notin {String, Symbol}: raise newException(LispError, "string.join needs a seperator")
-    let sep = $args[0]
-    var str = ""
-    for i in 1..args.high:
-      if i > 1:
-        str.add sep
-      if args[i].kind == String:
-        str.add args[i].str
-      else:
-        str.add $args[i]
-    return newString(str)
-  )
+    result["add"] = newFunc("add", proc(args: seq[LispVal]): LispVal =
+      if args.len < 1 or args[0].kind notin {List, Array}: raise newException(LispError, "add needs list or array")
+      for i in 1..args.high:
+        args[0].elems.add args[i]
+    )
+
+    result["string.replace"] = newFunc("string.replace", proc(args: seq[LispVal]): LispVal =
+      if args.len < 3 or args[0].kind != String or args[1].kind != String or args[2].kind != String: raise newException(LispError, "string.replace needs 3 strings")
+      return newString(args[0].str.replace(args[1].str, args[2].str))
+    )
+
+    result["dump"] = newFunc("dump", proc(args: seq[LispVal]): LispVal =
+      if args.len == 0: raise newException(LispError, "dump needs an argument")
+      echo args[0]
+      return args[0]
+    )
+
+    result["parseJson"] = newFunc("parseJson", proc(args: seq[LispVal]): LispVal =
+      if args.len == 0 or args[0].kind != LispValKind.String: raise newException(LispError, "parseJson needs string")
+      try:
+        return args[0].str.parseJson().jsonTo(LispVal)
+      except CatchableError as e:
+        raise newException(LispError, e.msg, e)
+    )
+
+    result["toJson"] = newFunc("toJson", proc(args: seq[LispVal]): LispVal =
+      if args.len == 0: raise newException(LispError, "toJson needs an argument")
+      try:
+        return newString($args[0].toJson)
+      except CatchableError as e:
+        raise newException(LispError, e.msg, e)
+    )
+
+    result["append"] = newFunc("append", proc(args: seq[LispVal]): LispVal =
+      if args.len < 1 or args[0].kind notin {List, Array}: raise newException(LispError, "append needs list or array")
+      for i in 1..args.high:
+        if args[i].kind notin {List, Array}:
+          raise newException(LispError, "append needs list or array")
+        args[0].elems.add args[i].elems
+    )
+
+    # result["info"] = newFunc("info", proc(args: seq[LispVal]): LispVal =
+    #   var str = ""
+    #   for i, arg in args:
+    #     if i > 0:
+    #       str.add " "
+    #     str.add $arg
+    #   debugf"{str}"
+    # )
+
+    # result["echo"] = newFunc("echo", proc(args: seq[LispVal]): LispVal =
+    #   var str = ""
+    #   for i, arg in args:
+    #     if i > 0:
+    #       str.add " "
+    #     str.add $arg
+    #   debugf"lisp: {str}"
+    # )
+
+    result["path.split"] = newFunc("path.split", proc(args: seq[LispVal]): LispVal =
+      if args.len > 0 and args[0].kind == String:
+        let (path, name, ext) = args[0].str.splitFile
+        return newList(@[newString(path), newString(name), newString(ext)])
+      return newList()
+    )
+
+    result["path.split-dir"] = newFunc("path.split", proc(args: seq[LispVal]): LispVal =
+      if args.len > 0 and args[0].kind == String:
+        let (path, name) = args[0].str.splitPath
+        return newList(@[newString(path), newString(name)])
+      return newList()
+    )
+
+    result["string.append"] = newFunc("string.append", proc(args: seq[LispVal]): LispVal =
+      var str = ""
+      for i, arg in args:
+        if arg.kind == String:
+          str.add arg.str
+        else:
+          str.add $arg
+      return newString(str)
+    )
+
+    result["string.join"] = newFunc("string.join", proc(args: seq[LispVal]): LispVal =
+      if args.len < 1: raise newException(LispError, "string.join needs a seperator")
+      if args[0].kind notin {String, Symbol}: raise newException(LispError, "string.join needs a seperator")
+      let sep = $args[0]
+      var str = ""
+      for i in 1..args.high:
+        if i > 1:
+          str.add sep
+        if args[i].kind == String:
+          str.add args[i].str
+        else:
+          str.add $args[i]
+      return newString(str)
+    )
