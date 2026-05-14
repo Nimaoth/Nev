@@ -4,7 +4,7 @@ import config_provider
 import component
 export component
 
-include dynlib_export
+include misc/dynlib_export
 
 type ConfigComponent* = ref object of Component
   config*: ConfigStore

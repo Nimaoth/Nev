@@ -5,7 +5,7 @@ import nimsumtree/[arc]
 import workspace
 import service, config_provider, vfs, vfs_service
 
-include dynlib_export
+include misc/dynlib_export
 
 {.push gcsafe.}
 {.push raises: [].}

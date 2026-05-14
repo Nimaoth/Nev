@@ -4,7 +4,7 @@ import input_handler/input_handler, document_editor
 import bumpy
 import ui/node
 
-include dynlib_export
+include misc/dynlib_export
 
 {.push gcsafe.}
 {.push raises: [].}

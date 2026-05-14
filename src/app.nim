@@ -3,7 +3,7 @@ import misc/[id, util, timer, event, myjsonutils, rect_utils, custom_logger, cus
   array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, generational_seq, fuzzy_matching,
   rope_utils]
 import ui/node
-import scripting/[expose]
+import misc/[expose]
 import platform
 import workspace
 import config_provider

@@ -1,6 +1,6 @@
 import std/[strformat, strutils, tables, algorithm, unicode, sequtils, sugar, json, options, math]
 import misc/[custom_logger, array_set, util, regex, bitset]
-import input_api
+import misc/input_api
 
 export input_api
 

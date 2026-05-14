@@ -13,7 +13,7 @@ when not defined(appLspServer):
 when implModule and defined(appLspServer):
   import std/[strutils, strformat, options, tables, json, uri, sequtils]
   import misc/[custom_logger, util, custom_async, event, connection, response]
-  import channel
+  import misc/channel
   import nimsumtree/arc
   import service, command_service, layout/layout
   import vfs

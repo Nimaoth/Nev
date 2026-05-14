@@ -6,7 +6,7 @@ import vfs, service
 
 import nimsumtree/[rope, arc]
 
-include dynlib_export
+include misc/dynlib_export
 
 {.push apprtl, gcsafe, raises: [].}
 proc newFilePreviewer*(vfs: VFS, services: Services, openNewDocuments: bool = false, reuseExistingDocuments: bool = true): Previewer

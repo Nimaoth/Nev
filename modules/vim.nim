@@ -9,7 +9,7 @@ when implModule:
   import misc/[util, custom_unicode, myjsonutils, id, wrap, custom_regex, rope_utils, custom_async, custom_logger]
   import nimsumtree/[buffer, rope, clock, arc]
   import scripting_api
-  import input_api
+  import misc/input_api
   import service, config_provider, layout/layout
   import document_editor, document, text_editor_component, text_component, move_component, command_component, snippet_component
   import config_component, command_service, search_component, decoration_component

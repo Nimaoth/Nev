@@ -30,7 +30,7 @@ export
 const
   MaxEventsCount* = 64
 
-include dynlib_export
+include misc/dynlib_export
 
 when defined(windows):
   import std/[sets, hashes]

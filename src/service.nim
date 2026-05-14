@@ -3,7 +3,7 @@ import misc/[util, custom_logger, custom_async]
 
 const builtinServices = CacheSeq"builtinServices"
 
-include dynlib_export
+include misc/dynlib_export
 
 {.push gcsafe.}
 {.push raises: [].}

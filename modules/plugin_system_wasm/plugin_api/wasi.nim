@@ -1,7 +1,7 @@
 import std/[macros, strutils, strformat]
 import misc/[custom_logger, util, macro_utils]
 import nimsumtree/arc
-import channel
+import misc/channel
 
 import wasmtime
 

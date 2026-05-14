@@ -1,7 +1,7 @@
 
 import std/[strformat, strutils]
 import misc/[custom_unicode, timer]
-import input_api, input_handler/input_handler
+import misc/input_api, input_handler/input_handler
 
 export input_api
 

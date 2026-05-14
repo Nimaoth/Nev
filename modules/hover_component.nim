@@ -2,7 +2,7 @@
 import std/[options]
 import nimsumtree/[rope]
 import misc/[event, custom_async, delayed_task, jsonex]
-import component, view, config_provider, input_api
+import component, view, config_provider, misc/input_api
 
 export component
 

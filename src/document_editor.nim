@@ -7,7 +7,7 @@ import component
 
 export component
 
-include dynlib_export
+include misc/dynlib_export
 
 import platform
 import document, service, config_provider

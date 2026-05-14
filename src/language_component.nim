@@ -4,7 +4,7 @@ import component
 
 export component
 
-include dynlib_export
+include misc/dynlib_export
 
 type LanguageComponent* = ref object of Component
   mLanguageId: string

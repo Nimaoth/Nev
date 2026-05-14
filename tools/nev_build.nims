@@ -47,7 +47,7 @@ proc copySharedFilesTo(dir: string) =
   cpDir2 "plugin_api", dir
   mkDir dir / "src"
   mkDir dir / "src/misc"
-  cpFile2 "src/input_api.nim", dir / "src"
+  cpFile2 "src/misc/input_api.nim", dir / "src"
   cpFile2 "src/misc/custom_unicode.nim", dir / "src/misc"
   cpFile2 "src/misc/embed_source.nim", dir / "src/misc"
   cpFile2 "src/misc/event.nim", dir / "src/misc"

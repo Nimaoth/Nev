@@ -19,7 +19,7 @@ when implModule:
   import std/[tables, options, json, os]
   import results
   import misc/[custom_async, custom_logger, myjsonutils, util, regex]
-  import scripting/expose
+  import misc/expose
   import dispatch_tables, vfs_config, config_provider, app_options
   import fsnotify, vfs_local
 

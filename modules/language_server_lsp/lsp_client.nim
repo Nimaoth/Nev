@@ -1,10 +1,10 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os]
 import misc/[util, myjsonutils, custom_async, response]
 import text/language/[language_server_base, lsp_types]
-import scripting/expose
+import misc/expose
 from workspace as ws import nil
 import dispatch_tables, vfs
-import channel
+import misc/channel
 
 import misc/async_process
 import log

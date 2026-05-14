@@ -163,7 +163,7 @@ proc parseCommand*(json: JsonNodeEx): tuple[command: string, args: string, ok: b
 when implModule:
   import std/[strformat, sugar, json, streams, hashes]
   import misc/[util, custom_async, custom_unicode, myjsonutils, parsejsonex, timer]
-  import config_provider, input_api, register, dispatch_tables
+  import config_provider, misc/input_api, register, dispatch_tables
 
   {.push gcsafe.}
   {.push raises: [].}

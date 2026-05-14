@@ -60,7 +60,7 @@ when implModule:
   import std/[sequtils]
   import misc/[util, custom_logger, async_process, timer]
   import nimsumtree/[rope, arc]
-  import text_component, channel
+  import text_component, misc/channel
 
   logCategory "formatting-component"
 

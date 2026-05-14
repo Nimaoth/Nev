@@ -42,7 +42,7 @@ proc saveSession*(self: SessionService): JsonNode = sessionSaveSession(self)
 when implModule:
   import std/[options, strutils, tables]
   import misc/[custom_logger, util, myjsonutils]
-  import scripting/[expose]
+  import misc/expose
   import dispatch_tables, event_service, vfs_service
   import compilation_config
 

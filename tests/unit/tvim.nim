@@ -10,7 +10,7 @@ import std/[unittest, options, json, sequtils, tables, strutils]
 import misc/[util, custom_logger, jsonex]
 import config_provider, service, document, document_editor, text_component, text_editor_component
 import text/[text, text_editor, text_document]
-import platform, input_handler/input_handler, input_api, command_service, layout/layout
+import platform, input_handler/input_handler, misc/input_api, command_service, layout/layout
 import vim, register, event_service, move_database, session, vfs_service, workspace
 import scripting_api except TextDocumentEditor
 

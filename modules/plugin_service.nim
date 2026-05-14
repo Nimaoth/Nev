@@ -161,7 +161,7 @@ when implModule:
   import std/[macros, os, sugar, strutils]
   import misc/[custom_logger, util, myjsonutils]
   import nimsumtree/[arc]
-  import scripting/expose
+  import misc/expose
   import vfs_service, vfs, dispatch_tables, input_handler/input_handler
 
   logCategory "plugins"

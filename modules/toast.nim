@@ -36,7 +36,7 @@ proc showToast*(self: ToastService, title: string, message: string, color: strin
 when implModule:
   import std/[options, json]
   import results
-  import scripting/expose
+  import misc/expose
   import misc/[myjsonutils]
   import dispatch_tables
 

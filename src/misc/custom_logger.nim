@@ -3,7 +3,7 @@ from logging import nil
 import util, timer
 export strformat
 
-include dynlib_export
+include misc/dynlib_export
 
 {.used.}
 {.push raises: [].}

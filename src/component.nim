@@ -1,5 +1,5 @@
 import std/[tables, hashes, options]
-include dynlib_export
+include misc/dynlib_export
 
 type
   ComponentTypeId* = distinct int64

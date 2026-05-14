@@ -5,7 +5,7 @@ import vfs, component
 
 export component
 
-include dynlib_export
+include misc/dynlib_export
 
 type DocumentId* = distinct uint64
 

@@ -5,7 +5,7 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, generational_seq, render_command]
 import misc/[custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex, case_swap]
-import scripting/[expose]
+import misc/[expose]
 import platform
 import text/language/language_server_base
 import document, document_editor, input_handler/input_handler, vmath, bumpy, text_document

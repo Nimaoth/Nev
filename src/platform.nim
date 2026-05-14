@@ -3,7 +3,7 @@ import vmath, chroma
 import ui/node
 import misc/[event, timer, custom_async]
 import nimsumtree/[arc]
-import vfs, app_options, scripting_api, pixie, input_api, service
+import vfs, app_options, scripting_api, pixie, misc/input_api, service
 
 export input_api, event
 
@@ -216,7 +216,7 @@ proc getClipboardText*(self: Platform): Future[Option[string]] {.async.} =
     return self.getClipboardTextImpl(self).await
   return string.none
 
-include dynlib_export
+include misc/dynlib_export
 
 var texturesToUpload {.apprtlvar.}: seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.ColorRGBX], dynamic: bool]]
 var texturesToDelete {.apprtlvar.}: seq[TextureId]

@@ -1,7 +1,7 @@
 #use layout text_editor_component register command_service selector_popup input_handler treesitter
 import nimsumtree/[arc]
 import misc/[id]
-import channel, view
+import misc/channel, view
 import types
 from scripting_api import CreateTerminalOptions, RunInTerminalOptions, SshOptions, LineNumbers
 
@@ -33,7 +33,7 @@ when implModule:
   import ui/node
   import platform
   import finder/[finder, previewer]
-  import dynamic_view, input_handler/input_handler, config_provider, layout/layout, theme, vterm, input_api, selector_popup/builder, vfs, vfs_service
+  import dynamic_view, input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, selector_popup/builder, vfs, vfs_service
   import text_editor_component, config_component, register, service, command_service
   import types_impl
   import render

@@ -1,5 +1,5 @@
 import std/[json, strutils, tables, osproc, streams, options, macros]
-import custom_logger, custom_async, util, channel, generational_seq
+import custom_logger, custom_async, util, misc/channel, generational_seq
 import nimsumtree/arc
 
 {.push warning[Deprecated]:off.}

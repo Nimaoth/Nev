@@ -2,7 +2,7 @@ import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options, 
 import fusion/matching
 import chroma, vmath
 import misc/[util, id, custom_unicode, array_set, rect_utils, custom_logger, render_command, arena]
-import theme, input_api
+import theme, misc/input_api
 
 export util, id, chroma, vmath, rect_utils, input_api
 export render_command

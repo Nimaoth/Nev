@@ -26,7 +26,7 @@ when defined(featMemChannels):
   static:
     echo "with feature featMemChannels"
   import nimsumtree/[arc]
-  import channel
+  import misc/channel
 
   {.push rtl, gcsafe, raises: [].}
   proc getMemChannels*(): seq[tuple[name: string, stdin: Arc[BaseChannel], stdout: Arc[BaseChannel]]]
@@ -71,7 +71,7 @@ when implModule:
   import std/[atomics, strformat, typedthreads, terminal, colors, locks]
   import nimsumtree/[arc]
   import misc/[util, custom_async]
-  import channel
+  import misc/channel
 
   type
     LogDrainThreadMessageKind = enum

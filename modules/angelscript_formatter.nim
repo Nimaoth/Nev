@@ -28,7 +28,7 @@ when implModule:
   import std/[parsexml, streams, strformat]
   import misc/[util, custom_logger, rope_utils, async_process, timer, custom_async]
   import nimsumtree/[rope, buffer, clock]
-  import document, text_component, channel
+  import document, text_component, misc/channel
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
   logCategory "angelscript-formatter"

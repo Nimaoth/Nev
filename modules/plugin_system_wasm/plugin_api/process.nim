@@ -1,7 +1,7 @@
 import std/[options, json, strutils]
 import results
 import misc/[custom_async, custom_logger, myjsonutils, util, async_process]
-import scripting/[expose]
+import misc/expose
 import workspace
 import service, dispatch_tables, vfs, vfs_service, plugin_service
 

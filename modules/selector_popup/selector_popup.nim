@@ -73,7 +73,7 @@ when implModule:
   import search_component, document_editor, text_component, text_editor_component, config_component
   import ui/node
 
-  import scripting/[expose], dispatch_tables
+  import misc/expose, dispatch_tables
 
   logCategory "selector"
 

@@ -1,7 +1,7 @@
 import std/[json, tables]
 import misc/[wrap]
 
-include dynlib_export
+include misc/dynlib_export
 
 export JsonCallError
 

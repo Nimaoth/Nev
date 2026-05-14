@@ -3,7 +3,7 @@ import misc/[util, event, custom_async, custom_logger, myjsonutils, jsonex, id, 
 import service
 from scripting_api import LineNumbers
 
-include dynlib_export
+include misc/dynlib_export
 
 logCategory "config"
 
@@ -461,7 +461,7 @@ macro declareSettingsTemplate*(name: untyped, prefix: static string, body: untyp
 
 when implModule:
   import std/[algorithm, macrocache]
-  import scripting/expose
+  import misc/expose
   import platform
   import dispatch_tables
   var setAllDefaults: proc(store: ConfigStore) {.raises: [].} = nil

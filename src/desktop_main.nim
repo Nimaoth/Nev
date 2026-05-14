@@ -240,7 +240,7 @@ when enableGui:
 {.push warning[UnusedImport]:off.}
 import service
 import document_editor, input_handler/input_handler, vfs_service, toast
-import scripting/expose
+import misc/expose
 import config_provider
 import vcs/vcs_api
 import inlay_hint_component, config_component # todo: make these modules

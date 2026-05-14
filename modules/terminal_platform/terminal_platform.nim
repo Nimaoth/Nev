@@ -13,7 +13,7 @@ when implModule:
   import chroma as chroma
   import misc/[custom_logger, rect_utils, event, timer, custom_unicode, custom_async, tui]
   import ui/node
-  import app_options, terminal_input, input_api, input_handler/input_handler
+  import app_options, terminal_input, misc/input_api, input_handler/input_handler
   import terminal/vterm
 
   when defined(windows):

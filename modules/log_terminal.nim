@@ -10,7 +10,7 @@ when implModule:
   import misc/[util, custom_async]
   import dynamic_view, terminal/terminal, service, layout/layout
   from scripting_api import CreateTerminalOptions
-  import channel
+  import misc/channel
   import log
 
   type

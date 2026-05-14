@@ -11,7 +11,7 @@ import vcs/vcs, event_service, toast, treesitter/treesitter
 import language_server_component, config_component, move_database, move_component, text_component, treesitter_component,
   language_component, formatting_component
 
-include dynlib_export
+include misc/dynlib_export
 
 import nimsumtree/[buffer, clock, static_array, rope, clone]
 import nimsumtree/sumtree except Cursor, mapIt

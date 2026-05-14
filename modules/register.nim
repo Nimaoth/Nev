@@ -72,7 +72,7 @@ proc setRegisterAsync*(self: Registers, register: string, value: sink Register):
 proc recordCommand*(self: Registers, command: string, registers: openArray[string] = []) = registersRecordCommand(self, command, registers)
 
 when implModule:
-  import scripting/[expose]
+  import misc/expose
   import misc/[custom_logger, util, rope_utils, array_set]
   import dispatch_tables
   import platform

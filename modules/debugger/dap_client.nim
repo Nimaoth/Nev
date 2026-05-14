@@ -1,6 +1,6 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, hashes, genasts, os]
 import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection, async_process]
-import scripting/expose
+import misc/expose
 from std/logging import nil
 
 {.push gcsafe.}

@@ -8,7 +8,7 @@ import view
 import render_view as rv
 import platform
 import config_provider, command_service, command_line, compilation_config
-import plugin_service, document_editor, vfs, vfs_service, channel, register, move_database, popup, event_service, session
+import plugin_service, document_editor, vfs, vfs_service, misc/channel, register, move_database, popup, event_service, session
 import terminal/terminal
 import document, decoration_component, command_component, text_editor_component, text_component
 import snippet_component, move_component, config_component, search_component

@@ -6,7 +6,7 @@ import document
 from lsp_types as lsp_types import CompletionItem, WorkspaceEdit, ServerCapabilities
 export ServerCapabilities
 
-include dynlib_export
+include misc/dynlib_export
 
 logCategory "language-server-base"
 

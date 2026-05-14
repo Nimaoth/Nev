@@ -3,7 +3,7 @@ import view
 
 export view
 
-include dynlib_export
+include misc/dynlib_export
 
 {.push gcsafe, raises: [].}
 
