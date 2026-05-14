@@ -1,7 +1,7 @@
 #use event_service language_server_component input_handler move_component treesitter
 import std/[options, tables, strutils, os, strformat, sugar, sequtils]
 import misc/[custom_logger, custom_async, util, rope_utils, event, rope_regex, myjsonutils, jsonex]
-import text/language/[language_server_base]
+import language_server
 import nimsumtree/[arc, rope]
 import service, event_service, document_editor, document, config_provider, vfs, vfs_service
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor

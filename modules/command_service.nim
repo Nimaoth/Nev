@@ -74,9 +74,7 @@ macro registerCommandImpl(self: CommandService, name: string, impl: typed): unty
   for i in countdown(typ.len - 1, 1):
     let originalArgumentName = typ[i][0]
     let originalArgumentType = typ[i][1]
-    var mappedArgumentType = originalArgumentType.repr.parseExpr
     let index = newLit(i - 1)
-    # todo: default value
     let arg = genAst(jsonArg, index, originalArgumentName = newLit(originalArgumentName.repr), originalArgumentType):
       getArg[originalArgumentType](jsonArg, nil, index, originalArgumentName)
     callImpl.insert(1, arg)
@@ -161,8 +159,8 @@ proc parseCommand*(json: JsonNodeEx): tuple[command: string, args: string, ok: b
 
 # Implementation
 when implModule:
-  import std/[strformat, sugar, json, streams, hashes]
-  import misc/[util, custom_async, custom_unicode, myjsonutils, parsejsonex, timer]
+  import std/[sugar, hashes]
+  import misc/[util, custom_async, custom_unicode, parsejsonex, timer]
   import config_provider, misc/input_api, register, dispatch_tables
 
   {.push gcsafe.}

@@ -1,6 +1,5 @@
 import std/[json, tables, strutils, options]
 import chroma, results
-import nimsumtree/arc
 import misc/[custom_logger, myjsonutils, util, custom_async, event]
 import service
 import vfs
@@ -178,14 +177,6 @@ when implModule:
   proc themeTokenFontScalec(theme: Theme, name: cstring): float =
     let len = name.len
     return theme.tokenColors.getCascading(name.toOpenArray(0, len - 1), Style(fontScale: 1.0)).fontScale
-
-  proc themeAnyColor(theme: Theme, color: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
-    return if color.startsWith "#":
-      parseHexVar(color).valueOr(default)
-    elif color.startsWith "&":
-      theme.color(color[1..^1], default)
-    else:
-      theme.tokenColor(color, default)
 
   {.pop.} # raises: []
   {.pop.} # gcsafe

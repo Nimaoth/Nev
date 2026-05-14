@@ -1,6 +1,6 @@
 #use input_handler layout
 import std/[options, tables, strutils, json]
-import text/language/[language_server_base]
+import language_server
 import service
 
 const currentSourcePath2 = currentSourcePath()
@@ -20,7 +20,6 @@ when implModule:
   import nimsumtree/rope
   import misc/[custom_logger, custom_async, util, response, rope_utils, event, myjsonutils]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-  import text/language/[lsp_types]
   import dispatch_tables, document_editor, layout/layout, input_handler/input_handler, config_provider, command_service
   import document, text_component, move_component, language_component, language_server_component, session
 
@@ -153,18 +152,18 @@ when implModule:
     let self = self.LanguageServerCommandLine
     return string.none
 
-  proc lspCommandLineGetInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+  proc lspCommandLineGetInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server.InlayHint]]] {.async.} =
     let self = self.LanguageServerCommandLine
-    return success[seq[language_server_base.InlayHint]](@[])
+    return success[seq[language_server.InlayHint]](@[])
 
-  proc lspCommandLineGetDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
+  proc lspCommandLineGetDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[language_server.LspDiagnostic]]] {.async.} =
     let self = self.LanguageServerCommandLine
-    return success[seq[lsp_types.Diagnostic]](@[])
+    return success[seq[language_server.LspDiagnostic]](@[])
 
   proc newLanguageServerCommandLine(): LanguageServerCommandLine =
     var server = new LanguageServerCommandLine
     server.name = "command-line"
-    server.capabilities.completionProvider = lsp_types.CompletionOptions().some
+    server.capabilities.completionProvider = language_server.CompletionOptions().some
     server.getDefinitionImpl = lspCommandLineGetDefinition
     server.getCompletionsImpl = lspCommandLineGetCompletions
     server.getSymbolsImpl = lspCommandLineGetSymbols

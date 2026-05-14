@@ -41,7 +41,7 @@ when implModule:
   import misc/[expose]
   import platform
   import layout/layout
-  import text/language/[language_server_base]
+  import language_server
   import text/[display_map, overlay_map]
   import config_provider, dispatch_tables, misc/input_api, input_handler/input_handler
   import decoration_component, document, vfs_service, vfs, register

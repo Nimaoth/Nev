@@ -36,7 +36,7 @@ when implModule:
   import nimsumtree/[rope, buffer, clock]
   import misc/[util, custom_logger, rope_utils, delayed_task, id, event, custom_async, response]
   import document_editor, document
-  import text/language/language_server_base
+  import language_server except Range
   import language_server_component, text_editor_component, text_component
 
   logCategory "inlay-hint-component"
@@ -120,7 +120,7 @@ when implModule:
     let visibleRangeHalf = te.visibleTextRange(screenLineCount div 2)
     let visibleRange = te.visibleTextRange(screenLineCount)
     let snapshot = text.buffer.snapshot.clone()
-    let inlayHints: Response[seq[language_server_base.InlayHint]] = await lsComp.getInlayHints(document.filename, visibleRange.toSelection)
+    let inlayHints: Response[seq[language_server.InlayHint]] = await lsComp.getInlayHints(document.filename, visibleRange.toSelection)
     if self.document.isNil:
       return
 

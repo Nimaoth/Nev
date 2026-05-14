@@ -1,6 +1,6 @@
 import std/[sugar, algorithm, sequtils]
 import misc/[custom_unicode, util, id, event]
-import text/language/[lsp_types]
+import language_server
 import scripting_api
 
 const currentSourcePath2 = currentSourcePath()

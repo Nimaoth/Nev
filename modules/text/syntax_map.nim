@@ -4,7 +4,7 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 from scripting_api as api import nil
 import misc/[custom_async, custom_unicode, util, regex, timer, rope_utils, arena, array_view, array_table, event, array_set]
 import misc/diff, treesitter/[treesitter, treesitter_type_conv]
-from text/language/lsp_types import nil
+from language_server import nil
 import theme
 import chroma
 import malebolgia
@@ -206,7 +206,7 @@ type
   Highlight = tuple[range: Range[Point], color: Color, fontStyle: set[FontStyle], fontScale: float, priority: int]
 
   DiagnosticEndPoint* = object
-    severity*: lsp_types.DiagnosticSeverity
+    severity*: language_server.DiagnosticSeverity
     start*: bool
     point*: Point
 
@@ -1152,10 +1152,10 @@ proc nextDiagnostic(self: var StyledChunkIterator) =
   if self.diagnosticIndex < self.diagnosticEndPoints.len:
     let change = if self.diagnosticEndPoints[self.diagnosticIndex].start: 1 else: -1
     case self.diagnosticEndPoints[self.diagnosticIndex].severity
-    of lsp_types.DiagnosticSeverity.Error: self.errorDepth += change
-    of lsp_types.DiagnosticSeverity.Warning: self.warnDepth += change
-    of lsp_types.DiagnosticSeverity.Information: self.infoDepth += change
-    of lsp_types.DiagnosticSeverity.Hint: self.hintDepth += change
+    of language_server.DiagnosticSeverity.Error: self.errorDepth += change
+    of language_server.DiagnosticSeverity.Warning: self.warnDepth += change
+    of language_server.DiagnosticSeverity.Information: self.infoDepth += change
+    of language_server.DiagnosticSeverity.Hint: self.hintDepth += change
     inc self.diagnosticIndex
 
 proc seek*(self: var StyledChunkIterator, point: Point) =

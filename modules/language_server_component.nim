@@ -2,7 +2,7 @@
 import std/[options, json]
 import misc/[event, custom_async, response]
 import component
-import text/language/[language_server_base, lsp_types]
+import language_server
 import language_server_list
 export component
 from scripting_api import Cursor, Selection
@@ -29,16 +29,16 @@ proc languageServerComponentGetImplementation(self: LanguageServerComponent, fil
 proc languageServerComponentGetTypeDefinition(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.modrtl, async: (raises: []), gcsafe.}
 proc languageServerComponentGetReferences(self: LanguageServerComponent, filename: string, location: Cursor): Future[seq[Definition]] {.modrtl, async: (raises: []), gcsafe.}
 proc languageServerComponentSwitchSourceHeader(self: LanguageServerComponent, filename: string): Future[Option[string]] {.modrtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetCompletions(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetCompletions(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[language_server.CompletionList]] {.modrtl, async: (raises: []), gcsafe.}
 proc languageServerComponentGetSymbols(self: LanguageServerComponent, filename: string): Future[seq[Symbol]] {.modrtl, async: (raises: []), gcsafe.}
 proc languageServerComponentGetWorkspaceSymbols(self: LanguageServerComponent, filename: string, query: string): Future[seq[Symbol]] {.modrtl, async: (raises: []), gcsafe.}
 proc languageServerComponentGetHover(self: LanguageServerComponent, filename: string, location: Cursor): Future[Option[string]] {.modrtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetSignatureHelp(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.modrtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetInlayHints(self: LanguageServerComponent, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.modrtl, async: (raises: []), gcsafe.}
-proc languageServerComponentGetDiagnostics(self: LanguageServerComponent, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetSignatureHelp(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[seq[language_server.SignatureHelpResponse]]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetInlayHints(self: LanguageServerComponent, filename: string, selection: Selection): Future[Response[seq[language_server.InlayHint]]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetDiagnostics(self: LanguageServerComponent, filename: string): Future[Response[seq[language_server.LspDiagnostic]]] {.modrtl, async: (raises: []), gcsafe.}
 proc languageServerComponentGetCompletionTriggerChars(self: LanguageServerComponent): set[char] {.modrtl, gcsafe, raises: [].}
-proc languageServerComponentGetCodeActions(self: LanguageServerComponent, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.modrtl, async: (raises: []), gcsafe.}
-proc languageServerComponentRename(self: LanguageServerComponent, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentGetCodeActions(self: LanguageServerComponent, filename: string, selection: Selection, diagnostics: seq[language_server.LspDiagnostic]): Future[Response[language_server.CodeActionResponse]] {.modrtl, async: (raises: []), gcsafe.}
+proc languageServerComponentRename(self: LanguageServerComponent, filename: string, position: Cursor, newName: string): Future[Response[seq[language_server.WorkspaceEdit]]] {.modrtl, async: (raises: []), gcsafe.}
 proc languageServerComponentExecuteCommand(self: LanguageServerComponent, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.modrtl, async: (raises: []), gcsafe.}
 
 # Nice wrappers
@@ -60,7 +60,7 @@ proc getReferences*(self: LanguageServerComponent, filename: string, location: C
   await languageServerComponentGetReferences(self, filename, location)
 proc switchSourceHeader*(self: LanguageServerComponent, filename: string): Future[Option[string]] {.async: (raises: []).} =
   await languageServerComponentSwitchSourceHeader(self, filename)
-proc getCompletions*(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async: (raises: []).} =
+proc getCompletions*(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[language_server.CompletionList]] {.async: (raises: []).} =
   await languageServerComponentGetCompletions(self, filename, location)
 proc getSymbols*(self: LanguageServerComponent, filename: string): Future[seq[Symbol]] {.async: (raises: []).} =
   await languageServerComponentGetSymbols(self, filename)
@@ -68,17 +68,17 @@ proc getWorkspaceSymbols*(self: LanguageServerComponent, filename: string, query
   await languageServerComponentGetWorkspaceSymbols(self, filename, query)
 proc getHover*(self: LanguageServerComponent, filename: string, location: Cursor): Future[Option[string]] {.async: (raises: []).} =
   await languageServerComponentGetHover(self, filename, location)
-proc getSignatureHelp*(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async: (raises: []).} =
+proc getSignatureHelp*(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[seq[language_server.SignatureHelpResponse]]] {.async: (raises: []).} =
   await languageServerComponentGetSignatureHelp(self, filename, location)
-proc getInlayHints*(self: LanguageServerComponent, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async: (raises: []).} =
+proc getInlayHints*(self: LanguageServerComponent, filename: string, selection: Selection): Future[Response[seq[language_server.InlayHint]]] {.async: (raises: []).} =
   await languageServerComponentGetInlayHints(self, filename, selection)
-proc getDiagnostics*(self: LanguageServerComponent, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.async: (raises: []).} =
+proc getDiagnostics*(self: LanguageServerComponent, filename: string): Future[Response[seq[language_server.LspDiagnostic]]] {.async: (raises: []).} =
   await languageServerComponentGetDiagnostics(self, filename)
 proc getCompletionTriggerChars*(self: LanguageServerComponent): set[char] =
   languageServerComponentGetCompletionTriggerChars(self)
-proc getCodeActions*(self: LanguageServerComponent, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.async: (raises: []).} =
+proc getCodeActions*(self: LanguageServerComponent, filename: string, selection: Selection, diagnostics: seq[language_server.LspDiagnostic]): Future[Response[language_server.CodeActionResponse]] {.async: (raises: []).} =
   await languageServerComponentGetCodeActions(self, filename, selection, diagnostics)
-proc rename*(self: LanguageServerComponent, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.async: (raises: []).} =
+proc rename*(self: LanguageServerComponent, filename: string, position: Cursor, newName: string): Future[Response[seq[language_server.WorkspaceEdit]]] {.async: (raises: []).} =
   await languageServerComponentRename(self, filename, position, newName)
 proc executeCommand*(self: LanguageServerComponent, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async: (raises: []).} =
   await languageServerComponentExecuteCommand(self, command, arguments)
@@ -149,7 +149,7 @@ when implModule:
       return await self.LanguageServerComponentImpl.languageServerList.switchSourceHeader(filename)
     except CatchableError as e:
       log lvlError, &"switchSourceHeader: {e.msg}"
-  proc languageServerComponentGetCompletions(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async: (raises: []).} =
+  proc languageServerComponentGetCompletions(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[language_server.CompletionList]] {.async: (raises: []).} =
     try:
       return await self.LanguageServerComponentImpl.languageServerList.getCompletions(filename, location)
     except CatchableError as e:
@@ -169,17 +169,17 @@ when implModule:
       return await self.LanguageServerComponentImpl.languageServerList.getHover(filename, location)
     except CatchableError as e:
       log lvlError, &"getHover: {e.msg}"
-  proc languageServerComponentGetSignatureHelp(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async: (raises: []).} =
+  proc languageServerComponentGetSignatureHelp(self: LanguageServerComponent, filename: string, location: Cursor): Future[Response[seq[language_server.SignatureHelpResponse]]] {.async: (raises: []).} =
     try:
       return await self.LanguageServerComponentImpl.languageServerList.getSignatureHelp(filename, location)
     except CatchableError as e:
       log lvlError, &"getSignatureHelp: {e.msg}"
-  proc languageServerComponentGetInlayHints(self: LanguageServerComponent, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async: (raises: []).} =
+  proc languageServerComponentGetInlayHints(self: LanguageServerComponent, filename: string, selection: Selection): Future[Response[seq[language_server.InlayHint]]] {.async: (raises: []).} =
     try:
       return await self.LanguageServerComponentImpl.languageServerList.getInlayHints(filename, selection)
     except CatchableError as e:
       log lvlError, &"getInlayHints: {e.msg}"
-  proc languageServerComponentGetDiagnostics(self: LanguageServerComponent, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.async: (raises: []).} =
+  proc languageServerComponentGetDiagnostics(self: LanguageServerComponent, filename: string): Future[Response[seq[language_server.LspDiagnostic]]] {.async: (raises: []).} =
     try:
       return await self.LanguageServerComponentImpl.languageServerList.getDiagnostics(filename)
     except CatchableError as e:
@@ -190,12 +190,12 @@ when implModule:
     except CatchableError as e:
       log lvlError, &"getCompletionTriggerChars: {e.msg}"
       return {}
-  proc languageServerComponentGetCodeActions(self: LanguageServerComponent, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.async: (raises: []).} =
+  proc languageServerComponentGetCodeActions(self: LanguageServerComponent, filename: string, selection: Selection, diagnostics: seq[language_server.LspDiagnostic]): Future[Response[language_server.CodeActionResponse]] {.async: (raises: []).} =
     try:
       return await self.LanguageServerComponentImpl.languageServerList.getCodeActions(filename, selection, diagnostics)
     except CatchableError as e:
       log lvlError, &"getCodeActions: {e.msg}"
-  proc languageServerComponentRename(self: LanguageServerComponent, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.async: (raises: []).} =
+  proc languageServerComponentRename(self: LanguageServerComponent, filename: string, position: Cursor, newName: string): Future[Response[seq[language_server.WorkspaceEdit]]] {.async: (raises: []).} =
     try:
       return await self.LanguageServerComponentImpl.languageServerList.rename(filename, position, newName)
     except CatchableError as e:

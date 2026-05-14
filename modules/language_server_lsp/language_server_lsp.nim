@@ -1,8 +1,8 @@
 #use workspace_edit log layout text_editor_component treesitter_component command_service event_service language_server_component selector_popup input_handler
 import std/[strformat, strutils, os, sets, tables, options, json, sequtils, uri]
 import misc/[id, custom_logger, util, custom_async, async_process, event, response, rope_utils, array_view, jsonex, myjsonutils]
-import text/language/[language_server_base, lsp_types]
-import text/language/language_server_base
+import language_server
+import language_server
 
 # import std/[typedthreads]
 # import misc/[custom_unicode, id, jsonex]
@@ -113,7 +113,7 @@ when implModule:
     if languageServersAdded.len > 0:
       self.languageServersPerDocument[doc.id] = languageServersAdded
 
-  proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_types.ConfigurationParams):
+  proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: language_server.ConfigurationParams):
       Future[seq[JsonNode]] {.gcsafe, async.} =
     var res = newSeq[JsonNode]()
 
@@ -136,17 +136,17 @@ when implModule:
 
     return res
 
-  proc handleApplyWorkspaceEditRequest*(self: LanguageServerLSP, params: lsp_types.ApplyWorkspaceEditParams):
-      Future[lsp_types.ApplyWorkspaceEditResponse] {.gcsafe, async.} =
+  proc handleApplyWorkspaceEditRequest*(self: LanguageServerLSP, params: language_server.ApplyWorkspaceEditParams):
+      Future[language_server.ApplyWorkspaceEditResponse] {.gcsafe, async.} =
     discard
 
     # todo: nice error messages when failing
     if applyWorkspaceEdit(self.editors, self.vfs, params.edit).await:
-      return lsp_types.ApplyWorkspaceEditResponse(
+      return language_server.ApplyWorkspaceEditResponse(
         applied: true,
       )
     else:
-      return lsp_types.ApplyWorkspaceEditResponse(
+      return language_server.ApplyWorkspaceEditResponse(
         applied: false,
         failureReason: "Internal error".some,
       )
@@ -467,48 +467,48 @@ when implModule:
 
     return string.none
 
-  proc lspGetSignatureHelp*(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
+  proc lspGetSignatureHelp*(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[language_server.SignatureHelpResponse]]] {.async.} =
     let self = self.LanguageServerLSP
 
     if self.serverCapabilities.signatureHelpProvider.isNone:
-      return success[seq[lsp_types.SignatureHelpResponse]](@[])
+      return success[seq[language_server.SignatureHelpResponse]](@[])
 
     let localizedPath = self.vfs.localize(filename)
     let response = await self.client.getSignatureHelp(localizedPath, location.line, location.column)
     if response.isError:
       log(lvlWarn, &"[{self.name}] Error in getSignatureHelp('{filename}', {location}): {response.error}")
-      return response.to(seq[lsp_types.SignatureHelpResponse])
+      return response.to(seq[language_server.SignatureHelpResponse])
 
     if response.isCanceled:
       # log(lvlInfo, &"[{self.name}] Canceled inlay hints ({response.id}) for '{filename}':{selection} ")
-      return response.to(seq[lsp_types.SignatureHelpResponse])
+      return response.to(seq[language_server.SignatureHelpResponse])
 
     let parsedResponse = response.result
-    var res = newSeq[lsp_types.SignatureHelpResponse](1)
+    var res = newSeq[language_server.SignatureHelpResponse](1)
     res[0] = parsedResponse
-    return success[seq[lsp_types.SignatureHelpResponse]](res)
+    return success[seq[language_server.SignatureHelpResponse]](res)
 
   proc lspGetInlayHints*(self: LanguageServer, filename: string, selection: Selection):
-      Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+      Future[Response[seq[language_server.InlayHint]]] {.async.} =
     let self = self.LanguageServerLSP
 
     if self.serverCapabilities.inlayHintProvider.isNone:
-      return success[seq[language_server_base.InlayHint]](@[])
+      return success[seq[language_server.InlayHint]](@[])
 
     let localizedPath = self.vfs.localize(filename)
     let response = await self.client.getInlayHints(localizedPath, selection)
     if response.isError:
       log(lvlWarn, &"[{self.name}] Error in getInlayHints('{filename}', {selection}): {response.error}")
-      return response.to(seq[language_server_base.InlayHint])
+      return response.to(seq[language_server.InlayHint])
 
     if response.isCanceled:
       # log(lvlInfo, &"[{self.name}] Canceled inlay hints ({response.id}) for '{filename}':{selection} ")
-      return response.to(seq[language_server_base.InlayHint])
+      return response.to(seq[language_server.InlayHint])
 
     let parsedResponse = response.result
 
     if parsedResponse.getSome(inlayHints):
-      var hints: seq[language_server_base.InlayHint]
+      var hints: seq[language_server.InlayHint]
       for hint in inlayHints:
         let label = case hint.label.kind:
           of JString: hint.label.getStr
@@ -520,25 +520,25 @@ when implModule:
           else:
             ""
 
-        hints.add language_server_base.InlayHint(
+        hints.add language_server.InlayHint(
           location: (hint.position.line, hint.position.character),
           label: label,
           kind: hint.kind.mapIt(case it
-            of lsp_types.InlayHintKind.Type: language_server_base.InlayHintKind.Type
-            of lsp_types.InlayHintKind.Parameter: language_server_base.InlayHintKind.Parameter
+            of language_server.InlayHintKind.Type: language_server.InlayHintKind.Type
+            of language_server.InlayHintKind.Parameter: language_server.InlayHintKind.Parameter
           ),
           textEdits: hint.textEdits.mapIt(
-            language_server_base.TextEdit(selection: it.`range`.toSelection, newText: it.newText)),
+            language_server.TextEdit(selection: it.`range`.toSelection, newText: it.newText)),
           # tooltip*: Option[string] # | MarkupContent # todo
           paddingLeft: hint.paddingLeft.get(false),
           paddingRight: hint.paddingRight.get(false),
           data: hint.data
         )
 
-      return success[seq[language_server_base.InlayHint]](hints)
+      return success[seq[language_server.InlayHint]](hints)
 
     # todo: better error message
-    return errorResponse[seq[language_server_base.InlayHint]](-1, "Invalid response")
+    return errorResponse[seq[language_server.InlayHint]](-1, "Invalid response")
 
   proc toInternalSymbolKind(symbolKind: SymbolKind): SymbolType =
     try:
@@ -654,7 +654,7 @@ when implModule:
 
     return completions
 
-  proc lspResolveWorkspaceSymbol*(self: LanguageServer, symbol: lsp_types.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
+  proc lspResolveWorkspaceSymbol*(self: LanguageServer, symbol: language_server.WorkspaceSymbol): Future[Option[Definition]] {.async.} =
     let self = self.LanguageServerLSP
 
     let resolveProvider = self.serverCapabilities.workspaceSymbolProvider
@@ -729,30 +729,30 @@ when implModule:
     return res
 
   proc lspGetDiagnostics*(self: LanguageServer, filename: string):
-      Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
+      Future[Response[seq[language_server.LspDiagnostic]]] {.async.} =
     let self = self.LanguageServerLSP
     # debugf"getDiagnostics: {filename}"
 
     if self.serverCapabilities.diagnosticProvider.isNone:
-      return success[seq[lsp_types.Diagnostic]](@[])
+      return success[seq[language_server.LspDiagnostic]](@[])
 
     let localizedPath = self.vfs.localize(filename)
     let response = await self.client.getDiagnostics(localizedPath)
     if response.isError:
       log(lvlWarn, &"[{self.name}] Error in getDiagnostics('{filename}'): {response.error}")
-      return response.to(seq[lsp_types.Diagnostic])
+      return response.to(seq[language_server.LspDiagnostic])
 
     if response.isCanceled:
       # log(lvlInfo, &"[{self.name}] Canceled diagnostics ({response.id}) for '{filename}' ")
-      return response.to(seq[lsp_types.Diagnostic])
+      return response.to(seq[language_server.LspDiagnostic])
 
     let report = response.result
 
     if report.asRelatedFullDocumentDiagnosticReport().getSome(report):
-      return success[seq[lsp_types.Diagnostic]](report.items)
+      return success[seq[language_server.LspDiagnostic]](report.items)
 
     # todo: better error message
-    return errorResponse[seq[lsp_types.Diagnostic]](-1, "Invalid response")
+    return errorResponse[seq[language_server.LspDiagnostic]](-1, "Invalid response")
 
   proc lspGetCompletions*(self: LanguageServer, filename: string, location: Cursor):
       Future[Response[CompletionList]] {.async.} =
@@ -762,21 +762,21 @@ when implModule:
     let localizedPath = self.vfs.localize(filename)
     return await self.client.getCompletions(localizedPath, location.line, location.column)
 
-  proc lspGetCodeActions*(self: LanguageServer, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]):
-      Future[Response[lsp_types.CodeActionResponse]] {.async.} =
+  proc lspGetCodeActions*(self: LanguageServer, filename: string, selection: Selection, diagnostics: seq[language_server.LspDiagnostic]):
+      Future[Response[language_server.CodeActionResponse]] {.async.} =
     let self = self.LanguageServerLSP
     if self.serverCapabilities.codeActionProvider.isNone:
-      return success(lsp_types.CodeActionResponse.default)
+      return success(language_server.CodeActionResponse.default)
     let localizedPath = self.vfs.localize(filename)
     return await self.client.getCodeActions(localizedPath, selection, diagnostics)
 
-  proc lspRename*(self: LanguageServer, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.async.} =
+  proc lspRename*(self: LanguageServer, filename: string, position: Cursor, newName: string): Future[Response[seq[language_server.WorkspaceEdit]]] {.async.} =
     let self = self.LanguageServerLSP
     let localizedPath = self.vfs.localize(filename)
     let res = await self.client.rename(localizedPath, position, newName)
     if res.isSuccess and res.result.getSome(edit):
       return success(@[edit])
-    return res.to(seq[lsp_types.WorkspaceEdit])
+    return res.to(seq[language_server.WorkspaceEdit])
 
   proc lspExecuteCommand*(self: LanguageServer, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
     let self = self.LanguageServerLSP
@@ -816,7 +816,7 @@ when implModule:
           var oldAdjusted: rope.Range[Point]
           oldAdjusted.a = it.new.a
           oldAdjusted.b = oldAdjusted.a + (it.old.b - it.old.a).toPoint
-          TextDocumentContentChangeEvent(range: language_server_base.toLspRange(oldAdjusted.toSelection), text: $text)
+          TextDocumentContentChangeEvent(range: language_server.toLspRange(oldAdjusted.toSelection), text: $text)
         )
         asyncSpawn self.client.notifyTextDocumentChangedMain(localizedPath, version, changes)
 

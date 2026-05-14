@@ -146,7 +146,7 @@ proc clearCommands*(config: EventHandlerConfig) =
 
 # Implementation
 when implModule:
-  import std/[sequtils, strutils, sugar, unicode, algorithm]
+  import std/[sequtils, sugar, unicode, algorithm]
   import misc/[custom_logger, util, custom_async]
   import misc/expose
   import dispatch_tables

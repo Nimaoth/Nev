@@ -7,7 +7,6 @@ import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_mat
 import misc/[custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex, case_swap]
 import misc/[expose, diff]
 import platform
-import text/language/language_server_base
 import document, document_editor, input_handler/input_handler, vmath, bumpy, text_document
 import selector_popup/builder, dispatch_tables, register
 import config_provider, service, layout/layout, vfs, vfs_service, command_service, toast
@@ -27,9 +26,7 @@ import command_line, file_previewer
 
 import workspace_edit, search_component
 
-from text/language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
-  TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
-  Command, WorkspaceEdit, asCommand, asCodeAction, asUriObject, WorkspaceSymbol
+import language_server except Range
 
 import nimsumtree/[buffer, clock, static_array, rope]
 from nimsumtree/sumtree as st import summaryType, itemSummary, Bias, mapOpt
@@ -206,9 +203,9 @@ type
     selection: Selection
     case kind: CodeActionKind
     of CodeActionKind.Command:
-      command: lsp_types.Command
+      command: language_server.Command
     of CodeActionKind.CodeAction:
-      action: lsp_types.CodeAction
+      action: language_server.CodeAction
 
 type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
@@ -278,7 +275,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   showSignatureHelpTask: DelayedTask    # for showing signatureHelp info after a delay
   showSignatureHelp*: bool              # whether to show signatureHelp info in ui
   signatureHelpLocation*: Cursor        # where to show the signatureHelp info
-  signatures*: seq[lsp_types.SignatureInformation]
+  signatures*: seq[SignatureInformation]
   currentSignature*: int
   currentSignatureParam*: int
 
@@ -3736,20 +3733,20 @@ proc createCompletionFromSnippet(self: TextDocumentEditor, snippet: JsonNode): C
     else:
       raise newException(ValueError, "Invalid json type for snippet: " & $snippet.kind)
 
-    let edit = lsp_types.TextEdit(
-      `range`: lsp_types.Range(
-        start: lsp_types.Position(line: -1, character: -1),
-        `end`: lsp_types.Position(line: -1, character: -1),
+    let edit = LspTextEdit(
+      `range`: language_server.Range(
+        start: Position(line: -1, character: -1),
+        `end`: Position(line: -1, character: -1),
       ),
       newText: text,
     )
     return Completion(
       item: CompletionItem(
-        kind: lsp_types.CompletionKind.Snippet,
+        kind: CompletionKind.Snippet,
         label: prefix,
         detail: prefix.some,
         insertTextFormat: InsertTextFormat.Snippet.some,
-        textEdit: lsp_types.init(lsp_types.CompletionItemTextEditVariant, edit).some,
+        textEdit: init(CompletionItemTextEditVariant, edit).some,
       ),
     )
   except CatchableError as e:
@@ -3775,7 +3772,7 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
     (0, 0.RuneCount)
 
   if completion.item.textEdit.getSome(edit):
-    if edit.asTextEdit().getSome(edit):
+    if edit.asLspTextEdit().getSome(edit):
       if edit.`range`.start.line < 0:
         editSelection = self.document.getCompletionSelectionAt(cursor)
       else:
@@ -4007,11 +4004,11 @@ proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
 
   self.markDirty()
 
-proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor, languageServer: LanguageServer): seq[lsp_types.Diagnostic] =
-  let codeActions = self.codeActions.mgetOrPut(languageServer.name).addr
+proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor, ls: LanguageServer): seq[LspDiagnostic] =
+  let codeActions = self.codeActions.mgetOrPut(ls.name).addr
   let visibleRange = self.visibleTextRange(0)
   for diagnosticsData in self.document.diagnosticsPerLS.mitems:
-    if languageServer != nil and diagnosticsData.languageServer != languageServer:
+    if ls != nil and diagnosticsData.languageServer != ls:
       continue
 
     for d in diagnosticsData.currentDiagnostics.mitems:
@@ -4023,10 +4020,10 @@ proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor, languageSer
       codeActions[][d.selection.first.line] = @[]
 
       # todo: correctly convert selection coordinate (line, bytes) to lsp (line, rune?)
-      result.add lsp_types.Diagnostic(
-        range: lsp_types.Range(
-          start: lsp_types.Position(line: d.selection.first.line, character: d.selection.first.column),
-          `end`: lsp_types.Position(line: d.selection.last.line, character: d.selection.last.column),
+      result.add LspDiagnostic(
+        range: language_server.Range(
+          start: Position(line: d.selection.first.line, character: d.selection.first.column),
+          `end`: Position(line: d.selection.last.line, character: d.selection.last.column),
         ),
         severity: d.severity,
         code: d.code,

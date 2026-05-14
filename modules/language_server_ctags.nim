@@ -2,7 +2,7 @@
 import std/[strformat, strutils, os, sets, tables, options, json]
 import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_process, event, response,
   rope_utils, arena, array_view, array_set]
-import text/language/[language_server_base, lsp_types]
+import language_server
 import nimsumtree/[arc, rope]
 import service, event_service, document_editor, document, config_provider, vfs, vfs_service
 import treesitter/[treesitter_type_conv]
@@ -30,9 +30,9 @@ type
   CTagsSymbols = object
     sourceFile: string
     definitions: seq[CTagsDefinition]
-    completions: seq[lsp_types.CompletionItem]
+    completions: seq[language_server.CompletionItem]
     symbols: seq[Symbol]
-    moduleCompletions: seq[lsp_types.CompletionItem]
+    moduleCompletions: seq[language_server.CompletionItem]
 
   LanguageServerCTags* = ref object of LanguageServer
     services: Services
@@ -130,7 +130,7 @@ when implModule:
     var total: int = 0
     for file in self.files.values:
       total += file.symbols.len
-    var allSymbols: seq[Symbol] = newSeqOfCap[language_server_base.Symbol](total)
+    var allSymbols: seq[Symbol] = newSeqOfCap[language_server.Symbol](total)
     for file in self.files.values:
       allSymbols.add file.symbols
     return allSymbols
@@ -159,9 +159,9 @@ when implModule:
     else:
       return string.none
 
-  proc ctagsGetSignatureHelp*(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
+  proc ctagsGetSignatureHelp*(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[language_server.SignatureHelpResponse]]] {.async.} =
     let self = self.LanguageServerCTags
-    var res = newSeq[lsp_types.SignatureInformation]()
+    var res = newSeq[language_server.SignatureInformation]()
     if self.documents.getDocumentByPath(filename).getSome(doc):
       let config = doc.getConfigComponent().getOr:
         return
@@ -180,12 +180,12 @@ when implModule:
       for file in self.files.values:
         for def in file.definitions:
           if def.signature.len > 0 and (funcText == def.name or funcText.endsWith("." & def.name)):
-            res.add lsp_types.SignatureInformation(
+            res.add language_server.SignatureInformation(
               label: def.signature,
-              parameters: @[lsp_types.ParameterInformation(label: newJString(def.signature))]
+              parameters: @[language_server.ParameterInformation(label: newJString(def.signature))]
             )
 
-    return @[lsp_types.SignatureHelpResponse(
+    return @[language_server.SignatureHelpResponse(
       signatures: res,
     )].success
 
@@ -217,7 +217,7 @@ when implModule:
 
     return some(^flowVar)
 
-  proc ctagsGetCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
+  proc ctagsGetCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[language_server.CompletionList]] {.async.} =
     let self = self.LanguageServerCTags
 
     var t = startTimer()
@@ -268,7 +268,7 @@ when implModule:
             importedFilePaths.incl path
 
     maybeSleep()
-    var res: seq[CompletionItem] = newSeqOfCap[lsp_types.CompletionItem](total)
+    var res: seq[CompletionItem] = newSeqOfCap[language_server.CompletionItem](total)
     let paths = collect:
       for k in self.files.keys:
         k
@@ -297,7 +297,7 @@ when implModule:
         res.add file.completions[i]
         inc i
 
-    result = lsp_types.CompletionList().success
+    result = language_server.CompletionList().success
     swap(res, result.result.items) # Avoid copying, can be large
 
   proc newLanguageServerCTags*(services: Services): LanguageServerCTags =
@@ -309,7 +309,7 @@ when implModule:
     result.config = services.getServiceChecked(ConfigService).runtime
     result.eventBus = services.getServiceChecked(EventService)
     result.refetchWorkspaceSymbolsOnQueryChange = false
-    result.capabilities.completionProvider = lsp_types.CompletionOptions().some
+    result.capabilities.completionProvider = language_server.CompletionOptions().some
 
     result.getSymbolsImpl = ctagsGetSymbols
     result.getDefinitionImpl = ctagsGetDefinition
@@ -428,21 +428,21 @@ when implModule:
               )
               s[].definitions.add def
 
-              let edit = lsp_types.TextEdit(
-                `range`: lsp_types.Range(
-                  start: lsp_types.Position(line: -1, character: -1),
-                  `end`: lsp_types.Position(line: -1, character: -1),
+              let edit = language_server.LspTextEdit(
+                `range`: language_server.Range(
+                  start: language_server.Position(line: -1, character: -1),
+                  `end`: language_server.Position(line: -1, character: -1),
                 ),
                 newText: def.name,
               )
               let detail = if def.signature.len > 0: def.signature else: def.kindRaw
               let completion = CompletionItem(
-                kind: lsp_types.CompletionKind.Text,
+                kind: language_server.CompletionKind.Text,
                 label: def.name,
                 detail: detail.some,
-                documentation: lsp_types.init(lsp_types.CompletionItemDocumentationVariant, def.path).some,
+                documentation: language_server.init(language_server.CompletionItemDocumentationVariant, def.path).some,
                 insertTextFormat: InsertTextFormat.PlainText.some,
-                textEdit: lsp_types.init(lsp_types.CompletionItemTextEditVariant, edit).some,
+                textEdit: language_server.init(language_server.CompletionItemTextEditVariant, edit).some,
               )
               case def.kind
               of SymbolType.File, SymbolType.Module, SymbolType.Namespace, SymbolType.Package:

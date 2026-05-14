@@ -2,7 +2,6 @@ import std/[locks, options]
 import vmath, chroma
 import ui/node
 import misc/[event, timer, custom_async]
-import nimsumtree/[arc]
 import vfs, app_options, scripting_api, pixie, misc/input_api, service
 
 export input_api, event

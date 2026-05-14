@@ -29,12 +29,11 @@ when implModule and defined(appLspServer):
   import nimsumtree/rope
   import text_component, language_server_component
   import document_editor, vfs_service
-  import text/language/lsp_types as lsp_types
-  import text/language/language_server_base
+  import language_server
   import language_server_lsp/language_server_lsp
   import workspace
 
-  proc toJsonHook*(item: lsp_types.CompletionItem): JsonNode =
+  proc toJsonHook*(item: language_server.CompletionItem): JsonNode =
     result = newJObject()
     for k, v in item.fieldPairs:
       when v is Option:
@@ -301,7 +300,7 @@ when implModule and defined(appLspServer):
       else:
         # Incremental: convert LSP range to internal selection
         try:
-          let r = rangeNode.jsonTo(lsp_types.Range, Joptions(allowMissingKeys: true, allowExtraKeys: true))
+          let r = rangeNode.jsonTo(language_server.Range, Joptions(allowMissingKeys: true, allowExtraKeys: true))
           let runeSelection = (
             (r.start.line, r.start.character.RuneIndex),
             (r.`end`.line, r.`end`.character.RuneIndex))
@@ -517,10 +516,10 @@ when implModule and defined(appLspServer):
         let endLine = r{"end"}{"line"}.getInt
         let endChar = r{"end"}{"character"}.getInt
         let contextDiags = msg{"params"}{"context"}{"diagnostics"}
-        var diagnostics: seq[lsp_types.Diagnostic]
+        var diagnostics: seq[language_server.LspDiagnostic]
         if contextDiags != nil and contextDiags.kind == JArray:
           try:
-            diagnostics = contextDiags.jsonTo(seq[lsp_types.Diagnostic], Joptions(allowMissingKeys: true, allowExtraKeys: true))
+            diagnostics = contextDiags.jsonTo(seq[language_server.LspDiagnostic], Joptions(allowMissingKeys: true, allowExtraKeys: true))
           except CatchableError as e:
             conn.logChannel.logLine(lvlError, &"[lsp-server] textDocument/codeAction: failed to parse diagnostics: {e.msg}")
         let angelLs = await service.getLsp(path)
@@ -537,7 +536,7 @@ when implModule and defined(appLspServer):
         let angelLs = await service.getLsp(".as")
         if angelLs.isSome:
           try:
-            let symbol = msg{"params"}.jsonTo(lsp_types.WorkspaceSymbol, Joptions(allowMissingKeys: true, allowExtraKeys: true))
+            let symbol = msg{"params"}.jsonTo(language_server.WorkspaceSymbol, Joptions(allowMissingKeys: true, allowExtraKeys: true))
             let definition = await angelLs.get.resolveWorkspaceSymbol(symbol)
             if definition.isSome:
               let d = definition.get
@@ -663,7 +662,7 @@ when implModule and defined(appLspServer):
     if ls.isNone:
       self.debugLogStdout.logLine(lvlError, "hookDiagnostics: no ls found")
       return
-    self.diagnosticsHandle = ls.get.onDiagnostics.subscribe proc(params: lsp_types.PublicDiagnosticsParams) =
+    self.diagnosticsHandle = ls.get.onDiagnostics.subscribe proc(params: language_server.PublicDiagnosticsParams) =
       let conn = self.activeConnection
       if conn == nil:
         return

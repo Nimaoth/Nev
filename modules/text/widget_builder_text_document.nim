@@ -6,7 +6,7 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 import platform
 import ui/[widget_library]
 import document_editor, theme, config_provider, layout/layout
-import text/language/[lsp_types]
+import language_server
 import text/[syntax_map, overlay_map, wrap_map, diff_map, display_map]
 import view, treesitter/treesitter
 import scroll_box, treesitter_component, decoration_component, hover_component, contextline_component
@@ -233,7 +233,7 @@ proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, curso
   let inactiveParamColor = builder.theme.color("signatureHelp.inactiveParam", fadedTextColor1)
   let inactiveSignatureColor = builder.theme.color("signatureHelp.inactiveSignature", fadedTextColor2)
 
-  proc drawSignature(signatureColor: Color, activeParamColor: Color, sig: lsp_types.SignatureInformation) =
+  proc drawSignature(signatureColor: Color, activeParamColor: Color, sig: language_server.SignatureInformation) =
     let activeParameter = sig.activeParameter.get(self.currentSignatureParam)
     builder.panel(&{SizeToContentY, SizeToContentX, LayoutHorizontal}):
       builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = "(", textColor = signatureColor)
@@ -898,11 +898,11 @@ proc drawLine*(state: var LineDrawerState, commands: var RenderCommands, lineNum
             if maxIndex < diagnostic.message.len:
               message.add "..."
             let width = message.runeLen.float * state.builder.charWidth # todo: measure text
-            let color = case diagnostic.severity.get(lsp_types.DiagnosticSeverity.Hint)
-            of lsp_types.DiagnosticSeverity.Error: state.errorColor
-            of lsp_types.DiagnosticSeverity.Warning: state.warningColor
-            of lsp_types.DiagnosticSeverity.Information: state.informationColor
-            of lsp_types.DiagnosticSeverity.Hint: state.hintColor
+            let color = case diagnostic.severity.get(language_server.DiagnosticSeverity.Hint)
+            of language_server.DiagnosticSeverity.Error: state.errorColor
+            of language_server.DiagnosticSeverity.Warning: state.warningColor
+            of language_server.DiagnosticSeverity.Information: state.informationColor
+            of language_server.DiagnosticSeverity.Hint: state.hintColor
             commands.drawText(message, rect(lineNumberWidth, height, width, state.builder.textHeight), color, 0.UINodeFlags)
             height += state.builder.textHeight * message.countLines.float
             state.chunkBoundsPerLine[^1].dontCenter = true
@@ -929,11 +929,11 @@ proc drawLine*(state: var LineDrawerState, commands: var RenderCommands, lineNum
               if maxIndex < diagnostic.message.len:
                 message.add "..."
               let width = message.runeLen.float * state.builder.charWidth # todo: measure text
-              let color = case diagnostic.severity.get(lsp_types.DiagnosticSeverity.Hint)
-              of lsp_types.DiagnosticSeverity.Error: state.errorColor
-              of lsp_types.DiagnosticSeverity.Warning: state.warningColor
-              of lsp_types.DiagnosticSeverity.Information: state.informationColor
-              of lsp_types.DiagnosticSeverity.Hint: state.hintColor
+              let color = case diagnostic.severity.get(language_server.DiagnosticSeverity.Hint)
+              of language_server.DiagnosticSeverity.Error: state.errorColor
+              of language_server.DiagnosticSeverity.Warning: state.warningColor
+              of language_server.DiagnosticSeverity.Information: state.informationColor
+              of language_server.DiagnosticSeverity.Hint: state.hintColor
               commands.drawText(message, rect(xPos, 0, width, state.builder.textHeight), color, 0.UINodeFlags)
               state.lineBounds.w += width
 

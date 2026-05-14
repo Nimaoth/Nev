@@ -2,7 +2,7 @@
 import std/[options, strutils, sets]
 import nimsumtree/rope except Cursor
 import misc/[custom_logger, custom_unicode, util, event, custom_async, response, fuzzy_matching]
-import text/language/[language_server_base, lsp_types]
+import language_server
 import service, event_service, document_editor, config_provider
 
 const currentSourcePath2 = currentSourcePath()
@@ -26,7 +26,7 @@ when implModule:
   type CollectWordsThreadState = object
     rope: Rope
     filterText: string
-    items: seq[lsp_types.CompletionItem]
+    items: seq[language_server.CompletionItem]
 
   proc collectWordsAndFilterThread(data: ptr CollectWordsThreadState) {.gcsafe, raises: [].} =
     let rope = data.rope.clone()
@@ -57,15 +57,15 @@ when implModule:
       if buffer.len > 0:
         wordCache.incl buffer
 
-    var items: seq[lsp_types.CompletionItem]
+    var items: seq[language_server.CompletionItem]
     for word in wordCache:
       if word == filterText:
         continue
       let (score, matched) = matchFuzzy(filterText, word)
       if filterText.len == 0 or matched:
-        items.add lsp_types.CompletionItem(
+        items.add language_server.CompletionItem(
           label: word,
-          kind: lsp_types.CompletionKind.Text,
+          kind: language_server.CompletionKind.Text,
           sortText: if filterText.len > 0: some($(-score)) else: string.none,
         )
     data.items = items
@@ -89,12 +89,12 @@ when implModule:
         word.setLen(0)
     return word
 
-  proc getCompletionsImpl(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.async.} =
+  proc getCompletionsImpl(self: LanguageServer, filename: string, location: Cursor): Future[Response[language_server.CompletionList]] {.async.} =
     let self = self.LanguageServerDocumentCompletion
     let doc = self.documents.getDocumentByPath(filename).getOr:
-      return success(lsp_types.CompletionList())
+      return success(language_server.CompletionList())
     let text = doc.getTextComponent().getOr:
-      return success(lsp_types.CompletionList())
+      return success(language_server.CompletionList())
 
     let rope = text.content
     var data = CollectWordsThreadState(
@@ -104,16 +104,16 @@ when implModule:
     try:
       await spawnAsync(collectWordsAndFilterThread, data.addr)
     except CancelledError:
-      return success(lsp_types.CompletionList())
+      return success(language_server.CompletionList())
 
-    return success(lsp_types.CompletionList(isIncomplete: false, items: data.items))
+    return success(language_server.CompletionList(isIncomplete: false, items: data.items))
 
   # proc ueGetCompletionTriggerChars*(self: LanguageServer): set[char] =
   #   return {'.', '>', ':'}
 
   proc newLanguageServerDocumentCompletion(services: Services): LanguageServerDocumentCompletion =
     result = new LanguageServerDocumentCompletion
-    result.capabilities.completionProvider = lsp_types.CompletionOptions().some
+    result.capabilities.completionProvider = language_server.CompletionOptions().some
     result.name = "document-completion"
     result.services = services
     result.documents = services.getServiceChecked(DocumentEditorService)

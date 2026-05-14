@@ -1,6 +1,6 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os]
 import misc/[util, myjsonutils, custom_async, response]
-import text/language/[language_server_base, lsp_types]
+import language_server
 import misc/expose
 from workspace as ws import nil
 import dispatch_tables, vfs
@@ -11,7 +11,7 @@ import log
 
 logCategory2 "lsp-client"
 
-export lsp_types
+export language_server
 
 var file {.threadvar.}: syncio.File
 var logFileName {.threadvar.}: string
@@ -960,7 +960,7 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
   # client.log.log lvlDebug, &"[getCompletions] {filename}:{line}:{column}: no completions found"
   return errorResponse[CompletionList](-1, fmt"[getCompletions] {filename}:{line}:{column}: no completions found")
 
-proc getCodeActions*(client: LSPClient, filename: string, selection: ((int, int), (int, int)), diagnostics: seq[lsp_types.Diagnostic]): Future[Response[CodeActionResponse]] {.async.} =
+proc getCodeActions*(client: LSPClient, filename: string, selection: ((int, int), (int, int)), diagnostics: seq[language_server.LspDiagnostic]): Future[Response[CodeActionResponse]] {.async.} =
   # client.log.log lvlDebug, &"[getCodeActions] {filename.absolutePath}:{selection}"
 
   let params = %*{

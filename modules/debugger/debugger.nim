@@ -15,7 +15,7 @@ when implModule:
   import vmath, bumpy, chroma
   import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap, arena, array_view, rope_utils, array_set, tui]
   import dap_client, config_provider, selector_popup/builder, input_handler/input_handler, document, document_editor, layout/layout, session
-  import text/language/[language_server_base]
+  import language_server except Range
   import treesitter/[treesitter_type_conv]
   import platform
   import finder/[previewer, finder]
@@ -2326,9 +2326,9 @@ when implModule:
 
     return result
 
-  proc debuggerGetInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+  proc debuggerGetInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server.InlayHint]]] {.async.} =
     let self = self.LanguageServerDebugger
-    result = newSeq[language_server_base.InlayHint]().success
+    result = newSeq[language_server.InlayHint]().success
 
     if self.debugger.debuggerState != Paused:
       return
@@ -2345,7 +2345,7 @@ when implModule:
       let document = doc.get
       let timestamp = self.debugger.timestamp
       let decls = await document.getDeclarationsInRange(selection.toRange)
-      var inlayHints = newSeq[language_server_base.InlayHint]()
+      var inlayHints = newSeq[language_server.InlayHint]()
 
       let futures = collect:
         for decl in decls:
@@ -2370,13 +2370,13 @@ when implModule:
         if nl == -1:
           let eq = eval.result.result.find("= ")
           if eq != -1:
-            inlayHints.add language_server_base.InlayHint(
+            inlayHints.add language_server.InlayHint(
               location: decls[i].decl.b.toCursor,
               label: eval.result.result[eq..^1].strip(),
               paddingLeft: true,
             )
           else:
-            inlayHints.add language_server_base.InlayHint(
+            inlayHints.add language_server.InlayHint(
               location: decls[i].decl.b.toCursor,
               label: "= " & eval.result.result,
               paddingLeft: true,
@@ -2398,7 +2398,7 @@ when implModule:
               label.add "..."
               break
 
-          inlayHints.add language_server_base.InlayHint(
+          inlayHints.add language_server.InlayHint(
             location: decls[i].decl.b.toCursor,
             label: label,
             paddingLeft: true,

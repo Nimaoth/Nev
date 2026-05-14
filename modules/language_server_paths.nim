@@ -1,7 +1,7 @@
 #use event_service language_server_component input_handler treesitter lisp
 import std/[options, tables, strutils, os, strformat]
 import misc/[custom_logger, custom_async, util, response, rope_utils, event, regex, rope_regex, myjsonutils]
-import text/language/[language_server_base, lsp_types]
+import language_server
 import nimsumtree/[arc, rope]
 import service, event_service, document_editor, config_provider, vfs, vfs_service
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -154,7 +154,7 @@ when implModule:
           completions.add CompletionItem(
             label: name,
             kind: CompletionKind.Function,
-            textEdit: lsp_types.TextEdit(
+            textEdit: language_server.LspTextEdit(
               range: replaceRange.toSelection.toLspRange,
               newText: name,
             ).toJson.jsonTo(CompletionItemTextEditVariant).some
@@ -164,7 +164,7 @@ when implModule:
             label: name & divider,
             kind: CompletionKind.Class,
             showCompletionsAgain: true.some,
-            textEdit: lsp_types.TextEdit(
+            textEdit: language_server.LspTextEdit(
               range: replaceRange.toSelection.toLspRange,
               newText: name & divider,
             ).toJson.jsonTo(CompletionItemTextEditVariant).some
@@ -180,7 +180,7 @@ when implModule:
     result.eventBus = services.getServiceChecked(EventService)
     result.vfs = services.getServiceChecked(VFSService).vfs
     result.config = services.getServiceChecked(ConfigService).runtime
-    result.capabilities.completionProvider = lsp_types.CompletionOptions().some
+    result.capabilities.completionProvider = language_server.CompletionOptions().some
     result.refetchWorkspaceSymbolsOnQueryChange = false
     try:
       result.pathRegex = re(pathRegex)

@@ -4,7 +4,6 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 from scripting_api as api import nil
 import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, rope_utils, jsonex, diff]
 import workspace
-import text/language/[language_server_base]
 import text/[syntax_map, display_map, indent]
 import document, document_editor, config_provider, service, vfs, vfs_service, language_server_list
 import vcs, event_service, toast, treesitter/treesitter
@@ -16,7 +15,7 @@ include misc/dynlib_export
 import nimsumtree/[buffer, clock, static_array, rope, clone]
 import nimsumtree/sumtree except Cursor, mapIt
 
-from text/language/lsp_types as lsp_types import nil
+import language_server except Range
 export document, document_editor, id
 
 logCategory "text-document"
@@ -588,7 +587,7 @@ proc runeCursorToCursor*(self: TextDocument, cursor: RuneCursor): Cursor =
 proc runeSelectionToSelection*(self: TextDocument, cursor: RuneSelection): Selection =
   return (self.runeCursorToCursor(cursor.first), self.runeCursorToCursor(cursor.last))
 
-proc lspRangeToSelection*(self: TextDocument, r: lsp_types.Range): Selection =
+proc lspRangeToSelection*(self: TextDocument, r: language_server.Range): Selection =
   let runeSelection = (
     (r.start.line, r.start.character.RuneIndex),
     (r.`end`.line, r.`end`.character.RuneIndex))
@@ -1279,7 +1278,7 @@ proc updateDiagnosticEndPoints(self: TextDocument) =
   self.diagnosticEndPoints.setLen(0)
   for diagnostics in self.diagnosticsPerLS.mitems:
     for i, d in diagnostics.currentDiagnostics:
-      let severity = d.severity.get(lsp_types.DiagnosticSeverity.Hint)
+      let severity = d.severity.get(DiagnosticSeverity.Hint)
       self.diagnosticEndPoints.add DiagnosticEndPoint(severity: severity, point: d.selection.first.toPoint, start: true)
       self.diagnosticEndPoints.add DiagnosticEndPoint(severity: severity, point: d.selection.last.toPoint, start: false)
 
@@ -1314,7 +1313,7 @@ proc resolveDiagnosticAnchors*(self: TextDocument) =
     diagnostics.resolveDiagnosticAnchors(self.buffer.snapshot.clone())
   self.updateDiagnosticEndPoints()
 
-proc setCurrentDiagnostics(self: TextDocument, languageServer: LanguageServer, diagnostics: openArray[lsp_types.Diagnostic], snapshot: sink Option[BufferSnapshot]) =
+proc setCurrentDiagnostics(self: TextDocument, languageServer: LanguageServer, diagnostics: openArray[LspDiagnostic], snapshot: sink Option[BufferSnapshot]) =
 
   let snapshot = snapshot.take(self.buffer.snapshot.clone())
 
@@ -1322,7 +1321,7 @@ proc setCurrentDiagnostics(self: TextDocument, languageServer: LanguageServer, d
     self.diagnosticsPerLS.add DiagnosticsData(languageServer: languageServer)
     self.languageServerDiagnosticsIndex[languageServer.name] = self.diagnosticsPerLS.high
 
-  proc setDiagnostics(diagnosticsData: var DiagnosticsData, diagnostics: openArray[lsp_types.Diagnostic], snapshot: sink BufferSnapshot) =
+  proc setDiagnostics(diagnosticsData: var DiagnosticsData, diagnostics: openArray[LspDiagnostic], snapshot: sink BufferSnapshot) =
 
     diagnosticsData.currentDiagnostics.setLen diagnostics.len
     diagnosticsData.currentDiagnosticsAnchors.setLen diagnostics.len
@@ -1334,7 +1333,7 @@ proc setCurrentDiagnostics(self: TextDocument, languageServer: LanguageServer, d
         (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
       let selection = self.runeSelectionToSelection(runeSelection).normalized
 
-      diagnosticsData.currentDiagnostics[i] = language_server_base.Diagnostic(
+      diagnosticsData.currentDiagnostics[i] = Diagnostic(
         selection: selection,
         severity: d.severity,
         code: d.code,
@@ -1388,7 +1387,7 @@ proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
   #   self.lastDiagnosticVersion = snapshot.version
   #   self.setCurrentDiagnostics(ls, diagnostics.result, snapshot.some)
 
-proc handleDiagnosticsReceived(self: TextDocument, languageServer: LanguageServer, diagnostics: lsp_types.PublicDiagnosticsParams) =
+proc handleDiagnosticsReceived(self: TextDocument, languageServer: LanguageServer, diagnostics: PublicDiagnosticsParams) =
   if not self.settings.diagnostics.enable.get():
     self.clearDiagnostics(languageServer.name)
     return
@@ -1433,7 +1432,7 @@ proc handleLanguageServerAttached(self: TextDocument, languageServer: LanguageSe
 
   # todo: only do that if language server supports sending diagnostics
   # if languageServer.capabilities.diagnosticProvider.isSome:
-  let onDiagnosticsHandle = languageServer.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
+  let onDiagnosticsHandle = languageServer.onDiagnostics.subscribe proc(diagnostics: PublicDiagnosticsParams) =
     self.handleDiagnosticsReceived(languageServer, diagnostics)
   self.onDiagnosticsHandles[languageServer.name] = (languageServer, onDiagnosticsHandle)
 

@@ -63,7 +63,7 @@ var tsAllocated* {.modrtlvar.}: uint64 = 0
 var tsFreed* {.modrtlvar.}: uint64 = 0
 
 when implModule:
-  import std/[os, strutils, dynlib]
+  import std/[strutils, dynlib]
   import compilation_config
   import wasm_engine
   import wasmtime

@@ -11,7 +11,7 @@ when implModule:
   import std/[strutils, sets, algorithm]
   import misc/[custom_unicode, util, event, timer, custom_logger, fuzzy_matching, delayed_task, custom_async, rope_utils]
   import nimsumtree/rope
-  import text/language/[lsp_types]
+  import language_server
   import text_component, move_component, language_component
   import scripting_api
 

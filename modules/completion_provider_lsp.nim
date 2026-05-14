@@ -1,6 +1,6 @@
 import completion, document
 import misc/[custom_unicode]
-import text/language/[language_server_base]
+import language_server
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -11,7 +11,7 @@ proc newCompletionProviderLsp*(document: Document, languageServer: LanguageServe
 
 when implModule:
   import misc/[util, custom_async, event, timer, custom_logger, fuzzy_matching, response, rope_utils]
-  import text/language/[lsp_types]
+  import language_server
   import nimsumtree/rope
   import completion, document, text_component, move_component
   import scripting_api

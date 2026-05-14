@@ -12,7 +12,7 @@ when implModule:
   import std/[json, tables]
   import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching, jsonex, rope_utils]
   import nimsumtree/rope
-  import text/language/[lsp_types]
+  import language_server
   import completion, document, text_component, move_component, language_component
 
   logCategory "Comp-Snip"
@@ -45,8 +45,8 @@ when implModule:
             text.add "\n"
           text.add line.getStr
 
-        let edit = lsp_types.TextEdit(`range`: lsp_types.Range(start: Position(line: -1, character: -1), `end`: Position(line: -1, character: -1)), newText: text)
-        self.unfilteredCompletions.add(CompletionItem(label: prefix, detail: name.some, insertTextFormat: InsertTextFormat.Snippet.some, textEdit: lsp_types.init(lsp_types.CompletionItemTextEditVariant, edit).some))
+        let edit = language_server.LspTextEdit(`range`: language_server.Range(start: Position(line: -1, character: -1), `end`: Position(line: -1, character: -1)), newText: text)
+        self.unfilteredCompletions.add(CompletionItem(label: prefix, detail: name.some, insertTextFormat: InsertTextFormat.Snippet.some, textEdit: language_server.init(language_server.CompletionItemTextEditVariant, edit).some))
 
     except:
       log lvlError, fmt"Failed to get snippets for language {languageId}"

@@ -5,7 +5,7 @@ import document_editor, vfs
 
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
-from text/language/lsp_types import WorkspaceEdit
+from language_server import WorkspaceEdit
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -26,7 +26,7 @@ proc runeCursorToCursor*(rope: Rope, cursor: RuneCursor): Cursor =
 proc runeSelectionToSelection*(rope: Rope, cursor: RuneSelection): Selection =
   return (rope.runeCursorToCursor(cursor.first), rope.runeCursorToCursor(cursor.last))
 
-proc lspRangeToSelection*(rope: Rope, r: lsp_types.Range): Selection =
+proc lspRangeToSelection*(rope: Rope, r: language_server.Range): Selection =
   let runeSelection = (
     (r.start.line, r.start.character.RuneIndex),
     (r.`end`.line, r.`end`.character.RuneIndex))
@@ -74,14 +74,14 @@ when implModule:
         if doc.requiresLoad:
           doc.load()
 
-      var queue = newSeq[tuple[doc: Document, edits: seq[lsp_types.TextEdit]]]()
+      var queue = newSeq[tuple[doc: Document, edits: seq[language_server.LspTextEdit]]]()
       for lspPath, editJson in changes.fields.pairs:
         if not documents.contains(lspPath):
           continue
 
         let doc = documents[lspPath]
         try:
-          let edits = editJson.jsonTo(seq[lsp_types.TextEdit])
+          let edits = editJson.jsonTo(seq[language_server.LspTextEdit])
           queue.add (doc, edits)
         except:
           log lvlError, "Failed to parse text edit: " & $editJson
