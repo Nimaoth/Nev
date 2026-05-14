@@ -1,7 +1,7 @@
 #use theme
-import platform/platform
+import platform
 import misc/[custom_async, custom_logger, util, timer]
-import service, platform_service, config_provider
+import service, config_provider
 
 const currentSourcePath2 = currentSourcePath()
 include module_base

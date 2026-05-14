@@ -97,7 +97,7 @@ when implModule:
   import std/[sequtils, deques]
   import misc/[util, custom_logger, rope_utils]
   import document_editor, text_component
-  import service, platform_service
+  import service, platform
 
   logCategory "text-editor-component"
 

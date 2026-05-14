@@ -1,8 +1,7 @@
 import command_service
 import std/[os, typedthreads, tables, hashes, macros, deques, genasts]
-import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command]
+import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, tui]
 import ui/node
-import platform/[tui]
 import nimsumtree/[rope, arc]
 import dynamic_view, input_handler/input_handler, config_provider, layout/layout, theme, vterm, input_api, channel, register
 from scripting_api import SshOptions, RunInTerminalOptions, CreateTerminalOptions

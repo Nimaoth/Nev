@@ -63,7 +63,7 @@ when implModule:
   import view, dynamic_view, layout/layout, service, input_handler/input_handler, command_service
   import theme
   import vcs/vcs
-  import platform_service, stats
+  import platform, stats
   import session
   import config_provider
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor

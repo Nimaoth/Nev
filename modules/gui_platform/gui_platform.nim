@@ -1,5 +1,5 @@
 #use theme
-import platform/platform
+import platform
 import compilation_config
 
 const currentSourcePath2 = currentSourcePath()

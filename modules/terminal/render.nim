@@ -1,8 +1,7 @@
 import std/[options, tables, strutils]
 import vmath, bumpy, chroma
 import pixie
-import misc/[util, custom_logger, custom_unicode]
-import platform/[tui]
+import misc/[util, custom_logger, custom_unicode, tui]
 import theme, view, dynamic_view, config_provider
 import types_impl
 

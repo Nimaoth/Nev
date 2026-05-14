@@ -68,7 +68,7 @@ when implModule:
   import std/[strformat]
   import misc/[util, custom_logger, rope_utils]
   import document_editor, text_component, language_server_component, command_component, text_editor_component
-  import command_service, service, platform_service, platform/platform
+  import command_service, service, platform
 
   logCategory "hover-component"
 

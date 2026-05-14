@@ -6,11 +6,11 @@ from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, generational_seq, render_command]
 import misc/[custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex, case_swap]
 import scripting/[expose]
-import platform/[platform]
+import platform
 import text/language/language_server_base
 import document, document_editor, input_handler/input_handler, vmath, bumpy, text_document
 import selector_popup/builder, dispatch_tables, register
-import config_provider, service, layout/layout, platform_service, vfs, vfs_service, command_service, toast
+import config_provider, service, layout/layout, vfs, vfs_service, command_service, toast
 import move_database, event_service
 import workspace
 import finder/[previewer, finder]

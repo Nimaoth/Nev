@@ -4,7 +4,7 @@ import misc/[id, util, timer, event, myjsonutils, rect_utils, custom_logger, cus
   rope_utils]
 import ui/node
 import scripting/[expose]
-import platform/[platform]
+import platform
 import workspace
 import config_provider
 import input_handler/input_handler, document, document_editor, popup, dispatch_tables, theme, app_options, view, register

@@ -10,7 +10,7 @@ import std/[unittest, options, json, sequtils]
 import misc/[util, custom_logger]
 import text/text_document
 import config_provider, scripting_api, service
-import platform/platform, platform_service, event_service, move_database, vfs_service, workspace
+import platform, event_service, move_database, vfs_service, workspace
 
 defineSetAllDefaultSettings()
 

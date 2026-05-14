@@ -75,7 +75,7 @@ when implModule:
   import scripting/[expose]
   import misc/[custom_logger, util, rope_utils, array_set]
   import dispatch_tables
-  import platform_service
+  import platform
 
   logCategory "register"
 

@@ -3,7 +3,7 @@ import vmath, chroma
 import ui/node
 import misc/[event, timer, custom_async]
 import nimsumtree/[arc]
-import vfs, app_options, scripting_api, pixie, input_api
+import vfs, app_options, scripting_api, pixie, input_api, service
 
 export input_api, event
 
@@ -90,6 +90,27 @@ type
     focusWindowImpl*: FocusWindowImpl
     setClipboardTextImpl*: SetClipboardTextImpl
     getClipboardTextImpl*: GetClipboardTextImpl
+
+  PlatformService* = ref object of Service
+    platform*: Platform
+    platformSetFuture: Future[void]
+
+func serviceName*(_: typedesc[PlatformService]): string = "PlatformService"
+
+addBuiltinService(PlatformService)
+
+method init*(self: PlatformService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  self.platformSetFuture = newFuture[void]()
+  try:
+    await self.platformSetFuture
+  except CatchableError as e:
+    result.err(e)
+  return ok()
+
+proc setPlatform*(self: PlatformService, platform: Platform) =
+  assert self.platform.isNil
+  self.platform = platform
+  self.platformSetFuture.complete()
 
 proc requestRender*(self: Platform, redrawEverything = false) =
   if self.requestRenderImpl != nil:

@@ -4,8 +4,8 @@ import misc/[custom_async, custom_logger, util, myjsonutils, disposable_ref, jso
 import scripting/expose
 import workspace
 import finder/[finder, previewer, file_previewer]
-import platform/[platform]
-import service, dispatch_tables, platform_service
+import platform
+import service, dispatch_tables
 import selector_popup/builder, vcs, layout/layout, vfs, config_provider
 from scripting_api import SelectionCursor, ScrollSnapBehaviour, toSelection
 import document_editor, text_editor_component, move_component, command_component

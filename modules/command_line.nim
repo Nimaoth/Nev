@@ -39,7 +39,7 @@ when implModule:
   import misc/[util, custom_async, custom_unicode, myjsonutils, parsejsonex, timer, rope_utils, async_process, delayed_task, jsonex]
   import nimsumtree/[rope, sumtree]
   import scripting/[expose]
-  import platform/[platform], platform_service
+  import platform
   import layout/layout
   import text/language/[language_server_base]
   import text/[display_map, overlay_map]

@@ -1,7 +1,7 @@
 import std/[os]
 import vmath, bumpy, chroma
 import ui/[node, widget_library]
-import service, platform_service
+import service, platform
 import theme
 
 proc renderHorizontalLayout(self: View, builder: UINodeBuilder): seq[OverlayFunction] =

@@ -2,7 +2,7 @@ import std/[options, tables, sets]
 import vmath, bumpy
 import misc/[id, custom_logger, util, event, response]
 import dap_client, config_provider, command_service, input_handler/input_handler, dynamic_view, document, document_editor, layout/layout
-import platform/platform
+import platform
 import finder/[previewer]
 import workspace, vfs, vfs_service
 import text/language/[lsp_types, language_server_base]

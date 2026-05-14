@@ -164,11 +164,11 @@ proc getViews*(self: LayoutService, T: typedesc): seq[T] =
 when implModule:
   import std/[tables, sugar, deques, sets, os]
   import results
-  import platform/platform
+  import platform
   import misc/[custom_logger, rect_utils, myjsonutils, util, jsonex]
   import workspace
   import finder/[finder, previewer]
-  import platform_service, input_handler/input_handler, config_provider, vfs, vfs_service, session, layouts, command_service, status_line, theme
+  import input_handler/input_handler, config_provider, vfs, vfs_service, session, layouts, command_service, status_line, theme
   import nimsumtree/arc
 
   export layouts

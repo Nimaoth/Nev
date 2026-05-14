@@ -15,7 +15,7 @@ when implModule:
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import service, event_service, document_editor, document, decoration_component, treesitter_component
   import text_component, language_component, text_editor_component, command_component, move_component
-  import snippet_component, config_component, platform_service, component, config_provider
+  import snippet_component, config_component, platform, component, config_provider
 
   {.push warning[Deprecated]:off.}
   import std/[threadpool]

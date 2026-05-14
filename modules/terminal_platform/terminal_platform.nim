@@ -1,5 +1,5 @@
 #use input_handler theme
-import platform/platform
+import platform
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -11,8 +11,8 @@ when implModule:
   import std/colors as stdcolors
   import vmath
   import chroma as chroma
-  import misc/[custom_logger, rect_utils, event, timer, custom_unicode, custom_async]
-  import platform/tui, ui/node
+  import misc/[custom_logger, rect_utils, event, timer, custom_unicode, custom_async, tui]
+  import ui/node
   import app_options, terminal_input, input_api, input_handler/input_handler
   import terminal/vterm
 

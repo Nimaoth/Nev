@@ -9,7 +9,7 @@ export component
 
 include dynlib_export
 
-import platform/[platform]
+import platform
 import document, service, config_provider
 
 from scripting_api import EditorId
@@ -206,7 +206,7 @@ when implModule:
   import std/[json, algorithm]
   import misc/[array_set]
   import vmath
-  import platform_service, dispatch_tables
+  import dispatch_tables
 
   addBuiltinService(DocumentEditorService)
 

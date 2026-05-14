@@ -2,7 +2,7 @@ import std/[strformat, options, tables, sets, strutils, algorithm]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger, array_set]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import platform/platform
+import platform
 import ui/[widget_library]
 import theme, view, document_editor, layout/layout, service
 import types_impl, debugger, dap_client

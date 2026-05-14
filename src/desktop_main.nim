@@ -220,15 +220,15 @@ if not disableLogging: ## Enable loggers
       logger().enableConsoleLogger()
 
 import misc/[custom_async]
-import platform/[platform]
+import platform
 import ui/widget_builders
-import app, platform_service
+import app
 
 when enableTerminal:
   import "../modules/terminal_platform"/terminal_platform
 
 when enableGui:
-  import platform/[tui]
+  import misc/[tui]
   import "../modules/gui_platform"/gui_platform
 
   if backend.get == Gui:

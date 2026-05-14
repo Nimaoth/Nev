@@ -41,7 +41,7 @@ logger.setConsoleLogger(externLogger)
 import std/[strformat]
 import vmath
 import misc/[util, timer, custom_async]
-import platform/platform
+import platform
 import ui/widget_builders
 import app
 

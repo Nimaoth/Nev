@@ -27,12 +27,11 @@ when implModule:
     echo "DO Build terminal implementation"
 
   import std/[streams, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm, sets, macros, deques, genasts]
-  import platform/[tui]
   import chroma, pixie, pixie/fileformats/png
   import nimsumtree/[rope]
-  import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, async_process, wrap, case_swap, jsonex, array_set]
+  import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, async_process, wrap, case_swap, jsonex, array_set, tui]
   import ui/node
-  import platform/platform
+  import platform
   import finder/[finder, previewer]
   import dynamic_view, input_handler/input_handler, config_provider, layout/layout, theme, vterm, input_api, selector_popup/builder, vfs, vfs_service
   import text_editor_component, config_component, register, service, command_service

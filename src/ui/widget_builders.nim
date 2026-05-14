@@ -2,7 +2,7 @@ import std/[sugar, os, strutils, sets]
 import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils, jsonex]
 import ui/node
-import platform/platform, platform_service
+import platform
 import ui/[widget_library]
 import document_editor, theme, view, layout/layout, config_provider, command_line, toast
 import popup

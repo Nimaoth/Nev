@@ -2,7 +2,7 @@ import std/[strutils, sugar, sequtils]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger, disposable_ref]
 import ui/node
-import platform/platform
+import platform
 import ui/[widget_library]
 import selector_popup, theme, document_editor
 import finder/[finder, previewer, file_previewer, open_editor_previewer, data_previewer]

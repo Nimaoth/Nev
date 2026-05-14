@@ -1,5 +1,4 @@
 #use hover_component layout text_editor_component treesitter_component command_service decoration_component event_service session language_server_component selector_popup input_handler move_component
-import platform/[tui]
 import nimsumtree/[arc]
 import service, command_service, channel, view
 import types
@@ -14,11 +13,11 @@ func serviceName*(_: typedesc[DebuggerService]): string = "Debugger"
 when implModule:
   import std/[options, json, tables, sugar, strtabs, streams, sets, sequtils, enumerate, osproc, macros, genasts]
   import vmath, bumpy, chroma
-  import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap, arena, array_view, rope_utils, array_set]
-  import dap_client, config_provider, selector_popup/builder, input_handler/input_handler, dynamic_view, document, document_editor, layout/layout, platform_service, session
+  import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap, arena, array_view, rope_utils, array_set, tui]
+  import dap_client, config_provider, selector_popup/builder, input_handler/input_handler, dynamic_view, document, document_editor, layout/layout, session
   import text/language/[language_server_base]
   import treesitter/[treesitter_type_conv]
-  import platform/platform
+  import platform
   import finder/[previewer, finder]
   import workspace, vfs, vfs_service
   import ui/node

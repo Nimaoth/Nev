@@ -6,7 +6,7 @@ import layout/layout
 import text/[overlay_map]
 import view
 import render_view as rv
-import platform/platform, platform_service
+import platform
 import config_provider, command_service, command_line, compilation_config
 import plugin_service, document_editor, vfs, vfs_service, channel, register, move_database, popup, event_service, session
 import terminal/terminal
