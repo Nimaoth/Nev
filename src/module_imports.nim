@@ -3,6 +3,7 @@ when not defined(useDynlib):
   import "../modules/input_handler/input_handler.nim"
   import "../modules/terminal_platform/terminal_platform.nim"
   import "../modules/vfs_config.nim"
+  import "../modules/vfs_local.nim"
   import "../modules/vfs_service.nim"
   import "../modules/event_service.nim"
   import "../modules/session.nim"
@@ -64,6 +65,7 @@ proc initModules*() =
   when declared(init_module_input_handler): init_module_input_handler()
   when declared(init_module_terminal_platform): init_module_terminal_platform()
   when declared(init_module_vfs_config): init_module_vfs_config()
+  when declared(init_module_vfs_local): init_module_vfs_local()
   when declared(init_module_vfs_service): init_module_vfs_service()
   when declared(init_module_event_service): init_module_event_service()
   when declared(init_module_session): init_module_session()
@@ -176,6 +178,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_session): shutdown_module_session()
   when declared(shutdown_module_event_service): shutdown_module_event_service()
   when declared(shutdown_module_vfs_service): shutdown_module_vfs_service()
+  when declared(shutdown_module_vfs_local): shutdown_module_vfs_local()
   when declared(shutdown_module_vfs_config): shutdown_module_vfs_config()
   when declared(shutdown_module_terminal_platform): shutdown_module_terminal_platform()
   when declared(shutdown_module_input_handler): shutdown_module_input_handler()
@@ -186,6 +189,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("input_handler")
   loadModule("terminal_platform")
   loadModule("vfs_config")
+  loadModule("vfs_local")
   loadModule("vfs_service")
   loadModule("event_service")
   loadModule("session")

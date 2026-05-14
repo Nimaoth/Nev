@@ -1041,9 +1041,6 @@ proc saveAppState*(self: App) {.expose("editor").} =
 proc requestRender*(self: App, redrawEverything: bool = false) {.expose("editor").} =
   self.platform.requestRender(redrawEverything)
 
-proc clearWorkspaceCaches*(self: App) {.expose("editor").} =
-  self.workspace.clearDirectoryCache()
-
 proc prompt(self: App, choices: seq[string], title: string = ""): Future[Option[string]] =
   defer:
     self.platform.requestRender()
@@ -1984,9 +1981,9 @@ proc chooseLocation*(self: App) {.expose("editor").} =
 
 proc searchWorkspaceItemList(workspace: Workspace, query: string, paths: seq[string], maxResults: int, maxLen: int): Future[ItemList] {.async: (raises: []).} =
   let searchResults = if paths.len > 0:
-    workspace.searchWorkspace(paths, query, maxResults).await
+    workspace.search(paths, query, maxResults).await
   else:
-    workspace.searchWorkspace(query, maxResults).await
+    workspace.search(query, maxResults).await
   log lvlInfo, fmt"Found {searchResults.len} results"
 
   var list = newItemList(searchResults.len)
@@ -2023,7 +2020,6 @@ proc getWorkspaceSearchResults(self: WorkspaceSearchDataSource): Future[void] {.
 
   let t = startTimer()
   let list = self.workspace.searchWorkspaceItemList(self.query, self.paths, self.maxResults, self.maxLen).await
-  debugf"[searchWorkspace] {t.elapsed.ms}ms"
   self.onItemsChanged.invoke list
 
 proc workspaceSearchDataSourceClose(self: DataSource) =

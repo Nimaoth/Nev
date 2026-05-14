@@ -44,25 +44,33 @@ func serviceName*(_: typedesc[Workspace]): string = "Workspace"
 
 # DLL API
 {.push modrtl, gcsafe, raises: [].}
-proc workspaceSearchPaths*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]]
-proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]]
+proc workspaceSearchPaths*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).}
+proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).}
 proc workspaceSetWorkspaceFolder*(self: Workspace, path: string)
 proc workspaceAddWorkspaceFolder(self: Workspace, path: string, recomputeFileCache: bool = true)
+proc workspaceRemoveWorkspaceFolder(self: Workspace, path: string, recomputeFileCache: bool = true)
 proc workspaceGetAbsolutePath(self: Workspace, path: string): string
 proc getRelativePathAndWorkspaceSync*(self: Workspace, absolutePath: string): Option[tuple[root, path: string]]
 proc workspaceGetRelativePathSync(self: Workspace, absolutePath: string): Option[string]
 proc workspaceRestore(self: Workspace, settings: JsonNode)
+proc workspaceSettings(self: Workspace): JsonNode
+proc workspaceRecomputeFileCache(self: Workspace)
+proc workspaceLoadDefaultIgnoreFile*(self: Workspace)
 {.pop.}
 
 # Nice wrappers
 
-proc search*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.inline.} = workspaceSearchPaths(self, paths, query, maxResults, customArgs)
-proc search*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.inline.} = workspaceSearch(self, query, maxResults, customArgs, additionalPaths)
+proc search*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} = await workspaceSearchPaths(self, paths, query, maxResults, customArgs)
+proc search*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} = await workspaceSearch(self, query, maxResults, customArgs, additionalPaths)
 proc setWorkspaceFolder*(self: Workspace, path: string) {.inline.} = workspaceSetWorkspaceFolder(self, path)
 proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) = workspaceAddWorkspaceFolder(self, path, recomputeFileCache)
+proc removeWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) = workspaceRemoveWorkspaceFolder(self, path, recomputeFileCache)
 proc getAbsolutePath*(self: Workspace, path: string): string = workspaceGetAbsolutePath(self, path)
 proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string] = workspaceGetRelativePathSync(self, absolutePath)
 proc restore*(self: Workspace, settings: JsonNode) = workspaceRestore(self, settings)
+proc settings*(self: Workspace): JsonNode = workspaceSettings(self)
+proc recomputeFileCache*(self: Workspace) = workspaceRecomputeFileCache(self)
+proc loadDefaultIgnoreFile*(self: Workspace) = workspaceLoadDefaultIgnoreFile(self)
 
 proc info*(self: Workspace): WorkspaceInfo =
   try:
@@ -141,15 +149,13 @@ when implModule:
       return true
     return false
 
-  proc settings*(self: Workspace): JsonNode =
+  proc workspaceSettings(self: Workspace): JsonNode =
     try:
       result = newJObject()
       result["path"] = newJString(self.path.absolutePath)
       result["additionalPaths"] = %self.additionalPaths
     except ValueError, OSError:
       discard
-
-  proc clearDirectoryCache*(self: Workspace) = discard
 
   iterator walkDirCustom(dir: string, relative = false, checkDir = false, skipSpecial = false): tuple[kind: PathComponent, path: string] {.tags: [ReadDirEffect], raises: [OSError].} =
     when defined(windows):
@@ -311,10 +317,9 @@ when implModule:
     except CancelledError:
       discard
 
-  proc recomputeFileCache*(self: Workspace) =
+  proc workspaceRecomputeFileCache(self: Workspace) =
     logScope lvlInfo, &"recomputeFileCache"
     asyncSpawn self.recomputeFileCacheAsync()
-
 
   proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResults: int, customArgs: seq[string]):
       Future[seq[SearchResult]] {.async: (raises: []).} =
@@ -359,7 +364,7 @@ when implModule:
     except CatchableError:
       return @[]
 
-  proc searchWorkspace*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
+  proc searchWorkspace(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
     var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
     for path in paths:
       futs.add self.searchWorkspaceFolder(query, path, maxResults, customArgs)
@@ -373,7 +378,7 @@ when implModule:
 
     return res
 
-  proc searchWorkspace*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
+  proc searchWorkspace(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
     var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
     futs.add self.searchWorkspaceFolder(query, self.path, maxResults, customArgs)
     for path in self.additionalPaths:
@@ -390,11 +395,11 @@ when implModule:
 
     return res
 
-  proc workspaceSearchPaths*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.gcsafe, raises: [].} =
-    searchWorkspace(self, paths, query, maxResults, customArgs)
+  proc workspaceSearchPaths*(self: Workspace, paths: seq[string], query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.gcsafe, async: (raises: []).} =
+    await searchWorkspace(self, paths, query, maxResults, customArgs)
 
-  proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.gcsafe, raises: [].} =
-    searchWorkspace(self, query, maxResults, customArgs, additionalPaths)
+  proc workspaceSearch*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[], additionalPaths: seq[string] = @[]): Future[seq[SearchResult]] {.gcsafe, async: (raises: []).} =
+    await searchWorkspace(self, query, maxResults, customArgs, additionalPaths)
 
   proc workspaceGetAbsolutePath(self: Workspace, path: string): string =
     if path.isAbsolute:
@@ -442,7 +447,7 @@ when implModule:
     except:
       return Globs.none
 
-  proc loadDefaultIgnoreFile*(self: Workspace) =
+  proc workspaceLoadDefaultIgnoreFile(self: Workspace) =
     if self.loadIgnoreFile(&".{appName}-ignore").getSome(ignore):
       self.ignore = ignore
       log lvlInfo, &"Using ignore file '.{appName}-ignore' for workspace {self.name}"
@@ -455,7 +460,7 @@ when implModule:
     # todo: make this configurable
     self.ignore.original.add ".git"
 
-  proc removeWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) =
+  proc workspaceRemoveWorkspaceFolder(self: Workspace, path: string, recomputeFileCache: bool = true) =
     let idx = if path == self.path:
       -1
     else:
@@ -535,7 +540,7 @@ when implModule:
     except CatchableError as e:
       log lvlError, &"Failed to restore workspace from settings: {e.msg}\n{settings.pretty}"
 
-  proc init_module_angelscript_formatter*() {.cdecl, exportc, dynlib.} =
+  proc init_module_workspace*() {.cdecl, exportc, dynlib.} =
     getServices().addService(Workspace(
       vfs: getServiceChecked(VFSService).vfs,
     ))

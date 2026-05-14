@@ -1,4 +1,4 @@
-#use vfs_service
+#use vfs_service workspace
 import std/[strutils, strformat, options]
 import misc/[async_process, custom_async, util, custom_logger]
 import vfs
