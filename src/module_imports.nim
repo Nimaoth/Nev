@@ -1,6 +1,13 @@
 when not defined(useDynlib):
   import "../modules/theme.nim"
+  import "../modules/wasm_engine.nim"
   import "../modules/lisp.nim"
+  import "../modules/treesitter/treesitter.nim"
+  import "../modules/move_database.nim"
+  import "../modules/move_component.nim"
+  import "../modules/completion.nim"
+  import "../modules/text_component.nim"
+  import "../modules/completion_provider_snippet.nim"
   import "../modules/input_handler/input_handler.nim"
   import "../modules/terminal_platform/terminal_platform.nim"
   import "../modules/vfs_config.nim"
@@ -11,13 +18,8 @@ when not defined(useDynlib):
   import "../modules/status_line.nim"
   import "../modules/workspace.nim"
   import "../modules/log.nim"
-  import "../modules/wasm_engine.nim"
-  import "../modules/treesitter/treesitter.nim"
   import "../modules/register.nim"
   import "../modules/command_service.nim"
-  import "../modules/move_database.nim"
-  import "../modules/move_component.nim"
-  import "../modules/text_component.nim"
   import "../modules/text_editor_component.nim"
   import "../modules/layout/layout.nim"
   import "../modules/command_server.nim"
@@ -49,10 +51,12 @@ when not defined(useDynlib):
   import "../modules/undo_tree.nim"
   import "../modules/language_server_paths.nim"
   import "../modules/angelscript_formatter.nim"
+  import "../modules/completion_provider_document.nim"
   import "../modules/debugger/debugger.nim"
   import "../modules/dashboard.nim"
   import "../modules/vcs_git.nim"
   import "../modules/vcs_perforce.nim"
+  import "../modules/completion_provider_lsp.nim"
   import "../modules/vim.nim"
   import "../modules/language_server_ctags.nim"
   import "../modules/language_server_regex.nim"
@@ -68,7 +72,14 @@ when not defined(useDynlib):
 
 proc initModules*() =
   when declared(init_module_theme): init_module_theme()
+  when declared(init_module_wasm_engine): init_module_wasm_engine()
   when declared(init_module_lisp): init_module_lisp()
+  when declared(init_module_treesitter): init_module_treesitter()
+  when declared(init_module_move_database): init_module_move_database()
+  when declared(init_module_move_component): init_module_move_component()
+  when declared(init_module_completion): init_module_completion()
+  when declared(init_module_text_component): init_module_text_component()
+  when declared(init_module_completion_provider_snippet): init_module_completion_provider_snippet()
   when declared(init_module_input_handler): init_module_input_handler()
   when declared(init_module_terminal_platform): init_module_terminal_platform()
   when declared(init_module_vfs_config): init_module_vfs_config()
@@ -79,13 +90,8 @@ proc initModules*() =
   when declared(init_module_status_line): init_module_status_line()
   when declared(init_module_workspace): init_module_workspace()
   when declared(init_module_log): init_module_log()
-  when declared(init_module_wasm_engine): init_module_wasm_engine()
-  when declared(init_module_treesitter): init_module_treesitter()
   when declared(init_module_register): init_module_register()
   when declared(init_module_command_service): init_module_command_service()
-  when declared(init_module_move_database): init_module_move_database()
-  when declared(init_module_move_component): init_module_move_component()
-  when declared(init_module_text_component): init_module_text_component()
   when declared(init_module_text_editor_component): init_module_text_editor_component()
   when declared(init_module_layout): init_module_layout()
   when declared(init_module_command_server): init_module_command_server()
@@ -117,10 +123,12 @@ proc initModules*() =
   when declared(init_module_undo_tree): init_module_undo_tree()
   when declared(init_module_language_server_paths): init_module_language_server_paths()
   when declared(init_module_angelscript_formatter): init_module_angelscript_formatter()
+  when declared(init_module_completion_provider_document): init_module_completion_provider_document()
   when declared(init_module_debugger): init_module_debugger()
   when declared(init_module_dashboard): init_module_dashboard()
   when declared(init_module_vcs_git): init_module_vcs_git()
   when declared(init_module_vcs_perforce): init_module_vcs_perforce()
+  when declared(init_module_completion_provider_lsp): init_module_completion_provider_lsp()
   when declared(init_module_vim): init_module_vim()
   when declared(init_module_language_server_ctags): init_module_language_server_ctags()
   when declared(init_module_language_server_regex): init_module_language_server_regex()
@@ -147,10 +155,12 @@ proc shutdownModules*() =
   when declared(shutdown_module_language_server_regex): shutdown_module_language_server_regex()
   when declared(shutdown_module_language_server_ctags): shutdown_module_language_server_ctags()
   when declared(shutdown_module_vim): shutdown_module_vim()
+  when declared(shutdown_module_completion_provider_lsp): shutdown_module_completion_provider_lsp()
   when declared(shutdown_module_vcs_perforce): shutdown_module_vcs_perforce()
   when declared(shutdown_module_vcs_git): shutdown_module_vcs_git()
   when declared(shutdown_module_dashboard): shutdown_module_dashboard()
   when declared(shutdown_module_debugger): shutdown_module_debugger()
+  when declared(shutdown_module_completion_provider_document): shutdown_module_completion_provider_document()
   when declared(shutdown_module_angelscript_formatter): shutdown_module_angelscript_formatter()
   when declared(shutdown_module_language_server_paths): shutdown_module_language_server_paths()
   when declared(shutdown_module_undo_tree): shutdown_module_undo_tree()
@@ -182,13 +192,8 @@ proc shutdownModules*() =
   when declared(shutdown_module_command_server): shutdown_module_command_server()
   when declared(shutdown_module_layout): shutdown_module_layout()
   when declared(shutdown_module_text_editor_component): shutdown_module_text_editor_component()
-  when declared(shutdown_module_text_component): shutdown_module_text_component()
-  when declared(shutdown_module_move_component): shutdown_module_move_component()
-  when declared(shutdown_module_move_database): shutdown_module_move_database()
   when declared(shutdown_module_command_service): shutdown_module_command_service()
   when declared(shutdown_module_register): shutdown_module_register()
-  when declared(shutdown_module_treesitter): shutdown_module_treesitter()
-  when declared(shutdown_module_wasm_engine): shutdown_module_wasm_engine()
   when declared(shutdown_module_log): shutdown_module_log()
   when declared(shutdown_module_workspace): shutdown_module_workspace()
   when declared(shutdown_module_status_line): shutdown_module_status_line()
@@ -199,12 +204,26 @@ proc shutdownModules*() =
   when declared(shutdown_module_vfs_config): shutdown_module_vfs_config()
   when declared(shutdown_module_terminal_platform): shutdown_module_terminal_platform()
   when declared(shutdown_module_input_handler): shutdown_module_input_handler()
+  when declared(shutdown_module_completion_provider_snippet): shutdown_module_completion_provider_snippet()
+  when declared(shutdown_module_text_component): shutdown_module_text_component()
+  when declared(shutdown_module_completion): shutdown_module_completion()
+  when declared(shutdown_module_move_component): shutdown_module_move_component()
+  when declared(shutdown_module_move_database): shutdown_module_move_database()
+  when declared(shutdown_module_treesitter): shutdown_module_treesitter()
   when declared(shutdown_module_lisp): shutdown_module_lisp()
+  when declared(shutdown_module_wasm_engine): shutdown_module_wasm_engine()
   when declared(shutdown_module_theme): shutdown_module_theme()
 
 proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("theme")
+  loadModule("wasm_engine")
   loadModule("lisp")
+  loadModule("treesitter")
+  loadModule("move_database")
+  loadModule("move_component")
+  loadModule("completion")
+  loadModule("text_component")
+  loadModule("completion_provider_snippet")
   loadModule("input_handler")
   loadModule("terminal_platform")
   loadModule("vfs_config")
@@ -215,13 +234,8 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("status_line")
   loadModule("workspace")
   loadModule("log")
-  loadModule("wasm_engine")
-  loadModule("treesitter")
   loadModule("register")
   loadModule("command_service")
-  loadModule("move_database")
-  loadModule("move_component")
-  loadModule("text_component")
   loadModule("text_editor_component")
   loadModule("layout")
   loadModule("command_server")
@@ -253,10 +267,12 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("undo_tree")
   loadModule("language_server_paths")
   loadModule("angelscript_formatter")
+  loadModule("completion_provider_document")
   loadModule("debugger")
   loadModule("dashboard")
   loadModule("vcs_git")
   loadModule("vcs_perforce")
+  loadModule("completion_provider_lsp")
   loadModule("vim")
   loadModule("language_server_ctags")
   loadModule("language_server_regex")

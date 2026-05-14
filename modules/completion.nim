@@ -1,9 +1,10 @@
 import std/[sugar, algorithm, sequtils]
-import misc/[custom_unicode, util, id, event, custom_logger]
-import language/[lsp_types]
+import misc/[custom_unicode, util, id, event]
+import text/language/[lsp_types]
 import scripting_api
 
-include misc/dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -36,7 +37,7 @@ type
     currentFilterText*: string
     priority*: Option[int]
     mergeStrategy*: MergeStrategy = MergeStrategy(kind: TakeAll)
-    forceUpdateCompletionsImpl*: proc(self: CompletionProvider)
+    forceUpdateCompletionsImpl*: proc(self: CompletionProvider) {.gcsafe, raises: [].}
 
   CompletionEngine* = ref object
     providers: seq[tuple[provider: CompletionProvider, onCompletionsUpdatedHandle: Id]]
@@ -46,7 +47,7 @@ type
     combinedDirty: bool
     revision*: int
 
-{.push apprtl.}
+{.push modrtl.}
 proc completionGetCompletions(self: CompletionEngine): lent seq[Completion]
 proc completionSetCurrentLocations(self: CompletionEngine, locations: openArray[Selection])
 proc completionUpdateCompletions(self: CompletionEngine)
@@ -69,6 +70,7 @@ proc withPriority*(provider: CompletionProvider, priority: int): CompletionProvi
   provider
 
 when implModule:
+  import misc/[custom_logger]
 
   logCategory "completion"
 

@@ -1,15 +1,17 @@
 import completion, document
-import language/[language_server_base]
+import misc/[custom_unicode]
+import text/language/[language_server_base]
 
-include misc/dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newCompletionProviderLsp*(document: Document, languageServer: LanguageServer): CompletionProvider
 {.pop.}
 
 when implModule:
-  import misc/[custom_unicode, util, custom_async, event, timer, custom_logger, fuzzy_matching, response, rope_utils]
-  import language/[lsp_types, language_server_base]
+  import misc/[util, custom_async, event, timer, custom_logger, fuzzy_matching, response, rope_utils]
+  import text/language/[lsp_types]
   import nimsumtree/rope
   import completion, document, text_component, move_component
   import scripting_api

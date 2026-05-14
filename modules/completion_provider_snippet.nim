@@ -1,9 +1,10 @@
 import completion, document
 import config_provider
 
-include misc/dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newCompletionProviderSnippet*(configStore: ConfigStore, document: Document): CompletionProvider
 {.pop.}
 
@@ -11,7 +12,7 @@ when implModule:
   import std/[json, tables]
   import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching, jsonex, rope_utils]
   import nimsumtree/rope
-  import language/[lsp_types]
+  import text/language/[lsp_types]
   import completion, document, text_component, move_component, language_component
 
   logCategory "Comp-Snip"

@@ -1,8 +1,9 @@
 import completion, document
 
-include misc/dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newCompletionProviderDocument*(document: Document): CompletionProvider
 {.pop.}
 
@@ -10,7 +11,7 @@ when implModule:
   import std/[strutils, sets, algorithm]
   import misc/[custom_unicode, util, event, timer, custom_logger, fuzzy_matching, delayed_task, custom_async, rope_utils]
   import nimsumtree/rope
-  import language/[lsp_types]
+  import text/language/[lsp_types]
   import text_component, move_component, language_component
   import scripting_api
 
