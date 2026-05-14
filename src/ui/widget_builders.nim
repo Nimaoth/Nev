@@ -6,7 +6,7 @@ import platform
 import ui/[widget_library]
 import document_editor, theme, view, layout/layout, config_provider, command_line, toast
 import popup
-import render_view, dynamic_view, status_line
+import dynamic_view, status_line
 from scripting_api import nil
 import vcs/vcs, service
 
@@ -39,19 +39,6 @@ method createUI*(self: DynamicView, builder: UINodeBuilder): seq[OverlayFunction
 method createUI*(self: EditorView, builder: UINodeBuilder): seq[OverlayFunction] =
   assert self.editor.renderImpl != nil
   return self.editor.renderImpl(self.editor, builder)
-
-method createUI*(self: RenderView, builder: UINodeBuilder): seq[OverlayFunction] =
-  builder.panel(&{FillX, FillY, FillBackground, MaskContent}, backgroundColor = color(0, 0, 0)):
-    onClickAny btn:
-      self.layout.tryActivateView(self)
-      self.mouseStates.incl(btn.int64)
-
-    self.bounds = currentNode.boundsAbsolute
-    self.render()
-    currentNode.renderCommands = self.commands
-    currentNode.markDirty(builder)
-
-  self.resetDirty()
 
 proc flushOverlays(builder: UINodeBuilder, overlays: var seq[OverlayFunction]) =
   for overlay in overlays:

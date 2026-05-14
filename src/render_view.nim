@@ -1,176 +1,212 @@
 import std/[strformat, tables, sets]
 import misc/[custom_logger, util, delayed_task, timer, render_command]
 import view, service
-import platform
-import layout/layout, input_handler/input_handler, command_service
+import dynamic_view
 
-{.push gcsafe, raises: [].}
+include misc/dynlib_export
 
-logCategory "custom-view"
+{.push apprtl, gcsafe, raises: [].}
+proc newRenderView*(services: Services): DynamicView
+proc rvSetRenderWhenInactive(self: DynamicView, enabled: bool)
+proc rvSetRenderInterval(self: DynamicView, ms: int)
+{.pop.}
 
-type
-  RenderView* = ref object of View
-    services: Services
-    commandService: CommandService
-    events: EventHandlerService
-    layout*: LayoutService
-    platform: Platform
+proc setRenderWhenInactive(self: DynamicView, enabled: bool) = rvSetRenderWhenInactive(self, enabled)
+proc setRenderInterval(self: DynamicView, ms: int) = rvSetRenderInterval(self, ms)
 
-    commands*: RenderCommands
-    userId*: string
+when implModule:
+  import platform
+  import layout/layout, input_handler/input_handler, command_service
+  import ui/node
 
-    bounds*: Rect
-    interval: int = -1
-    onRender*: proc(view: RenderView) {.gcsafe, raises: [].}
-    renderTask: DelayedTask
-    renderWhenInactive*: bool = false
-    preventThrottling*: bool = false
+  type
+    RenderView* = ref object of DynamicView
+      services: Services
+      commandService: CommandService
+      events: EventHandlerService
+      layout*: LayoutService
+      platform: Platform
 
-    eventHandlers: Table[string, EventHandler]
+      commands*: RenderCommands
+      userId*: string
 
-    modes*: seq[string]
+      bounds*: Rect
+      interval: int = -1
+      onRender*: proc(view: RenderView) {.gcsafe, raises: [].}
+      renderTask: DelayedTask
+      renderWhenInactive*: bool = false
+      preventThrottling*: bool = false
 
-    keyStates*: HashSet[int64]
-    mouseStates*: HashSet[int64]
-    mousePos*: Vec2
-    scrollDelta*: Vec2
+      eventHandlers: Table[string, EventHandler]
 
-proc handleAction(self: RenderView, action: string, arg: string): Option[string]
-proc handleInput(self: RenderView, text: string)
+      modes*: seq[string]
 
-proc handleKeyPress*(self: RenderView, input: int64, modifiers: Modifiers) =
-  self.keyStates.incl(input)
+      keyStates*: HashSet[int64]
+      mouseStates*: HashSet[int64]
+      mousePos*: Vec2
+      scrollDelta*: Vec2
 
-proc handleKeyRelease*(self: RenderView, input: int64, modifiers: Modifiers) =
-  self.keyStates.excl(input)
+  {.push gcsafe, raises: [].}
 
-proc handleRune*(self: RenderView, input: int64, modifiers: Modifiers) =
-  self.keyStates.incl(input)
+  logCategory "custom-view"
 
-proc handleMousePress(self: RenderView, button: MouseButton, modifiers: Modifiers, pos: Vec2) =
-  self.mouseStates.incl(button.int64)
+  proc handleAction(self: RenderView, action: string, arg: string): Option[string]
+  proc handleInput(self: RenderView, text: string)
 
-proc handleMouseRelease(self: RenderView, button: MouseButton, modifiers: Modifiers, pos: Vec2) =
-  self.mouseStates.excl(button.int64)
+  proc handleKeyPress*(self: RenderView, input: int64, modifiers: Modifiers) =
+    self.keyStates.incl(input)
 
-proc handleMouseMove(self: RenderView, pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
-  self.mousePos = pos - self.bounds.xy
+  proc handleKeyRelease*(self: RenderView, input: int64, modifiers: Modifiers) =
+    self.keyStates.excl(input)
 
-proc handleScroll(self: RenderView, pos: Vec2, scroll: Vec2, modifiers: Modifiers) =
-  self.scrollDelta = scroll
+  proc handleRune*(self: RenderView, input: int64, modifiers: Modifiers) =
+    self.keyStates.incl(input)
 
-proc bindPlatformEvents(self: RenderView) =
-  discard self.platform.onKeyPress.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyPress(event.input, event.modifiers)
-  discard self.platform.onKeyRelease.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyRelease(event.input, event.modifiers)
-  discard self.platform.onRune.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleRune(event.input, event.modifiers)
-  discard self.platform.onMousePress.subscribe proc(event: tuple[button: MouseButton, modifiers: Modifiers, pos: Vec2]): void {.gcsafe, raises: [].} = self.handleMousePress(event.button, event.modifiers, event.pos)
-  discard self.platform.onMouseRelease.subscribe proc(event: tuple[button: MouseButton, modifiers: Modifiers, pos: Vec2]): void {.gcsafe, raises: [].} = self.handleMouseRelease(event.button, event.modifiers, event.pos)
-  discard self.platform.onMouseMove.subscribe proc(event: tuple[pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]]): void {.gcsafe, raises: [].} = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
-  discard self.platform.onScroll.subscribe proc(event: tuple[pos: Vec2, scroll: Vec2, modifiers: Modifiers]): void {.gcsafe, raises: [].} = self.handleScroll(event.pos, event.scroll, event.modifiers)
+  proc handleMousePress(self: RenderView, button: MouseButton, modifiers: Modifiers, pos: Vec2) =
+    self.mouseStates.incl(button.int64)
 
-proc newRenderView*(services: Services): RenderView =
-  result = RenderView(services: services)
-  result.platform = services.getServiceChecked(PlatformService).platform
-  result.commandService = services.getServiceChecked(CommandService)
-  result.events = services.getServiceChecked(EventHandlerService)
-  result.layout = services.getServiceChecked(LayoutService)
-  result.bindPlatformEvents()
+  proc handleMouseRelease(self: RenderView, button: MouseButton, modifiers: Modifiers, pos: Vec2) =
+    self.mouseStates.excl(button.int64)
 
-proc setRenderInterval*(self: RenderView, ms: int)
+  proc handleMouseMove(self: RenderView, pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
+    self.mousePos = pos - self.bounds.xy
 
-method desc*(self: RenderView): string =
-  &"RenderView({self.id2}, interval = {self.interval}, renderWhenInactive = {self.renderWhenInactive}, preventThrottling = {self.preventThrottling})"
+  proc handleScroll(self: RenderView, pos: Vec2, scroll: Vec2, modifiers: Modifiers) =
+    self.scrollDelta = scroll
 
-method kind*(self: RenderView): string = "render"
+  proc bindPlatformEvents(self: RenderView) =
+    discard self.platform.onKeyPress.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyPress(event.input, event.modifiers)
+    discard self.platform.onKeyRelease.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyRelease(event.input, event.modifiers)
+    discard self.platform.onRune.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleRune(event.input, event.modifiers)
+    discard self.platform.onMousePress.subscribe proc(event: tuple[button: MouseButton, modifiers: Modifiers, pos: Vec2]): void {.gcsafe, raises: [].} = self.handleMousePress(event.button, event.modifiers, event.pos)
+    discard self.platform.onMouseRelease.subscribe proc(event: tuple[button: MouseButton, modifiers: Modifiers, pos: Vec2]): void {.gcsafe, raises: [].} = self.handleMouseRelease(event.button, event.modifiers, event.pos)
+    discard self.platform.onMouseMove.subscribe proc(event: tuple[pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]]): void {.gcsafe, raises: [].} = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
+    discard self.platform.onScroll.subscribe proc(event: tuple[pos: Vec2, scroll: Vec2, modifiers: Modifiers]): void {.gcsafe, raises: [].} = self.handleScroll(event.pos, event.scroll, event.modifiers)
 
-method display*(self: RenderView): string = self.desc()
+  proc desc*(self: RenderView): string =
+    &"RenderView({self.id2}, interval = {self.interval}, renderWhenInactive = {self.renderWhenInactive}, preventThrottling = {self.preventThrottling})"
 
-proc renderViewFromUserId*(layout: LayoutService, id: string): Option[RenderView] =
-  for v in layout.allViews:
-    if v of RenderView and v.RenderView.userId == id:
-      return v.RenderView.some
-  return RenderView.none
+  proc kind*(self: RenderView): string = "custom"
 
-proc render*(self: RenderView) =
-  if self.preventThrottling:
-    self.platform.lastEventTime = startTimer()
+  proc display*(self: RenderView): string = self.desc()
 
-  if self.dirty and self.onRender != nil:
-    try:
-      self.onRender(self)
-    except Exception:
-      discard
+  proc renderViewFromUserId*(layout: LayoutService, id: string): Option[RenderView] =
+    for v in layout.allViews:
+      if v of RenderView and v.RenderView.userId == id:
+        return v.RenderView.some
+    return RenderView.none
 
-  self.scrollDelta = vec2(0, 0)
-
-method activate*(self: RenderView) =
-  self.active = true
-  self.setRenderInterval(self.interval)
-
-method deactivate*(self: RenderView) =
-  self.active = false
-  if not self.renderWhenInactive and self.renderTask != nil:
-    self.renderTask.pause()
-
-proc setRenderCommands*(self: RenderView, commands: RenderCommands) =
-  self.commands = commands
-  self.markDirty()
-
-method checkDirty*(self: RenderView) =
-  ## checkDirty is called for every visible view every frame
-  if self.interval == 0 and (self.active or self.renderWhenInactive):
-    self.markDirty()
-
-proc setRenderWhenInactive*(self: RenderView, enabled: bool) =
-  self.renderWhenInactive = enabled
-  if not self.active and enabled:
+  proc activate(self: RenderView) =
+    self.active = true
     self.setRenderInterval(self.interval)
 
-proc setRenderInterval*(self: RenderView, ms: int) =
-  self.interval = ms
-  if ms <= 0:
-    if self.renderTask != nil:
+  proc deactivate(self: RenderView) =
+    self.active = false
+    if not self.renderWhenInactive and self.renderTask != nil:
       self.renderTask.pause()
-    return
 
-  if self.active or self.renderWhenInactive:
-    if self.renderTask == nil:
-      self.renderTask = startDelayed(ms, repeat = true):
-        if self.active or self.renderWhenInactive:
-          self.markDirty()
-        else:
-          self.renderTask.pause()
-    else:
-      self.renderTask.interval = ms
-      self.renderTask.reschedule()
+  proc setRenderCommands*(self: RenderView, commands: RenderCommands) =
+    self.commands = commands
+    self.markDirty()
 
-proc getEventHandler(self: RenderView, context: string): EventHandler =
-  if context notin self.eventHandlers:
-    var eventHandler: EventHandler
-    assignEventHandler(eventHandler, self.events.getEventHandlerConfig(context)):
-      onAction:
-          if self.handleAction(action, arg).isSome:
-            Handled
+  proc checkDirty(self: RenderView) =
+    ## checkDirty is called for every visible view every frame
+    if self.interval == 0 and (self.active or self.renderWhenInactive):
+      self.markDirty()
+
+  proc rvSetRenderWhenInactive(self: DynamicView, enabled: bool) =
+    let self = self.RenderView
+    self.renderWhenInactive = enabled
+    if not self.active and enabled:
+      self.setRenderInterval(self.interval)
+
+  proc rvSetRenderInterval(self: DynamicView, ms: int) =
+    let self = self.RenderView
+    self.interval = ms
+    if ms <= 0:
+      if self.renderTask != nil:
+        self.renderTask.pause()
+      return
+
+    if self.active or self.renderWhenInactive:
+      if self.renderTask == nil:
+        self.renderTask = startDelayed(ms, repeat = true):
+          if self.active or self.renderWhenInactive:
+            self.markDirty()
           else:
-            Ignored
+            self.renderTask.pause()
+      else:
+        self.renderTask.interval = ms
+        self.renderTask.reschedule()
 
-      onInput:
-        self.handleInput(input)
-        Handled
+  proc getEventHandler(self: RenderView, context: string): EventHandler =
+    if context notin self.eventHandlers:
+      var eventHandler: EventHandler
+      assignEventHandler(eventHandler, self.events.getEventHandlerConfig(context)):
+        onAction:
+            if self.handleAction(action, arg).isSome:
+              Handled
+            else:
+              Ignored
 
-    self.eventHandlers[context] = eventHandler
-    return eventHandler
+        onInput:
+          self.handleInput(input)
+          Handled
 
-  return self.eventHandlers[context]
+      self.eventHandlers[context] = eventHandler
+      return eventHandler
 
-method getEventHandlers*(self: RenderView, inject: Table[string, EventHandler]): seq[EventHandler] =
-  for mode in self.modes:
-    result.add self.getEventHandler(mode)
+    return self.eventHandlers[context]
 
-proc handleAction(self: RenderView, action: string, arg: string): Option[string] =
-  let res = self.commandService.executeCommand(action & " " & arg)
-  if res.isSome:
-    return res
+  proc getEventHandlers*(self: RenderView, inject: Table[string, EventHandler]): seq[EventHandler] =
+    for mode in self.modes:
+      result.add self.getEventHandler(mode)
 
-proc handleInput(self: RenderView, text: string) =
-  discard
+  proc render(self: RenderView, builder: UINodeBuilder): seq[OverlayFunction] =
+    builder.panel(&{FillX, FillY, FillBackground, MaskContent}, backgroundColor = color(0, 0, 0)):
+      onClickAny btn:
+        self.layout.tryActivateView(self)
+        self.mouseStates.incl(btn.int64)
+
+      self.bounds = currentNode.boundsAbsolute
+      if self.preventThrottling:
+        self.platform.lastEventTime = startTimer()
+
+      if self.dirty and self.onRender != nil:
+        try:
+          self.onRender(self)
+        except Exception:
+          discard
+
+      self.scrollDelta = vec2(0, 0)
+      currentNode.renderCommands = self.commands
+      currentNode.markDirty(builder)
+
+    self.resetDirty()
+
+  proc handleAction(self: RenderView, action: string, arg: string): Option[string] =
+    return self.commandService.executeCommand(action & " " & arg)
+
+  proc handleInput(self: RenderView, text: string) =
+    discard
+
+  proc newRenderView*(services: Services): DynamicView =
+    let view = RenderView(services: services)
+    view.platform = services.getServiceChecked(PlatformService).platform
+    view.commandService = services.getServiceChecked(CommandService)
+    view.events = services.getServiceChecked(EventHandlerService)
+    view.layout = services.getServiceChecked(LayoutService)
+    view.bindPlatformEvents()
+
+
+    view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayRenderFunc] =
+      render(self.RenderView, builder)
+    view.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
+      getEventHandlers(self.RenderView, inject)
+    view.descImpl = proc(self: View): string = desc(self.RenderView)
+    view.kindImpl = proc(self: View): string = kind(self.RenderView)
+    view.displayImpl = proc(self: View): string = display(self.RenderView)
+    view.activateImpl = proc(self: View) = activate(self.RenderView)
+    view.deactivateImpl = proc(self: View) = deactivate(self.RenderView)
+    view.checkDirtyImpl = proc(self: View) = checkDirty(self.RenderView)
+    return view
