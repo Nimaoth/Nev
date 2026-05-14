@@ -242,8 +242,7 @@ import service
 import document_editor, input_handler/input_handler, vfs_service, toast
 import misc/expose
 import config_provider
-import vcs/vcs_api
-import inlay_hint_component, config_component # todo: make these modules
+import config_component # todo: make these modules
 {.pop.}
 
 import stats, event_service

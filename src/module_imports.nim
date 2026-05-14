@@ -60,6 +60,7 @@ when not defined(useDynlib):
   import "../modules/log_terminal.nim"
   import "../modules/gui_platform/gui_platform.nim"
   import "../modules/markdown_component.nim"
+  import "../modules/vcs_commands.nim"
   import "../modules/git_ui.nim"
 
 proc initModules*() =
@@ -124,10 +125,12 @@ proc initModules*() =
   when declared(init_module_log_terminal): init_module_log_terminal()
   when declared(init_module_gui_platform): init_module_gui_platform()
   when declared(init_module_markdown_component): init_module_markdown_component()
+  when declared(init_module_vcs_commands): init_module_vcs_commands()
   when declared(init_module_git_ui): init_module_git_ui()
 
 proc shutdownModules*() =
   when declared(shutdown_module_git_ui): shutdown_module_git_ui()
+  when declared(shutdown_module_vcs_commands): shutdown_module_vcs_commands()
   when declared(shutdown_module_markdown_component): shutdown_module_markdown_component()
   when declared(shutdown_module_gui_platform): shutdown_module_gui_platform()
   when declared(shutdown_module_log_terminal): shutdown_module_log_terminal()
@@ -252,4 +255,5 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("log_terminal")
   loadModule("gui_platform")
   loadModule("markdown_component")
+  loadModule("vcs_commands")
   loadModule("git_ui")

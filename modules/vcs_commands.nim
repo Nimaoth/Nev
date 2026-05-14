@@ -1,4 +1,7 @@
-include misc/dynlib_export
+#use layout
+
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 when implModule:
   import std/[options, os, json, sugar, tables]
@@ -8,15 +11,15 @@ when implModule:
   import finder/[finder, previewer, file_previewer]
   import platform
   import service, dispatch_tables
-  import selector_popup/builder, vcs, layout/layout, vfs, config_provider
+  import selector_popup/builder, vcs/vcs, layout/layout, vfs, config_provider
   from scripting_api import SelectionCursor, ScrollSnapBehaviour, toSelection
   import document_editor, text_editor_component, move_component, command_component
   import command_service
 
-  logCategory "vcs_api"
+  logCategory "vcs-commands"
 
   proc getChangedFilesFromGitAsync(self: VCSService, workspace: Workspace, all: bool): Future[ItemList] {.async: (raises: []).} =
-    let vcsList = self.getAllVersionControlSystems()
+    let vcsList = self.versionControlSystems
     var items = newSeq[FinderItem]()
 
     for vcs in vcsList:
@@ -142,7 +145,7 @@ when implModule:
     popup.finder = finder.some
     popup.previewer = previewer.Previewer.some
 
-    for vcs in self.getAllVersionControlSystems():
+    for vcs in self.versionControlSystems:
       popup.title.add &"{vcs.name}: {vcs.status}"
       break
 
@@ -228,6 +231,6 @@ when implModule:
     let layout = self.services.getServiceChecked(LayoutService)
     discard layout.pushSelectorPopup popup
 
-  proc init_module_vcs_api*() {.cdecl, exportc, dynlib.} =
+  proc init_module_vcs_commands*() {.cdecl, exportc, dynlib.} =
     let commands = getServiceChecked(CommandService)
     commands.registerCommand "choose-git-active-files", proc(all: bool) = chooseGitActiveFiles(all)
