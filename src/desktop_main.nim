@@ -221,7 +221,6 @@ if not disableLogging: ## Enable loggers
 
 import misc/[custom_async]
 import platform
-import ui/widget_builders
 import app
 
 when enableTerminal:
@@ -292,7 +291,7 @@ proc pollFutures() =
   except CatchableError:
     discard
 
-proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, frameIndex: var int) =
+proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions, frameIndex: var int) =
   var frameTime = 0.0
 
   plat.lastEventTime = startTimer()
@@ -302,8 +301,11 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, fra
   var lastTime = totalTime.elapsed.float
 
   var lowPowerMode = false
+  let services = getServices()
 
-  var eventBus: EventService = app.services.getServiceChecked(EventService)
+  var eventBus: EventService = getServiceChecked(EventService)
+  let config = getServiceChecked(ConfigService).runtime
+
   while not app.closeRequested:
     defer:
       inc frameIndex
@@ -318,7 +320,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, fra
     let eventTimer = startTimer()
     gAsyncFrameTimer = startTimer()
     let eventCounter = plat.processEvents()
-    app.services.tick()
+    services.tick()
     let eventTime = eventTimer.elapsed.ms
 
     if eventCounter > 0:
@@ -341,7 +343,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, fra
         plat.requestedRender = false
         plat.builder.beginFrame(size, plat.redrawEverything)
         try:
-          app.updateWidgetTree(plat.builder, frameIndex)
+          app.render(plat.builder, frameIndex)
           plat.builder.endFrame()
         except:
           discard
@@ -371,6 +373,8 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, fra
     if not app.firstRenderDone:
       if getServices().getService(StatsService).getSome(stats):
         stats.add("Startup Time", startupTimer.elapsed.ms.int, "ms")
+      app.loadPlugins()
+
     app.firstRenderDone = true
 
     {.gcsafe.}:
@@ -384,14 +388,14 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions, fra
     var outlierTime = 20.0
 
     let frameSoFar = totalTimer.elapsed.ms
-    let terminalSleepThreshold = app.config.runtime.get("platform.terminal-sleep-threshold", 0)
-    if plat.lastEventTime.elapsed.ms > app.config.runtime.get("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
-      let time = app.config.runtime.get("platform.reduced-fps-2.ms", 30)
+    let terminalSleepThreshold = config.get("platform.terminal-sleep-threshold", 0)
+    if plat.lastEventTime.elapsed.ms > config.get("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
+      let time = config.get("platform.reduced-fps-2.ms", 30)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
       lowPowerMode = true
-    elif plat.lastEventTime.elapsed.ms > app.config.runtime.get("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
-      let time = app.config.runtime.get("platform.reduced-fps-2.ms", 15)
+    elif plat.lastEventTime.elapsed.ms > config.get("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
+      let time = config.get("platform.reduced-fps-2.ms", 15)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
       lowPowerMode = true
@@ -459,9 +463,8 @@ import misc/event
 proc main() =
   let app = newApp(backend.get, plat, gServices, gAppOptions)
   log lvlInfo, &"Finished creating app"
-  asyncSpawn app.loadPlugins()
 
-  var eventBus: EventService = app.services.getServiceChecked(EventService)
+  var eventBus: EventService = getServiceChecked(EventService)
   var frameIndex = 0
 
   var p = plat
@@ -474,7 +477,7 @@ proc main() =
     p.requestedRender = false
     p.builder.beginFrame(size)
     try:
-      app.updateWidgetTree(p.builder, frameIndex)
+      app.render(p.builder, frameIndex)
       p.builder.endFrame()
     except:
       discard
