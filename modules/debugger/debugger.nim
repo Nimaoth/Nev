@@ -1836,7 +1836,7 @@ when implModule:
       )
 
     # todo
-    # builder.previewer = newDataPreviewer(self.services, language="javascript".some).Previewer.some
+    # builder.previewer = newDataPreviewer(language="javascript".some).Previewer.some
 
     let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
     builder.finder = finder.some

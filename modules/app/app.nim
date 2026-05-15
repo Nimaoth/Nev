@@ -1489,7 +1489,7 @@ when implModule:
     defer:
       self.platform.requestRender()
 
-    let dataPreviewer = newDataPreviewer(self.services, language="javascript".some)
+    let dataPreviewer = newDataPreviewer(language="javascript".some)
 
     var state: ref tuple[
       index: int,
@@ -1852,7 +1852,7 @@ when implModule:
     var finder = newFinder(source, filterAndSort=true)
     finder.filterThreshold = float.low
 
-    let previewer = newDataPreviewer(self.services, language="javascript".some)
+    let previewer = newDataPreviewer(language="javascript".some)
     var popup = newSelectorPopup("plugins".some, finder.some, previewer.Previewer.some)
     popup.scale.x = scaleX
     popup.scale.y = scaleY

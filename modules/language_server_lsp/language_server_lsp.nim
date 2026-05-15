@@ -1002,7 +1002,7 @@ Errors:
 Server Capabilities: {lsp.serverCapabilities.toJson.pretty}"""
       )
 
-    builder.previewer = newDataPreviewer(getServices(), language="json".some).Previewer.some
+    builder.previewer = newDataPreviewer(language="json".some).some
 
     let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
     builder.finder = finder.some

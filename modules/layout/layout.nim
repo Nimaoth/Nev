@@ -1566,7 +1566,7 @@ when implModule:
     finder.filterThreshold = float.low
 
     let previewer = if preview:
-      newOpenEditorPreviewer(self.services).Previewer.some
+      newOpenEditorPreviewer().some
     else:
       Previewer.none
 

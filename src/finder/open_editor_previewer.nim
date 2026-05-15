@@ -1,52 +1,59 @@
-import std/[options, strformat, strutils]
-import nimsumtree/[rope]
-import misc/[util, custom_logger]
-import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import finder, previewer, service, document_editor
-import text_editor_component
-import ui/node
+import previewer
 
-logCategory "open-editor-previewer"
+include misc/dynlib_export
 
-type
-  OpenEditorPreviewer* = ref object of Previewer
-    services*: Services
-    editors*: DocumentEditorService
-    editor*: DocumentEditor
+{.push apprtl, gcsafe, raises: [].}
+proc newOpenEditorPreviewer*(): Previewer
+{.pop.}
 
-proc deinitImpl(self: OpenEditorPreviewer) =
-  # logScope lvlInfo, &"[deinit] Destroying open editor previewer"
-  self[] = default(typeof(self[]))
+when implModule:
+  import std/[options, strformat, strutils]
+  import nimsumtree/[rope]
+  import misc/[util, custom_logger]
+  import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
+  import finder, document_editor
+  import text_editor_component
+  import ui/node
 
-proc previewItemImpl(self: OpenEditorPreviewer, item: FinderItem, editor: DocumentEditor) =
-  # logScope lvlInfo, &"previewItem {item}"
+  logCategory "open-editor-previewer"
 
-  self.editor = editor
+  type
+    OpenEditorPreviewer* = ref object of Previewer
+      editors*: DocumentEditorService
+      editor*: DocumentEditor
 
-  let editorId = item.data.parseInt.EditorId.catch:
-    log lvlError, fmt"Failed to parse editor id from data '{item}'"
-    return
+  proc deinitImpl(self: OpenEditorPreviewer) =
+    # logScope lvlInfo, &"[deinit] Destroying open editor previewer"
+    self[] = default(typeof(self[]))
 
-  let editorToPreview = self.editors.getEditor(editorId.EditorIdNew).getOr:
-    return
+  proc previewItemImpl(self: OpenEditorPreviewer, item: FinderItem, editor: DocumentEditor) =
+    # logScope lvlInfo, &"previewItem {item}"
 
-  let tecToPreview = editorToPreview.getTextEditorComponent().getOr:
-    return
+    self.editor = editor
 
-  let tec = editor.getTextEditorComponent().getOr:
-    return
+    let editorId = item.data.parseInt.EditorId.catch:
+      log lvlError, fmt"Failed to parse editor id from data '{item}'"
+      return
 
-  editor.setDocument(editorToPreview.currentDocument)
-  tec.selection = tecToPreview.selection
-  tec.centerCursor(point(0, 0), 0, snap = true)
+    let editorToPreview = self.editors.getEditor(editorId.EditorIdNew).getOr:
+      return
 
-proc newOpenEditorPreviewer*(services: Services): OpenEditorPreviewer =
-  new result
-  result.services = services
-  result.editors = services.getServiceChecked(DocumentEditorService)
-  result.previewItemImpl = proc(self: Previewer, item: FinderItem, editor: DocumentEditor) = previewItemImpl(self.OpenEditorPreviewer, item, editor)
-  result.deinitImpl = proc(self: Previewer) = deinitImpl(self.OpenEditorPreviewer)
-  result.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
-    let self = self.OpenEditorPreviewer
-    if self.editor.isNotNil:
-      result.add self.editor.render(builder)
+    let tecToPreview = editorToPreview.getTextEditorComponent().getOr:
+      return
+
+    let tec = editor.getTextEditorComponent().getOr:
+      return
+
+    editor.setDocument(editorToPreview.currentDocument)
+    tec.selection = tecToPreview.selection
+    tec.centerCursor(point(0, 0), 0, snap = true)
+
+  proc newOpenEditorPreviewer*(): Previewer =
+    new result
+    result.editors = getServiceChecked(DocumentEditorService)
+    result.previewItemImpl = proc(self: Previewer, item: FinderItem, editor: DocumentEditor) = previewItemImpl(self.OpenEditorPreviewer, item, editor)
+    result.deinitImpl = proc(self: Previewer) = deinitImpl(self.OpenEditorPreviewer)
+    result.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
+      let self = self.OpenEditorPreviewer
+      if self.editor.isNotNil:
+        result.add self.editor.render(builder)
