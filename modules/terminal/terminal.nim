@@ -32,7 +32,7 @@ when implModule:
   import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, async_process, wrap, case_swap, jsonex, array_set, tui]
   import ui/node
   import platform
-  import finder/[finder, previewer]
+  import finder, previewer
   import input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, selector_popup/builder, vfs, vfs_service
   import text_editor_component, config_component, register, service, command_service
   import types_impl

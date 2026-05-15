@@ -12,7 +12,7 @@ import selector_popup/builder, dispatch_tables, register
 import config_provider, service, layout/layout, vfs, vfs_service, command_service, toast
 import move_database, event_service
 import workspace
-import finder/[previewer, finder]
+import previewer, finder
 import vcs, treesitter/treesitter
 import text/[overlay_map, tab_map, wrap_map, diff_map, display_map, snippet, indent]
 import completion_provider_document, completion_provider_lsp, completion_provider_snippet, completion

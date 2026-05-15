@@ -1,11 +1,12 @@
 import std/[options]
 import finder, previewer
 
-include misc/dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type GetPreviewTextImpl* = proc(item: FinderItem): string {.gcsafe, raises: [].}
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newDataPreviewer*(language = string.none, getPreviewTextImpl: GetPreviewTextImpl = nil): Previewer
 proc dataPreviewerSetPath(self: Previewer, path: string)
 {.pop.}
@@ -65,16 +66,16 @@ when implModule:
     self[] = default(typeof(self[]))
 
   proc newDataPreviewer*(language = string.none, getPreviewTextImpl: GetPreviewTextImpl = nil): Previewer =
-    result = Previewer()
-    result.activateImpl = proc (self: Previewer) =
+    let res = DataPreviewer()
+    res.activateImpl = proc (self: Previewer) =
       self.DataPreviewer.dataPreviewerActivate()
-    result.deactivateImpl = proc (self: Previewer) =
+    res.deactivateImpl = proc (self: Previewer) =
       self.DataPreviewer.dataPreviewerDeactivate()
-    result.previewItemImpl = proc (self: Previewer, item: FinderItem, editor: DocumentEditor) =
+    res.previewItemImpl = proc (self: Previewer, item: FinderItem, editor: DocumentEditor) =
       self.DataPreviewer.dataPreviewerPreviewItem(item, editor)
-    result.delayPreviewImpl = proc (self: Previewer) =
+    res.delayPreviewImpl = proc (self: Previewer) =
       self.DataPreviewer.dataPreviewerDelayPreview()
-    result.deinitImpl = proc (self: Previewer) =
+    res.deinitImpl = proc (self: Previewer) =
       self.DataPreviewer.dataPreviewerDeinit()
 
     let document = getServiceChecked(DocumentEditorService).createDocument("text", ".txt", load = false, %%*{"createLanguageServer": false})
@@ -83,9 +84,11 @@ when implModule:
     document.usage = "data-previewer-temp"
     if language.isSome:
       document.getLanguageComponent().get.setLanguageId(language.get)
-    result.tempDocument = document
-    result.getPreviewTextImpl = getPreviewTextImpl
-    result.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
+    res.tempDocument = document
+    res.getPreviewTextImpl = getPreviewTextImpl
+    res.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
       let self = self.DataPreviewer
       if self.editor.isNotNil:
         result.add self.editor.render(builder)
+
+    return res

@@ -5,7 +5,7 @@ import ui/node
 import platform
 import ui/[widget_library]
 import selector_popup, theme, document_editor
-import finder/[finder, previewer, open_editor_previewer, data_previewer]
+import finder, previewer, open_editor_previewer, data_previewer
 import config_provider, input_handler/input_handler, view, file_previewer
 import service
 

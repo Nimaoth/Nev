@@ -167,7 +167,7 @@ when implModule:
   import platform
   import misc/[custom_logger, rect_utils, myjsonutils, util, jsonex]
   import workspace
-  import finder/[finder, previewer]
+  import finder, previewer
   import input_handler/input_handler, config_provider, vfs, vfs_service, session, layouts, command_service, status_line, theme
   import nimsumtree/arc
 
@@ -1513,7 +1513,7 @@ when implModule:
     cmds.registerCommand "open", proc(path: string, slot: Option[string]) = self.open(path, slot.get(""))
     cmds.registerCommand "choose-open", proc(preview: Option[bool], scaleX: Option[float], scaleY: Option[float], previewScale: Option[float]) = self.chooseOpen(preview.get(true), scaleX.get(0.8), scaleY.get(0.8), previewScale.get(0.6))
 
-  import finder/[open_editor_previewer]
+  import open_editor_previewer
   proc chooseOpen*(self: LayoutService, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) =
     let self = self.LayoutServiceImpl
     defer:

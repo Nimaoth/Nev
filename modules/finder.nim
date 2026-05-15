@@ -3,7 +3,8 @@ import nimsumtree/arc
 import misc/[event, custom_async, fuzzy_matching]
 import scripting_api
 
-include misc/dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
 type
   GetPreviewTextImpl* = proc(item: FinderItem): string {.gcsafe, raises: [].}
@@ -71,7 +72,7 @@ type
     callbackSeq: proc(): seq[FinderItem] {.gcsafe, raises: [].}
     callbackList: proc(): ItemList {.gcsafe, raises: [].}
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newFinder*(source: DataSource, filterAndSort: bool = true, sort: bool = true, minScore: float = 0, skipFirstQuery: bool = false): Finder
 proc finderDeinit(finder: Finder)
 proc newStaticDataSource*(items: sink seq[FinderItem]): StaticDataSource
@@ -153,7 +154,7 @@ proc retrigger*(self: SyncDataSource) {.gcsafe, raises: [].} =
   self.wasQueried = false
   self.setQuery("")
 
-var finderFuzzyMatchConfig* {.apprtlvar.} = FuzzyMatchConfig(ignoredChars: {' '}, useDiff: true)
+var finderFuzzyMatchConfig* {.modrtlvar.} = FuzzyMatchConfig(ignoredChars: {' '}, useDiff: true)
 
 when implModule:
   import std/[algorithm, sugar, strutils, json, tables]

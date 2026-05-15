@@ -8,7 +8,7 @@ when implModule:
   import vmath
   import misc/[custom_async, custom_logger, util, myjsonutils, disposable_ref, jsonex, rope_utils]
   import workspace
-  import finder/[finder, previewer]
+  import finder, previewer
   import platform, file_previewer
   import service, dispatch_tables
   import selector_popup/builder, vcs, layout/layout, vfs, config_provider

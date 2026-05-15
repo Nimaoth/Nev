@@ -2,7 +2,7 @@
 import std/[options, sequtils, os, json]
 import misc/[custom_async, id, util, regex, event]
 import vfs, vfs_service, service
-import finder/finder
+import finder
 
 const currentSourcePath2 = currentSourcePath()
 include module_base

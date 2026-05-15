@@ -22,7 +22,7 @@ when implModule:
   import service, event_service, document_editor, document, config_provider, vfs, vfs_service, selector_popup/builder
   import nimsumtree/[arc, rope, buffer]
   import layout/layout, command_service, toast
-  import finder/[finder, data_previewer]
+  import finder, data_previewer
 
   logCategory "language-server-lsp"
 

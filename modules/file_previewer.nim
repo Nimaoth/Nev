@@ -1,6 +1,6 @@
 #use vfs_service workspace
 import document_editor
-import finder/previewer
+import previewer
 import vfs, service
 
 const currentSourcePath2 = currentSourcePath()
@@ -18,7 +18,7 @@ when implModule:
   import nimsumtree/[rope]
   import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils, array_set, jsonex, rope_utils]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-  import vcs, finder/finder
+  import vcs, finder
   import document, text_component, move_component, text_editor_component, command_component
   import ui/node
 

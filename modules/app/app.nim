@@ -34,7 +34,7 @@ when implModule:
   import config_provider
   import input_handler/input_handler, document, document_editor, popup, dispatch_tables, theme, view, register
   import text_component, text_editor_component
-  import finder/[finder, previewer, data_previewer]
+  import finder, previewer, data_previewer
   import compilation_config, vfs, vfs_service
   import layout/[layout], session, command_service, command_line, toast, plugin_service
   import event_service, vcs

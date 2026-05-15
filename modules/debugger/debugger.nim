@@ -18,7 +18,7 @@ when implModule:
   import language_server except Range
   import treesitter/[treesitter_type_conv]
   import platform
-  import finder/[previewer, finder]
+  import previewer, finder
   import workspace, vfs, vfs_service
   import ui/node
   import nimsumtree/[rope, buffer]

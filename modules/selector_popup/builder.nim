@@ -1,6 +1,6 @@
 import std/[json, tables, options]
 import misc/[myjsonutils]
-import finder/[finder, previewer]
+import finder, previewer
 import document_editor
 
 type ISelectorPopup* = object

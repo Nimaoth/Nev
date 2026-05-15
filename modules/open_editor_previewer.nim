@@ -1,8 +1,9 @@
 import previewer
 
-include misc/dynlib_export
+const currentSourcePath2 = currentSourcePath()
+include module_base
 
-{.push apprtl, gcsafe, raises: [].}
+{.push modrtl, gcsafe, raises: [].}
 proc newOpenEditorPreviewer*(): Previewer
 {.pop.}
 
@@ -11,7 +12,7 @@ when implModule:
   import nimsumtree/[rope]
   import misc/[util, custom_logger]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-  import finder, document_editor
+  import finder, document_editor, service
   import text_editor_component
   import ui/node
 
@@ -19,7 +20,6 @@ when implModule:
 
   type
     OpenEditorPreviewer* = ref object of Previewer
-      editors*: DocumentEditorService
       editor*: DocumentEditor
 
   proc deinitImpl(self: OpenEditorPreviewer) =
@@ -35,7 +35,7 @@ when implModule:
       log lvlError, fmt"Failed to parse editor id from data '{item}'"
       return
 
-    let editorToPreview = self.editors.getEditor(editorId.EditorIdNew).getOr:
+    let editorToPreview = getServiceChecked(DocumentEditorService).getEditor(editorId.EditorIdNew).getOr:
       return
 
     let tecToPreview = editorToPreview.getTextEditorComponent().getOr:
@@ -49,11 +49,12 @@ when implModule:
     tec.centerCursor(point(0, 0), 0, snap = true)
 
   proc newOpenEditorPreviewer*(): Previewer =
-    new result
-    result.editors = getServiceChecked(DocumentEditorService)
-    result.previewItemImpl = proc(self: Previewer, item: FinderItem, editor: DocumentEditor) = previewItemImpl(self.OpenEditorPreviewer, item, editor)
-    result.deinitImpl = proc(self: Previewer) = deinitImpl(self.OpenEditorPreviewer)
-    result.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
+    let res = OpenEditorPreviewer()
+    res.previewItemImpl = proc(self: Previewer, item: FinderItem, editor: DocumentEditor) = previewItemImpl(self.OpenEditorPreviewer, item, editor)
+    res.deinitImpl = proc(self: Previewer) = deinitImpl(self.OpenEditorPreviewer)
+    res.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
       let self = self.OpenEditorPreviewer
       if self.editor.isNotNil:
         result.add self.editor.render(builder)
+
+    return res

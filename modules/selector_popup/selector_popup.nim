@@ -1,8 +1,8 @@
-#use layout text_editor_component command_service search_component input_handler treesitter file_previewer
+#use layout text_editor_component command_service search_component input_handler treesitter file_previewer data_previewer
 import std/[options]
 import vmath
 import misc/[myjsonutils]
-import finder/[finder, previewer]
+import finder, previewer
 import config_provider, popup, document_editor, view
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 
