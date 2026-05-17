@@ -14,8 +14,6 @@ import platform, input_handler/input_handler, misc/input_api, command_service, l
 import vim, register, event_service, move_database, session, vfs_service, workspace
 import scripting_api except TextDocumentEditor
 
-defineSetAllDefaultSettings()
-
 type
   NilPlatform* = ref object of Platform
 

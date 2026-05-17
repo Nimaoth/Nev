@@ -12,8 +12,6 @@ import text/text_document
 import config_provider, scripting_api, service
 import platform, event_service, move_database, vfs_service, workspace
 
-defineSetAllDefaultSettings()
-
 type
   NilPlatform* = ref object of Platform
 
