@@ -3,8 +3,10 @@
 {.push warning[UnusedImport]:off.}
 
 when not defined(useDynlib):
-  import "../modules/theme.nim"
+  import "../modules/log.nim"
   import "../modules/lisp.nim"
+  import "../modules/config_store.nim"
+  import "../modules/theme.nim"
   import "../modules/input_handler/input_handler.nim"
   import "../modules/terminal_platform/terminal_platform.nim"
   import "../modules/vfs_config.nim"
@@ -22,7 +24,6 @@ when not defined(useDynlib):
   import "../modules/open_editor_previewer.nim"
   import "../modules/status_line.nim"
   import "../modules/workspace.nim"
-  import "../modules/log.nim"
   import "../modules/register.nim"
   import "../modules/command_service.nim"
   import "../modules/layout/layout.nim"
@@ -80,8 +81,10 @@ when not defined(useDynlib):
   import "../modules/git_ui.nim"
 
 proc initModules*() =
-  when declared(init_module_theme): init_module_theme()
+  when declared(init_module_log): init_module_log()
   when declared(init_module_lisp): init_module_lisp()
+  when declared(init_module_config_store): init_module_config_store()
+  when declared(init_module_theme): init_module_theme()
   when declared(init_module_input_handler): init_module_input_handler()
   when declared(init_module_terminal_platform): init_module_terminal_platform()
   when declared(init_module_vfs_config): init_module_vfs_config()
@@ -99,7 +102,6 @@ proc initModules*() =
   when declared(init_module_open_editor_previewer): init_module_open_editor_previewer()
   when declared(init_module_status_line): init_module_status_line()
   when declared(init_module_workspace): init_module_workspace()
-  when declared(init_module_log): init_module_log()
   when declared(init_module_register): init_module_register()
   when declared(init_module_command_service): init_module_command_service()
   when declared(init_module_layout): init_module_layout()
@@ -212,7 +214,6 @@ proc shutdownModules*() =
   when declared(shutdown_module_layout): shutdown_module_layout()
   when declared(shutdown_module_command_service): shutdown_module_command_service()
   when declared(shutdown_module_register): shutdown_module_register()
-  when declared(shutdown_module_log): shutdown_module_log()
   when declared(shutdown_module_workspace): shutdown_module_workspace()
   when declared(shutdown_module_status_line): shutdown_module_status_line()
   when declared(shutdown_module_open_editor_previewer): shutdown_module_open_editor_previewer()
@@ -230,12 +231,16 @@ proc shutdownModules*() =
   when declared(shutdown_module_vfs_config): shutdown_module_vfs_config()
   when declared(shutdown_module_terminal_platform): shutdown_module_terminal_platform()
   when declared(shutdown_module_input_handler): shutdown_module_input_handler()
-  when declared(shutdown_module_lisp): shutdown_module_lisp()
   when declared(shutdown_module_theme): shutdown_module_theme()
+  when declared(shutdown_module_config_store): shutdown_module_config_store()
+  when declared(shutdown_module_lisp): shutdown_module_lisp()
+  when declared(shutdown_module_log): shutdown_module_log()
 
 proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
-  loadModule("theme")
+  loadModule("log")
   loadModule("lisp")
+  loadModule("config_store")
+  loadModule("theme")
   loadModule("input_handler")
   loadModule("terminal_platform")
   loadModule("vfs_config")
@@ -253,7 +258,6 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("open_editor_previewer")
   loadModule("status_line")
   loadModule("workspace")
-  loadModule("log")
   loadModule("register")
   loadModule("command_service")
   loadModule("layout")

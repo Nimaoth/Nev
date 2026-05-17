@@ -749,8 +749,8 @@ when implModule:
       discard getTok(p)
       while p.tok != tkBracketRi:
         result.elems.add(parseLisp(p, depth+1))
-        if p.tok != tkComma: break
-        discard getTok(p)
+        if p.tok == tkComma: discard getTok(p)
+        if p.tok == tkBracketRi: break
       eat(p, tkBracketRi)
     of tkParenLe:
       if depth > depthLimit:

@@ -1,7 +1,10 @@
 import std/[json, options, tables, macros, genasts, sets, typetraits, strformat, strutils]
 import misc/[util, event, custom_async, custom_logger, myjsonutils, jsonex, id, custom_unicode]
-import service
+import service, lisp
+import config_store
 from scripting_api import LineNumbers
+
+export config_store
 
 include misc/dynlib_export
 
@@ -19,23 +22,6 @@ type
     stores*: Table[string, ConfigStore]
     storesByName*: Table[string, ConfigStore]
     groups*: seq[string]
-
-    settingDescriptions: seq[SettingDescription]
-    settingDescriptionsIndices: Table[string, int]
-
-  ConfigStore* = ref object
-    id: int
-    parent*: ConfigStore
-    revision*: int
-    name*: string
-    detail*: string
-    filename*: string
-    originalText*: string
-    settings*: JsonNodeEx
-    mergedSettingsCache: tuple[parent: JsonNodeEx, revision: int, settings: JsonNodeEx]
-    onConfigChanged*: Event[string]
-    parentChangedHandle: Id
-    prefix*: string
 
   Setting*[T] = ref object
     store*: ConfigStore
@@ -57,11 +43,6 @@ type
     docs*: string
     noInit*: bool
 
-  RegexSetting* = object
-    impl: JsonNodeEx
-
-  RuneSetSetting* = distinct HashSet[Rune]
-
   DiagnosticsLocation* = enum LineEnd = "line-end", Below = "below", LineEndOrBelow = "line-end-or-below"
 
   ToastStyle* = enum Minimal = "minimal", Box = "box"
@@ -70,78 +51,9 @@ func serviceName*(_: typedesc[ConfigService]): string = "ConfigService"
 
 const defaultToJsonOptions = ToJsonOptions(enumMode: joptEnumString, jsonNodeMode: joptJsonNodeAsRef)
 
-proc `$`*(self: RuneSetSetting): string {.borrow.}
-
-proc `in`*(r: Rune, set: RuneSetSetting): bool =
-  type Base = HashSet[Rune]
-  set.Base.contains(r)
-
-proc `in`*(c: char, set: RuneSetSetting): bool =
-  c.Rune in set
-
-proc fromJsonExHook*(t: var RuneSetSetting, jsonNode: JsonNodeEx) =
-  var runes = initHashSet[Rune]()
-  for s in jsonNode:
-    if s.kind == JString:
-      runes.incl s.str.runeAt(0)
-    if s.kind == JArray:
-      for r in s[0].str.runeAt(0)..s[1].str.runeAt(0):
-        runes.incl r
-  t = runes.RuneSetSetting
-
 proc toJsonExHook*[T](a: Setting[T]): JsonNodeEx {.raises: [].} =
   let v = a.get()
   return v.toJsonEx(defaultToJsonOptions)
-
-proc fromJsonExHook*(t: var RegexSetting, jsonNode: JsonNodeEx) =
-  t = RegexSetting(impl: jsonNode)
-
-proc decodeRegex*(value: JsonNodeEx, default: string = ""): string =
-  if value.kind == JString:
-    return value.str
-  elif value.kind == JArray:
-    var r = ""
-    for t in value.elems:
-      if t.kind != JString:
-        log lvlError, &"Invalid regex value: {value}, expected string, got {t}"
-        continue
-      if r.len > 0:
-        r.add "|"
-      r.add t.str
-
-    return r
-  elif value.kind == JNull:
-    return default
-  else:
-    log lvlError, &"Invalid regex value: {value}, expected string | array[string]"
-    return default
-
-proc decodeRegex*(value: RegexSetting, default: string = ""): string =
-  return value.impl.decodeRegex(default)
-
-proc desc*(self: ConfigStore, pretty = false): string =
-  result = &"CS({self.name}@{self.revision}"
-  if not self.parent.isNil:
-    if pretty:
-      result.add "\n"
-      result.add self.parent.desc(pretty).indent(2)
-    else:
-      result.add ", "
-      result.add self.parent.desc
-  result.add ")"
-
-proc `$`*(self: ConfigStore): string =
-  result = self.desc
-  result.add "\n"
-  result.add self.settings.pretty().indent(2)
-
-iterator parentStores*(self: ConfigStore, includeSelf: bool = true): ConfigStore =
-  var it = self
-  if not includeSelf:
-    it = it.parent
-  while not it.isNil:
-    yield it
-    it = it.parent
 
 proc setting*(self: ConfigStore, key: string, T: typedesc, def: JsonNodeEx = nil): Setting[T] {.gcsafe.} =
   # if def != nil:
@@ -161,125 +73,25 @@ proc setting*(self: ConfigStore, key: string, T: typedesc, def: JsonNodeEx = nil
 
   return Setting[T](store: self, key: key, defaultValue: def)
 
-proc extendJson*(a: var JsonNodeEx, b: JsonNodeEx) =
-  if not b.extend:
-    a = b
-    return
-
-  if (a.kind, b.kind) == (jsonex.JObject, jsonex.JObject):
-    for (key, value) in b.fields.pairs:
-      if a.hasKey(key):
-        a.fields[key].extendJson(value)
-      else:
-        a[key] = value
-
-  elif (a.kind, b.kind) == (jsonex.JArray, jsonex.JArray):
-    for value in b.elems:
-      a.elems.add value
-
-  else:
-    a = b
-
 {.push apprtl, gcsafe, raises: [].}
-proc configStoreGet(self: ConfigStore, key: string): JsonNodeEx
-proc configStoreSet(self: ConfigStore, key: string, jsonValue: JsonNodeEx)
-proc configStoreSetSettings(self: ConfigStore, settings: JsonNodeEx)
-proc configStoreSetParent(self: ConfigStore, parent: ConfigStore)
 proc configServiceGetLanguageStore(self: ConfigService, languageId: string): ConfigStore
 proc configServiceAddStore(self: ConfigService, name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore
 proc configServiceRemoveStore(self: ConfigService, store: ConfigStore)
 proc configServiceGetByPath(self: ConfigService, path: string): JsonNodeEx
 proc configServiceGetStoreForPath(self: ConfigService, path: string): (ConfigStore, string)
-proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx)
 proc configReconnectGroups(self: ConfigService)
-proc configMergedSettings(self: ConfigStore): JsonNodeEx
-proc configClear(self: ConfigStore, key: string)
-proc configGetAllKeys(self: JsonNodeEx): seq[tuple[key: string, value: JsonNodeEx]]
 proc configGetStoreForId(self: ConfigService, id: int): ConfigStore
 proc configGetSettingDescription(self: ConfigService, key: string): Option[SettingDescription]
 {.pop.}
 
-proc set*[T](self: ConfigStore, key: string, value: T) =
-  let jsonValue = when T is JsonNodeEx: value else: value.toJsonEx(defaultToJsonOptions)
-  configStoreSet(self, key, jsonValue)
-
-proc setSettings*(self: ConfigStore, settings: JsonNodeEx) = configStoreSetSettings(self, settings)
-proc setParent*(self: ConfigStore, parent: ConfigStore) = configStoreSetParent(self, parent)
 proc getLanguageStore*(self: ConfigService, languageId: string): ConfigStore = configServiceGetLanguageStore(self, languageId)
 proc addStore*(self: ConfigService, name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore = configServiceAddStore(self, name, filename, parent, settings)
 proc removeStore*(self: ConfigService, store: ConfigStore) = configServiceRemoveStore(self, store)
 proc getByPath*(self: ConfigService, path: string): JsonNodeEx = configServiceGetByPath(self, path)
 proc getStoreForPath*(self: ConfigService, path: string): (ConfigStore, string) = configServiceGetStoreForPath(self, path)
 proc reconnectGroups*(self: ConfigService) = configReconnectGroups(self)
-proc mergedSettings*(self: ConfigStore): JsonNodeEx = configMergedSettings(self)
-proc clear*(self: ConfigStore, key: string) = configClear(self, key)
-proc getAllKeys*(self: JsonNodeEx): seq[tuple[key: string, value: JsonNodeEx]] = configGetAllKeys(self)
 proc getStoreForId*(self: ConfigService, id: int): ConfigStore = configGetStoreForId(self, id)
 proc getSettingDescription*(self: ConfigService, key: string): Option[SettingDescription] = configGetSettingDescription(self, key)
-
-proc getValue*(self: ConfigStore, key: string): JsonNodeEx =
-  result = self.configStoreGet(key)
-  if self.prefix != "":
-    let override = self.configStoreGet(self.prefix & "." & key)
-    if override != nil and result != nil:
-      result.extendJson(override)
-
-proc get*(self: ConfigStore, key: string): JsonNodeEx =
-  result = self.configStoreGet(key)
-  if self.prefix != "":
-    let override = self.configStoreGet(self.prefix & "." & key)
-    if override != nil and result != nil:
-      result.extendJson(override)
-
-proc get*(self: ConfigStore, key: string, T: typedesc, defaultValue: T): T =
-  let value = self.get(key)
-  if value != nil:
-    try:
-      when T is JsonNode:
-        return value.toJson
-      elif T is JsonNodeEx:
-        return value
-      else:
-        if value.kind == JNull:
-          return defaultValue
-        return value.jsonTo(T)
-    except Exception as e:
-      let t = $T
-      let p = value.pretty
-      log lvlError, &"[{self.name}] Failed to get setting '{key}' as type {t}: {e.msg}\n{p}"
-      return defaultValue
-  else:
-    return defaultValue
-
-proc get*(self: ConfigStore, key: string, T: typedesc): T {.inline.} =
-  self.get(key, T, T.default)
-
-proc get*[T](self: ConfigStore, key: string, defaultValue: T): T {.inline.} =
-  self.get(key, T, defaultValue)
-
-proc setUserData(node: JsonNodeEx, userData: int) =
-  node.userData = userData
-  if node.kind == JObject:
-    for value in node.fields.values:
-      value.setUserData(userData)
-  elif node.kind == JArray:
-    for value in node.elems:
-      value.setUserData(userData)
-
-var nextConfigStoreId {.apprtlvar.} = 1
-proc new*(_: typedesc[ConfigStore], name, filename: string, parent: ConfigStore = nil, settings: JsonNodeEx = newJexObject()): ConfigStore {.gcsafe.} =
-  let id = block:
-    {.gcsafe.}:
-      let id = nextConfigStoreId
-      inc nextConfigStoreId
-      id
-
-  result = ConfigStore(id: id, name: name, filename: filename, settings: newJexObject())
-  result.settings.setUserData(id)
-  settings.setUserData(id)
-  result.settings.evaluateSettingsRec(settings)
-  result.settings.extend = true
-  result.setParent(parent)
 
 proc get*[T](self: Setting[T], default: T): lent T =
   if self.cache.isSome and self.revision == self.store.revision:
@@ -317,16 +129,6 @@ proc getRegex*(self: Setting[Option[RegexSetting]], default: string): string =
   if value.isNone:
     return default
   return value.get.decodeRegex(default)
-
-var settingGroupDescriptions {.compileTime.} = initTable[string, SettingGroupDescription]()
-var settingDescriptionsIndices {.compileTime.} = initTable[string, int]()
-var settingToJsonTypeNames {.compileTime.} = initTable[string, string]()
-var settingDescriptions* {.compileTime.} = newSeq[SettingDescription]()
-var getSettingDescriptions*: proc(): seq[SettingDescription] {.gcsafe, raises: [].}
-
-template setSettingDefault(index: int, defaultValue: untyped) =
-  static:
-    settingDescriptions[index].default = $defaultValue.toJsonEx(defaultToJsonOptions)
 
 proc camelCaseToHyphenCase(str: string): string =
   for c in str:
@@ -378,13 +180,7 @@ proc typeNameToJson*(T: typedesc[DiagnosticsLocation]): string =
 proc typeNameToJson*(T: typedesc[ToastStyle]): string =
   return "\"minimal\" | \"box\""
 
-macro addJsonTypeName(key: static[string], name: static[string]) =
-  settingToJsonTypeNames[key] = name
-
 proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], body: NimNode): NimNode {.compileTime.} =
-  if name.repr in settingGroupDescriptions:
-    error "Duplicate setting group " & name.repr, name
-
   let declare = ident"declare"
   let use = ident"use"
   let store = genSym(nskParam, "store")
@@ -402,16 +198,12 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
       var res = name()
       # result.foo = store.setting("foo", int)
 
-  var setDefaultNodes = nnkStmtList.newTree()
-
   template withPrefix(s: string): string =
     block:
       if prefix.len > 0:
         prefix & "." & s
       else:
         s
-
-  var desc = SettingGroupDescription()
 
   var docs: NimNode = nil
   for node in body:
@@ -428,14 +220,9 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
 
       var s = SettingDescription(name: settingName, prefix: prefix, fullName: fullName, typ: typ.repr, default: "null", noInit: noInit)
 
+
       if docs != nil:
         s.docs = docs.strVal
-
-      settingDescriptions.add(s)
-      desc.settings.add settingDescriptions.high
-
-      if prefix != "":
-        settingDescriptionsIndices[fullName] = settingDescriptions.high
 
       typeNode[0][2][2].add nnkIdentDefs.newTree(name.postfix("*"), nnkBracketExpr.newTree(bindSym"Setting", typ), newEmptyNode())
 
@@ -447,17 +234,6 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
           genAst(fieldName = name, settingName, typ, store, res, prefixArg, default):
             res.fieldName = ({.gcsafe.}: store.setting(joinSettingKey(prefixArg, settingName), typ, when typeof(default) is JsonNodeEx: copy(default) else: default.toJsonEx(defaultToJsonOptions)))
 
-      if default.repr != "nil":
-        setDefaultNodes.add block:
-          genAst(index = settingDescriptions.high, default):
-            setSettingDefault(index, default)
-
-      setDefaultNodes.add block:
-        genAst(index = settingDescriptions.high, fullName, typ):
-          addJsonTypeName(fullName, typeNameToJson(typ))
-          static:
-            settingDescriptions[index].typeName = typeNameToJson(typ)
-
       docs = nil
       continue
 
@@ -465,32 +241,6 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
       let name = node[1]
       let fullName = name.repr.camelCaseToHyphenCase.withPrefix()
       let typ = node[2]
-
-      if typ.repr notin settingGroupDescriptions:
-        error "Unknown setting type " & typ.repr, typ
-
-      for i in settingGroupDescriptions[typ.repr].settings:
-        let p = settingDescriptions[i]
-        var s = SettingDescription(
-          name: p.name,
-          prefix: fullName,
-          fullName: fullName & "." & p.name,
-          typ: p.typ,
-          default: p.default,
-          docs: p.docs,
-          noInit: noInit,
-        )
-
-        settingDescriptions.add(s)
-        desc.settings.add settingDescriptions.high
-        settingDescriptionsIndices[s.name] = settingDescriptions.high
-
-        setDefaultNodes.add block:
-          genAst(fullName2 = s.fullName, subName = p.name, index = settingDescriptions.high):
-            static:
-              if settingToJsonTypeNames.contains(subName):
-                settingToJsonTypeNames[fullName2] = settingToJsonTypeNames[subName]
-                settingDescriptions[index].typeName = settingToJsonTypeNames[subName]
 
       typeNode[0][2][2].add nnkIdentDefs.newTree(name.postfix("*"), typ, newEmptyNode())
 
@@ -506,13 +256,11 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
 
     error "Invalid setting, expected 'declare name, type, default'", node
 
-  settingGroupDescriptions[name.repr] = desc
-
   newNode[6].add block:
     genAst(res):
       return res
 
-  result = nnkStmtList.newTree(typeNode, newNode, setDefaultNodes)
+  result = nnkStmtList.newTree(typeNode, newNode)
 
 macro declareSettings*(name: untyped, prefix: static string, body: untyped) =
   return declareSettingsImpl(name, prefix, false, body)
@@ -525,7 +273,7 @@ when implModule:
   import misc/expose
   import platform
   import dispatch_tables
-  var setAllDefaults: proc(store: ConfigStore) {.raises: [].} = nil
+  import default_settings
 
   {.push gcsafe.}
   {.push raises: [].}
@@ -534,24 +282,17 @@ when implModule:
 
   method init*(self: ConfigService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"ConfigService.init"
-    {.gcsafe.}:
-      for desc in getSettingDescriptions():
-        self.settingDescriptions.add desc
-        self.settingDescriptionsIndices[desc.fullName] = self.settingDescriptions.high
+    # {.gcsafe.}:
+      # for desc in getSettingDescriptions():
+      #   self.settingDescriptions.add desc
 
     self.base = ConfigStore.new("base", "settings://base")
-    {.cast(gcsafe).}:
-      setAllDefaults(self.base)
+    fillDefaultSettings(self.base)
     self.runtime = ConfigStore.new("runtime", "settings://runtime")
     self.runtime.setParent(self.base)
     return ok()
 
   proc configGetSettingDescription(self: ConfigService, key: string): Option[SettingDescription] =
-    self.settingDescriptionsIndices.withValue(key, val):
-      return self.settingDescriptions[val[]].some
-    for desc in self.settingDescriptions:
-      if desc.fullName == key:
-        return desc.some
     return SettingDescription.none
 
   proc configServiceRemoveStore(self: ConfigService, store: ConfigStore) =
@@ -647,260 +388,6 @@ when implModule:
 
     else:
       self.runtime.setParent(self.base)
-
-  proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx) =
-    proc findSep(str: string, start: int): int =
-      result = str.find('.', start)
-      while result != -1 and result + 1 <= str.high and str[result + 1] == '.':
-        result = str.find('.', result + 2)
-
-    if node.kind == JObject:
-      target = newJexObject()
-      target.setUserData(node.userData)
-      for (key, field) in node.fields.pairs:
-        var prevI = 0
-        var i = key.findSep(0)
-
-        var subTarget = target
-        while i != -1:
-          var extend = true
-          if key[prevI] == '+':
-            extend = true
-            inc prevI
-          elif key[prevI] == '*':
-            extend = false
-            inc prevI
-
-          let sub = key[prevI..<i].replace("..", ".")
-
-          if subTarget.hasKey(sub):
-            subTarget = subTarget[sub]
-          else:
-            var subObject = newJexObject()
-            subObject.setUserData(node.userData)
-            subObject.extend = extend
-            subTarget[sub] = subObject
-            subTarget = subObject
-
-          prevI = i + 1
-          i = key.findSep(prevI)
-
-        var extend = field.extend
-        if prevI < key.len:
-          if key[prevI] == '+':
-            extend = true
-            inc prevI
-          elif key[prevI] == '*':
-            extend = false
-            inc prevI
-          let sub = key[prevI..^1].replace("..", ".")
-
-          var evaluatedField: JsonNodeEx
-          evaluatedField.evaluateSettingsRec(field)
-          evaluatedField.extend = extend
-          subTarget[sub] = evaluatedField
-        else:
-          # empty last key
-          var evaluatedField: JsonNodeEx
-          evaluatedField.evaluateSettingsRec(field)
-          evaluatedField.extend = extend
-          subTarget[""] = evaluatedField
-
-    else:
-      target = node
-
-  proc configStoreSetParent(self: ConfigStore, parent: ConfigStore) =
-    if self.parent != parent:
-      if self.parent != nil:
-        self.parent.onConfigChanged.unsubscribe(self.parentChangedHandle)
-
-      self.parent = parent
-      self.mergedSettingsCache.settings = nil
-      inc self.revision
-
-      if self.parent != nil:
-        self.parentChangedHandle = self.parent.onConfigChanged.subscribe proc(key: string) =
-          inc self.revision
-          var val = self.settings
-          var extend = val.extend
-          for keyRaw in key.splitOpenArray('.'):
-            if keyRaw.len == 0:
-              break
-            if isNil(val) or val.kind != JObject:
-              val = nil
-              break
-            val = val.fields.getOrDefault(keyRaw.p.toOpenArray(0, keyRaw.len - 1))
-            if val != nil:
-              extend = extend and val.extend
-
-          if val == nil or extend:
-            self.onConfigChanged.invoke(key)
-
-      self.onConfigChanged.invoke("")
-
-  proc configStoreSetSettings(self: ConfigStore, settings: JsonNodeEx) =
-    self.settings = newJexObject()
-    self.settings.setUserData(self.id)
-    settings.setUserData(self.id)
-    self.settings.evaluateSettingsRec(settings)
-    self.settings.extend = true
-    self.mergedSettingsCache.settings = nil
-    inc self.revision
-    self.onConfigChanged.invoke("")
-
-  proc configMergedSettings(self: ConfigStore): JsonNodeEx =
-    if self.parent != nil:
-      var parentMergedSettings = self.parent.mergedSettings
-      let a = cast[ptr JsonNodeEx](parentMergedSettings)
-      let b = cast[ptr JsonNodeEx](self.mergedSettingsCache.parent)
-      if self.mergedSettingsCache.settings == nil or a != b or self.mergedSettingsCache.revision != self.parent.revision:
-        # log lvlInfo, &"Parent changed for ConfigStore {self.desc}, recalculate merged settings"
-        var mergedSettings = parentMergedSettings.copy()
-        mergedSettings.extendJson(self.settings)
-        self.mergedSettingsCache = (parentMergedSettings, self.parent.revision, mergedSettings)
-
-      return self.mergedSettingsCache.settings
-
-    else:
-      return self.settings
-
-  proc configClear(self: ConfigStore, key: string) =
-    log lvlInfo, &"Clear setting '{key}' in {self.desc()}"
-
-    inc self.revision
-    self.mergedSettingsCache.settings = nil
-
-    var prevI = 0
-    var i = key.find('.')
-    if i == -1:
-      i = key.len
-
-    var node = self.settings
-    while prevI < key.len:
-      var extend = true
-      var subKey = key[prevI..<i]
-      if subKey[0] == '+':
-        subKey = subKey[1..^1]
-        extend = true
-      elif subKey[0] == '*':
-        subKey = subKey[1..^1]
-        extend = false
-
-      defer:
-        prevI = i + 1
-        i = key.find('.', prevI)
-        if i == -1:
-          i = key.len
-
-      if i == key.len:
-        node.fields.del(subKey)
-      else:
-        if not node.hasKey(subKey):
-          break
-        node = node[subKey]
-
-    self.onConfigChanged.invoke(key)
-
-  proc configStoreSet(self: ConfigStore, key: string, jsonValue: JsonNodeEx) =
-    # log lvlInfo, &"Set setting '{key}' to {jsonValue} in {self.desc()}"
-
-    var prevI = 0
-    var i = key.find('.')
-    if i == -1:
-      i = key.len
-
-    var node = self.settings
-    while prevI <= key.len:
-      var extend = true
-      var subKey = key[prevI..<i]
-      if subKey.len > 0 and subKey[0] == '+':
-        subKey = subKey[1..^1]
-        extend = true
-      elif subKey.len > 0 and subKey[0] == '*':
-        subKey = subKey[1..^1]
-        extend = false
-
-      defer:
-        prevI = i + 1
-        i = key.find('.', prevI)
-        if i == -1:
-          i = key.len
-
-      if node.kind != jsonex.JObject:
-        log lvlError, &"Failed to change setting '{key}', '{key[0..<prevI]}' is not an object:\n{node}"
-        return
-
-      if i == key.len:
-        if subKey in node.fields:
-          if node.fields[subKey] == jsonValue:
-            return
-        node[subKey] = jsonValue
-        break
-      else:
-        if not node.hasKey(subKey):
-          var newValue = newJexObject()
-          newValue.extend = extend
-          newValue.userData = self.id
-          node[subKey] = newValue
-        node = node[subKey]
-
-    inc self.revision
-    self.mergedSettingsCache.settings = nil
-    self.onConfigChanged.invoke(key)
-
-  proc configStoreGet(self: ConfigStore, key: string): JsonNodeEx =
-    var res = self.settings
-    var extend = res.extend
-    for keyRaw in key.splitOpenArray('.'):
-      if isNil(res) or res.kind != jsonex.JObject:
-        res = nil
-        break
-      res = res.fields.getOrDefault(keyRaw.p.toOpenArray(0, keyRaw.len - 1))
-      if res != nil:
-        extend = extend and res.extend
-
-    if not extend:
-      return res
-
-    if self.parent != nil:
-      let parentRes = self.parent.configStoreGet(key)
-      if res != nil and parentRes == nil:
-        return res
-      elif res != nil and parentRes != nil:
-        result = parentRes.copy()
-        result.extendJson(res)
-        return
-      else:
-        assert res == nil
-        return parentRes
-
-    return res
-
-  proc getRegexValue*(self: ConfigStore, path: string, default: string = ""): string =
-    let value = self.get(path, JsonNodeEx, nil)
-    if value == nil:
-      return default
-    return value.decodeRegex(default)
-
-  proc getAllConfigKeys*(node: JsonNodeEx, prefix: string, res: var seq[tuple[key: string, value: JsonNodeEx]]) =
-    if node == nil:
-      return
-
-    case node.kind
-    of jsonex.JObject:
-      if prefix.len > 0:
-        res.add (prefix, node)
-      for key, value in node.fields.pairs:
-        let key = if prefix.len > 0: prefix & "." & key else: key
-        value.getAllConfigKeys(key, res)
-    else:
-      res.add (prefix, node)
-
-  proc configGetAllKeys(self: JsonNodeEx): seq[tuple[key: string, value: JsonNodeEx]] =
-    self.getAllConfigKeys("", result)
-
-  proc getAllConfigKeys*(self: ConfigStore): seq[tuple[key: string, value: JsonNodeEx]] =
-    self.settings.getAllConfigKeys("", result)
 
   proc configGetStoreForId(self: ConfigService, id: int): ConfigStore =
     for store in self.runtime.parentStores:
@@ -1003,65 +490,6 @@ when implModule:
 
   {.pop.} # raises: []
   {.pop.} # gcsafe
-
-  proc setAllDefaultsImpl(store: ConfigStore, descriptions: seq[SettingDescription]) {.raises: [].} =
-    for setting in descriptions:
-      try:
-        if setting.name.contains("*") or setting.prefix == "" or setting.noInit:
-          continue
-        store.set(setting.fullName, setting.default.parseJsonEx())
-      except Exception as e:
-        log lvlError, &"Failed to set default for setting '{setting.name}': {e.msg}\n{setting.default}"
-
-  template defineSetAllDefaultSettings*(): untyped =
-    const descriptions = settingDescriptions
-    setAllDefaults = proc(store: ConfigStore) {.raises: [].} =
-      setAllDefaultsImpl(store, descriptions)
-
-    # static:
-    #   echo "=========== All settings ==========="
-    #   for i, desc in settingDescriptions:
-    #     echo i, ": ", desc
-
-    proc getSettingDescriptionsImpl(): seq[SettingDescription] =
-      const settingDescriptionsTemp = settingDescriptions
-      return settingDescriptionsTemp
-    getSettingDescriptions = getSettingDescriptionsImpl
-
-    proc markdown(s: string): string = s
-
-    proc generateDocs() =
-      var text = markdown"""| . | . | . | . |
-"""
-
-      var sortedDescriptions = descriptions
-      let typeNames = settingToJsonTypeNames
-
-      proc escape(s: string): string = s.replace("|", "\\|")
-
-      sortedDescriptions.sort(proc(a, b: auto): int = cmp(a.fullName, b.fullName))
-      var lastFullName = ""
-      for desc in sortedDescriptions:
-        if desc.name.contains("*") or desc.prefix == "" or desc.noInit or desc.fullName == lastFullName:
-          continue
-        lastFullName = desc.fullName
-
-        let docs = desc.docs.replace("\n", " ")
-        var typeName = desc.typ
-        if typeNames.contains(desc.fullName):
-          typeName = typeNames[desc.fullName]
-
-        text.add "| `" & desc.fullName & "` | " & typeName.escape() & " | " & desc.default.escape() & " | " & docs.escape() & " |\n"
-
-      var current = readFile("docs/settings.md")
-      let index = current.find("| . | . | . | . |")
-      assert index != -1
-      let new = current[0..<index] & text
-      writeFile("docs/settings.md", new)
-
-    when not defined(useDynlib):
-      static:
-        generateDocs()
 
 declareSettings BackgroundSettings, "":
   ## If true the background is transparent.
@@ -1296,6 +724,3 @@ declareSettingsTemplate TreesitterSettings, "text.treesitter":
 
   ## Path relative to the repository root where queries are located. If not set then the editor will look for the queries.
   declare repository, Option[string], nil
-
-when isMainModule:
-  defineSetAllDefaultSettings()

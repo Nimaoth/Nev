@@ -84,6 +84,18 @@ proc toPascalCase(str: string): string =
 
 proc readDependencies(str: string, modules: Table[string, ModuleInfo]): Table[string, seq[string]] =
   try:
+    if str == "modules\\log.nim":
+      discard
+    elif str == "modules\\config_store.nim":
+      for dep in ["log"]:
+        result[dep] = @[]
+    elif str == "modules\\lisp.nim":
+      for dep in ["log"]:
+        result[dep] = @[]
+    else:
+      for dep in ["log", "config_store"]:
+        result[dep] = @[]
+
     let f = readFile(str)
     for l in f.splitLines:
       if l.startsWith("#use "):
@@ -234,7 +246,7 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
         for (file, info) in m.files.pairs:
           echo &"  {file} {info}"
 
-      var dependencies = @["log"]
+      var dependencies: seq[string] = @[]
       for module in m.dependencies.keys:
         dependencies.add module
       let dependenciesStr = dependencies.join(",")

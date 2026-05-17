@@ -243,6 +243,7 @@ import vcs # required for dll exported global vars
 import service
 import config_provider
 import config_component # todo: make these modules
+import core_settings
 {.pop.}
 
 import stats, event_service
@@ -418,8 +419,6 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
 
     {.gcsafe.}:
       logger().flush()
-
-defineSetAllDefaultSettings()
 
 gServices.addBuiltinServices()
 gServices.getServiceChecked(PlatformService).setPlatform(plat)
