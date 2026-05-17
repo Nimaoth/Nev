@@ -11,25 +11,6 @@ const currentSourcePath2 = currentSourcePath()
 include module_base
 
 type
-  FormatterInput* = enum TempFile = "temp-file", File = "file", Stdin = "stdin"
-
-proc typeNameToJson*(T: typedesc[FormatterInput]): string =
-  return "\"temp-file\" | \"file\" | \"stdin\""
-
-declareSettings FormatSettings, "formatter":
-  ## If true run the formatter when saving.
-  declare onSave, bool, false
-
-  ## Command to run. First entry is path to the formatter program, subsequent entries are passed as arguments to the formatter.
-  declare command, seq[string], newSeq[string]()
-
-  ## How input is passed to the formatter
-  ## `temp-file`: When formatting the file is saved to a temporary file and the formatter is run on the temporary file
-  ## `file`: The formatter is run on the actual file. Make sure to save first.
-  ## `stdin`: The file is passed to the formatter through stdin, and the formatter is expected to write the formatted output to stdout.
-  declare input, FormatterInput, FormatterInput.TempFile
-
-type
   Formatter* = ref object of RootObj
     formatImpl*: proc(self: Formatter, document: Document): Future[void] {.gcsafe, async: (raises: []).}
 
@@ -39,7 +20,6 @@ type
   FormattingComponent* = ref object of Component
     vfs: VFS
     config: ConfigStore
-    settings: FormatSettings
 
 func serviceName*(_: typedesc[FormattingService]): string = "FormattingService"
 
@@ -61,7 +41,7 @@ when implModule:
   import std/[sequtils]
   import misc/[util, custom_logger, async_process, timer]
   import nimsumtree/[rope, arc]
-  import text_component, misc/channel
+  import text_component, misc/channel, core_settings
 
   logCategory "formatting-component"
 
@@ -80,12 +60,11 @@ when implModule:
       typeId: FormattingComponentId,
       vfs: vfs,
       config: config,
-      settings: FormatSettings.new(config),
       initializeImpl: (proc(self: Component, owner: ComponentOwner) =
         let self = self.FormattingComponent
         owner.Document.preSaveHandlers.add proc(doc: Document): Future[void] {.async: (raises: [])} =
           debugf"pre save {doc.filename}"
-          if self.settings.onSave.get():
+          if self.config.getFormatterOnSave():
             await self.format()
       ),
     )
@@ -115,7 +94,7 @@ when implModule:
 
     let doc = self.owner.Document
 
-    let formatterType = self.config.get("formatter.type", "")
+    let formatterType = self.config.getFormatterType()
     if formatterType != "":
       if formatterType in formattingService.formatters:
         let formatter = formattingService.formatters[formatterType]
@@ -128,12 +107,12 @@ when implModule:
       return
 
     try:
-      let command = self.config.get("formatter.command", seq[string])
+      let command = self.config.getFormatterCommand()
       if command.len == 0:
         log lvlWarn, &"No formatter configured for '{doc.filename}'"
         return
 
-      let input = self.config.get("formatter.input", FormatterInput)
+      let input = self.config.getFormatterInput()
 
       let formatterPath = command[0]
       let formatterArgs = command[1..^1].mapIt(it.replace("{filename}", doc.localizedPath))
@@ -164,7 +143,7 @@ when implModule:
 
         await text.reloadFromRope(rope.clone())
 
-      of File:
+      of FormatterInput.File:
         discard await runProcessAsync(formatterPath, formatterArgs & @[doc.localizedPath])
         var rope: Rope = Rope.new()
         try:
@@ -175,7 +154,7 @@ when implModule:
 
         await text.reloadFromRope(rope.clone())
 
-      of Stdin:
+      of FormatterInput.Stdin:
         var process = startAsyncProcess(formatterPath, formatterArgs, killOnExit = true, autoStart = false)
         discard process.start()
         asyncSpawn readStderr(formatterPath, process.stderr)
