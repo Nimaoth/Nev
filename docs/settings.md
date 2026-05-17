@@ -35,7 +35,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `editor.max-search-results` | int | 1000 | Max number of search results returned by global text based search. |
 | `editor.open-session.args` | Option[seq[any]] | null | Command arguments to use when opening a session in a new window. |
 | `editor.open-session.command` | Option[string] | null | Command to use when opening a session in a new window. |
-| `editor.open-session.use-multiplexer` | bool | true | If true then Nev will detect if it's running inside a multiplexer like tmux, zellij or wezterm (by using environment varia bles) and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij` or `editor.open-sessi on.wezterm` |
+| `editor.open-session.use-multiplexer` | bool | true | If true then Nev will detect if it's running inside a multiplexer like tmux, zellij or wezterm (by using environment variables) and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij` or `editor.open-session.wezterm` |
 | `editor.print-statistics-on-shutdown` | bool | false | If true the editor prints memory usage statistics when quitting. |
 | `editor.prompt-before-quit` | bool | false | If true then you will be prompted to confirm quitting even when no unsaved changes exist. |
 | `editor.record-input-history` | bool | false | Whether the editor shows a history of the last few pressed buttons in the status bar. |
@@ -58,7 +58,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `terminal.default-mode` | string | "" | Input mode to activate when creating a new terminal, if no mode is specified otherwise. |
 | `terminal.idle-threshold` | int | 500 | After how many milliseconds of no data received from a terminal it is considered idle, and can be reused for running more commands. |
 | `text.add-new-file-vcs` | bool | false | If true then newly saved files will be added to the vcs (only for perforce right now, does nothing for git) |
-| `text.add-new-file-vcs-prompt` | bool | true | If true then you will be prompted when saving a new file on whether to add it to the vcs, otherwise the file is always add ed. |
+| `text.add-new-file-vcs-prompt` | bool | true | If true then you will be prompted when saving a new file on whether to add it to the vcs, otherwise the file is always added. |
 | `text.auto-insert-close` | bool | true | Automatically insert closing parenthesis, braces, brackets and quotes. |
 | `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes). |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
@@ -67,7 +67,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `text.code-actions.sign-width` | int | 1 | How many columns the sign occupies. |
 | `text.color-highlight.enable` | bool | false | Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language in `text.color-highlight.{language-id}.` |
 | `text.color-highlight.kind` | "hex", "float1", "float255" | "hex" | How to interpret the number. 'hex' means the number is written as either 6 or 8 hex characters, e.g. ABBACA7. 'float1' means the number is a float with 0 being black and 1 being white. 'float255' means the number is a float or int with 0 being black and 255 being white. |
-| `text.color-highlight.regex` | regex | "#([0-9a-fA-F]{6})\|#([0-9a-fA-F]{8})" | Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kin d. |
+| `text.color-highlight.regex` | regex | "#([0-9a-fA-F]{6})\|#([0-9a-fA-F]{8})" | Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kind. |
 | `text.completion-mode` | string | "editor.text" | Mode to activate while completion window is open. |
 | `text.completion-word-chars` | seq[string or seq[string]] | [["a","z"],["A","Z"],["0","9"],"_"] |  |
 | `text.control-click-command` | string | "goto-definition" | Command to run after control clicking on some text. |
@@ -77,7 +77,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `text.default-mode` | string | "" | Default mode to set when opening/creating text documents. |
 | `text.diagnostics.enable` | bool | false | Enable diagnostics. Also requires a language server which supports diagnostics. |
 | `text.diagnostics.snapshot-history` | int | 5 | How many snapshots to keep when editing. Snapshots are used to fix up diagnostic locations when receiving diagnostics for an older version of the document (e.g when you continue editing and the languages doesn't respond fast enough). You might want to increase this if you are using a language server which is very slow and you want diagnostics to show up even when you're actively typing (diagnostics received for old document versions are discarded). |
-| `text.diff-reload.enable` | bool | true | When reloading a file the editor will compute the diff between the file on disk and the in memory document, and then apply the diff to the in memory version so it matches the content on disk. This can reduce memory usage when reloading files often (although it increases memory usage while reloading and increases load ti mes). It's also better for collaboration as it doesn't affect the entire file. |
+| `text.diff-reload.enable` | bool | true | When reloading a file the editor will compute the diff between the file on disk and the in memory document, and then apply the diff to the in memory version so it matches the content on disk. This can reduce memory usage when reloading files often (although it increases memory usage while reloading and increases load times). It's also better for collaboration as it doesn't affect the entire file. |
 | `text.diff-reload.timeout` | int | 250 | Max number of milliseconds to use for diffing. If the timeout is exceeded then the file will be reloaded normally. |
 | `text.disable-completions` | bool | false | Disable auto completion |
 | `text.disable-scrolling` | bool | false | Disable scrolling |
@@ -95,7 +95,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `text.indent` | "tabs", "spaces" | "spaces" | Whether to used spaces or tabs for indentation. When indent detection is enabled then this only specfies the default for new files and files where the indentation type can't be detected automatically. |
 | `text.indent-after` | Option[seq[string]] | null | When you insert a new line, if the current line ends with one of these strings then the new line will be indented. |
 | `text.indent-detection.enable` | bool | true | Enable auto detecting the indent style when opening files. |
-| `text.indent-detection.samples` | int | 50 | How many indent characters to process when detecting the indent style. Increase this if it fails for files which start wit h many unindented lines. |
+| `text.indent-detection.samples` | int | 50 | How many indent characters to process when detecting the indent style. Increase this if it fails for files which start with many unindented lines. |
 | `text.indent-detection.timeout` | int | 20 | Max number of milliseconds to spend trying to detect the indent style. |
 | `text.inlay-hints.enable` | bool | true | Whether inlay hints are enabled. |
 | `text.line-comment` | Option[string] | null | String which starts a line comment |
@@ -170,7 +170,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `ui.vsync` | bool | true | Enable vertical sync to prevent screen tearing. |
 | `ui.which-key-delay` | int | 250 | After how many milliseconds the which key window opens. |
 | `ui.which-key-height` | int | 6 | How many rows tall the window showing next possible inputs should be. |
-| `ui.which-key-no-progress` | bool | false | If true then the window showing next possible inputs will be displayed even when no keybinding is in progress (i.e. it wil l always be shown). |
+| `ui.which-key-no-progress` | bool | false | If true then the window showing next possible inputs will be displayed even when no keybinding is in progress (i.e. it will always be shown). |
 | `ui.which-key-show-when-mod` | bool | false | Show which key window when holding down modifiers. |
 | `ui.whitespace-char` | string | "·" | Character to use when rendering whitespace. If this is the empty string or not set then spaces are not rendered. |
 | `ui.whitespace-color` | string | "comment" | Color of rendered whitespace. Can be a theme key or hex color (e.g #ff00ff). |

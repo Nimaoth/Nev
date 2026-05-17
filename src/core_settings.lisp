@@ -60,8 +60,7 @@
       "Show which key window when holding down modifiers.")
 
     (setting which-key-no-progress "bool" false
-      "If true then the window showing next possible inputs will be displayed even when no keybinding is in progress (i.e. it wil
-l always be shown).")
+      "If true then the window showing next possible inputs will be displayed even when no keybinding is in progress (i.e. it will always be shown).")
 
     (setting which-key-height "int" 6
       "How many rows tall the window showing next possible inputs should be.")
@@ -138,10 +137,8 @@ the screen height.")
 
   (group OpenSessionSettings "editor.open-session"
     (setting use-multiplexer "bool" true
-      "If true then Nev will detect if it's running inside a multiplexer like tmux, zellij or wezterm (by using environment varia
-bles)
-and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij` or `editor.open-sessi
-on.wezterm`")
+      "If true then Nev will detect if it's running inside a multiplexer like tmux, zellij or wezterm (by using environment variables)
+and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij` or `editor.open-session.wezterm`")
 
     (setting command "Option[string]" nil
       "Command to use when opening a session in a new window.")
@@ -324,8 +321,7 @@ If false then the entire line is shown.")
       "Enable auto detecting the indent style when opening files.")
 
     (setting samples "int" 50
-      "How many indent characters to process when detecting the indent style. Increase this if it fails for files which start wit
-h many unindented lines.")
+      "How many indent characters to process when detecting the indent style. Increase this if it fails for files which start with many unindented lines.")
 
     (setting timeout "int" 20
       "Max number of milliseconds to spend trying to detect the indent style."))
@@ -334,8 +330,7 @@ h many unindented lines.")
     (setting enable "bool" true
       "When reloading a file the editor will compute the diff between the file on disk and the in memory document,
 and then apply the diff to the in memory version so it matches the content on disk.
-This can reduce memory usage when reloading files often (although it increases memory usage while reloading and increases load ti
-mes).
+This can reduce memory usage when reloading files often (although it increases memory usage while reloading and increases load times).
 It's also better for collaboration as it doesn't affect the entire file.")
 
     (setting timeout "int" 250
@@ -368,8 +363,7 @@ code actions.")
 in `text.color-highlight.{language-id}.`")
 
     (setting regex "RegexSetting" "#([0-9a-fA-F]{6})|#([0-9a-fA-F]{8})"
-      "Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kin
-d.")
+      "Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kind.")
 
     (setting kind "ColorType" hex
       "How to interpret the number.
@@ -401,8 +395,7 @@ for new files and files where the indentation type can't be detected automatical
       "If true then newly saved files will be added to the vcs (only for perforce right now, does nothing for git)")
 
     (setting add-new-file-vcs-prompt "bool" true
-      "If true then you will be prompted when saving a new file on whether to add it to the vcs, otherwise the file is always add
-ed.")
+      "If true then you will be prompted when saving a new file on whether to add it to the vcs, otherwise the file is always added.")
 
     (setting inclusive-selection "bool" false
       "Specifies whether a selection includes the character after the end cursor.
