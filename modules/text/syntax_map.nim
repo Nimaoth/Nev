@@ -8,6 +8,7 @@ from language_server import nil
 import theme
 import chroma
 import malebolgia
+import prof
 
 {.push warning[Deprecated]:off.}
 import std/[threadpool]
@@ -164,7 +165,7 @@ proc seek(self: var LayerIterator, offset: int) =
   for i, layer in self.layers.mpairs:
     discard layer.cursor.seek(layer.start + offset, Bias.Right, ())
 
-proc layersOverlapping*(self: var LayerIterator, range: Range[int]): seq[int] =
+proc layersOverlapping*(self: var LayerIterator, range: Range[int], result: var seq[int]) =
   for layer in self.layers.mitems:
     discard layer.cursor.seekForward(layer.start + range.a, Bias.Right, ())
     if layer.cursor.item.getSome(item) and (item.depth == 0 or item.index > 0):
@@ -173,6 +174,9 @@ proc layersOverlapping*(self: var LayerIterator, range: Range[int]): seq[int] =
       layer.cursor.next()
       if layer.cursor.item.getSome(item) and (item.depth == 0 or item.index > 0):
         result.add item.index
+
+proc layersOverlapping*(self: var LayerIterator, range: Range[int]): seq[int] =
+  self.layersOverlapping(range, result)
 
 type
   SyntaxMap* = ref object
@@ -218,6 +222,8 @@ type
     highlighter*: Option[Highlighter]
     theme*: Theme
     highlights: seq[Highlight]
+    scratchHighlights: seq[Highlight]
+    overlappingLayersCached: seq[int]
     highlightsIndex: int = -1
     diagnosticEndPoints*: seq[DiagnosticEndPoint]
     diagnosticIndex*: int
@@ -321,7 +327,7 @@ proc buildLayerIndex*(layers: openArray[SyntaxLayer], text: Rope): SumTree[Synta
       lines: max(text.endPoint, lastPoint) - lastPoint,
     ), ())
 
-proc layersOverlapping*(self: SyntaxMapSnapshot, range: Range[int]): seq[int] =
+proc layersOverlapping*(self: SyntaxMapSnapshot, range: Range[int], result: var seq[int]) =
   # todo: seek to beginning of each depth, then to byte index to find overlaps more efficiently
   var cursor = self.layerIndex.initCursor(SyntaxLayerRefSummary)
   cursor.next()
@@ -338,6 +344,9 @@ proc layersOverlapping*(self: SyntaxMapSnapshot, range: Range[int]): seq[int] =
     if range.a <= itemRange.b and range.b >= itemRange.a:
       result.add item.index
     cursor.next()
+
+proc layersOverlapping*(self: SyntaxMapSnapshot, range: Range[int]): seq[int] =
+  self.layersOverlapping(range, result)
 
 proc treesOverlapping*(self: SyntaxMapSnapshot, range: Range[int]): seq[TSTree] =
   for layer in self.layersOverlapping(range):
@@ -458,6 +467,7 @@ proc findExistingLayerTree(self: SyntaxMapSnapshot, language: string,
   return TSTree()
 
 proc parseTreesitter(parser: TSParser, oldTree: TSTree, text: sink Rope): TSTree =
+  daTag(daTreesitter)
   var ropeCursor = text.cursor()
   let newTree = parser.parseCallback(oldTree):
     proc(byteIndex: int, cursor: api.Cursor): (ptr char, int) =
@@ -1119,6 +1129,7 @@ proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, highlighter: 
   result.theme = theme
   # todo: reuse this arena every frame
   result.arena = initArena(16 * 1024)
+  result.highlights = newSeqOfCap[Highlight](128)
 
   result.errorColor = result.defaultColor
   result.warningColor = result.defaultColor
@@ -1136,9 +1147,21 @@ proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, highlighter: 
     result.infoColor = theme.tokenColor("info", result.defaultColor)
     result.hintColor = theme.tokenColor("hint", result.defaultColor)
 
+    const names = [
+      "rainbow0",
+      "rainbow1",
+      "rainbow2",
+      "rainbow3",
+      "rainbow4",
+      "rainbow5",
+      "rainbow6",
+      "rainbow7",
+      "rainbow8",
+      "rainbow9",
+    ]
     if result.highlighter.isSome and result.highlighter.get.rainbowParens:
-      for i in 0..10:
-        let c = theme.color("rainbow" & $i, color(0, 0, 0, 0))
+      for name in names:
+        let c = theme.color(name, color(0, 0, 0, 0))
         if c == color(0, 0, 0, 0):
           break
         result.parenColors.add c
@@ -1191,7 +1214,7 @@ func contentString(self: var StyledChunkIterator, selection: Range[Point], byteR
 
 proc `+`(a, b: Color): Color = color(a.r + b.r, a.g + b.g, a.b + b.b, a.a + b.a)
 
-proc addHighlight(highlights: var seq[Highlight], nextHighlight: sink Highlight, defaultColor: Color) =
+proc addHighlight(highlights: var seq[Highlight], nextHighlight: sink Highlight, defaultColor: Color, scratch: var seq[Highlight]) =
   ## Adds the new highlight into highlights, blending and splitting with overlapping highlights
   ## highlights: aaaaabbbbbb cccccdddddd
   ## next:         xxxxxxxxxxxx
@@ -1224,16 +1247,16 @@ proc addHighlight(highlights: var seq[Highlight], nextHighlight: sink Highlight,
     return
 
   var nextHighlight = nextHighlight
-  var merged = newSeqOfCap[Highlight](highlights.len + 4)
+  scratch.setLen(0)
   var cursor = nextHighlight.range.a
 
   for h in highlights.items:
     if h.range.b <= nextHighlight.range.a or h.range.a >= nextHighlight.range.b:
       # Once we pass the insertion range, flush any remaining part of the new highlight.
       if h.range.a >= nextHighlight.range.b and cursor < nextHighlight.range.b:
-        merged.addSegment(blendOverBase(nextHighlight, cursor...nextHighlight.range.b, defaultColor, {}, 1.0))
+        scratch.addSegment(blendOverBase(nextHighlight, cursor...nextHighlight.range.b, defaultColor, {}, 1.0))
         cursor = nextHighlight.range.b
-      merged.addSegment(h)
+      scratch.addSegment(h)
       continue
 
     let overlapStart = max(h.range.a, nextHighlight.range.a)
@@ -1242,29 +1265,29 @@ proc addHighlight(highlights: var seq[Highlight], nextHighlight: sink Highlight,
     if h.range.a < overlapStart:
       var left = h
       left.range.b = overlapStart
-      merged.addSegment(left)
+      scratch.addSegment(left)
 
     if cursor < overlapStart:
-      merged.addSegment(blendOverBase(nextHighlight, cursor...overlapStart, defaultColor, {}, 1.0))
+      scratch.addSegment(blendOverBase(nextHighlight, cursor...overlapStart, defaultColor, {}, 1.0))
 
     if overlapStart < overlapEnd:
       if h.priority > nextHighlight.priority:
         var keep = h
         keep.range = overlapStart...overlapEnd
-        merged.addSegment(keep)
+        scratch.addSegment(keep)
       else:
-        merged.addSegment(blendOverBase(nextHighlight, overlapStart...overlapEnd, h.color, h.fontStyle, h.fontScale))
+        scratch.addSegment(blendOverBase(nextHighlight, overlapStart...overlapEnd, h.color, h.fontStyle, h.fontScale))
       cursor = max(cursor, overlapEnd)
 
     if h.range.b > overlapEnd:
       var right = h
       right.range.a = overlapEnd
-      merged.addSegment(right)
+      scratch.addSegment(right)
 
   if cursor < nextHighlight.range.b:
-    merged.addSegment(blendOverBase(nextHighlight, cursor...nextHighlight.range.b, defaultColor, {}, 1.0))
+    scratch.addSegment(blendOverBase(nextHighlight, cursor...nextHighlight.range.b, defaultColor, {}, 1.0))
 
-  highlights = merged
+  swap(highlights, scratch)
 
 proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
   if self.atEnd:
@@ -1324,11 +1347,12 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
         let chunkStartByte = snap.rope.pointToOffset(point)
         let chunkEndByte = chunkStartByte + currentChunk.len
 
-        var overlapping: seq[int] = self.layerIterator.layersOverlapping(chunkStartByte...chunkEndByte)
+        self.overlappingLayersCached.setLen(0)
+        self.layerIterator.layersOverlapping(chunkStartByte...chunkEndByte, self.overlappingLayersCached)
         # echo &"highlight chunk {currentChunk}"
 
         var requiresSort = false
-        for layerIdx in overlapping:
+        for layerIdx in self.overlappingLayersCached:
           let layer {.cursor.} = snap.layers[layerIdx]
           if layer.tree.isNil or layer.highlightQuery.isNil: continue
           let highlightQuery = layer.highlightQuery
@@ -1429,14 +1453,14 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
               let fontScale = self.theme.tokenFontScale(capture.name)
               let priority = match.pattern + layer.depth * 10_000
               var nextHighlight: Highlight = (nodeRangeClamped, color, fontStyle, fontScale, priority)
-              self.highlights.addHighlight(nextHighlight.ensureMove, self.defaultColor)
+              self.highlights.addHighlight(nextHighlight.ensureMove, self.defaultColor, self.scratchHighlights)
 
         if requiresSort:
           var highlights = self.highlights
           highlights.sort(proc(a, b: Highlight): int = cmp(a.range.a, b.range.a))
           self.highlights.setLen(0)
           for nextHighlight in highlights.mitems:
-            self.highlights.addHighlight(nextHighlight, self.defaultColor)
+            self.highlights.addHighlight(nextHighlight, self.defaultColor, self.scratchHighlights)
 
   assert self.chunk.isSome
   var currentChunk = self.chunk.get
