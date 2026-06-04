@@ -313,6 +313,10 @@ type
     onDrag*: proc(view: TerminalView, button: input_api.MouseButton, col: int, row: int, modifiers: Modifiers) {.gcsafe, raises: [].}
     onMove*: proc(view: TerminalView, col: int, row: int) {.gcsafe, raises: [].}
     isInPreview*: bool = false
+    renderBuffer*: string
+    backgroundRenderCommands*: ref RenderCommands
+    foregroundRenderCommands*: ref RenderCommands
+
 
   TerminalServiceImpl* = ref object of TerminalService
     events*: EventHandlerService

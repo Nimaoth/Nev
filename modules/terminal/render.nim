@@ -3,7 +3,7 @@ import vmath, bumpy, chroma
 import pixie
 import misc/[util, custom_logger, custom_unicode, tui]
 import theme, view, config_provider
-import types_impl
+import types_impl, core_settings
 
 from std/colors as colors import nil
 
@@ -52,8 +52,7 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
   self.resetDirty()
 
   let config = self.terminals.config.runtime
-  let uiSettings = UISettings.new(config)
-  let inactiveBrightnessChange = uiSettings.background.inactiveBrightnessChange.get()
+  let inactiveBrightnessChange = config.getUiBackgroundInactiveBrightnessChange()
   var backgroundColor = if self.active:
     builder.theme.color("editor.background", color(25/255, 25/255, 40/255))
   else:
@@ -170,17 +169,21 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
         outCellWidth = builder.charWidth.floor.int
         outCellHeight = builder.textHeight.floor.int
 
-        # todo: reuse those
-        var backgroundRenderCommands = new(RenderCommands)
-        var foregroundRenderCommands = new(RenderCommands)
+        if self.backgroundRenderCommands == nil:
+          self.backgroundRenderCommands = new(RenderCommands)
+        if self.foregroundRenderCommands == nil:
+          self.foregroundRenderCommands = new(RenderCommands)
+
+        self.backgroundRenderCommands[].clear()
+        self.foregroundRenderCommands[].clear()
 
         currentNode.renderCommands.clear()
-        currentNode.renderCommandList = @[backgroundRenderCommands, foregroundRenderCommands]
+        currentNode.renderCommandList = @[self.backgroundRenderCommands, self.foregroundRenderCommands]
         if self.terminal.isNotNil:
           let width = self.terminal.terminalBuffer.width
           let height = self.terminal.terminalBuffer.height
 
-          buildCommands(backgroundRenderCommands[]):
+          buildCommands(self.backgroundRenderCommands[]):
             for s in self.terminal.sixels:
               self.terminals.sixelTextures.withValue(s.contentHash, textureId):
                 let offset = vec2(s.col.float * builder.charWidth, s.row.float * builder.textHeight)
@@ -188,7 +191,7 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
                   s.px.float * s.width.float * imageScale, s.py.float * s.height.float * imageScale)
                 drawImage(bounds, textureId[])
 
-          self.drawImages(builder, backgroundRenderCommands[], int.low ..< -1073741824)
+          self.drawImages(builder, self.backgroundRenderCommands[], int.low ..< -1073741824)
 
           if config.get("debug.simple-terminal-render", false):
             for row in 0..<height:
@@ -238,19 +241,18 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
                   fgColor = cursorBackgroundColor
 
                 let bounds = rect(col.float * builder.charWidth, row.float * builder.textHeight, builder.charWidth, builder.textHeight)
-                buildCommands(foregroundRenderCommands[]):
+                buildCommands(self.foregroundRenderCommands[]):
                   if bg != bgNone:
-                    buildCommands(backgroundRenderCommands[]):
+                    buildCommands(self.backgroundRenderCommands[]):
                       fillRect(bounds, bgColor)
 
                   if cell.chsLen > 0:
                     drawText(cell.chs.toOpenArray(0, cell.chsLen - 1), bounds, fgColor, 0.UINodeFlags)
 
           else:
-            var buffer = ""
             for row in 0..<height:
               var lastCell: TerminalChar = self.terminal.terminalBuffer[0, row]
-              buffer.setLen(0)
+              self.renderBuffer.setLen(0)
               var boundsAcc = rect(0, row.float * builder.textHeight, 0, builder.textHeight)
 
               var bg = lastCell.bg
@@ -261,26 +263,26 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
               var textFlags = 0.UINodeFlags
 
               template flush(draw: bool = true): untyped =
-                # debugf"flush {boundsAcc}, '{buffer}'"
-                if buffer.len > 0 and draw:
+                # debugf"flush {boundsAcc}, '{self.renderBuffer}'"
+                if self.renderBuffer.len > 0 and draw:
                   if bg != bgNone:
-                    buildCommands(backgroundRenderCommands[]):
+                    buildCommands(self.backgroundRenderCommands[]):
                       fillRect(boundsAcc, bgColor)
 
-                  buildCommands(foregroundRenderCommands[]):
+                  buildCommands(self.foregroundRenderCommands[]):
                     if styleStrikethrough in lastCell.style:
                       # todo: make this work in terminal platform
                       fillRect(rect(boundsAcc.x, boundsAcc.y + boundsAcc.h * 0.4, boundsAcc.w, boundsAcc.h * 0.1), fgColor)
 
                     if styleHidden notin lastCell.style and not lastCell.isEmpty:
-                      # debugf"  draw {boundsAcc}, '{buffer}'"
-                      drawText(buffer, boundsAcc, fgColor, textFlags)
+                      # debugf"  draw {boundsAcc}, '{self.renderBuffer}'"
+                      drawText(self.renderBuffer, boundsAcc, fgColor, textFlags)
 
                 textFlags = 0.UINodeFlags
                 boundsAcc.x = boundsAcc.xw
                 boundsAcc.x = (boundsAcc.x / builder.charWidth).ceil * builder.charWidth
                 boundsAcc.w = builder.charWidth
-                buffer.setLen(0)
+                self.renderBuffer.setLen(0)
                 runLen = 0
 
               template `!=`(a, b: colors.Color): bool =
@@ -306,7 +308,7 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
                   of CursorShape.BarLeft:
                     cursorBounds.w *= 0.1
 
-                  buildCommands(foregroundRenderCommands[]):
+                  buildCommands(self.foregroundRenderCommands[]):
                     fillRect(cursorBounds, cursorForegroundColor)
                     if not cell.isEmpty and styleHidden notin cell.style:
                       drawText(cell.chs, cellBounds, fgColor, textFlags)
@@ -331,9 +333,9 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
                   boundsAcc.x = col.float * builder.charWidth
 
                 if not cell.isEmpty:
-                  cell.writeCharsTo(buffer)
+                  cell.writeCharsTo(self.renderBuffer)
                 else:
-                  buffer.add "\0"
+                  self.renderBuffer.add "\0"
                 boundsAcc.w = (col + 1).float * builder.charWidth - boundsAcc.x
                 inc runLen
 
@@ -397,11 +399,11 @@ proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHe
               # Flush last part of the line
               flush()
 
-          self.drawImages(builder, backgroundRenderCommands[], -1073741824..<0)
-          self.drawImages(builder, foregroundRenderCommands[], 0..int.high)
+          self.drawImages(builder, self.backgroundRenderCommands[], -1073741824..<0)
+          self.drawImages(builder, self.foregroundRenderCommands[], 0..int.high)
 
         # Scroll bar
-        buildCommands(foregroundRenderCommands[]):
+        buildCommands(self.foregroundRenderCommands[]):
           if self.terminal.scrollHeight > 0:
             let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
             let thumbHeightRatio = cellHeight.float / self.terminal.scrollHeight

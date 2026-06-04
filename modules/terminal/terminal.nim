@@ -27,6 +27,7 @@ when implModule:
     echo "DO Build terminal implementation"
 
   import std/[streams, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm, sets, macros, deques, genasts]
+  import prof
   import chroma, pixie, pixie/fileformats/png
   import nimsumtree/[rope]
   import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, async_process, wrap, case_swap, jsonex, array_set, tui]
@@ -1584,6 +1585,7 @@ when implModule:
       return cmp(a.imageId, b.imageId)
 
   proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
+    daTag(daTerminal)
     var state = s
     state.scrollbackLines = 16384
     state.scrollbackBuffer = initDeque[seq[VTermScreenCell]](state.scrollbackLines)
@@ -2644,6 +2646,7 @@ when implModule:
         terminal: term,
         closeOnTerminate: options.closeOnTerminate,
         slot: options.slot,
+        renderBuffer: newStringOfCap(1024),
       )
 
       proc renderTerminal(self: TerminalView, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].} =
@@ -2709,6 +2712,7 @@ when implModule:
         terminal: term,
         closeOnTerminate: options.closeOnTerminate,
         slot: options.slot,
+        renderBuffer: newStringOfCap(1024),
       )
 
       proc renderTerminal(self: TerminalView, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].} =
