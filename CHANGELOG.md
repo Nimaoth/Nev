@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.0](https://github.com/Nimaoth/Nev/compare/v0.5.1...v0.6.0) (2026-06-04)
+- Added memory profiler (not in release builds)
+- Popups can now be popped and put into the main layout
+- New Git UI with some basic git functionality
+- Memory usage and performance optimizations
+
 ## [0.5.1](https://github.com/Nimaoth/Nev/compare/v0.5.0...v0.5.1) (2026-04-25)
 
 - Fix key repeating not working in linux GUI version
