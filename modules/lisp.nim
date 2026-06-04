@@ -91,6 +91,94 @@ proc `$`*(val: LispVal): string {.raises: [].} =
   of Lambda: &"({val.params}) -> {val.body})"
   of Macro: &"!({val.params}) -> {val.body})"
 
+proc indent(s: var string, i: int) =
+  s.add(spaces(i))
+
+proc newIndent(curr, indent: int, ml: bool): int =
+  if ml: return curr + indent
+  else: return indent
+
+proc nl(s: var string, ml: bool) =
+  s.add(if ml: "\n" else: " ")
+
+proc toPretty(result: var string, node: LispVal, indent = 2, ml = true,
+              lstArr = false, currIndent = 0) =
+  case node.kind
+  of Map:
+    if lstArr: result.indent(currIndent) # Indentation
+    if node.fields.len > 0:
+      result.add("{")
+      result.nl(ml) # New line
+      var i = 0
+      for key, val in pairs(node.fields):
+        if i > 0:
+          result.add(",")
+          result.nl(ml) # New Line
+        inc i
+        # Need to indent more than {
+        result.indent(newIndent(currIndent, indent, ml))
+        escapeJson(key, result)
+        result.add(": ")
+        toPretty(result, val, indent, ml, false,
+                 newIndent(currIndent, indent, ml))
+      result.nl(ml)
+      result.indent(currIndent) # indent the same as {
+      result.add("}")
+    else:
+      result.add("{}")
+  of Symbol:
+    if lstArr: result.indent(currIndent)
+    result.add $node
+  of String:
+    if lstArr: result.indent(currIndent)
+    result.add $node
+  of Number:
+    if lstArr: result.indent(currIndent)
+    result.addFloat(node.num)
+  of Bool:
+    if lstArr: result.indent(currIndent)
+    result.add(if node.bol: "true" else: "false")
+  of Array:
+    if lstArr: result.indent(currIndent)
+    if len(node.elems) != 0:
+      result.add("[")
+      result.nl(ml)
+      for i in 0..len(node.elems)-1:
+        if i > 0:
+          result.add(",")
+          result.nl(ml) # New Line
+        toPretty(result, node.elems[i], indent, ml,
+            true, newIndent(currIndent, indent, ml))
+      result.nl(ml)
+      result.indent(currIndent)
+      result.add("]")
+    else: result.add("[]")
+  of List:
+    if lstArr: result.indent(currIndent)
+    if len(node.elems) != 0:
+      result.add("(")
+      result.nl(ml)
+      for i in 0..len(node.elems)-1:
+        if i > 0:
+          result.add(" ")
+          result.nl(ml) # New Line
+        toPretty(result, node.elems[i], indent, ml,
+            true, newIndent(currIndent, indent, ml))
+      result.nl(ml)
+      result.indent(currIndent)
+      result.add(")")
+    else: result.add("[]")
+  of Nil:
+    if lstArr: result.indent(currIndent)
+    result.add("null")
+  of Func: result.add &"<native.{node.name}>"
+  of Lambda: result.add &"({node.params}) -> {node.body})"
+  of Macro: result.add &"!({node.params}) -> {node.body})"
+
+proc pretty*(node: LispVal, indent = 2): string =
+  result = ""
+  toPretty(result, node, indent)
+
 proc newNil*(): LispVal =
   LispVal(kind: Nil)
 
