@@ -148,7 +148,7 @@ when implModule:
     if root.len == 0:
       return
     let output = await self.runGitCommand(@["branch", "-a"], root)
-    var branchesSeq: seq[string] = @[]
+    var branchesSeq: seq[string] = @["HEAD"]
     for line in output:
       if line.len > 0 and not line.startsWith("* "):
         branchesSeq.add line.strip()
@@ -810,13 +810,26 @@ when implModule:
       if view.editCommit:
         view.setError("Finish editing first")
         return
-      let branch = args.strip()
-      if branch.len == 0:
-        view.setError("No branch specified")
+      case view.cursor.panel
+      of Commits:
+        let commitIndex = view.cursor.commitIndex
+        if commitIndex >= view.commits.len:
+          view.setError("Invalid selection")
+          return
+        let commit = view.commits[commitIndex]
+        runGitAsync(@["checkout", commit.id]):
+          asyncSpawn view.refreshStatusAsync()
+      of Branches:
+        let branchIndex = view.cursor.branchIndex
+        if branchIndex >= view.branches.len:
+          view.setError("Invalid selection")
+          return
+        let branch = view.branches[branchIndex]
+        runGitAsync(@["checkout", branch]):
+          asyncSpawn view.refreshStatusAsync()
+      else:
+        view.setError("Select a commit or branch first")
         return
-      runGitAsync(@["checkout", branch]):
-        asyncSpawn view.refreshStatusAsync()
-        asyncSpawn view.refreshBranchesAsync()
 
     defineCommand("fetch", "Fetch"):
       if view.editCommit:
@@ -919,9 +932,6 @@ when implModule:
           if layout.openFile("git://@/staged/" & relPath).getSome(editor):
             editor.getCommandComponent().get.executeCommand(&"""start-diff "git://@/HEAD/{relPath}" true""")
       of Commits:
-        if view.cursor.panel != Commits:
-          view.setError("Select a commit or stash first")
-          return
         let commitIndex = view.cursor.commitIndex
         if commitIndex >= view.commits.len:
           view.setError("Invalid selection")
