@@ -351,9 +351,10 @@ when hasSomeStackTrace:
   proc rawWriteStackTrace(s: var string) =
     ##### patch begin - Use stacktracer lib for stacktraces
     when defined(stacktracer):
-      let bt = stacktracerGetStacktrace()
-      add(s, bt)
-      stacktracerFreeStacktrace(bt)
+      when not defined(profiler):
+        let bt = stacktracerGetStacktrace()
+        add(s, bt)
+        stacktracerFreeStacktrace(bt)
       ##### patch end - Use stacktracer lib for stacktraces
     elif defined(nimStackTraceOverride):
       add(s, "Traceback (most recent call last, using override)\n")
