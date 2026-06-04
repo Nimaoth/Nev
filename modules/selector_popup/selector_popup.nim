@@ -22,11 +22,12 @@ type
     scope*: string
     title*: string
 
-    scale*: Vec2
     previewScale*: float = 0.5
     sizeToContentY*: bool = true
     maxDisplayNameWidth*: int = 50
     maxColumnWidth*: int = 60
+
+    isInLayout*: bool = false
 
     focusPreview*: bool
 
@@ -216,9 +217,9 @@ when implModule:
     {.gcsafe.}:
       if getServices().isNil: return SelectorPopupImpl.none
       let layout = getServices().getServiceChecked(LayoutService)
-      if layout.getPopupForId(wrapper.id).getSome(editor):
-        if editor of SelectorPopupImpl:
-          return editor.SelectorPopupImpl.some
+      if layout.getView(wrapper.id.int32).getSome(view):
+        if view of SelectorPopupImpl:
+          return view.SelectorPopupImpl.some
       return SelectorPopupImpl.none
 
   static:
@@ -233,7 +234,7 @@ when implModule:
     t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
   proc updatePreview(self: SelectorPopupImpl, item: FinderItem) =
-    if self.previewer.isSome:
+    if self.previewer.isSome and self.previewVisible:
       let view = self.previewer.get.previewItem(item)
       if view != self.previewView:
         if self.previewView != nil:
@@ -316,7 +317,7 @@ when implModule:
       if handled:
         self.layout.popPopup(self)
 
-  proc selectorPopupCancel*(self: SelectorPopupImpl) =
+  proc selectorPopupCancel(self: SelectorPopupImpl) =
     if self.accepted:
       return
 
@@ -326,7 +327,7 @@ when implModule:
     if self.handleCanceled != nil:
       self.handleCanceled()
 
-  proc sort*(self: SelectorPopupImpl, sort: ToggleBool) {.expose("popup.selector").} =
+  proc sort(self: SelectorPopupImpl, sort: ToggleBool) {.expose("popup.selector").} =
     if self.textEditor.isNil:
       return
     assert self.finder.isNotNil
@@ -335,7 +336,7 @@ when implModule:
     # Retrigger filter and sort
     self.finder.setQuery(self.getSearchString())
 
-  proc setMinScore*(self: SelectorPopupImpl, value: float, add: bool = false) {.expose("popup.selector").} =
+  proc setMinScore(self: SelectorPopupImpl, value: float, add: bool = false) {.expose("popup.selector").} =
     if self.textEditor.isNil:
       return
 
@@ -352,7 +353,7 @@ when implModule:
     self.finder.setQuery(self.getSearchString())
     self.markDirty()
 
-  proc prev*(self: SelectorPopupImpl, count: int = 1) {.expose("popup.selector").} =
+  proc prev(self: SelectorPopupImpl, count: int = 1) {.expose("popup.selector").} =
     if self.textEditor.isNil:
       return
 
@@ -369,7 +370,7 @@ when implModule:
 
     self.markDirty()
 
-  proc next*(self: SelectorPopupImpl, count: int = 1) {.expose("popup.selector").} =
+  proc next(self: SelectorPopupImpl, count: int = 1) {.expose("popup.selector").} =
     if self.textEditor.isNil:
       return
 
@@ -386,7 +387,7 @@ when implModule:
 
     self.markDirty()
 
-  proc setFocusPreview*(self: SelectorPopupImpl, focus: bool) {.expose("popup.selector").} =
+  proc setFocusPreview(self: SelectorPopupImpl, focus: bool) {.expose("popup.selector").} =
     if self.previewer.isNone:
       return
 
@@ -409,6 +410,10 @@ when implModule:
   genDispatcher("popup.selector")
   addActiveDispatchTable "popup.selector", genDispatchTable("popup.selector")
 
+  proc selectorPopupHandleAddedToLayout(self: SelectorPopupImpl) =
+    self.setPreviewVisible(false)
+    self.isInLayout = true
+
   proc selectorPopupHandleAction*(self: SelectorPopupImpl, action: string, arg: string): Option[JsonNode] {.gcsafe, raises: [].} =
     # debugf"SelectorPopupImpl.handleAction {action} '{arg}'"
     if self.textEditor.isNil:
@@ -423,7 +428,7 @@ when implModule:
           return newJNull().some
 
       var args = newJArray()
-      args.add api.SelectorPopup(id: self.id).toJson
+      args.add api.SelectorPopup(id: self.id2.uint64).toJson
       for a in newStringStream(arg).parseJsonFragments():
         args.add a
 
@@ -506,14 +511,14 @@ when implModule:
     popup.scale = vec2(0.5, 0.5)
     popup.scope = scopeName.get("")
     popup.initImpl = proc(self: Popup) = selectorPopupInit(self.SelectorPopupImpl)
-    popup.deinitImpl = proc(self: Popup) = selectorPopupDeinit(self.SelectorPopupImpl)
-    popup.getActiveEditorImpl = proc(self: Popup): Option[DocumentEditor] = selectorPopupGetActiveEditor(self.SelectorPopupImpl)
-    popup.getEventHandlersImpl = proc(self: Popup): seq[EventHandler] = selectorPopupGetEventHandlers(self.SelectorPopupImpl)
-    popup.cancelImpl = proc(self: Popup) = selectorPopupCancel(self.SelectorPopupImpl)
+    popup.closeImpl = proc(self: View) = selectorPopupDeinit(self.SelectorPopupImpl)
+    popup.getActiveEditorImpl = proc(self: View): Option[DocumentEditor] = selectorPopupGetActiveEditor(self.SelectorPopupImpl)
+    popup.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] = selectorPopupGetEventHandlers(self.SelectorPopupImpl)
     popup.handleActionImpl = proc(self: Popup, action: string, arg: string): Option[JsonNode] = selectorPopupHandleAction(self.SelectorPopupImpl, action, arg)
-    popup.renderImpl = proc(self: Popup, builder: UINodeBuilder): seq[OverlayFunction] =
+    popup.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] =
       {.gcsafe.}:
         selectorPopupCreateUI(self.SelectorPopupImpl, builder)
+    popup.handleAddedToLayoutImpl = proc(self: Popup) = selectorPopupHandleAddedToLayout(self.SelectorPopupImpl)
 
     let document = popup.editors.createDocument("text", "ed://.selector-popup-search-bar", load = false, %%*{"createLanguageServer": false})
     document.usage = "search-bar"
@@ -577,6 +582,7 @@ when implModule:
     result.pop = proc() {.gcsafe, raises: [].} = self.pop()
     result.preview = proc(item: FinderItem) {.gcsafe, raises: [].} = self.updatePreview(item)
     result.getPreviewEditor = proc(): DocumentEditor {.gcsafe, raises: [].} = self.previewEditor
+    result.inLayout = proc(): bool {.gcsafe, raises: [].} = self.isInLayout
 
   proc init_module_selector_popup*() {.cdecl, exportc, dynlib.} =
     let layout = getServiceChecked(LayoutService)
@@ -608,4 +614,4 @@ when implModule:
           popup.addCustomCommand command, proc(popup: SelectorPopup, args: JsonNode): bool =
             return handler(popup.SelectorPopupImpl.asISelectorPopup, args)
 
-      layout.pushPopup popup
+      layout.pushPopup popup, builder.slot

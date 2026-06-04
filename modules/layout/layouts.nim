@@ -434,7 +434,7 @@ method removeView*(self: CenterLayout, view: View): bool =
 proc toJson*(self: View): JsonNode =
   return self.saveLayout(initHashSet[Id]());
 
-proc layoutSaveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode =
+proc tabLayoutSaveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode =
   let self = self.Layout
   # todo: make this configurable through parameter??
   # if self.children.len == 0:
@@ -472,6 +472,9 @@ proc autoLayoutSaveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode =
       let saved = c.saveLayout(discardedViews)
       if saved != nil:
         children.add saved
+
+  if children.len == 0:
+    return nil
 
   if self.childTemplate != nil:
     result["childTemplate"] = self.childTemplate.saveLayout(discardedViews)
@@ -1128,102 +1131,119 @@ method tryActivateView*(self: Layout, predicate: proc(view: View): bool {.gcsafe
 
   return false
 
-method changeSplitSize*(self: Layout, change: float, vertical: bool): bool {.base.} =
+method changeSplitSize*(self: Layout, change: float, vertical: bool, add: bool = true, index: int = -1): bool {.base.} =
   if self.children.len > 0:
     let c = self.children[self.activeIndex]
     if c of Layout:
-      return c.Layout.changeSplitSize(change, vertical)
+      return c.Layout.changeSplitSize(change, vertical, add, index)
 
   return false
 
-method changeSplitSize*(self: AutoLayout, change: float, vertical: bool): bool =
+method changeSplitSize*(self: AutoLayout, change: float, vertical: bool, add: bool = true, index: int = -1): bool =
   if self.maximize:
     if self.children.len > 0:
       let c = self.children[self.activeIndex]
       if c of Layout:
-        return c.Layout.changeSplitSize(change, vertical)
+        return c.Layout.changeSplitSize(change, vertical, add, index)
     return false
 
   if self.children.len > 0:
     let c = self.children[self.activeIndex]
-    if c of Layout and c.Layout.changeSplitSize(change, vertical):
+    if c of Layout and c.Layout.changeSplitSize(change, vertical, add, index):
         return true
 
-    var index = self.activeIndex
-    if index == self.children.high:
-      index -= 1
+    var index = index
+    if index == -1:
+      index = self.activeIndex
+      if index >= self.children.high:
+        index = self.children.high - 1
 
-    self.setSplitRatio(index, self.getSplitRatio(index) + change)
+    if add:
+      self.setSplitRatio(index, self.getSplitRatio(index) + change)
+    else:
+      self.setSplitRatio(index, change)
     return true
 
   return false
 
-method changeSplitSize*(self: VerticalLayout, change: float, vertical: bool): bool =
+method changeSplitSize*(self: VerticalLayout, change: float, vertical: bool, add: bool = true, index: int = -1): bool =
   if self.maximize:
     if self.children.len > 0:
       let c = self.children[self.activeIndex]
       if c of Layout:
-        return c.Layout.changeSplitSize(change, vertical)
+        return c.Layout.changeSplitSize(change, vertical, add, index)
     return false
 
   if self.children.len > 0:
     let c = self.children[self.activeIndex]
-    if c of Layout and c.Layout.changeSplitSize(change, vertical):
+    if c of Layout and c.Layout.changeSplitSize(change, vertical, add, index):
       return true
 
     if not vertical:
       return false
 
-    var index = self.activeIndex
-    if index == self.children.high:
-      index -= 1
+    var index = index
+    if index == -1:
+      index = self.activeIndex
+      if index >= self.children.high:
+        index = self.children.high - 1
 
-    self.setSplitRatio(index, self.getSplitRatio(index) + change)
+    if add:
+      self.setSplitRatio(index, self.getSplitRatio(index) + change)
+    else:
+      self.setSplitRatio(index, change)
     return true
 
   return false
 
-method changeSplitSize*(self: HorizontalLayout, change: float, vertical: bool): bool =
+method changeSplitSize*(self: HorizontalLayout, change: float, vertical: bool, add: bool = true, index: int = -1): bool =
   if self.maximize:
     if self.children.len > 0:
       let c = self.children[self.activeIndex]
       if c of Layout:
-        return c.Layout.changeSplitSize(change, vertical)
+        return c.Layout.changeSplitSize(change, vertical, add, index)
     return false
 
   if self.children.len > 0:
     let c = self.children[self.activeIndex]
-    if c of Layout and c.Layout.changeSplitSize(change, vertical):
+    if c of Layout and c.Layout.changeSplitSize(change, vertical, add, index):
       return true
 
     if vertical:
       return false
 
-    var index = self.activeIndex
-    if index == self.children.high:
-      index -= 1
+    var index = index
+    if index == -1:
+      index = self.activeIndex
+      if index >= self.children.high:
+        index = self.children.high - 1
 
-    self.setSplitRatio(index, self.getSplitRatio(index) + change)
+    if add:
+      self.setSplitRatio(index, self.getSplitRatio(index) + change)
+    else:
+      self.setSplitRatio(index, change)
     return true
 
   return false
 
-method changeSplitSize*(self: AlternatingLayout, change: float, vertical: bool): bool =
+method changeSplitSize*(self: AlternatingLayout, change: float, vertical: bool, add: bool = true, index: int = -1): bool =
   if self.maximize:
     if self.children.len > 0:
       let c = self.children[self.activeIndex]
       if c of Layout:
-        return c.Layout.changeSplitSize(change, vertical)
+        return c.Layout.changeSplitSize(change, vertical, add, index)
     return false
 
   if self.children.len > 0:
     let c = self.children[self.activeIndex]
-    if c of Layout and c.Layout.changeSplitSize(change, vertical):
+    if c of Layout and c.Layout.changeSplitSize(change, vertical, add, index):
       return true
 
-    var index = self.activeIndex
-    if index == self.children.high:
-      index -= 1
+    var index = index
+    if index == -1:
+      index = self.activeIndex
+      if index >= self.children.high:
+        index = self.children.high - 1
 
     if index < 0:
       return false
@@ -1237,26 +1257,34 @@ method changeSplitSize*(self: AlternatingLayout, change: float, vertical: bool):
     elif vertical and index == 0:
       return false
 
-    self.setSplitRatio(index, self.getSplitRatio(index) + change)
+    if add:
+      self.setSplitRatio(index, self.getSplitRatio(index) + change)
+    else:
+      self.setSplitRatio(index, change)
     return true
 
   return false
 
-method changeSplitSize*(self: TabLayout, change: float, vertical: bool): bool =
+method changeSplitSize*(self: TabLayout, change: float, vertical: bool, add: bool = true, index: int = -1): bool =
   if self.children.len > 0:
     let c = self.children[self.activeIndex]
     if c of Layout:
-      return c.Layout.changeSplitSize(change, vertical)
+      return c.Layout.changeSplitSize(change, vertical, add, index)
 
   return false
 
-method changeSplitSize*(self: CenterLayout, change: float, vertical: bool): bool =
+method changeSplitSize*(self: CenterLayout, change: float, vertical: bool, add: bool = true, index: int = -1): bool =
   let c = self.children[self.activeIndex]
   if c != nil and c of Layout:
-    if c.Layout.changeSplitSize(change, vertical):
+    if c.Layout.changeSplitSize(change, vertical, add, index):
       return true
 
-  var index = self.activeIndex
+  var index = index
+  if index == -1:
+    index = self.activeIndex
+    if index >= self.children.high:
+      index = self.children.high - 1
+
   if index == MainLayoutCenter:
     if vertical:
       if self.children[MainLayoutBottom] != nil:
@@ -1456,7 +1484,7 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
       kindImpl: tabLayoutKind,
       renderImpl: renderTabLayout,
       copyImpl: tabLayoutCopy,
-      saveLayoutImpl: layoutSaveLayout,
+      saveLayoutImpl: tabLayoutSaveLayout,
       activeLeafViewImpl: layoutActiveLeafView,
     )
     res.parseLayoutFields()

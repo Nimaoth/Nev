@@ -930,7 +930,7 @@ when implModule:
     self.saveAppState()
 
     for popup in self.layout.popups:
-      popup.deinit()
+      popup.close()
 
     let editors = collect(for e in self.editors.allEditors: e)
     for editor in editors:
@@ -1426,7 +1426,7 @@ when implModule:
     self.workspace.loadDefaultIgnoreFile()
     self.workspace.recomputeFileCache()
 
-  proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
+  proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4, slot: string = "") {.expose("editor").} =
     defer:
       self.platform.requestRender()
 
@@ -1483,9 +1483,9 @@ when implModule:
         te.centerCursor(targetSelection.get.last.toPoint)
       return true
 
-    self.layout.pushPopup popup
+    self.layout.pushPopup popup, slot
 
-  proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5) {.expose("editor").} =
+  proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5, slot: string = "") {.expose("editor").} =
     defer:
       self.platform.requestRender()
 
@@ -1738,9 +1738,9 @@ when implModule:
         editor.markDirty()
       return true
 
-    self.layout.pushPopup popup
+    self.layout.pushPopup popup, slot
 
-  proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5) {.expose("editor").} =
+  proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5, slot: string = "") {.expose("editor").} =
     ## Opens a file dialog which shows all files in the currently open workspaces
     ## Press <ENTER> to select a file
     ## Press <ESCAPE> to close the dialogue
@@ -1772,9 +1772,9 @@ when implModule:
           discard self.layout.openFile(item.data, path)
       return true
 
-    self.layout.pushPopup popup
+    self.layout.pushPopup popup, slot
 
-  proc chooseOpenDocument*(self: App) {.expose("editor").} =
+  proc chooseOpenDocument*(self: App, slot: string = "") {.expose("editor").} =
     defer:
       self.platform.requestRender()
 
@@ -1825,9 +1825,9 @@ when implModule:
 
       return true
 
-    self.layout.pushPopup popup
+    self.layout.pushPopup popup, slot
 
-  proc showPlugins*(self: App, scaleX: float = 0.9, scaleY: float = 0.9, previewScale: float = 0.6) {.expose("editor").} =
+  proc showPlugins*(self: App, scaleX: float = 0.9, scaleY: float = 0.9, previewScale: float = 0.6, slot: string = "") {.expose("editor").} =
     defer:
       self.requestRender()
 
@@ -1918,7 +1918,7 @@ when implModule:
       asyncSpawn reloadPlugin(manifest.path)
       return true
 
-    self.layout.pushPopup popup
+    self.layout.pushPopup popup, slot
 
   proc gotoNextLocation*(self: App) {.expose("editor").} =
     if self.finderItems.len == 0:
@@ -1958,7 +1958,7 @@ when implModule:
       te.targetSelection = location.get.toPoint.toRange
       te.centerCursor(location.get.toPoint)
 
-  proc chooseLocation*(self: App) {.expose("editor").} =
+  proc chooseLocation*(self: App, slot: string = "") {.expose("editor").} =
     defer:
       self.platform.requestRender()
 
@@ -1989,7 +1989,7 @@ when implModule:
 
       return true
 
-    self.layout.pushPopup popup
+    self.layout.pushPopup popup, slot
 
   proc searchWorkspaceItemList(workspace: Workspace, query: string, paths: seq[string], maxResults: int, maxLen: int): Future[ItemList] {.async: (raises: []).} =
     let searchResults = if paths.len > 0:
@@ -2059,7 +2059,7 @@ when implModule:
     result.closeImpl = workspaceSearchDataSourceClose
     result.setQueryImpl = workspaceSearchDataSourceSetQuery
 
-  proc searchGlobalInteractive*(self: App, path: string = "") {.expose("editor").} =
+  proc searchGlobalInteractive*(self: App, path: string = "", slot: string = "") {.expose("editor").} =
     defer:
       self.platform.requestRender()
 
@@ -2081,7 +2081,7 @@ when implModule:
         return
 
       var targetSelection = location.mapIt(it.toSelection)
-      if popup.getPreviewSelection().getSome(selection):
+      if not popup.isInLayout and popup.getPreviewSelection().getSome(selection):
         targetSelection = selection.some
 
       let editor = self.layout.openFile(path)
@@ -2090,9 +2090,9 @@ when implModule:
         te.centerCursor(targetSelection.get.last.toPoint)
       return true
 
-    self.layout.pushPopup popup
+    self.layout.pushPopup popup, slot
 
-  proc searchGlobal*(self: App, query: string) {.expose("editor").} =
+  proc searchGlobal*(self: App, query: string, slot: string = "") {.expose("editor").} =
     defer:
       self.platform.requestRender()
 
@@ -2125,7 +2125,7 @@ when implModule:
         te.centerCursor(targetSelection.get.last.toPoint)
       return true
 
-    self.layout.pushPopup popup
+    self.layout.pushPopup popup, slot
 
   proc installTreesitterParserAsync*(self: App, languageOrRepoName: string, host: string) {.async.} =
     try:
@@ -2329,7 +2329,7 @@ when implModule:
 
     return list
 
-  proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normalize: bool = true, diff: bool = false, previewScale: float = 0.5) {.expose("editor").} =
+  proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normalize: bool = true, diff: bool = false, previewScale: float = 0.5, slot: string = "") {.expose("editor").} =
     ## Open a file explorer at `root`. If `diff` is true then files will be show as a diff if applicable
     defer:
       self.platform.requestRender()
@@ -2544,7 +2544,7 @@ when implModule:
         te.centerCursor(te.selection.b)
       return true
 
-    self.layout.pushPopup popup
+    self.layout.pushPopup popup, slot
 
   proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
     self.exploreFiles(self.workspace.getWorkspacePath())
@@ -2669,7 +2669,7 @@ when implModule:
       res.add self.commandLine.commandLineEditor.getEventHandlers({"above-mode": commandLineResultEventHandlerLow}.toTable)
       res.add self.getEventHandler(self.generalSettings.commandLineResultModeHigh.get())
     elif self.layout.popups.len > 0:
-      res.add self.layout.popups[self.layout.popups.high].getEventHandlers()
+      res.add self.layout.popups[self.layout.popups.high].getEventHandlers(initTable[string, EventHandler](0))
     elif self.layout.tryGetCurrentView().getSome(view):
       res.add view.getEventHandlers(initTable[string, EventHandler](0))
 

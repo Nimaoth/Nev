@@ -1015,6 +1015,7 @@
         "slots.debugger-toolbar": "*.right.+",
         "slots.debugger-variables": "*.left.+",
         "slots.small-left": "*.left.+",
+        "slots.small-right": "*.right.+",
         "slots.debugger-output": "*.bottom",
         "kind": "tab",
         "childTemplate": {
@@ -1024,7 +1025,6 @@
             },
             "rightTemplate": {
                 "kind": "vertical",
-                "split-ratios": [0.1, 0.25],
                 "temporary": false,
             }
         }

@@ -2101,13 +2101,16 @@ when implModule:
     for v in existing:
       self.layout.closeView(v, keepHidden = false, restoreHidden = false)
 
-  proc toggleView(self: Debugger, T: typedesc, slot: string, focus: bool) =
+  proc toggleView(self: Debugger, T: typedesc, slot: string, focus: bool, splitSize: Option[float] = float.none) =
     let existing = self.layout.getViews(T)
     for v in existing:
       if self.layout.isViewVisible(v):
         self.layout.closeView(v, keepHidden = false, restoreHidden = false)
       else:
         self.layout.showView(v, slot, focus = focus)
+
+        if splitSize.isSome:
+          self.layout.changeSplitSize(self.layout.getSlot(v), splitSize.get, vertical = true, add = false)
 
     if existing.len == 0:
       let view = when T is VariablesView:
@@ -2117,6 +2120,9 @@ when implModule:
       else:
         createDebuggerView[T](self)
       self.layout.addView(view, slot, focus = focus)
+
+      if splitSize.isSome:
+        self.layout.changeSplitSize(self.layout.getSlot(view), splitSize.get, vertical = true, add = false)
 
   proc closeDebuggerViews*(self: Debugger) =
     self.variableViews.setLen(0)
@@ -2179,7 +2185,7 @@ when implModule:
       self.layout.addView(createDebuggerView[ToolbarView](self), slot, focus = focus)
 
   proc toggleDebuggerThreads*(self: Debugger, focus: bool = true, slot: string = "#debugger-threads") =
-    self.toggleView(ThreadsView, slot, focus)
+    self.toggleView(ThreadsView, slot, focus, some(0.25))
 
   proc toggleDebuggerStacktrace*(self: Debugger, focus: bool = true, slot: string = "#debugger-stacktrace") =
     self.toggleView(StacktraceView, slot, focus)
@@ -2191,7 +2197,7 @@ when implModule:
     self.toggleView(OutputView, slot, focus)
 
   proc toggleDebuggerToolbar*(self: Debugger, focus: bool = true, slot: string = "#debugger-toolbar") =
-    self.toggleView(ToolbarView, slot, focus)
+    self.toggleView(ToolbarView, slot, focus, some(0.1))
 
   proc handleAction(self: Debugger, action: string, arg: string): EventResponse =
     # debugf"[textedit] handleAction {action}, '{args}'"

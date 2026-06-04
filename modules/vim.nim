@@ -10,7 +10,7 @@ when implModule:
   import nimsumtree/[buffer, rope, clock, arc]
   import scripting_api
   import misc/input_api
-  import service, config_provider, layout/layout
+  import service, config_provider, layout/layout, popup
   import document_editor, document, text_editor_component, text_component, move_component, command_component, snippet_component
   import config_component, command_service, search_component, decoration_component
   import register
@@ -1222,7 +1222,27 @@ when implModule:
       editor.setMode("vim.normal")
       return
 
-    discard runCommand("close-active-view", "")
+    discard runCommand("close-active-view", "true false") # closeOpenPopup = true, restoreHidden = false
+
+  proc lastPopupNext() {.command.} =
+    let layout = getServiceChecked(LayoutService)
+    let views = layout.allViews
+    for i in countdown(views.high, 0):
+      let v = views[i]
+      if v of Popup and layout.isViewVisible(v):
+        discard v.Popup.handleAction("next", "")
+        discard v.Popup.handleAction("accept", "")
+        break
+
+  proc lastPopupPrev() {.command.} =
+    let layout = getServiceChecked(LayoutService)
+    let views = layout.allViews
+    for i in countdown(views.high, 0):
+      let v = views[i]
+      if v of Popup and layout.isViewVisible(v):
+        discard v.Popup.handleAction("prev", "")
+        discard v.Popup.handleAction("accept", "")
+        break
 
   proc selectWordOrAddCursor(editor: TextEditor) {.exposeActive(editorContext).} =
     let selections = editor.selections

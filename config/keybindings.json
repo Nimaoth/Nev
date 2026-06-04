@@ -196,7 +196,7 @@
         "<C-k>F": ["set-min-score", -1.0],
         "<C-k>+": ["set-min-score", 0.2, true],
         "<C-k>-": ["set-min-score", -0.2, true],
-        "<C-l>": ["set-location-list-from-current-popup"],
+        "<C-l>": ["pop-popup-into-slot", "#small-right"],
     },
 
     "popup.selector.preview": {
@@ -509,6 +509,8 @@
         ],
 
         "<SPACE>ft": ["create-file", "scratch"],
+        "<CA-DOWN>": ["vim.last-popup-next"],
+        "<CA-UP>": ["vim.last-popup-prev"],
     },
 
     "vim": {
@@ -657,7 +659,7 @@
         "gi": ["goto-implementation"],
         "gT": ["goto-type-definition"],
         "gs": ["goto-symbol"],
-        "gw": ["goto-workspace-symbol"],
+        "gw": ["goto-workspace-symbol", ""],
         "gr": ["goto-references"],
         "go": ["switch-source-header"],
         "ga": ["select-code-action"],

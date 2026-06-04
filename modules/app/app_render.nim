@@ -5,7 +5,7 @@ import ui/node
 import platform
 import ui/[widget_library]
 import document_editor, theme, layout/layout, config_provider, command_line, toast
-import popup
+import popup, view
 import status_line
 from scripting_api import nil
 import vcs, service
@@ -151,7 +151,7 @@ proc updateWidgetTree*(self: App, builder: UINodeBuilder, frameIndex: int) =
 
     # popups
     for i, popup in layout.popups:
-      overlays.add popup.createUI(builder)
+      overlays.add popup.render(builder)
       builder.panel(&{FlushBorders})
       builder.flushOverlays(overlays)
 

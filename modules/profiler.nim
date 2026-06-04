@@ -1368,7 +1368,3 @@ when implModule and defined(profiler):
       else:
         layout.addView(view, slot = "#small-left", focus = true)
         view.markDirty()
-
-else:
-  proc profProcessAllocatorEvents() {.modrtl.} =
-    discard

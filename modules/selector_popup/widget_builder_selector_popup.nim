@@ -4,7 +4,7 @@ import misc/[util, custom_logger, disposable_ref]
 import ui/node
 import platform
 import ui/[widget_library]
-import selector_popup, theme, document_editor
+import selector_popup, theme, document_editor, core_settings
 import finder, previewer, open_editor_previewer, data_previewer
 import config_provider, input_handler/input_handler, view, file_previewer
 import service
@@ -34,7 +34,7 @@ proc selectorPopupCreateUI*(self: SelectorPopupImpl, builder: UINodeBuilder): se
   # let dirty = self.dirty
   self.resetDirty()
 
-  let config = getServiceChecked(ConfigService)
+  let config = getServiceChecked(ConfigService).runtime
   let events = getServiceChecked(EventHandlerService)
 
   defer:
@@ -43,36 +43,52 @@ proc selectorPopupCreateUI*(self: SelectorPopupImpl, builder: UINodeBuilder): se
   let showPreview = self.previewEditor.isNotNil and self.previewVisible
   let previewScale = if showPreview: self.previewScale else: 0
 
-  let sizeToContentY = not showPreview and self.sizeToContentY
+  let sizeToContentY = not showPreview and self.sizeToContentY and not self.isInLayout
   var yFlag = if sizeToContentY:
     &{SizeToContentY}
   else:
     &{FillY}
 
-  let scale = (vec2(1, 1) - self.scale) * 0.5
+  var bounds = rect(vec2(0), builder.currentParent.bounds.wh)
+  if self.scale != vec2(1):
+    let scale = (vec2(1, 1) - self.scale) * 0.5
+    bounds = bounds.shrink(
+      absolute(scale.x * builder.currentParent.bounds.w),
+      absolute(scale.y * builder.currentParent.bounds.h))
+    bounds.x = ((bounds.x / builder.charWidth).floor() * builder.charWidth).round() - 1
+    bounds.y = ((bounds.y / builder.textHeight).floor() * builder.textHeight).round() - 1
+    bounds.w = ((bounds.w / builder.charWidth).ceil() * builder.charWidth).round() + 2
+    bounds.h = ((bounds.h / builder.textHeight).ceil() * builder.textHeight).round() + 2
 
-  var bounds = builder.currentParent.boundsActual.shrink(
-    absolute(scale.x * builder.currentParent.boundsActual.w),
-    absolute(scale.y * builder.currentParent.boundsActual.h))
-  bounds.x = ((bounds.x / builder.charWidth).floor() * builder.charWidth).round() - 1
-  bounds.y = ((bounds.y / builder.textHeight).floor() * builder.textHeight).round() - 1
-  bounds.w = ((bounds.w / builder.charWidth).ceil() * builder.charWidth).round() + 2
-  bounds.h = ((bounds.h / builder.textHeight).ceil() * builder.textHeight).round() + 2
+  let selectorActive = (not self.isInLayout or self.active) and not self.focusPreview
+  let inactiveBrightnessChange = config.getUiBackgroundInactiveBrightnessChange()
+  let popupBrightnessChange = if not self.isInLayout: inactiveBrightnessChange * 0.5 else: 0.0
+  var backgroundColor = if selectorActive:
+    builder.theme.color("editor.background", color(25/255, 25/255, 40/255)).lighten(popupBrightnessChange)
+  else:
+    builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(popupBrightnessChange + inactiveBrightnessChange)
+
+  if config.getUiBackgroundTransparent():
+    backgroundColor.a = 0
+  else:
+    backgroundColor.a = 1
+
+  var headerColor = if selectorActive:
+    builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255))
+  else:
+    builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
 
   let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  let backgroundColor = builder.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
   let borderColor = builder.theme.color("panel.border", backgroundColor.lighten(0.2))
   let selectionColor = builder.theme.color("list.activeSelectionBackground",
     color(0.8, 0.8, 0.8)).withAlpha(1)
-  let titleBackgroundColor = builder.theme.color(@["selector.title.background", "panel.background"], color(0.1, 0.1, 0.1)).withAlpha(1)
   let titleForegroundColor = builder.theme.color(@["selector.title.foreground", "editor.foreground"], color(0.1, 0.1, 0.1)).withAlpha(1)
 
   let excluded = ["prev", "next", "accept", "close"]
   proc filterCommand(s: string): bool =
     return not excluded.anyIt(s.toLowerAscii.startsWith(it))
   let nextPossibleInputs = events.getNextPossibleInputs(false, (handler) => handler.config.context.startsWith("popup.selector")).filterIt(filterCommand(it.description))
-  let uiSettings = UiSettings.new(config.runtime)
-  var whichKeyHeightLines = uiSettings.popupWhichKeyHeight.get()
+  var whichKeyHeightLines = config.getUiPopupWhichKeyHeight()
   whichKeyHeightLines = (nextPossibleInputs.len + 1) div 2
   let whichKeyHeightPx = builder.renderCommandKeysHeight(whichKeyHeightLines, padding = 0)
 
@@ -88,12 +104,12 @@ proc selectorPopupCreateUI*(self: SelectorPopupImpl, builder: UINodeBuilder): se
 
           let title = if self.title != "": self.title else: self.scope
           if title != "":
-            builder.panel(&{SizeToContentX, SizeToContentY, DrawText, FillBackground},
-              text = title,
-              pivot = vec2(0.5, 0),
-              textColor = titleForegroundColor,
-              backgroundColor = titleBackgroundColor,
-              x = leftBounds.w * 0.5)
+            builder.panel(&{FillX, SizeToContentY, FillBackground}, backgroundColor = headerColor):
+              builder.panel(&{SizeToContentX, SizeToContentY, DrawText},
+                text = title,
+                pivot = vec2(0.5, 0),
+                textColor = titleForegroundColor,
+                x = leftBounds.w * 0.5)
 
           builder.panel(&{FillX, SizeToContentY}):
             result.add self.textEditor.render(builder)
@@ -110,7 +126,7 @@ proc selectorPopupCreateUI*(self: SelectorPopupImpl, builder: UINodeBuilder): se
           if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.filteredLen > 0:
             let highlightColor = builder.theme.color("editor.foreground.highlight", textColor.lighten(0.18))
             let detailColor = textColor.darken(0.2)
-            let detailsFontScale = config.runtime.get("ui.selector.details-font-scale", 0.85)
+            let detailsFontScale = config.get("ui.selector.details-font-scale", 0.85)
 
             var rows: seq[seq[UINode]] = @[]
             var rowsNode: UINode
@@ -175,7 +191,7 @@ proc selectorPopupCreateUI*(self: SelectorPopupImpl, builder: UINodeBuilder): se
                   var row: seq[UINode] = @[]
 
                   builder.panel(&{FillX, SizeToContentY}):
-                    if config.runtime.get("ui.selector.show-score", false):
+                    if config.get("ui.selector.show-score", false):
                       row.add builder.createTextWithMaxWidth($(item.score * 100), maxColumnWidth, "...", detailColor, &{TextItalic}, fontScale = detailsFontScale)
 
                     row.add builder.highlightedText(name, matchIndices, textColor, highlightColor, maxDisplayNameWidth)

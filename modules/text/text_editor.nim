@@ -1,5 +1,6 @@
 import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables, parseutils,
   deques, sets, algorithm, os]
+import prof
 import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
@@ -3200,7 +3201,7 @@ proc encodeFileLocationForFinderItem(path: string, location: Option[Cursor]): st
     "column": location.get((0, 0)).column,
   }
 
-proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): Future[void] {.async.} =
+proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition], popupSlot: string = ""): Future[void] {.async.} =
   if definitions.len == 1:
     let d = definitions[0]
     self.openFileAt(d.filename, d.location.toSelection.some)
@@ -3210,6 +3211,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
     builder.scope = "text-lsp-locations".some
     builder.scaleX = 0.85
     builder.scaleY = 0.8
+    builder.slot = popupSlot
 
     var res = newSeq[FinderItem]()
     for i, definition in definitions:
@@ -3232,7 +3234,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
 
     discard self.layout.pushSelectorPopup(builder)
 
-proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
+proc gotoDefinitionAsync(self: TextDocumentEditor, popupSlot: string = ""): Future[void] {.async.} =
   let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
@@ -3241,9 +3243,9 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     let locations = await ls.getDefinition(self.document.filename, self.selection.last)
     if self.document.isNil:
       return
-    await self.gotoLocationAsync(locations)
+    await self.gotoLocationAsync(locations, popupSlot)
 
-proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
+proc gotoDeclarationAsync(self: TextDocumentEditor, popupSlot: string = ""): Future[void] {.async.} =
   let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
@@ -3252,9 +3254,9 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     let locations = await ls.getDeclaration(self.document.filename, self.selection.last)
     if self.document.isNil:
       return
-    await self.gotoLocationAsync(locations)
+    await self.gotoLocationAsync(locations, popupSlot)
 
-proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
+proc gotoTypeDefinitionAsync(self: TextDocumentEditor, popupSlot: string = ""): Future[void] {.async.} =
   let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
@@ -3263,9 +3265,9 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     let locations = await ls.getTypeDefinition(self.document.filename, self.selection.last)
     if self.document.isNil:
       return
-    await self.gotoLocationAsync(locations)
+    await self.gotoLocationAsync(locations, popupSlot)
 
-proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
+proc gotoImplementationAsync(self: TextDocumentEditor, popupSlot: string = ""): Future[void] {.async.} =
   let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
@@ -3274,9 +3276,9 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     let locations = await ls.getImplementation(self.document.filename, self.selection.last)
     if self.document.isNil:
       return
-    await self.gotoLocationAsync(locations)
+    await self.gotoLocationAsync(locations, popupSlot)
 
-proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
+proc gotoReferencesAsync(self: TextDocumentEditor, popupSlot: string = ""): Future[void] {.async.} =
   let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
@@ -3285,7 +3287,7 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
     let locations = await ls.getReferences(self.document.filename, self.selection.last)
     if self.document.isNil:
       return
-    await self.gotoLocationAsync(locations)
+    await self.gotoLocationAsync(locations, popupSlot)
 
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = self.document.getLanguageServer()
@@ -3364,13 +3366,14 @@ proc showCompletionWindow(self: TextDocumentEditor) =
   self.showCompletions = true
   self.markDirty()
 
-proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool) =
+proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool, slot: string) =
   var builder = SelectorPopupBuilder()
   builder.scope = "lines".some
   builder.scaleX = 1
   builder.scaleY = 0.8
   builder.maxDisplayNameWidth = 90
   builder.maxDisplayNameWidth = 100
+  builder.slot = slot
 
   # todo: use RopeCursor?
   var res = newSeq[FinderItem]()
@@ -3392,11 +3395,12 @@ proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool
 
   discard self.layout.pushSelectorPopup(builder)
 
-proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], navigateOnSelect: bool, detailFilename: bool = false) =
+proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], navigateOnSelect: bool, detailFilename: bool = false, slot: string = "") =
   var builder = SelectorPopupBuilder()
   builder.scope = "text-lsp-locations".some
   builder.scaleX = 0.85
   builder.scaleY = 0.8
+  builder.slot = slot
 
   var res = newSeq[FinderItem]()
   for i, symbol in symbols:
@@ -3419,7 +3423,7 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
 
   discard self.layout.pushSelectorPopup(builder)
 
-proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
+proc gotoSymbolAsync(self: TextDocumentEditor, popupSlot: string = ""): Future[void] {.async.} =
   let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
@@ -3431,7 +3435,7 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
     if symbols.len == 0:
       return
 
-    self.openSymbolSelectorPopup(symbols, navigateOnSelect=true)
+    self.openSymbolSelectorPopup(symbols, navigateOnSelect=true, slot=popupSlot)
 
 type
   LspWorkspaceSymbolsDataSource* = ref object of DataSource
@@ -3505,7 +3509,7 @@ proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer, workspace:
   result.closeImpl = lspWorkspaceSymbolsDataSourceClose
   result.setQueryImpl = lspWorkspaceSymbolsDataSourceSetQuery
 
-proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Future[void] {.async.} =
+proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = "", slot: string = ""): Future[void] {.async.} =
   let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
@@ -3515,6 +3519,7 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     builder.scope = "text-lsp-locations".some
     builder.scaleX = 0.85
     builder.scaleY = 0.8
+    builder.slot = slot
 
     builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
     let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, self.workspace, self.getFileName()), filterAndSort=true)
@@ -3561,20 +3566,20 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
 
     discard self.layout.pushSelectorPopup(builder)
 
-proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncSpawn self.gotoDefinitionAsync()
+proc gotoDefinition*(self: TextDocumentEditor, popupSlot: string = "") {.expose("editor.text").} =
+  asyncSpawn self.gotoDefinitionAsync(popupSlot)
 
-proc gotoDeclaration*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncSpawn self.gotoDeclarationAsync()
+proc gotoDeclaration*(self: TextDocumentEditor, popupSlot: string = "") {.expose("editor.text").} =
+  asyncSpawn self.gotoDeclarationAsync(popupSlot)
 
-proc gotoTypeDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncSpawn self.gotoTypeDefinitionAsync()
+proc gotoTypeDefinition*(self: TextDocumentEditor, popupSlot: string = "") {.expose("editor.text").} =
+  asyncSpawn self.gotoTypeDefinitionAsync(popupSlot)
 
-proc gotoImplementation*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncSpawn self.gotoImplementationAsync()
+proc gotoImplementation*(self: TextDocumentEditor, popupSlot: string = "") {.expose("editor.text").} =
+  asyncSpawn self.gotoImplementationAsync(popupSlot)
 
-proc gotoReferences*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncSpawn self.gotoReferencesAsync()
+proc gotoReferences*(self: TextDocumentEditor, popupSlot: string = "") {.expose("editor.text").} =
+  asyncSpawn self.gotoReferencesAsync(popupSlot)
 
 proc switchSourceHeader*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncSpawn self.switchSourceHeaderAsync()
@@ -3587,14 +3592,14 @@ proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.completionsDirty = true
   self.showCompletionWindow()
 
-proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncSpawn self.gotoSymbolAsync()
+proc gotoSymbol*(self: TextDocumentEditor, popupSlot: string = "") {.expose("editor.text").} =
+  asyncSpawn self.gotoSymbolAsync(popupSlot)
 
-proc fuzzySearchLines*(self: TextDocumentEditor, minScore: float = 0.2, sort: bool = true) {.expose("editor.text").} =
-  self.openLineSelectorPopup(minScore, sort)
+proc fuzzySearchLines*(self: TextDocumentEditor, minScore: float = 0.2, sort: bool = true, popupSlot: string = "") {.expose("editor.text").} =
+  self.openLineSelectorPopup(minScore, sort, popupSlot)
 
-proc gotoWorkspaceSymbol*(self: TextDocumentEditor, query: string = "") {.expose("editor.text").} =
-  asyncSpawn self.gotoWorkspaceSymbolAsync(query)
+proc gotoWorkspaceSymbol*(self: TextDocumentEditor, query: string = "", popupSlot: string = "") {.expose("editor.text").} =
+  asyncSpawn self.gotoWorkspaceSymbolAsync(query, popupSlot)
 
 proc renameAsync(self: TextDocumentEditor) {.async.} =
   let languageServer = self.document.getLanguageServer()
@@ -4461,6 +4466,7 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
   return JsonNode.none
 
 proc textEditorHandleAction(self: DocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
+  daTag(daTextEditorCommand)
   let self = self.TextDocumentEditor
   # debugf "handleAction '{action}', '{arg}', record = {record}"
   if self.commandComponent.isNil:
