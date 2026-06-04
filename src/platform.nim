@@ -32,6 +32,7 @@ type
   FocusWindowImpl* = proc(self: Platform) {.gcsafe, raises: [].}
   SetClipboardTextImpl* = proc(self: Platform, str: string) {.gcsafe, raises: [].}
   GetClipboardTextImpl* = proc(self: Platform): Future[Option[string]] {.gcsafe, async: (raises: []).}
+  SetTitleImpl* = proc(self: Platform, title: string) {.gcsafe, raises: [].}
 
   WLayoutOptions* = object
     getTextBounds*: proc(text: string, fontSizeIncreasePercent: float = 0): Vec2
@@ -89,6 +90,7 @@ type
     focusWindowImpl*: FocusWindowImpl
     setClipboardTextImpl*: SetClipboardTextImpl
     getClipboardTextImpl*: GetClipboardTextImpl
+    setTitleImpl*: SetTitleImpl
 
   PlatformService* = ref object of Service
     platform*: Platform
@@ -214,6 +216,10 @@ proc getClipboardText*(self: Platform): Future[Option[string]] {.async.} =
   if self.getClipboardTextImpl != nil:
     return self.getClipboardTextImpl(self).await
   return string.none
+
+proc setTitle*(self: Platform, title: string) =
+  if self.setTitleImpl != nil:
+    self.setTitleImpl(self, title)
 
 include misc/dynlib_export
 

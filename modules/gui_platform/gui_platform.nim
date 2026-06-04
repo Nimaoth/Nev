@@ -335,6 +335,9 @@ when implModule and enableGui:
 
   {.push gcsafe.}
 
+  proc setTitle*(self: GuiPlatform, title: string) =
+    self.window.title = title
+
   proc requestRenderGuiPlatform(self: GuiPlatform, redrawEverything: bool) =
     self.requestedRender = true
     self.redrawEverything = self.redrawEverything or redrawEverything
@@ -1142,6 +1145,7 @@ when implModule and enableGui:
     res.focusWindowImpl = proc(self: Platform) = self.GuiPlatform.focusWindowGuiPlatform()
     res.setClipboardTextImpl = proc(self: Platform, str: string) = self.GuiPlatform.setClipboardTextGuiPlatform(str)
     res.getClipboardTextImpl = proc(self: Platform): Future[Option[string]] {.async: (raises: [])} = self.GuiPlatform.getClipboardTextGuiPlatform().await
+    res.setTitleImpl = proc(self: Platform, title: string) = self.GuiPlatform.setTitle(title)
 
     return res
 

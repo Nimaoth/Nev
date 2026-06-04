@@ -1,4 +1,4 @@
-#use vfs_service
+#use vfs_service theme
 import std/[options, sequtils, os, json]
 import misc/[custom_async, id, util, regex, event]
 import vfs, vfs_service, service
@@ -89,7 +89,7 @@ when implModule:
   import std/[unicode]
   import malebolgia
   import misc/[timer, async_process, static_array, custom_logger]
-  import compilation_config, event_service
+  import compilation_config, event_service, platform
 
   logCategory "workspace"
 
@@ -497,8 +497,11 @@ when implModule:
     if self.path.len == 0:
       self.path = path
       self.loadDefaultIgnoreFile()
+
+      getServiceChecked(PlatformService).platform.setTitle(&"{path.splitPath.tail} - {path.splitPath.head}")
     else:
       self.additionalPaths.add path
+
 
     self.vfs.mount(&"ws{self.additionalPaths.len}://", newVFSLink(self.vfs.getVFS("").vfs, path & "/"))
 
