@@ -11,6 +11,12 @@ else:
   static:
     echo "Compiling for unknown"
 
+when defined(profiler):
+  import debug_allocator
+
+import prof
+daGlobalTag(daMain)
+
 import misc/[timer]
 let startupTimer = startTimer()
 
@@ -321,7 +327,9 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
     # handle events
     let eventTimer = startTimer()
     gAsyncFrameTimer = startTimer()
-    let eventCounter = plat.processEvents()
+    let eventCounter = block:
+      withDaTag(daEvent):
+        plat.processEvents()
     services.tick()
     let eventTime = eventTimer.elapsed.ms
 
@@ -329,7 +337,7 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
       plat.lastEventTime = startTimer()
 
     var updateTime, renderTime: float
-    block:
+    withDaTag(daRender):
       let delta = app.frameTimer.elapsed.ms
       app.frameTimer = startTimer()
 
@@ -383,7 +391,8 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
       logger().flush()
 
     let pollTimer = startTimer()
-    pollFutures()
+    withDaTag(daPoll):
+      pollFutures()
 
     let pollTime = pollTimer.elapsed.ms
 
@@ -420,8 +429,12 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
     {.gcsafe.}:
       logger().flush()
 
+    profProcessAllocatorEvents()
+
+profProcessAllocatorEvents()
 gServices.addBuiltinServices()
 gServices.getServiceChecked(PlatformService).setPlatform(plat)
+profProcessAllocatorEvents()
 
 import module_imports
 when defined(useDynlib):
@@ -442,6 +455,7 @@ when defined(useDynlib):
         init()
     except Exception as e:
       log lvlError, &"Failed to load module '{name}': {e.msg}"
+    profProcessAllocatorEvents()
 
   try:
     log lvlInfo, "Load dynamic modules"
@@ -454,13 +468,16 @@ when defined(useDynlib):
 else:
   log lvlInfo, "Load static modules"
   initModules()
+  profProcessAllocatorEvents()
 
 plat.init(gAppOptions)
 gServices.waitForServices()
+profProcessAllocatorEvents()
 
 import misc/event
 
 proc main() =
+  profProcessAllocatorEvents()
   let app = newApp(backend.get, plat, gServices, gAppOptions)
   log lvlInfo, &"Finished creating app"
 
@@ -485,6 +502,7 @@ proc main() =
     p.render(true)
     inc frameIndex
     pollFutures()
+    profProcessAllocatorEvents()
 
   run(app, plat, backend.get, gAppOptions, frameIndex)
 

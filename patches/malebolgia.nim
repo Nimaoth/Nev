@@ -2,6 +2,7 @@
 
 import std / [atomics, locks, tasks, times]
 from std / os import sleep
+import prof
 
 when defined(nimPreviewSlimSystem):
   import std / typedthreads
@@ -139,6 +140,7 @@ proc send(item: sink PoolTask) =
     quit "logic bug: queue not empty after signal!"
 
 proc worker() {.thread.} =
+  daTag(daMalebolgia)
   var item: PoolTask
   while not globalStopToken.load(moRelaxed):
     acquire(chan.L)

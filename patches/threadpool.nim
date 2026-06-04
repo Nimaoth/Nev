@@ -23,6 +23,7 @@ when not compileOption("threads"):
   {.error: "Threadpool requires --threads:on option.".}
 
 import std/[cpuinfo, cpuload, locks, os]
+import prof
 
 when defined(useDynlib):
   when defined(mallocImport):
@@ -360,6 +361,7 @@ when not defined(mallocImport):
   gSomeReady.initSemaphore()
 
 proc slave(w: ptr Worker) {.thread.} =
+  daTag(daThreadpool)
   isSlave()[] = true
   while true:
     if w.shutdown:
@@ -398,6 +400,7 @@ proc slave(w: ptr Worker) {.thread.} =
     if w.q.len != 0: w.cleanFlowVars
 
 proc distinguishedSlave(w: ptr Worker) {.thread.} =
+  daTag(daThreadpool)
   while true:
     when declared(atomicStoreN):
       atomicStoreN(addr(w.ready), true, ATOMIC_SEQ_CST)

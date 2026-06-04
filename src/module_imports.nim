@@ -62,6 +62,7 @@ when not defined(useDynlib):
   import "../modules/undo_tree.nim"
   import "../modules/language_server_paths.nim"
   import "../modules/angelscript_formatter.nim"
+  import "../modules/profiler.nim"
   import "../modules/debugger/debugger.nim"
   import "../modules/dashboard.nim"
   import "../modules/vcs_git.nim"
@@ -140,6 +141,7 @@ proc initModules*() =
   when declared(init_module_undo_tree): init_module_undo_tree()
   when declared(init_module_language_server_paths): init_module_language_server_paths()
   when declared(init_module_angelscript_formatter): init_module_angelscript_formatter()
+  when declared(init_module_profiler): init_module_profiler()
   when declared(init_module_debugger): init_module_debugger()
   when declared(init_module_dashboard): init_module_dashboard()
   when declared(init_module_vcs_git): init_module_vcs_git()
@@ -176,6 +178,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_vcs_git): shutdown_module_vcs_git()
   when declared(shutdown_module_dashboard): shutdown_module_dashboard()
   when declared(shutdown_module_debugger): shutdown_module_debugger()
+  when declared(shutdown_module_profiler): shutdown_module_profiler()
   when declared(shutdown_module_angelscript_formatter): shutdown_module_angelscript_formatter()
   when declared(shutdown_module_language_server_paths): shutdown_module_language_server_paths()
   when declared(shutdown_module_undo_tree): shutdown_module_undo_tree()
@@ -296,6 +299,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("undo_tree")
   loadModule("language_server_paths")
   loadModule("angelscript_formatter")
+  loadModule("profiler")
   loadModule("debugger")
   loadModule("dashboard")
   loadModule("vcs_git")

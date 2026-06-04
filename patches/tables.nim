@@ -287,6 +287,9 @@ proc initTable*[A, B](initialSize = defaultInitialSize): Table[A, B] =
   result = default(Table[A, B])
   initImpl(result, initialSize)
 
+proc hasRoom*[A, B](t: var Table[A, B]): bool =
+  return not mustRehash(t)
+
 proc `[]=`*[A, B](t: var Table[A, B], key: A, val: sink B) =
   ## Inserts a `(key, value)` pair into `t`.
   ##

@@ -14,26 +14,45 @@ when defined(mallocImport):
   proc reallocImpl(p: pointer, newSize: Natural): pointer = reallocImpl2(p, newSize)
   proc deallocImpl(p: pointer) = deallocImpl2(p)
 else:
-  proc allocImpl(size: Natural): pointer =
-    result = c_malloc(size.csize_t)
-    when defined(zephyr):
-      if result == nil:
-        raiseOutOfMem()
+  when defined(profiler):
+    proc profilerAlloc(size: Natural): pointer {.importc.}
+    proc profilerAlloc0(size: Natural): pointer {.importc.}
+    proc profilerRealloc(p: pointer, newSize: Natural): pointer {.importc.}
+    proc profilerDealloc(p: pointer) {.importc.}
 
-  proc alloc0Impl(size: Natural): pointer =
-    result = c_calloc(size.csize_t, 1)
-    when defined(zephyr):
-      if result == nil:
-        raiseOutOfMem()
+    proc allocImpl(size: Natural): pointer =
+      result = profilerAlloc(size)
 
-  proc reallocImpl(p: pointer, newSize: Natural): pointer =
-    result = c_realloc(p, newSize.csize_t)
-    when defined(zephyr):
-      if result == nil:
-        raiseOutOfMem()
+    proc alloc0Impl(size: Natural): pointer =
+      result = profilerAlloc0(size)
 
-  proc deallocImpl(p: pointer) =
-    c_free(p)
+    proc reallocImpl(p: pointer, newSize: Natural): pointer =
+      result = profilerRealloc(p, newSize)
+
+    proc deallocImpl(p: pointer) =
+      profilerDealloc(p)
+
+  else:
+    proc allocImpl(size: Natural): pointer =
+      result = c_malloc(size.csize_t)
+      when defined(zephyr):
+        if result == nil:
+          raiseOutOfMem()
+
+    proc alloc0Impl(size: Natural): pointer =
+      result = c_calloc(size.csize_t, 1)
+      when defined(zephyr):
+        if result == nil:
+          raiseOutOfMem()
+
+    proc reallocImpl(p: pointer, newSize: Natural): pointer =
+      result = c_realloc(p, newSize.csize_t)
+      when defined(zephyr):
+        if result == nil:
+          raiseOutOfMem()
+
+    proc deallocImpl(p: pointer) =
+      c_free(p)
 
   when defined(mallocExport):
     proc allocImpl2(size: Natural): pointer {.exportc, dynlib.} = allocImpl(size)
@@ -41,10 +60,10 @@ else:
     proc reallocImpl2(p: pointer, newSize: Natural): pointer {.exportc, dynlib.} = reallocImpl(p, newSize)
     proc deallocImpl2(p: pointer) {.exportc, dynlib.} = deallocImpl(p)
 
-    proc host_malloc*(size: csize_t): pointer {.exportc: "host_malloc", dynlib.} = c_malloc(size)
-    proc host_calloc*(nmemb, size: csize_t): pointer {.exportc: "host_calloc", dynlib.} = c_calloc(nmemb, size)
-    proc host_realloc*(p: pointer, newsize: csize_t): pointer {.exportc: "host_realloc", dynlib.} = c_realloc(p, newsize)
-    proc host_free*(p: pointer) {.exportc: "host_free", dynlib.} = c_free(p)
+    proc host_malloc*(size: csize_t): pointer {.exportc: "host_malloc", dynlib.} = allocImpl(size.int)
+    proc host_calloc*(nmemb, size: csize_t): pointer {.exportc: "host_calloc", dynlib.} = alloc0Impl(nmemb.int * size.int)
+    proc host_realloc*(p: pointer, newsize: csize_t): pointer {.exportc: "host_realloc", dynlib.} = reallocImpl(p, newsize.int)
+    proc host_free*(p: pointer) {.exportc: "host_free", dynlib.} = deallocImpl(p)
 
 proc realloc0Impl(p: pointer, oldsize, newSize: Natural): pointer =
   result = realloc(p, newSize.csize_t)
