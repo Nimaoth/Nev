@@ -213,7 +213,7 @@ when implModule:
         m.spawn parallelForChunk[T, C](cast[ptr UncheckedArray[T]](items[0].addr), start, start + len, ctx, cb)
         start += chunkSize
 
-  type FilterAndSortArgs = tuple[queries: seq[string], list: ItemList, sort: bool, minScore: float, skipFirstQuery: bool]
+  type FilterAndSortArgs = tuple[queries: seq[string], list: ptr ItemList, sort: bool, minScore: float, skipFirstQuery: bool]
 
   proc applyFuzzyFilter(index: int, item: var FinderItem, ctx: tuple[firstQueryIndex: int, queryIndex: int, args: ptr FilterAndSortArgs]) {.nimcall.} =
     if item.filtered:
@@ -234,10 +234,10 @@ when implModule:
     try:
       var list = args.list
       let scoreTimer = startTimer()
-      if list.len > 0:
+      if list[].len > 0:
         result.filtered = 0
 
-        for i, item in list.data.getMutUnsafe.items.mpairs:
+        for i, item in list[].data.getMutUnsafe.items.mpairs:
           item.filtered = false
           if item.originalIndex.isNone:
             item.originalIndex = i.some
@@ -251,15 +251,15 @@ when implModule:
           var minScore = float.high
           var maxScore = float.low
 
-          parallelFor list.data.getMutUnsafe.items, 512, (firstQueryIndex, queryIndex, args.addr), applyFuzzyFilter
+          parallelFor list[].data.getMutUnsafe.items, 512, (firstQueryIndex, queryIndex, args.addr), applyFuzzyFilter
 
-          for i, item in list.data.getMutUnsafe.items.mpairs:
+          for i, item in list[].data.getMutUnsafe.items.mpairs:
             if item.filtered:
               continue
             maxScore = max(maxScore, item.score)
             minScore = min(minScore, item.score)
 
-          for i, item in list.data.getMutUnsafe.items.mpairs:
+          for i, item in list[].data.getMutUnsafe.items.mpairs:
             if item.filtered:
               continue
             if item.score > 0:
@@ -286,7 +286,7 @@ when implModule:
         return 0
 
       let sortTimer = startTimer()
-      list.sort(customCmp, Descending)
+      list[].sort(customCmp, Descending)
       result.sortTime = sortTimer.elapsed.ms
 
       result.totalTime = result.scoreTime + result.sortTime
@@ -316,7 +316,7 @@ when implModule:
 
     self.lastTriggeredFilterVersions = versions
 
-    var filterResult = spawnAsync(filterAndSortItemsThread, (self.queries, items, self.sort, self.minScore, self.skipFirstQuery)).await
+    var filterResult = spawnAsync(filterAndSortItemsThread, (self.queries, items.addr, self.sort, self.minScore, self.skipFirstQuery)).await
 
     # debugf"[filterAndSortItems] -> {versions}, {filterResult.scoreTime}ms, {filterResult.sortTime}ms, {filterResult.totalTime}ms"
 
