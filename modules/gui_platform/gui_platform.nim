@@ -62,6 +62,7 @@ when implModule and enableGui:
       lastEvent: Option[(int64, Modifiers, Button)]
 
       drawnNodes: seq[UINode]
+      tempRenderCommands: RenderCommands
 
       vsync: bool
 
@@ -824,91 +825,7 @@ when implModule and enableGui:
     return cast[uint64](rune) or ((fontScaleFixedPoint and 0x00FFFFFF) shl 32) or (italicFlag shl 56) or (boldFlag shl 57)
 
   var solidPaint = newPaint(SolidPaint)
-  proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune, fontScale: float = 1.0) =
-    let wrap = TextWrap in flags
-    let wrapBounds = if flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
-      vec2(bounds.w, bounds.h)
-    else:
-      vec2(0, 0)
-
-    let hAlign = if TextAlignHorizontalLeft in flags:
-      HorizontalAlignment.LeftAlign
-    elif TextAlignHorizontalCenter in flags:
-      HorizontalAlignment.CenterAlign
-    elif TextAlignHorizontalRight in flags:
-      HorizontalAlignment.RightAlign
-    else:
-      HorizontalAlignment.LeftAlign
-
-    let vAlign = if TextAlignVerticalTop in flags:
-      VerticalAlignment.TopAlign
-    elif TextAlignVerticalCenter in flags:
-      VerticalAlignment.MiddleAlign
-    elif TextAlignVerticalBottom in flags:
-      VerticalAlignment.BottomAlign
-    else:
-      VerticalAlignment.TopAlign
-
-    let textFlags = flags * &{TextItalic, TextBold}
-
-    proc tintRune(r: Rune): bool =
-      return true
-
-    # todo: convert typeset to not use strings to avoid copying
-    try:
-      let font = platform.getFont(platform.ctx.fontSize * fontScale, flags)
-
-      let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap, snapToPixel = false)
-      template drawRune(i: int, rune: Rune, inColor: Color): untyped =
-        let color = if tintRune(rune):
-          inColor
-        else:
-          color(1, 1, 1)
-
-        let key = key(rune, textFlags, fontScale)
-        if rune.int < platform.asciiGlyphCache.len and textFlags == 0.UINodeFlags and fontScale == 1.0:
-          if platform.asciiGlyphCache[rune.int] == 0:
-            var path = font.typeface.getGlyphPath(rune)
-            let rect = arrangement.selectionRects[i]
-            path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
-            var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
-            for paint in font.paints:
-              image.fillPath(path, paint)
-            platform.boxy.addImage(key, image, genMipmaps=false)
-            platform.asciiGlyphCache[rune.int] = key
-
-          let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
-          platform.boxy.drawImage(platform.asciiGlyphCache[rune.int], pos, color)
-
-        else:
-          if not platform.glyphCache.contains(key):
-            var path = font.typeface.getGlyphPath(rune)
-            let rect = arrangement.selectionRects[i]
-            path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
-            var image = newImage(rect.w.ceil.int, rect.h.ceil.int + 2)
-            for paint in font.paints:
-              image.fillPath(path, paint)
-            platform.boxy.addImage(key, image, genMipmaps=false)
-            platform.glyphCache[key] = key
-
-          let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
-          platform.boxy.drawImage(key, pos, color)
-
-      if TextDrawSpaces in flags:
-        for i, rune in arrangement.runes:
-          let (rune, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
-          drawRune(i, rune, color)
-      else:
-        for i, rune in arrangement.runes:
-          drawRune(i, rune, color)
-
-      if TextUndercurl in flags:
-        platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
-
-    except GLerror, Exception:
-      discard
-
-  proc drawText(platform: GuiPlatform, text: string, arrangement: render_command.Arrangement, indices: RenderCommandArrangement, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune, fontSizeScale: float = 1.0) =
+  proc drawText(platform: GuiPlatform, arrangement: render_command.Arrangement, indices: RenderCommandArrangement, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune, fontSizeScale: float = 1.0) =
     let textFlags = flags * &{TextItalic, TextBold}
 
     proc tintRune(r: Rune): bool =
@@ -969,6 +886,14 @@ when implModule and enableGui:
     except GLerror, Exception:
       discard
 
+  proc drawText(platform: GuiPlatform, text: openArray[char], pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune, fontScale: float = 1.0) =
+
+    platform.tempRenderCommands.clear()
+    let font = platform.getFontInfo(platform.fontSize * fontScale, flags)
+    let arrangementIndex = platform.tempRenderCommands.typeset(text, font)
+    platform.drawText(platform.tempRenderCommands.arrangement, platform.tempRenderCommands.arrangements[arrangementIndex], pos, bounds, color, spaceColor, flags, underlineColor, spaceRune, fontScale)
+
+
   proc handleRenderCommand(platform: GuiPlatform, renderCommands: ptr RenderCommands, command: RenderCommand, spaceColor: Color, space: Rune, maskBounds: var seq[Rect], offsets: var seq[Vec2], offset: var Vec2) {.inline, raises: [Exception].} =
     case command.kind
     of RenderCommandKind.Rect:
@@ -984,21 +909,19 @@ when implModule and enableGui:
     of RenderCommandKind.FilledRect:
       platform.boxy.drawRect(command.bounds + offset, command.color)
     of RenderCommandKind.TextRaw:
-      # todo: don't copy string data
-      var text = newStringOfCap(command.len)
       if command.len > 0:
-        text.setLen(command.len)
-        copyMem(text[0].addr, command.data, command.len)
-        platform.drawText(text, command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
+        platform.drawText(
+          command.data.toOpenArray(0, command.len - 1),
+          command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
 
     of RenderCommandKind.Text:
-      # todo: don't copy string data
       assert renderCommands != nil
-      let text = renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
       if command.arrangementIndex == uint32.high:
-        platform.drawText(text, command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
+        platform.drawText(
+          renderCommands.strings.toOpenArray(command.textOffset.int, command.textOffset.int + command.textLen.int - 1),
+          command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
       else:
-        platform.drawText(text, renderCommands.arrangement, renderCommands.arrangements[command.arrangementIndex], command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
+        platform.drawText(renderCommands.arrangement, renderCommands.arrangements[command.arrangementIndex], command.bounds.xy + offset, command.bounds + offset, command.color, spaceColor, command.flags, command.underlineColor, space, command.fontScale.float)
     of RenderCommandKind.ScissorStart:
       platform.boxy.pushLayer()
       maskBounds.add(command.bounds + offset)
