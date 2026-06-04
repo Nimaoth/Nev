@@ -180,17 +180,18 @@ when implModule:
       if content.len > self.matchingWordHiglightSettings.maxFileSize.get():
         return
 
-      var oldSelection = edit.selection.normalized
-      if oldSelection.b.row.int - oldSelection.a.row.int > self.matchingWordHiglightSettings.maxSelectionLines.get():
+      let oldSelection = edit.selection
+      var selectionNorm = edit.selection.normalized
+      if selectionNorm.b.row.int - selectionNorm.a.row.int > self.matchingWordHiglightSettings.maxSelectionLines.get():
         return
 
-      oldSelection = content.clampOnLine(oldSelection)
+      selectionNorm = content.clampOnLine(selectionNorm)
 
-      let (selection, inclusive, addWordBoundary) = if oldSelection.isEmpty:
-        var s = moves.applyMove(oldSelection.b...oldSelection.b, "(vim.word)", includeEol=false).normalized
+      let (selection, inclusive, addWordBoundary) = if selectionNorm.isEmpty:
+        var s = moves.applyMove(selectionNorm.b...selectionNorm.b, "(vim.word)", includeEol=false).normalized
         const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
         if content.charAt(s.a) notin AlphaNumeric:
-          let prev = point(oldSelection.b.row, oldSelection.b.column - 1)
+          let prev = point(selectionNorm.b.row, selectionNorm.b.column - 1)
           if s.a.column > 0 and content.charAt(prev) in AlphaNumeric:
             s = moves.applyMove(prev...prev, "(vim.word)", includeEol=false).normalized
           else:
@@ -201,7 +202,7 @@ when implModule:
           return
         (s, false, true)
       else:
-        (oldSelection.normalized, self.useInclusiveSelections, false)
+        (selectionNorm.normalized, self.useInclusiveSelections, false)
 
       let startByte = content.pointToOffset(selection.a)
       let endByte = content.pointToOffset(selection.b)
