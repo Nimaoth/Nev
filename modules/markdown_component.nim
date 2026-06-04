@@ -287,6 +287,8 @@ when implModule:
     return false
 
   proc updateDelimiterHidingAsync(self: MarkdownComponent): Future[void] {.async.} =
+    if self.owner.isNil:
+      return
     if self.delimiterOverlayId.isNone:
       return
 
@@ -299,7 +301,7 @@ when implModule:
 
     var lastUpdateDelimiterRequestNum = self.updateDelimiterRequestNum
     let editor = self.owner.DocumentEditor
-    if editor.currentDocument.isNil:
+    if editor.isNil or editor.currentDocument.isNil:
       return
     let decorations = editor.getDecorationComponent().getOr:
       return
@@ -380,7 +382,7 @@ when implModule:
             result.add(r.a...point(r.b.row, r.b.column + 1))
 
   proc updateHeaderHidingAsync(self: MarkdownComponent): Future[void] {.async.} =
-    if self.headerOverlayId.isNone:
+    if self.headerOverlayId.isNone or self.owner.isNil:
       return
     let editor = self.owner.DocumentEditor
     if editor.currentDocument.isNil:

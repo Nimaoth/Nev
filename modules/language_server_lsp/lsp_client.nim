@@ -1,4 +1,5 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os]
+import prof
 import misc/[util, myjsonutils, custom_async, response]
 import language_server
 import misc/expose
@@ -1163,6 +1164,7 @@ proc handleNotifiesConfigurationChanged(client: LSPClient) {.async, gcsafe.} =
   client.log.log lvlInfo, &"handleNotifiesConfigurationChanged: client gone"
 
 proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
+  daTag(daLspClient)
   logFileName = getAppDir() / &"/logs/lsp.{client.name}.log"
   # try:
   #   # createDir(getAppDir() / "logs")
