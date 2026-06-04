@@ -1665,21 +1665,26 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
   let textNode = currentNode
   builder.panel(&{UINodeFlag.FillX, FillY, MouseHover}, tag = "text-editor-hover"):
     onClickAny btn:
-      self.handleMouseEvent(btn, pos - vec2(textNode.x, 0), modifiers, Click)
+      if self.document.isNotNil:
+        self.handleMouseEvent(btn, pos - vec2(textNode.x, 0), modifiers, Click)
     onDrag MouseButton.Left:
-      self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Drag)
+      if self.document.isNotNil:
+        self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Drag)
     onBeginHover:
-      if not self.hoverComponent.isHovered:
-        self.markDirty()
-      self.hoverComponent.isHovered = true
-      self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Hover)
+      if self.document.isNotNil:
+        if not self.hoverComponent.isHovered:
+          self.markDirty()
+        self.hoverComponent.isHovered = true
+        self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Hover)
     onHover:
-      self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Hover)
+      if self.document.isNotNil:
+        self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, Hover)
     onEndHover:
-      if self.hoverComponent.isHovered:
-        self.markDirty()
-      self.hoverComponent.isHovered = false
-      self.hoverComponent.cancelHover()
+      if self.document.isNotNil:
+        if self.hoverComponent.isHovered:
+          self.markDirty()
+        self.hoverComponent.isHovered = false
+        self.hoverComponent.cancelHover()
 
   # Get center line
   if not state.cursorOnScreen:
