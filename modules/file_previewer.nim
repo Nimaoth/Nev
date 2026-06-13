@@ -157,6 +157,10 @@ when implModule:
         log lvlInfo, fmt"Discard file load of '{path}' because preview editor was destroyed"
         return
 
+      if self.tempDocument.isNil or not self.tempDocument.isInitialized:
+        log lvlInfo, fmt"Discard file load of '{path}' because preview editor was destroyed"
+        return
+
       if self.revision > revision or editor.currentDocument.isNil:
         log lvlInfo, fmt"Discard file load of '{path}' because a newer one was requested"
         return
@@ -164,7 +168,8 @@ when implModule:
       self.tempDocument.getTextComponent().get.setFileAndContent(path, content.move)
       editor.setDocument(self.tempDocument)
 
-    let te = editor.getTextEditorComponent().get
+    let te = editor.getTextEditorComponent().getOr:
+      return
 
     if location.getSome(location):
       te.targetSelection = location.toSelection.toRange

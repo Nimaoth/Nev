@@ -40,6 +40,15 @@ when defined(profiler):
   template daGlobalTag*(tag: DaTag): untyped =
     daIncludeCurrentTagBit(uint64(ord(tag)))
 
+  proc stacktracerGetStacktrace*(): cstring {.importc: "stacktracer_get_stacktrace".}
+  proc stacktracerFreeStacktrace*(str: cstring) {.importc: "stacktracer_free_stacktrace".}
+
+  proc profStackTrace*() =
+    let stack = stacktracerGetStacktrace()
+    echo stack
+    stacktracerFreeStacktrace(stack)
+
+
 else:
   template withDaTag*(tag: DaTag, body: untyped): untyped =
     body
@@ -51,3 +60,16 @@ else:
     discard
 
   proc profProcessAllocatorEvents*() = discard
+
+  # proc stacktracerGetStacktrace*(): cstring = ""
+  # proc stacktracerFreeStacktrace*(str: cstring) = discard
+
+  # proc profStackTrace*() = discard
+  proc stacktracerGetStacktrace*(): cstring {.importc: "stacktracer_get_stacktrace".}
+  proc stacktracerFreeStacktrace*(str: cstring) {.importc: "stacktracer_free_stacktrace".}
+
+  proc profStackTrace*() =
+    let stack = stacktracerGetStacktrace()
+    echo stack
+    stacktracerFreeStacktrace(stack)
+
