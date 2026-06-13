@@ -1,6 +1,6 @@
 import std/[options, strutils, strformat, enumerate]
 import nimsumtree/[rope, sumtree, buffer, clock]
-import misc/[custom_async, custom_unicode, util, event, rope_utils]
+import misc/[custom_async, custom_unicode, util, event, rope_utils, arena]
 import syntax_map, overlay_map
 import chroma, theme
 
@@ -116,13 +116,13 @@ proc desc*(self: TabMapSnapshot): string =
 proc `$`*(self: TabMapSnapshot): string =
   result.add self.desc
 
-proc iter*(self {.byref.}: TabMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): TabChunkIterator =
+proc iter*(self {.byref.}: TabMapSnapshot, arena: ptr Arena, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): TabChunkIterator =
   let r = tabPoint(0, 0)...self.endTabPoint # todo: pass as parameter
   var (_, _, toNextStop) = self.toInputPointEx(r.a)
   if r.a + tabPoint(0, toNextStop) > r.b:
     toNextStop = r.b.column.int - r.a.column.int
   result = TabChunkIterator(
-    inputChunks: self.input.iter(highlighter, theme),
+    inputChunks: self.input.iter(arena, highlighter, theme),
     tabMap: self.clone(),
     maxExpansionColumn: self.maxExpansionColumn,
     insideLeadingTab: toNextStop > 0,
@@ -204,7 +204,7 @@ func toTabPoint*(self: TabMapSnapshot, point: InputPoint): TabPoint =
   if self.buffer.visibleText.summary.tabs == 0:
     return point.TabPoint
   else:
-    var chunks = self.input.iter()
+    var chunks = self.input.iter(nil)
     chunks.seekLine(point.row.int)
     let expanded = self.expandTabs(chunks, point.column.int)
     return tabPoint(point.row.int, expanded)
@@ -219,13 +219,13 @@ proc toInputPoint*(self: TabMapSnapshot, point: TabPoint, bias: Bias = Bias.Righ
   if self.buffer.visibleText.summary.tabs == 0:
     return point.InputPoint
   else:
-    var chunks = self.input.iter()
+    var chunks = self.input.iter(nil)
     chunks.seekLine(point.row.int)
     let (collapsedBytes, _, _) = self.collapseTabs(chunks, point.column.int, bias)
     return inputPoint(point.row.int, collapsedBytes)
 
 proc toInputPointEx*(self: TabMapSnapshot, point: TabPoint, bias: Bias = Bias.Right): tuple[inputPoint: InputPoint, expandedChars: int, toNextStop: int] =
-  var chunks = self.input.iter()
+  var chunks = self.input.iter(nil)
   chunks.seekLine(point.row.int)
   let (collapsedBytes, expandedChars, toNextStop) = self.collapseTabs(chunks, point.column.int, bias)
   return (inputPoint(point.row.int, collapsedBytes), expandedChars, toNextStop)

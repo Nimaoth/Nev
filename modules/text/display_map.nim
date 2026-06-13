@@ -1,6 +1,6 @@
 import std/[options, tables, sugar]
 import nimsumtree/[rope, buffer, clock]
-import misc/[custom_async, custom_unicode, util, event, rope_utils]
+import misc/[custom_async, custom_unicode, util, event, rope_utils, arena]
 import syntax_map, overlay_map, tab_map, wrap_map, diff_map
 from scripting_api import Selection
 import nimsumtree/sumtree except mapIt
@@ -104,9 +104,9 @@ proc new*(_: typedesc[DisplayMap]): DisplayMap =
   discard result.wrapMap.onUpdated.subscribe (a: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(a[0], a[1])
   discard result.diffMap.onUpdated.subscribe (a: (DiffMap, DiffMapSnapshot)) => self.handleDiffMapUpdated(a[0], a[1])
 
-proc iter*(displayMap: var DisplayMap, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): DisplayChunkIterator =
+proc iter*(displayMap: var DisplayMap, arena: ptr Arena, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): DisplayChunkIterator =
   result = DisplayChunkIterator(
-    diffChunks: displayMap.diffMap.snapshot.iter(highlighter, theme),
+    diffChunks: displayMap.diffMap.snapshot.iter(arena, highlighter, theme),
     indentGuideColor: color(1, 1, 1),
   )
   if theme != nil:

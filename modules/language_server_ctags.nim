@@ -189,7 +189,7 @@ when implModule:
       signatures: res,
     )].success
 
-  proc getImportedFilesThread(args: tuple[syntaxMap: SyntaxMapSnapshot, query: TSQuery]): seq[string] =
+  proc getImportedFilesThread(args: tuple[syntaxMap: ptr SyntaxMapSnapshot, query: TSQuery]): seq[string] =
     let text = args.syntaxMap.rope
     let endPoint = text.endPoint
     var arena = initArena()
@@ -211,10 +211,12 @@ when implModule:
 
     let endPoint = text.content.endPoint
 
-    let flowVar = threadpool.spawn getImportedFilesThread (syntaxMap: treesitter.syntaxMap.snapshot, query: query.get)
+    var snapshot = treesitter.syntaxMap.snapshot
+    let flowVar = threadpool.spawn getImportedFilesThread (syntaxMap: snapshot.addr, query: query.get)
     while not flowVar.isReady:
       await sleepAsync(2.milliseconds)
 
+    snapshot.use() # use after await to force it into the environment
     return some(^flowVar)
 
   proc ctagsGetCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[language_server.CompletionList]] {.async.} =

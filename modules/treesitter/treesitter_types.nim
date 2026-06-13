@@ -84,8 +84,11 @@ func setLanguage*(self: TSParser, language: TSLanguage): bool =
 func setLanguage*(self: TSParser, language: TSLanguageSnapshot): bool =
   return ts.tsParserSetLanguage(self.impl, language.impl)
 
+proc resetParser*(self: TSParser) =
+  ts.tsParserReset(self.impl)
+
 func isNil*(self: TSParser): bool = self.impl.isNil
-func isNil*(self: TSTree): bool = self.impl.isNil
+func isNil*(self: TsTree): bool = self.impl.isNil
 
 proc clone*(self: TSTree): TSTree =
   assert not self.isNil
@@ -128,8 +131,8 @@ proc getRange*(node: TSNode): TSRange =
 proc tsPoint*(line: int, column: int): TSPoint = TSPoint(row: line, column: column)
 proc tsRange*(first: TSPoint, last: TSPoint): TSRange = TSRange(first: first, last: last)
 
-proc root*(tree: TSTree): TSNode = TSNode(impl: tree.impl.tsTreeRootNode)
-proc edit*(self: TSTree, edit: TSInputEdit): TSTree =
+proc root*(tree: TsTree): TSNode = TSNode(impl: tree.impl.tsTreeRootNode)
+proc edit*(self: TsTree, edit: TSInputEdit): TsTree =
   var tsEdit = ts.TSInputEdit(
     startByte: edit.startIndex.uint32,
     oldEndByte: edit.oldEndIndex.uint32,

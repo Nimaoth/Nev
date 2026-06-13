@@ -33,6 +33,8 @@ proc align(address, alignment: int): int =
   else:
     result = (address + (alignment - 1)) and not (alignment - 1)
 
+proc isValid*(arena: Arena): bool = arena.bucketSize > 0
+
 proc initArena*(bucketSize: int = defaultBucketSize): Arena =
   result = Arena(bucketSize: bucketSize)
 
@@ -42,8 +44,9 @@ proc addBucket(arena: var Arena, bucketSize: int) =
     capacity: bucketSize,
     len: 0,
   )
-  # if arena.buckets.len > 1:
-  #   echo "allocate bucket ", arena.buckets.len, " with size ", bucketSize, " -> ", cast[int](arena.buckets[arena.buckets.high].data)
+  if arena.buckets.len > 1:
+    echo "allocate bucket ", arena.buckets.len, " with size ", bucketSize, " -> ", cast[int](arena.buckets[arena.buckets.high].data)
+    writeStackTrace()
 
 proc alloc*(arena: var Arena, size: int, alignment: int): pointer =
   ## Allocate memory on top of the stack.
@@ -147,9 +150,34 @@ proc restoreCheckpoint*(arena: var Arena, p: uint64) =
   let bucketsLen = (p shr 32).int
   let len = (p and 0xFFFFFFFF.uint64).int
   while arena.buckets.len > bucketsLen and arena.buckets.len > 1:
-    dealloc(arena.buckets[arena.buckets.high].data)
+    let bucket {.cursor.} = arena.buckets[arena.buckets.high]
+    when defined(profilerZeroArenas):
+      zeroMem(bucket.data, bucket.capacity)
+    dealloc(bucket.data)
     discard arena.buckets.pop()
 
   if arena.buckets.len > 0:
-    arena.buckets[arena.buckets.high].len = len
-    assert arena.buckets[arena.buckets.high].len <= arena.buckets[arena.buckets.high].capacity
+    var bucket {.cursor.} = arena.buckets[arena.buckets.high].addr
+    bucket.len = len
+    assert bucket.len <= bucket.capacity
+    when defined(profilerZeroArenas):
+      zeroMem(bucket.data[len].addr, bucket.capacity - bucket.len)
+
+template withCheckpoint*(arena: var Arena, body: untyped): untyped =
+  let cp = arena.checkpoint
+  try:
+    body
+  finally:
+    arena.restoreCheckpoint(cp)
+
+var tempArena {.threadvar.}: Arena
+
+proc initThreadArena*(size: int) {.gcsafe.} =
+  {.gcsafe.}:
+    tempArena = initArena(size)
+
+proc threadArena*(): var Arena {.gcsafe.} =
+  {.gcsafe.}:
+    if not tempArena.isValid:
+      initThreadArena(1 * 1024 * 1024)
+    return tempArena

@@ -1,6 +1,6 @@
 import std/[options, strutils, atomics, strformat, tables, sets, algorithm]
 import nimsumtree/[rope, sumtree, buffer, clock, static_array]
-import misc/[custom_async, custom_unicode, util, timer, event, rope_utils, array_set]
+import misc/[custom_async, custom_unicode, util, timer, event, rope_utils, array_set, arena]
 import syntax_map, theme, chroma
 
 import log
@@ -229,10 +229,10 @@ proc `$`*(self: OverlayMapSnapshot): string =
       result.add "\n"
       inc i
 
-proc iter*(overlay {.byref.}: OverlayMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): OverlayChunkIterator =
+proc iter*(overlay {.byref.}: OverlayMapSnapshot, arena: ptr Arena, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): OverlayChunkIterator =
   # debugEcho &"OverlayMapSnapshot.iter {overlay}"
   result = OverlayChunkIterator(
-    styledChunks: InputChunkIterator.init(overlay.buffer.visibleText, highlighter, theme),
+    styledChunks: InputChunkIterator.init(overlay.buffer.visibleText, arena, highlighter, theme),
     overlayMap: overlay.clone(),
     overlayMapCursor: overlay.map.initCursor(OverlayMapChunkSummary),
     theme: theme,
@@ -1192,7 +1192,8 @@ template endOutputPoint*(self: OverlayMapSnapshot): OverlayPoint = self.endOverl
 func outputPoint*(self: OverlayChunkIterator): OverlayPoint = self.overlayPoint
 
 proc renderString*(self: OverlayMapSnapshot): string =
-  var iter = self.iter()
+  var arena = initArena(10 * 1024)
+  var iter = self.iter(arena.addr)
   iter.seekLine(0)
   var last = overlayPoint()
   var lastChunk = OverlayChunk()

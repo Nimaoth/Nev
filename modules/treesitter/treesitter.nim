@@ -466,11 +466,14 @@ proc getTsParsers*(num: int): seq[TSParser] =
     result.add createTsParser()
 
 proc returnParser*(parser: TSParser) =
+  parser.resetParser()
   var p = ({.gcsafe.}: getParsers())
   withLock getParsersLock()[]:
     p[].add parser
 
 proc returnParsers*(parsers: sink seq[TSParser]) =
+  for p in parsers:
+    p.resetParser()
   var p = ({.gcsafe.}: getParsers())
   withLock getParsersLock()[]:
     p[].add parsers
@@ -488,6 +491,7 @@ template withParser*(p: untyped, body: untyped): untyped =
     p = createTsParser()
   if not p.isNil:
     defer:
+      p.resetParser()
       withLock lock[]:
         parsers[].add p
 

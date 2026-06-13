@@ -1375,7 +1375,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
     if highlight:
       if sm.snapshot.layers.len > 0:
         highlighter = Highlighter(snapshot: sm.snapshot.addr, rainbowParens: rainbowParens).some
-    var res = self.displayMap.iter(highlighter, builder.theme)
+    var res = self.displayMap.iter(builder.arena.addr, highlighter, builder.theme)
     res.styledChunks.diagnosticEndPoints = self.document.diagnosticEndPoints # todo: don't copy everything here
     if indentGuide:
       let cursorIndentLevel = self.document.rope.indentRunes(self.selection.last.line).int
@@ -1388,7 +1388,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
     if highlight:
       if sm.snapshot.layers.len > 0:
         highlighter = Highlighter(snapshot: sm.snapshot.addr, rainbowParens: rainbowParens).some
-    var res = self.diffDisplayMap.iter(highlighter, builder.theme)
+    var res = self.diffDisplayMap.iter(builder.arena.addr, highlighter, builder.theme)
     return res
 
   let signShow = self.settings.signs.show.get()

@@ -1,6 +1,6 @@
 import std/[options, atomics, strformat, tables]
 import nimsumtree/[rope, buffer, clock]
-import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
+import misc/[custom_async, custom_unicode, util, timer, event, rope_utils, arena]
 import misc/diff, syntax_map, overlay_map, wrap_map
 import nimsumtree/sumtree except mapIt
 import theme
@@ -116,6 +116,9 @@ type
     diffPoint*: DiffPoint
     atEnd*: bool
 
+proc use*(snapshot: DiffMapSnapshot) =
+  discard
+
 func clone*(self: DiffMapSnapshot): DiffMapSnapshot =
   var otherInput: InputMapSnapshot
   if not self.otherInput.map.isNil:
@@ -125,9 +128,9 @@ func clone*(self: DiffMapSnapshot): DiffMapSnapshot =
 proc new*(_: typedesc[DiffMap]): DiffMap =
   result = DiffMap(snapshot: DiffMapSnapshot(map: SumTree[DiffMapChunk].new([DiffMapChunk()])))
 
-proc iter*(diffMap: var DiffMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): DiffChunkIterator =
+proc iter*(diffMap: var DiffMapSnapshot, arena: ptr Arena, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): DiffChunkIterator =
   result = DiffChunkIterator(
-    inputChunks: diffMap.input.iter(highlighter, theme),
+    inputChunks: diffMap.input.iter(arena, highlighter, theme),
     diffMap: diffMap.clone(),
     diffMapCursor: diffMap.map.initCursor(DiffMapChunkSummary),
   )
@@ -254,7 +257,7 @@ proc createInlineDiff(self: ptr DiffMapSnapshot, mapping: ptr LineMapping): tupl
   let ropeDiff = diff(srcRopeSlice, dstRopeSlice)
   return (ropeDiff, srcLineRange.a, dstLineRange.a)
 
-proc createInlineDiffs(self: sink DiffMapSnapshot): seq[tuple[diff: RopeDiff[Point], srcBase: Point, dstBase: Point]] =
+proc createInlineDiffs(self: ptr DiffMapSnapshot): seq[tuple[diff: RopeDiff[Point], srcBase: Point, dstBase: Point]] =
   let mappings = self.mappings.get.addr
   result.setLen(mappings[].len)
   if true:
@@ -262,12 +265,12 @@ proc createInlineDiffs(self: sink DiffMapSnapshot): seq[tuple[diff: RopeDiff[Poi
       var m = createMaster()
       m.awaitAll:
         for i in 0..<mappings[].len:
-          m.spawn createInlineDiff(self.unsafeAddr, mappings[][i].unsafeAddr) -> result[i]
+          m.spawn createInlineDiff(self, mappings[][i].unsafeAddr) -> result[i]
       return
     except ValueError:
       discard
   for i in 0..<mappings[].len:
-    result[i] = createInlineDiff(self.unsafeAddr, mappings[][i].unsafeAddr)
+    result[i] = createInlineDiff(self, mappings[][i].unsafeAddr)
 
 proc updateLineDiffsAsync(self: DiffMap) {.async.} =
   self.updatingAsync = true
@@ -281,9 +284,12 @@ proc updateLineDiffsAsync(self: DiffMap) {.async.} =
       self.snapshot.inlineMappings.setLen(0)
       return
 
-    let flowVar = threadpool.spawn createInlineDiffs(self.snapshot.clone())
+    var snapshot = self.snapshot.clone()
+    let flowVar = threadpool.spawn createInlineDiffs(snapshot.addr)
     while not flowVar.isReady:
       await sleepAsync(1.milliseconds)
+
+    snapshot.use() # use after await to force it into the environment
 
     if self.snapshot.version != version:
       continue

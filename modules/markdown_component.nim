@@ -43,7 +43,7 @@ when implModule:
     headerOverlayId: Option[int]
 
   type MarkdownOverlayArgs = object
-    syntaxMap: SyntaxMapSnapshot
+    syntaxMap: ptr SyntaxMapSnapshot
     fullRange: TSRange
     languageId: string
     currentLines: HashSet[int]
@@ -325,14 +325,14 @@ when implModule:
       let content = text.content
       let fullRange = (point(0, 0)...content.endPoint).tsRange
 
-      let syntaxMap = treesitter.syntaxMap.snapshot
+      var syntaxMap = treesitter.syntaxMap.snapshot
       if syntaxMap.layerIndex.isNil:
         return
 
       var overlays: seq[Range[Point]] = @[]
       block:
         let overlaysFlowVar = threadpool.spawn collectDelimiterOverlaysThread(MarkdownOverlayArgs(
-          syntaxMap: syntaxMap,
+          syntaxMap: syntaxMap.addr,
           fullRange: fullRange,
           languageId: "markdown_inline",
           currentLines: self.currentLines,
@@ -340,6 +340,8 @@ when implModule:
         ))
         while not overlaysFlowVar.isReady:
           await sleepAsync(1.milliseconds)
+
+        syntaxMap.use() # use after await to force it into the environment
 
         # if syntaxMap.buffer.remoteId != snapshot.buffer.remoteId or syntaxMap.buffer.version != snapshot.buffer.version:
         #   # debugEcho &"dismiss, {self.pendingOperations} new ops"
@@ -408,13 +410,13 @@ when implModule:
     let content = text.content
     let fullRange = (point(0, 0)...content.endPoint).tsRange
 
-    let syntaxMap = treesitter.syntaxMap.snapshot
+    var syntaxMap = treesitter.syntaxMap.snapshot
     if syntaxMap.layerIndex.isNil:
       return
 
     var overlays: seq[Range[Point]] = @[]
     let overlaysFlowVar = threadpool.spawn collectHeaderOverlaysThread(MarkdownOverlayArgs(
-      syntaxMap: syntaxMap,
+      syntaxMap: syntaxMap.addr,
       fullRange: fullRange,
       languageId: "markdown",
       currentLines: self.currentLines,
@@ -422,6 +424,8 @@ when implModule:
     ))
     while not overlaysFlowVar.isReady:
       await sleepAsync(1.milliseconds)
+
+    syntaxMap.use() # use after await to force it into the environment
 
     overlays = ^overlaysFlowVar
 

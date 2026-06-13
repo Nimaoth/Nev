@@ -47,7 +47,7 @@ type
 type
   SyntaxLayer* = object
     language*: string
-    tree*: TSTree
+    tree*: TsTree
     ranges*: seq[TSRange]
     depth*: int
     highlightQuery*: TSQuery
@@ -80,14 +80,14 @@ proc `=copy`*(a: var SyntaxLayer, b: SyntaxLayer) =
   if not b.tree.isNil:
     a.tree = b.tree.clone()
   else:
-    a.tree = TSTree()
+    a.tree = TsTree()
 
 proc `=destroy`*(layer: SyntaxLayer) {.raises: [].} =
+  if not layer.tree.isNil:
+    layer.tree.delete()
   {.gcsafe.}:
     `=destroy`(layer.language)
     `=destroy`(layer.ranges)
-  if not layer.tree.isNil:
-    layer.tree.delete()
 
 func clone*(self: SyntaxLayerRef): SyntaxLayerRef = self
 
@@ -112,6 +112,9 @@ type
     layers: seq[tuple[cursor: sumtree.Cursor[SyntaxLayerRef, SyntaxLayerRefSummary], start: int]]
 
   Depth* = distinct int
+
+proc use*(snapshot: SyntaxMapSnapshot) =
+  discard
 
 proc cmp*[C](a: Depth, b: SyntaxLayerRefSummary, cx: C): int {.inline.} = cmp(a.int, b.depth)
 proc cmp*[C](a: int, b: SyntaxLayerRefSummary, cx: C): int {.inline.} = cmp(a, b.bytes)
@@ -238,7 +241,7 @@ type
     warningColor: Color
     infoColor: Color
     hintColor: Color
-    arena: Arena
+    arena: ptr Arena
     parenColors: seq[Color]
     depthOffset: int
     currentNode: TSNode
@@ -348,7 +351,7 @@ proc layersOverlapping*(self: SyntaxMapSnapshot, range: Range[int], result: var 
 proc layersOverlapping*(self: SyntaxMapSnapshot, range: Range[int]): seq[int] =
   self.layersOverlapping(range, result)
 
-proc treesOverlapping*(self: SyntaxMapSnapshot, range: Range[int]): seq[TSTree] =
+proc treesOverlapping*(self: SyntaxMapSnapshot, range: Range[int]): seq[TsTree] =
   for layer in self.layersOverlapping(range):
     result.add self.layers[layer].tree
 
@@ -410,13 +413,13 @@ proc snapshot*(self: SyntaxMap): lent SyntaxMapSnapshot =
       self.reparse()
   result = self.currentSnapshot
 
-proc tsTree*(self: SyntaxMap): TSTree =
+proc tsTree*(self: SyntaxMap): TsTree =
   if not self.language.isNil:
     if self.changes.len > 0 or self.currentSnapshot.layers.len == 0:
       self.applyEdits()
       self.reparse()
   let s {.cursor.} = self.currentSnapshot
-  if s.layers.len > 0: s.layers[0].tree else: TSTree()
+  if s.layers.len > 0: s.layers[0].tree else: TsTree()
 
 proc setLanguage*(self: SyntaxMap, language: TSLanguage, highlightQuery: TSQuery,
                   injectionQuery: TSQuery, rope: sink Rope) =
@@ -459,14 +462,14 @@ proc clipRangesToParent(ranges: seq[TSRange], parent: seq[TSRange]): seq[TSRange
       )
 
 proc findExistingLayerTree(self: SyntaxMapSnapshot, language: string,
-                            ranges: seq[TSRange]): TSTree =
+                            ranges: seq[TSRange]): TsTree =
   for layer in self.layers:
     if layer.language == language and layer.ranges.len > 0 and
         ranges.len > 0 and layer.ranges[0].startByte == ranges[0].startByte:
       return layer.tree
-  return TSTree()
+  return TsTree()
 
-proc parseTreesitter(parser: TSParser, oldTree: TSTree, text: sink Rope): TSTree =
+proc parseTreesitter(parser: TSParser, oldTree: TsTree, text: sink Rope): TsTree =
   daTag(daTreesitter)
   var ropeCursor = text.cursor()
   let newTree = parser.parseCallback(oldTree):
@@ -485,7 +488,7 @@ proc parseTreesitter(parser: TSParser, oldTree: TSTree, text: sink Rope): TSTree
   return newTree
 
 proc collectInjections(
-    tree: TSTree,
+    tree: TsTree,
     query: TSQuery,
     rope: Rope,
     parentRanges: seq[TSRange],
@@ -539,7 +542,7 @@ proc collectInjections(
 
 type ParseArgs = object
   rootLanguage: TSLanguageSnapshot
-  oldTree: TSTree
+  oldTree: TsTree
   text: Rope
   res: ptr SyntaxMapSnapshot
   requestedLanguages: ptr seq[string]
@@ -549,14 +552,14 @@ type ParseArgs = object
 # BFS injection discovery
 type LayerJob = object
   language: TSLanguageSnapshot
-  tree: TSTree
+  tree: TsTree
   ranges: seq[TSRange]
   depth: int
   highlightQuery: TSQuery
   injectionQuery: TSQuery
   requestedLanguage: string
 
-proc parseInjection(text: ptr Rope, inj: ptr InjectionJob, oldSnapshot: SyntaxMapSnapshot, depth: int, parser: TSParser): LayerJob {.raises: [].} =
+proc parseInjection(text: ptr Rope, inj: ptr InjectionJob, oldSnapshot: ptr SyntaxMapSnapshot, depth: int, parser: TSParser): LayerJob {.raises: [].} =
   let injLang = getLoadedLanguageSnapshot(inj.languageName)
 
   if injLang.isNone:
@@ -568,10 +571,10 @@ proc parseInjection(text: ptr Rope, inj: ptr InjectionJob, oldSnapshot: SyntaxMa
     )
 
   # echo &"parseTreesitterThreadLog: parsing injection lang={inj.languageName} ranges={inj.ranges.len}"
-  let existingTree = oldSnapshot.findExistingLayerTree(injLang.get.languageId, inj.ranges)
-  let oldClone = if existingTree.isNotNil: existingTree.clone() else: TSTree()
+  let existingTree = oldSnapshot[].findExistingLayerTree(injLang.get.languageId, inj.ranges)
+  let oldClone = if existingTree.isNotNil: existingTree.clone() else: TsTree()
 
-  var injTree = TSTree()
+  var injTree = TsTree()
   if not parser.setLanguage(injLang.get):
     # echo &"parseTreesitterThreadLog: failed to set injection language {inj.languageName}"
     oldClone.delete()
@@ -615,13 +618,13 @@ proc parseInjection(text: ptr Rope, inj: ptr InjectionJob, oldSnapshot: SyntaxMa
     requestedLanguage: requestedLanguage,
   )
 
-proc parseInjections(args: ParseArgs, injections: seq[InjectionJob], outJobs: var seq[LayerJob], oldSnapshot: SyntaxMapSnapshot, depth: int) =
+proc parseInjections(args: ParseArgs, injections: seq[InjectionJob], outJobs: var seq[LayerJob], oldSnapshot: ptr SyntaxMapSnapshot, depth: int) =
   {.push warning[BareExcept]:off.}
   try:
     var jobs = newSeq[LayerJob](injections.len)
     when true:
       proc parseInjectionHelper(chunkIndex: int, chunkSize: int, text: ptr Rope,
-          injections: ptr seq[InjectionJob], oldSnapshot: SyntaxMapSnapshot, depth: int,
+          injections: ptr seq[InjectionJob], oldSnapshot: ptr SyntaxMapSnapshot, depth: int,
           parser: TSParser, jobs: ptr seq[LayerJob]) {.raises: [].} =
         for i in (chunkIndex * chunkSize)..<min((chunkIndex + 1) * chunkSize, injections[].len):
           jobs[][i] = parseInjection(text, injections[i].addr, oldSnapshot, depth, parser)
@@ -631,10 +634,12 @@ proc parseInjections(args: ParseArgs, injections: seq[InjectionJob], outJobs: va
       let chunkSize = (injections.len / numChunks).ceil.int
       assert numChunks * chunkSize >= injections.len
       var parsers = getTsParsers(numChunks)
-      m.awaitAll:
-        for i in 0..<numChunks:
-          m.spawn parseInjectionHelper(i, chunkSize, args.text.addr, injections.addr, oldSnapshot, depth, parsers[i], jobs.addr)
-      returnParsers(parsers)
+      try:
+        m.awaitAll:
+          for i in 0..<numChunks:
+            m.spawn parseInjectionHelper(i, chunkSize, args.text.addr, injections.addr, oldSnapshot, depth, parsers[i], jobs.addr)
+      finally:
+        returnParsers(parsers)
     else:
       withParser parser:
         for i in 0..injections.high:
@@ -646,13 +651,13 @@ proc parseInjections(args: ParseArgs, injections: seq[InjectionJob], outJobs: va
   {.pop.}
 
 proc parseTreesitterThread(args: ParseArgs): bool =
-  let oldSnapshot {.cursor.} = args.res[]
+  let oldSnapshot = args.res
 
   # var t = startTimer()
   # defer:
   #   echo &"parseTreesitterThread took {t.elapsed.ms} ms"
 
-  var rootTree = TSTree()
+  var rootTree = TsTree()
   withParser parser:
     if not parser.setLanguage(args.rootLanguage):
       return false
@@ -679,15 +684,15 @@ proc parseTreesitterThread(args: ParseArgs): bool =
 
     var i = 0
     while i < jobs.len:
-      let job = jobs[i]
+      let job {.cursor.} = jobs[i]
       inc i
       if job.tree.isNil or job.injectionQuery.isNil or job.depth >= 5:
         continue
 
-      var arena = initArena(16 * 1024)
-      let injections = collectInjections(job.tree, job.injectionQuery, args.text, job.ranges, arena)
-      if injections.len > 0:
-        parseInjections(args, injections, jobs, oldSnapshot, job.depth)
+      threadArena().withCheckpoint:
+        let injections = collectInjections(job.tree, job.injectionQuery, args.text, job.ranges, threadArena())
+        if injections.len > 0:
+          parseInjections(args, injections, jobs, oldSnapshot, job.depth)
 
   jobs.sort(proc(a, b: LayerJob): int =
     if a.depth != b.depth: cmp(a.depth, b.depth)
@@ -757,10 +762,10 @@ proc reparseAsync(self: SyntaxMap) {.async.} =
     # Parse root layer
     let hasOldRoot = self.currentSnapshot.layers.len > 0 and self.currentSnapshot.layers[0].tree.isNotNil
     # echo &"reparseAsync: parsing root layer lang={self.language.languageId} hasOldTree={hasOldRoot}"
-    let oldRootTree: TSTree = if hasOldRoot:
+    let oldRootTree: TsTree = if hasOldRoot:
       self.currentSnapshot.layers[0].tree.clone()
     else:
-      TSTree()
+      TsTree()
     var newSnapshot = self.currentSnapshot
     var requestedLanguages: seq[string] = @[]
     let rootFlowVar = threadpool.spawn parseTreesitterThread(ParseArgs(
@@ -1122,13 +1127,12 @@ proc next*(self: var ChunkIterator2): Option[RopeChunk] =
 
   return chunk.some
 
-proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): StyledChunkIterator =
+proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, arena: ptr Arena, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): StyledChunkIterator =
   result.chunks = ChunkIterator2.init(rope.clone())
   result.defaultColor = color(1, 1, 1)
   result.highlighter = highlighter
   result.theme = theme
-  # todo: reuse this arena every frame
-  result.arena = initArena(16 * 1024)
+  result.arena = arena
   result.highlights = newSeqOfCap[Highlight](128)
 
   result.errorColor = result.defaultColor
@@ -1341,7 +1345,10 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
         let point = currentChunk.point
         let endPoint = currentChunk.endPoint
         let range = tsRange(tsPoint(point.row.int, point.column.int), tsPoint(endPoint.row.int, endPoint.column.int))
-        self.arena.restoreCheckpoint(0)
+        assert self.arena != nil
+        let cp = self.arena[].checkpoint
+        defer:
+          self.arena[].restoreCheckpoint(cp)
 
         # Compute byte offset for overlap query
         let chunkStartByte = snap.rope.pointToOffset(point)
@@ -1357,8 +1364,8 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
           if layer.tree.isNil or layer.highlightQuery.isNil: continue
           let highlightQuery = layer.highlightQuery
 
-          for match in highlightQuery.matches(layer.tree.root, range, self.arena):
-            let predicates = highlightQuery.predicatesForPattern(match.pattern, self.arena)
+          for match in highlightQuery.matches(layer.tree.root, range, self.arena[]):
+            let predicates = highlightQuery.predicatesForPattern(match.pattern, self.arena[])
             for capture in match.captures:
               let node = capture.node
               let byteRange = node.startByte...node.endByte

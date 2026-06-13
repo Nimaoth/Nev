@@ -1,6 +1,6 @@
 import std/[options, atomics, strformat, tables]
 import nimsumtree/[rope, sumtree, buffer, clock]
-import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
+import misc/[custom_async, custom_unicode, util, timer, event, rope_utils, arena]
 import syntax_map, overlay_map, tab_map, theme
 
 {.push warning[Deprecated]:off.}
@@ -127,9 +127,9 @@ func clone*(self: WrapMapSnapshot): WrapMapSnapshot =
 proc new*(_: typedesc[WrapMap]): WrapMap =
   result = WrapMap(snapshot: WrapMapSnapshot(map: SumTree[WrapMapChunk].new([WrapMapChunk()])))
 
-proc iter*(wrapMap: var WrapMapSnapshot, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): WrapChunkIterator =
+proc iter*(wrapMap: var WrapMapSnapshot, arena: ptr Arena, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): WrapChunkIterator =
   result = WrapChunkIterator(
-    inputChunks: wrapMap.input.iter(highlighter, theme),
+    inputChunks: wrapMap.input.iter(arena, highlighter, theme),
     wrapMap: wrapMap.clone(),
     wrapMapCursor: wrapMap.map.initCursor(WrapMapChunkSummary),
   )
@@ -445,7 +445,7 @@ proc update*(self: var WrapMapSnapshot, input: sink InputMapSnapshot, wrapWidth:
   var currentRange = inputPoint()...inputPoint()
   var currentDisplayRange = wrapPoint()...wrapPoint()
 
-  var iter = input.iter()
+  var iter = input.iter(nil)
   var nextWrapColumn = wrapWidth
 
   var newMap = SumTree[WrapMapChunk].new()
