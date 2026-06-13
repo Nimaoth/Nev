@@ -481,7 +481,7 @@ when implModule:
 
   proc editorViewKind(self: EditorView): string = "editor"
 
-  proc editorViewDisplay(self: EditorView): string = self.document.filename
+  proc editorViewDisplay(self: EditorView): string = self.document.filename.splitPath.tail
 
   proc editorViewSaveState(self: EditorView): JsonNode =
     if not self.editor.config.get("editor.save-in-session", true):
