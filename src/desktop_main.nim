@@ -314,6 +314,8 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
   var eventBus: EventService = getServiceChecked(EventService)
   let config = getServiceChecked(ConfigService).runtime
 
+  var lastGcTimer = startTimer()
+
   while not app.closeRequested:
     defer:
       inc frameIndex
@@ -416,6 +418,13 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
       lowPowerMode = false
     else:
       lowPowerMode = false
+
+    if lastGcTimer.elapsed.ms > config.get("gc.interval", 1000.0) and eventCounter == 0:
+      lastGcTimer = startTimer()
+      try:
+        GC_FullCollect()
+      except:
+        discard
 
     let totalTime = totalTimer.elapsed.ms
     if not app.disableLogFrameTime and
