@@ -44,9 +44,9 @@ proc addBucket(arena: var Arena, bucketSize: int) =
     capacity: bucketSize,
     len: 0,
   )
-  if arena.buckets.len > 1:
-    echo "allocate bucket ", arena.buckets.len, " with size ", bucketSize, " -> ", cast[int](arena.buckets[arena.buckets.high].data)
-    writeStackTrace()
+  # if arena.buckets.len > 1:
+  #   echo "allocate bucket ", arena.buckets.len, " with size ", bucketSize, " -> ", cast[int](arena.buckets[arena.buckets.high].data)
+  #   writeStackTrace()
 
 proc alloc*(arena: var Arena, size: int, alignment: int): pointer =
   ## Allocate memory on top of the stack.
