@@ -145,6 +145,9 @@ when implModule:
     if self.previewEditor.isNotNil:
       self.editors.closeEditor(self.previewEditor)
 
+    if self.previewer.isSome:
+      self.previewer.get.deinit()
+
     self[] = default(typeof(self[]))
 
   proc selectorPopupAddCustomCommand(self: SelectorPopup, name: string, command: SelectorPopupCommand) =

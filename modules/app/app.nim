@@ -1794,7 +1794,7 @@ when implModule:
           displayName: dirtyMarker & name,
           filterText: name,
           data: path,
-          details: @[relativeDirectory],
+          details: @[document.usage, relativeDirectory],
         )
 
       return items
