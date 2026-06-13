@@ -169,6 +169,7 @@ when implModule:
   proc defaultHandleCommand*(self: App, command: string): Option[string]
   proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.}
   proc runLateCommandsFromAppOptions(self: App)
+  proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normalize: bool = true, diff: bool = false, previewScale: float = 0.5, slot: string = "")
 
   type
     AppLogger* = ref object of Logger
@@ -347,14 +348,15 @@ when implModule:
         )
 
       # Restore open editors
-      if self.appOptions.fileToOpen.getSome(filePath):
+      if self.appOptions.fileToOpen.getSome(path):
         try:
-          let path = os.absolutePath(filePath).normalizePathUnix
           let kind = self.vfs.getFileKind(path).await
-          if kind.isSome and kind.get == FileKind.File:
-            discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+          if kind.isNone or kind.get == FileKind.File:
+            discard self.layout.openFile(path)
+          elif kind.isSome and kind.get == FileKind.Directory:
+            self.exploreFiles(path)
         except CatchableError as e:
-          log lvlError, &"Failed to open file '{filePath}': {e.msg}"
+          log lvlError, &"Failed to open file '{path}': {e.msg}"
 
       self.session.restoreSession(state.sessionData)
 
@@ -835,11 +837,13 @@ when implModule:
 
   proc setupSessionAndWorkspace*(self: App) {.async.} =
     log lvlInfo, &"Setup session and workspace"
+    if self.appOptions.fileToOpen.getSome(file):
+      self.appOptions.fileToOpen = os.absolutePath(file).normalizePathUnix.some
+
     if not self.appOptions.dontRestoreConfig:
       if self.appOptions.sessionOverride.getSome(session):
         self.sessionFile = os.absolutePath(session).normalizePathUnix
-      elif self.appOptions.fileToOpen.getSome(file):
-        let path = os.absolutePath(file).normalizePathUnix
+      elif self.appOptions.fileToOpen.getSome(path):
         let kind = self.vfs.getFileKind(path).await
         if kind.isSome:
           case kind.get
@@ -881,14 +885,15 @@ when implModule:
             asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace", changedFiles)
           )
 
-        if self.appOptions.fileToOpen.getSome(filePath):
+        if self.appOptions.fileToOpen.getSome(path):
           try:
-            let path = os.absolutePath(filePath).normalizePathUnix
             let kind = self.vfs.getFileKind(path).await
-            if kind.isSome and kind.get == FileKind.File:
+            if kind.isNone or kind.get == FileKind.File:
               discard self.layout.openFile(path)
+            elif kind.isSome and kind.get == FileKind.Directory:
+              self.exploreFiles(path)
           except CatchableError as e:
-            log lvlError, &"Failed to open file '{filePath}': {e.msg}"
+            log lvlError, &"Failed to open file '{path}': {e.msg}"
 
     else:
       # Open current working dir as local workspace if no workspace exists yet
@@ -905,14 +910,15 @@ when implModule:
             asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace", changedFiles)
           )
 
-      if self.appOptions.fileToOpen.getSome(filePath):
+      if self.appOptions.fileToOpen.getSome(path):
         try:
-          let path = os.absolutePath(filePath).normalizePathUnix
           let kind = self.vfs.getFileKind(path).await
-          if kind.isSome and kind.get == FileKind.File:
+          if kind.isNone or kind.get == FileKind.File:
             discard self.layout.openFile(path)
+          elif kind.isSome and kind.get == FileKind.Directory:
+            self.exploreFiles(path)
         except CatchableError as e:
-          log lvlError, &"Failed to open file '{filePath}': {e.msg}"
+          log lvlError, &"Failed to open file '{path}': {e.msg}"
 
   proc appLoadPlugins(self: AppBase) =
     let self = self.App
