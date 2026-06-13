@@ -5,6 +5,7 @@
 - Popups can now be popped and put into the main layout
 - New Git UI with some basic git functionality
 - Memory usage and performance optimizations
+- Follow XDG specification for loading config files. (On linux configs are loaded from `$XDG_CONFIG_HOME/Nev` or `$HOME/.config/Nev`, on windows from `$APPDATA/Nev`)
 
 ## [0.5.1](https://github.com/Nimaoth/Nev/compare/v0.5.0...v0.5.1) (2026-04-25)
 
