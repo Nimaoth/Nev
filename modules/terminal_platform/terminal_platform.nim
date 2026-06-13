@@ -306,10 +306,6 @@ when implModule:
         except CatchableError:
           discard
 
-      self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
-        result.x = text.len.float
-        result.y = 1
-
       let terminalSize = self.getTerminalSize()
       self.buffer.initTerminalBuffer(terminalSize.x, terminalSize.y)
       self.buffer.clear()
@@ -404,17 +400,6 @@ when implModule:
   proc lineHeightTerminalPlatform(self: TerminalPlatform): float = 1
   proc charWidthTerminalPlatform(self: TerminalPlatform): float = 1
   proc charGapTerminalPlatform(self: TerminalPlatform): float = 0
-  proc measureTextTerminalPlatform(self: TerminalPlatform, text: string): Vec2 =
-    result = vec2(0, 0)
-    result.y = 1
-    for b in text.iterateRuneBounds():
-      result.x = max(result.x, b.xw)
-      result.y = max(result.y, b.yh)
-
-  proc layoutTextTerminalPlatform(self: TerminalPlatform, text: string): seq[Rect] =
-    result = newSeqOfCap[Rect](text.len)
-    for b in text.iterateRuneBounds():
-      result.add b
 
   proc pushMask(self: TerminalPlatform, mask: Rect) =
     let maskedMask = if self.masks.len > 0:
@@ -918,10 +903,6 @@ when implModule:
       self.TerminalPlatform.charWidthTerminalPlatform()
     res.charGapImpl = proc(self: Platform): float =
       self.TerminalPlatform.charGapTerminalPlatform()
-    res.measureTextImpl = proc(self: Platform, text: string): Vec2 =
-      self.TerminalPlatform.measureTextTerminalPlatform(text)
-    res.layoutTextImpl = proc(self: Platform, text: string): seq[Rect] =
-      self.TerminalPlatform.layoutTextTerminalPlatform(text)
     res.setVsyncImpl = proc(self: Platform, enabled: bool) =
       self.TerminalPlatform.setVsyncTerminalPlatform(enabled)
     res.getFontInfoImpl = proc(self: Platform, fontSize: float, flags: UINodeFlags): ptr FontInfo =

@@ -1123,4 +1123,6 @@
         "{Control}": "hover.show-at-mouse",
         "{Alt}": "evaluate-mouse-hover",
     },
+
+    "gc.interval": 1000, // ms
 }

@@ -125,6 +125,20 @@ when implModule and enableGui:
         DWORD(sizeof(c))
       )
 
+  proc getTextBounds(self: GuiPlatform, text: string, fontScale: float = 1, flags: UINodeFlags = 0.UINodeFlags): Vec2 =
+    let font = self.getFont(self.ctx.font, self.ctx.fontSize * fontScale)
+    if text.len == 0:
+      self.tempRenderCommands.clear()
+      let font = self.getFontInfo(self.ctx.fontSize * fontScale, flags)
+      let arrangementIndex = self.tempRenderCommands.typeset(" ", font)
+      result = vec2(0)
+      result.y = self.tempRenderCommands.layoutBounds(arrangementIndex).y
+    else:
+      self.tempRenderCommands.clear()
+      let font = self.getFontInfo(self.ctx.fontSize * fontScale, flags)
+      let arrangementIndex = self.tempRenderCommands.typeset(text, font)
+      result = self.tempRenderCommands.layoutBounds(arrangementIndex)
+
   proc initGuiPlatform(self: GuiPlatform, options: AppOptions) =
     log lvlInfo, "Init GUI platform"
     try:
@@ -203,29 +217,9 @@ when implModule and enableGui:
       # This sets the font size of self.ctx and recalculates the char width
       self.fontSize = 16
 
-      self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
-        let font = self.getFont(self.ctx.font, self.ctx.fontSize * (1 + fontSizeIncreasePercent))
-        if text.len == 0:
-          let arrangement = font.typeset(" ")
-          result = vec2(0, arrangement.layoutBounds().y)
-        else:
-          let arrangement = font.typeset(text, snapToPixel = false)
-          result = arrangement.layoutBounds()
-
-      self.builder.textWidthImpl = proc(node: UINode): float32 =
-        let font = self.getFont(self.ctx.fontSize * node.fontScale, node.flags)
-        let arrangement = font.typeset(node.text, snapToPixel = false)
-        result = arrangement.layoutBounds().x
-
-      self.builder.textWidthStringImpl = proc(text: string): float32 =
-        let font = self.getFont(self.ctx.fontSize, 0.UINodeFlags)
-        let arrangement = font.typeset(text, snapToPixel = false)
-        result = arrangement.layoutBounds().x
-
-      self.builder.textBoundsImpl = proc(node: UINode): Vec2 =
-        let font = self.getFont(self.ctx.fontSize * node.fontScale, node.flags)
-        let arrangement = font.typeset(node.text, bounds = node.bounds.wh, wrap = TextWrap in node.flags, snapToPixel = false)
-        result = arrangement.layoutBounds()
+      self.builder.textWidthImpl = proc(node: UINode): float32 = self.getTextBounds(node.text, node.fontScale, node.flags).x
+      self.builder.textWidthStringImpl = proc(text: string): float32 = self.getTextBounds(text).x
+      self.builder.textBoundsImpl = proc(node: UINode): Vec2 = self.getTextBounds(node.text, node.fontScale, node.flags)
 
       self.window.onFocusChange = proc() =
         inc self.eventCounter
@@ -498,8 +492,8 @@ when implModule and enableGui:
 
   proc updateCharWidth*(self: GuiPlatform) =
     let font = self.getFont(self.ctx.font, self.ctx.fontSize)
-    let bounds = font.typeset(repeat("#_", 50), snapToPixel = false).layoutBounds()
-    let boundsSingle = font.typeset("#_", snapToPixel = false).layoutBounds()
+    let bounds = self.getTextBounds(repeat("#_", 50))
+    let boundsSingle = self.getTextBounds("#_")
     self.mCharWidth = bounds.x / 100
     self.mCharGap = (bounds.x / 100) - boundsSingle.x / 2
     self.mLineHeight = bounds.y
@@ -541,9 +535,6 @@ when implModule and enableGui:
   proc lineHeightGuiPlatform(self: GuiPlatform): float = self.mLineHeight
   proc charWidthGuiPlatform(self: GuiPlatform): float = self.mCharWidth
   proc charGapGuiPlatform(self: GuiPlatform): float = self.mCharGap
-
-  proc measureTextGuiPlatform(self: GuiPlatform, text: string): Vec2 = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text, snapToPixel = false).layoutBounds()
-  proc layoutTextGuiPlatform(self: GuiPlatform, text: string): seq[Rect] = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).selectionRects
 
   proc setVsyncGuiPlatform(self: GuiPlatform, enabled: bool) {.gcsafe, raises: [].} =
     try:
@@ -831,7 +822,6 @@ when implModule and enableGui:
     proc tintRune(r: Rune): bool =
       return true
 
-    # todo: convert typeset to not use strings to avoid copying
     try:
       let typeface = platform.getTypeface(flags)
       let fontScale = fontSizeScale * platform.ctx.fontSize / typeface.scale
@@ -1060,9 +1050,7 @@ when implModule and enableGui:
     res.lineHeightImpl = proc(self: Platform): float = self.GuiPlatform.lineHeightGuiPlatform()
     res.charWidthImpl = proc(self: Platform): float = self.GuiPlatform.charWidthGuiPlatform()
     res.charGapImpl = proc(self: Platform): float = self.GuiPlatform.charGapGuiPlatform()
-    res.measureTextImpl = proc(self: Platform, text: string): Vec2 = self.GuiPlatform.measureTextGuiPlatform(text)
     res.getStatisticsStringImpl = proc(self: Platform): string = self.GuiPlatform.getStatisticsStringGuiPlatform()
-    res.layoutTextImpl = proc(self: Platform, text: string): seq[Rect] = self.GuiPlatform.layoutTextGuiPlatform(text)
     res.setVsyncImpl = proc(self: Platform, enabled: bool) = self.GuiPlatform.setVsyncGuiPlatform(enabled)
     res.moveToMonitorImpl = proc(self: Platform, index: int) = self.GuiPlatform.moveToMonitorGuiPlatform(index)
     res.focusWindowImpl = proc(self: Platform) = self.GuiPlatform.focusWindowGuiPlatform()

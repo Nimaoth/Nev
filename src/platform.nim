@@ -34,8 +34,6 @@ type
   GetClipboardTextImpl* = proc(self: Platform): Future[Option[string]] {.gcsafe, async: (raises: []).}
   SetTitleImpl* = proc(self: Platform, title: string) {.gcsafe, raises: [].}
 
-  WLayoutOptions* = object
-    getTextBounds*: proc(text: string, fontSizeIncreasePercent: float = 0): Vec2
   Platform* = ref object of RootObj
     builder*: UINodeBuilder
     redrawEverything*: bool
@@ -58,7 +56,6 @@ type
     onDropFile*: Event[tuple[path: string, content: string]]
     onFocusChanged*: Event[bool]
     onPreRender*: Event[Platform]
-    layoutOptions*: WLayoutOptions
     logNextFrameTime*: bool
     lastEventTime*: Timer
     vfs*: VFS
@@ -81,10 +78,8 @@ type
     lineHeightImpl*: LineHeightImpl
     charWidthImpl*: CharWidthImpl
     charGapImpl*: CharGapImpl
-    measureTextImpl*: MeasureTextImpl
     preventDefaultImpl*: PreventDefaultImpl
     getStatisticsStringImpl*: GetStatisticsStringImpl
-    layoutTextImpl*: LayoutTextImpl
     setVsyncImpl*: SetVsyncImpl
     moveToMonitorImpl*: MoveToMonitorImpl
     focusWindowImpl*: FocusWindowImpl
@@ -180,10 +175,6 @@ proc charGap*(self: Platform): float =
   if self.charGapImpl != nil:
     return self.charGapImpl(self)
 
-proc measureText*(self: Platform, text: string): Vec2 =
-  if self.measureTextImpl != nil:
-    return self.measureTextImpl(self, text)
-
 proc preventDefault*(self: Platform) =
   if self.preventDefaultImpl != nil:
     self.preventDefaultImpl(self)
@@ -191,10 +182,6 @@ proc preventDefault*(self: Platform) =
 proc getStatisticsString*(self: Platform): string =
   if self.getStatisticsStringImpl != nil:
     return self.getStatisticsStringImpl(self)
-
-proc layoutText*(self: Platform, text: string): seq[Rect] =
-  if self.layoutTextImpl != nil:
-    return self.layoutTextImpl(self, text)
 
 proc setVsync*(self: Platform, enabled: bool) =
   if self.setVsyncImpl != nil:
