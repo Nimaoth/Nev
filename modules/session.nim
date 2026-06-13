@@ -55,7 +55,7 @@ when implModule:
     let vfsService = self.services.getService(VFSService).getOr: return @[]
     let vfs = vfsService.vfs
     try:
-      let lastSessionsJson = await vfs.read(homeConfigDir // "sessions.json")
+      let lastSessionsJson = await vfs.read("data://sessions.json")
       let lastSessions = lastSessionsJson.parseJson()
       if lastSessions.kind != JArray:
         log lvlError, &"sessions.json must contain an array of strings"

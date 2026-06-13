@@ -192,7 +192,7 @@ If you press another key like `k` before the time ends it will immediately inser
       "Watch the config files in the workspace directory and automatically reload them when they change.")
 
     (setting keep-session-history "bool" true
-      "If true then the editor will keep a history of opened sessions in home://.nev/sessions.json,
+      "If true then the editor will keep a history of opened sessions in data://sessions.json,
 which enables features like opening a recent session or opening the last session.")
 
     (setting prompt-before-quit "bool" false

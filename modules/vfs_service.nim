@@ -27,6 +27,15 @@ when implModule:
 
   proc localizePath*(self: VFSService, path: string): string
 
+  proc getStateDir*(): string {.tags: [ReadEnvEffect, ReadIOEffect].} =
+    when defined(windows):
+      result = getEnv("APPDATA")
+    elif defined(macosx):
+      result = getDataDir()
+    else:
+      result = getEnv("XDG_STATE_HOME", getEnv("HOME") / ".local" / "state")
+    result.normalizePathEnd(trailingSep = true)
+
   proc newVFSService(): VFSService =
     log lvlInfo, &"VFSService.init"
     let self = VFSService()
@@ -38,6 +47,10 @@ when implModule:
     self.vfs.mount("local://", localVfs2)
     self.vfs.mount("", newVFSLink(localVfs2, ""))
     self.vfs.mount("app://", newVFSLink(localVfs2, getAppDir().normalizeNativePath))
+    self.vfs.mount("data://", newVFSLink(localVfs2, getDataDir().normalizeNativePath // "Nev"))
+    self.vfs.mount("config://", newVFSLink(localVfs2, getConfigDir().normalizeNativePath // "Nev"))
+    self.vfs.mount("cache://", newVFSLink(localVfs2, getCacheDir().normalizeNativePath // "Nev"))
+    self.vfs.mount("state://", newVFSLink(localVfs2, getStateDir().normalizeNativePath // "Nev"))
     self.vfs.mount("unsaved://", newVFSLink(self.vfs.getVFS("app://", 1).vfs, "unsaved"))
     self.vfs.mount("temp://", newVFSLink(localVfs2, getTempDir().normalizeNativePath))
     self.vfs.mount("settings://", newVFSConfig())
@@ -57,7 +70,8 @@ when implModule:
       ""
     if homeDir != "":
       self.vfs.mount("home://", newVFSLink(localVfs2, homeDir & "/"))
-      localVfs2.cacheDir(self.localizePath("home://.nev"), ignore)
+
+    localVfs2.cacheDir(self.localizePath("config://"), ignore)
 
     try:
       if getAppOptions().fileToOpen.getSome(file):

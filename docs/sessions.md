@@ -19,7 +19,7 @@ If you launch with a file path (like `nev foo.txt`) then it will only open that 
 
 ## Opening sessions
 
-- Nev keeps track of recently opened sessions in `~/.nev/sessions.json`
+- Nev keeps track of recently opened sessions in `data://sessions.json`
 - You can open the last session you opened using `nev --restore-session` or `nev -e`
 - You can open a session from your history using the `open-recent-session` command.
 - You can open a session using the `open-session` command. This command takes a root directory and will

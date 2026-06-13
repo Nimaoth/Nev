@@ -8,7 +8,7 @@ Nim is compiled to wasm using Emscripten.
 
 ## Installing plugins
 
-Plugins are loaded from `app://plugins` (builtin plugins) and `home://.nev/plugins` (user plugins). You should install plugins into `home://.nev/plugins`.
+Plugins are loaded from `app://plugins` (builtin plugins) and `config://plugins` (user plugins). You should install plugins into `config://plugins`.
 
 ## Plugin API versions
 
@@ -66,8 +66,8 @@ To override the permissions for a plugin you need so set the `plugin.<plugin-id>
 The `plugin-id` is the name of the folder which contains the plugin manifest.
 
 ```json
-// In e.g. home://.nev/settings.json
-// Override permissions for home://.nev/plugins/my_plugin/manifest.json
+// In e.g. config://settings.json
+// Override permissions for config://plugins/my_plugin/manifest.json
 {
     "plugin.my_plugin.permissions": {
         "filesystemRead": {

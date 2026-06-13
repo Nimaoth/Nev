@@ -55,7 +55,7 @@ When the application reads the value of a setting, depending on the context it r
     app://config/settings-windows-gui.json
                ^
                |
-    home://.nev/settings.json                           // User settings.
+    config://settings.json                              // User settings. (Linux: $XDG_CONFIG_HOME or $HOME/.local/state, Windows: $APPDATA/Nev)
                ^
                |
     ws0://.nev/settings.json                            // Workspace settings.
@@ -78,7 +78,7 @@ When the application reads the value of a setting, depending on the context it r
 
 ### Changing settings
 There are a few places where you can change settings:
-- `home://.nev/settings.json`: Put settings in here if you want to set something globally (for your user). These settings will always be loaded when you open Nev.
+- `config://settings.json`: Put settings in here if you want to set something globally (for your user). These settings will always be loaded when you open Nev.
 - `{workspace_dir}/.nev/settings.json`: Put settings in here if you only want to change them for a specific project.
 - `browse-settings`: This command can be used to change settings in any store, but it defaults to the runtime store. Use this if you want to change settings temporarily, figure out where a setting is overridden [and more](finders.md#browse-settings)
 - `set-option`, `set-flag`, `toggle-flag`: These commands can be used to change settings in the runtime store. Use this for temporarily changing settings, or from plugins.

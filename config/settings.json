@@ -1035,7 +1035,7 @@
     "alias": {
         "explore-root": ["explore-files \"\""],
         "explore-workspace": ["explore-files \"ws0://\""],
-        "explore-user-config": ["explore-files \"home://.nev\""],
+        "explore-user-config": ["explore-files \"config://\""],
         "explore-app-config": ["explore-files \"app://config\""],
         "explore-workspace-config": ["explore-files \"ws0://.nev\""],
         "explore-help": ["explore-files \"app://docs\""],

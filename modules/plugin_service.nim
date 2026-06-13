@@ -210,7 +210,7 @@ when implModule:
     self.pluginSettings = PluginSettings.new(self.settings)
 
     asyncSpawn self.addPluginFolder("app://plugins")
-    asyncSpawn self.addPluginFolder("home://.nev/plugins")
+    asyncSpawn self.addPluginFolder("config://plugins")
     return ok()
 
   proc updatePermissions(self: PluginServiceImpl, plugin: Plugin) =

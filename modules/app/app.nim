@@ -55,7 +55,7 @@ when implModule:
   const sessionExtension = &".{appName}-session"
   const defaultSessionName = sessionExtension
   const appConfigDir = "app://config"
-  const homeConfigDir = "home://" & configDirName
+  const homeConfigDir = "config://"
   const workspaceConfigDir = "ws0://" & configDirName
 
   let platformName = when defined(windows):
@@ -293,7 +293,7 @@ when implModule:
         recentSessions.removeShift(i)
       recentSessions.add(session)
       log lvlInfo, &"Add session to recent sessions: {session} -> {recentSessions.toJson.pretty}"
-      await self.vfs.write(homeConfigDir // "sessions.json", recentSessions.toJson().pretty)
+      await self.vfs.write("data://sessions.json", recentSessions.toJson().pretty)
     except:
       log lvlError, &"Failed to update recent sessions: {getCurrentExceptionMsg()}"
 

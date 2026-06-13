@@ -674,7 +674,7 @@ declareSettings GeneralSettings, "editor":
   ## Watch the config files in the workspace directory and automatically reload them when they change.
   declare watchWorkspaceConfig, bool, true
 
-  ## If true then the editor will keep a history of opened sessions in home://.nev/sessions.json,
+  ## If true then the editor will keep a history of opened sessions in data://sessions.json,
   ## which enables features like opening a recent session or opening the last session.
   declare keepSessionHistory, bool, true
 
