@@ -272,7 +272,7 @@ when implModule and defined(profiler):
     of sskTag:
       if tagBit in ord(low(DaTag))..ord(high(DaTag)):
         return $DaTag(tagBit)
-      return fmt"Tag[{tagBit}]"
+      return &"Tag[{tagBit}]"
 
   proc baselineSeriesValue(self: ProfilerView, seriesKind: SnapshotSeriesKind, tagBit: int, fallback: int): int =
     if not self.baselineReferenceCaptured:
@@ -300,6 +300,209 @@ when implModule and defined(profiler):
     if tagMask == 0:
       self.untaggedAllocatedSize += delta
     self.applyTagDelta(tagMask, delta)
+
+  proc findAllocationsPointingTo*(self: ProfilerView, queryPtr: pointer): seq[pointer] =
+    let targetPtr = cast[uint64](queryPtr)
+    for allocationPtr, tracked in self.allocationsByPtr:
+      if tracked.usableSize <= 8:
+        continue
+      if (allocationPtr and 7'u64) != 0'u64:
+        continue
+
+      let wordCount = tracked.usableSize div 8
+      if wordCount <= 0:
+        continue
+
+      let words = cast[ptr UncheckedArray[uint64]](cast[pointer](allocationPtr))
+      for wordIndex in 0..<wordCount:
+        if words[wordIndex] == targetPtr:
+          result.add cast[pointer](allocationPtr)
+          break
+
+  proc parsePointerValue(arg: string): Option[uint64] =
+    let s = arg.strip()
+    if s.len == 0:
+      return none(uint64)
+
+    var base = 10'u64
+    var start = 0
+    if s.len > 2 and s[0] == '0' and (s[1] == 'x' or s[1] == 'X'):
+      base = 16'u64
+      start = 2
+
+    if start >= s.len:
+      return none(uint64)
+
+    var value = 0'u64
+    for i in start..<s.len:
+      let c = s[i]
+      var digit = -1
+      if c in {'0'..'9'}:
+        digit = ord(c) - ord('0')
+      elif base == 16'u64 and c in {'a'..'f'}:
+        digit = ord(c) - ord('a') + 10
+      elif base == 16'u64 and c in {'A'..'F'}:
+        digit = ord(c) - ord('A') + 10
+      else:
+        return none(uint64)
+
+      let digitValue = digit.uint64
+      if digitValue >= base:
+        return none(uint64)
+      value = value * base + digitValue
+
+    return some(value)
+
+  proc escape(value: string): string =
+    result = value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+  proc graphvizLabel(value: string): string =
+    result = value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")
+
+  proc formatLeakStackTrace(trace: cstring, maxLen: int = 2000): string =
+    if trace.isNil:
+      return "<no stack trace>"
+
+    result = $trace
+    return
+    result = result.replace("\r\n", " || ").replace("\n", " || ").replace("\r", " || ").replace(" || at ", " at ")
+
+    # let filterMarkers = ["debug_allocator.nim", "LoadLibraryExA", "NimMain"]
+    # for filterMarker in filterMarkers:
+    #   let markerPos = result.rfind(filterMarker)
+    #   if markerPos >= 0:
+    #     let separatorPos = result.find("||", markerPos)
+    #     if separatorPos >= 0 and separatorPos + 1 < result.len:
+    #       result = result[(separatorPos + 1)..^1].strip()
+    #     elif markerPos + filterMarker.len < result.len:
+    #       result = result[(markerPos + filterMarker.len)..^1].strip()
+    #     else:
+    #       result = ""
+
+    var filteredFrames: seq[string] = @[]
+    for frame in result.split(" || "):
+      let trimmedFrame = frame.strip()
+      if trimmedFrame.len == 0 or trimmedFrame.contains("<unknown>"):
+        continue
+      filteredFrames.add(trimmedFrame)
+    result = filteredFrames.join("\n")
+
+    if result.len == 0:
+      result = "<no caller frames>"
+
+    if result.len > maxLen:
+      result = result[0..<maxLen] & "..."
+
+  proc allocationNodeLabel(ptrValue: uint64, tracked: TrackedAllocation): string =
+    let stackText = formatLeakStackTrace(tracked.stackTrace, maxLen = 1200)
+    result = "0x" & ptrValue.toHex & "\\nsize=" & $tracked.usableSize & "\\nstack=" & graphvizLabel(stackText)
+
+  proc dumpAllocationGraphToFile*(self: ProfilerView, queryPtr: pointer, maxDepth: int, dumpPath: string = "logs/allocation-graph.dot"): bool {.gcsafe, raises: [].} =
+    try:
+      let depthLimit = max(0, maxDepth)
+      let queryValue = cast[uint64](queryPtr)
+      let queryId = "n" & queryValue.toHex
+
+      createDir("logs")
+
+      var visited = initTable[uint64, int](128)
+      var edges = newSeqOfCap[tuple[parent: uint64, child: uint64]](1024)
+      var stack = @[queryValue]
+      visited[queryValue] = depthLimit
+
+      proc walk(currentValue: uint64, remainingDepth: int) =
+        if remainingDepth <= 0:
+          return
+
+        for parentPtr in self.findAllocationsPointingTo(cast[pointer](currentValue)):
+          let parentValue = cast[uint64](parentPtr)
+          edges.add((parent: parentValue, child: currentValue))
+          let nextDepth = remainingDepth - 1
+          if parentValue notin visited or visited[parentValue] < nextDepth:
+            visited[parentValue] = nextDepth
+            stack.add(parentValue)
+
+      var index = 0
+      while index < stack.len:
+        let currentValue = stack[index]
+        let currentDepth = visited[currentValue]
+        walk(currentValue, currentDepth)
+        inc index
+
+      if edges.len == 0:
+        return false
+      edges.sort(proc(a, b: tuple[parent: uint64, child: uint64]): int =
+        let parentCmp = cmp(a.parent, b.parent)
+        if parentCmp != 0:
+          return parentCmp
+        return cmp(a.child, b.child)
+      )
+
+      var lines = newSeqOfCap[string](16 + edges.len * 2)
+      lines.add("digraph AllocationGraph {")
+      lines.add("  rankdir=LR;")
+      lines.add("  node [shape=box, fontname=\"Consolas\"];")
+      lines.add(&"  {queryId} [shape=diamond, style=filled, fillcolor=\"#f5d76e\", label=\"query\\n0x{queryValue.toHex}\"];")
+
+      var emittedNodes = initTable[uint64, bool](max(16, self.allocationsByPtr.len))
+      for edge in edges:
+        let parentId = "n" & edge.parent.toHex
+        let childId = if edge.child == queryValue: queryId else: "n" & edge.child.toHex
+
+        if edge.parent in self.allocationsByPtr and edge.parent notin emittedNodes:
+          let tracked = self.allocationsByPtr[edge.parent]
+          let labelText = allocationNodeLabel(edge.parent, tracked)
+          lines.add(&"  {parentId} [label=\"{labelText}\"];")
+          emittedNodes[edge.parent] = true
+
+        if edge.child in self.allocationsByPtr and edge.child notin emittedNodes:
+          let tracked = self.allocationsByPtr[edge.child]
+          let labelText = allocationNodeLabel(edge.child, tracked)
+          lines.add(&"  {childId} [label=\"{labelText}\"];")
+          emittedNodes[edge.child] = true
+
+        lines.add(&"  {parentId} -> {childId};")
+
+      lines.add("}")
+      writeFile(dumpPath, lines.join("\n"))
+      return true
+    except CatchableError:
+      discard
+    return false
+
+  proc findBiggestAllocationForStackHash(self: ProfilerView, returnAddressHash: uint64): Option[tuple[ptrValue: uint64, tracked: TrackedAllocation]] =
+    var bestPtr = 0'u64
+    var bestTracked: TrackedAllocation
+    var bestSize = -1
+
+    for allocationPtr, tracked in self.allocationsByPtr:
+      if tracked.returnAddressHash != returnAddressHash:
+        continue
+      if tracked.usableSize <= 8:
+        continue
+      if (allocationPtr and 7'u64) != 0'u64:
+        continue
+
+      if tracked.usableSize > bestSize:
+        bestPtr = allocationPtr
+        bestTracked = tracked
+        bestSize = tracked.usableSize
+
+    if bestPtr == 0:
+      return none(tuple[ptrValue: uint64, tracked: TrackedAllocation])
+
+    return some((ptrValue: bestPtr, tracked: bestTracked))
+
+  iterator allocationsForStackHash(self: ProfilerView, returnAddressHash: uint64): tuple[ptrValue: uint64, tracked: TrackedAllocation] =
+    for allocationPtr, tracked in self.allocationsByPtr:
+      if tracked.returnAddressHash != returnAddressHash:
+        continue
+      if tracked.usableSize <= 8:
+        continue
+      if (allocationPtr and 7'u64) != 0'u64:
+        continue
+
+      yield (allocationPtr, tracked)
 
   proc resetAllocationTracking(self: ProfilerView) =
     self.allocationsByPtr.clear()
@@ -578,40 +781,6 @@ when implModule and defined(profiler):
       self.cachedPotentialLeaks = self.potentialLeakCycleResults
       self.potentialLeakCycleResults.setLen(0)
 
-  proc formatLeakStackTrace(trace: cstring, maxLen: int = 2000): string =
-    if trace.isNil:
-      return "<no stack trace>"
-
-    result = $trace
-    return
-    result = result.replace("\r\n", " || ").replace("\n", " || ").replace("\r", " || ").replace(" || at ", " at ")
-
-    # let filterMarkers = ["debug_allocator.nim", "LoadLibraryExA", "NimMain"]
-    # for filterMarker in filterMarkers:
-    #   let markerPos = result.rfind(filterMarker)
-    #   if markerPos >= 0:
-    #     let separatorPos = result.find("||", markerPos)
-    #     if separatorPos >= 0 and separatorPos + 1 < result.len:
-    #       result = result[(separatorPos + 1)..^1].strip()
-    #     elif markerPos + filterMarker.len < result.len:
-    #       result = result[(markerPos + filterMarker.len)..^1].strip()
-    #     else:
-    #       result = ""
-
-    var filteredFrames: seq[string] = @[]
-    for frame in result.split(" || "):
-      let trimmedFrame = frame.strip()
-      if trimmedFrame.len == 0 or trimmedFrame.contains("<unknown>"):
-        continue
-      filteredFrames.add(trimmedFrame)
-    result = filteredFrames.join("\n")
-
-    if result.len == 0:
-      result = "<no caller frames>"
-
-    if result.len > maxLen:
-      result = result[0..<maxLen] & "..."
-
   proc formatVisibleLeakTags(self: ProfilerView): string =
     if self.leakVisibleTags.card == 0:
       return "<none>"
@@ -697,7 +866,7 @@ when implModule and defined(profiler):
     let kb = clamped.float / 1024.0
     let mb = clamped.float / (1024.0 * 1024.0)
     let gb = clamped.float / (1024.0 * 1024.0 * 1024.0)
-    return fmt"{clamped} B | {kb:.2f} KB | {mb:.2f} MB | {gb:.2f} GB"
+    return &"{clamped} B | {kb:.2f} KB | {mb:.2f} MB | {gb:.2f} GB"
 
   proc formatSignedMemoryMulti(value: int): string =
     let sign = if value >= 0: "+" else: "-"
@@ -705,7 +874,7 @@ when implModule and defined(profiler):
     let kb = absValue.float / 1024.0
     let mb = absValue.float / (1024.0 * 1024.0)
     let gb = absValue.float / (1024.0 * 1024.0 * 1024.0)
-    return fmt"{sign}{absValue} B | {sign}{kb:.2f} KB | {sign}{mb:.2f} MB | {sign}{gb:.2f} GB"
+    return &"{sign}{absValue} B | {sign}{kb:.2f} KB | {sign}{mb:.2f} MB | {sign}{gb:.2f} GB"
 
   proc stackSortModeLabel(mode: StackSortMode): string =
     case mode
@@ -754,13 +923,13 @@ when implModule and defined(profiler):
   proc stackMetricThresholdLabel(mode: StackSortMode): string =
     case mode
     of ssmTotalSize:
-      return fmt">= {stackChartMinTotalSize div 1024}KB"
+      return &">= {stackChartMinTotalSize div 1024}KB"
     of ssmAllocationCount:
-      return fmt">= {stackChartMinAllocationCount} allocs"
+      return &">= {stackChartMinAllocationCount} allocs"
     of ssmTotalAllocations:
-      return fmt">= {stackChartMinTotalAllocationCount} total allocs"
+      return &">= {stackChartMinTotalAllocationCount} total allocs"
     of ssmAllocationsPerSecond:
-      return fmt">= {stackChartMinAllocationsPerSecond:.1f}/s"
+      return &">= {stackChartMinAllocationsPerSecond:.1f}/s"
 
   proc formatStackMetricValue(value: float64, mode: StackSortMode): string =
     case mode
@@ -771,7 +940,7 @@ when implModule and defined(profiler):
     of ssmTotalAllocations:
       return $max(0, int(value))
     of ssmAllocationsPerSecond:
-      return fmt"{max(0.0, value):.2f}/s"
+      return &"{max(0.0, value):.2f}/s"
 
   proc nextStackSortMode(mode: StackSortMode): StackSortMode =
     case mode
@@ -844,8 +1013,8 @@ when implModule and defined(profiler):
       let totalBaseline = max(0, self.baselineSeriesValue(sskTotal, -1, totalCurrent))
       let untaggedCurrent = max(0, latestSnapshot.untaggedAllocatedBytes)
       let untaggedBaseline = max(0, self.baselineSeriesValue(sskUntagged, -1, untaggedCurrent))
-      lines.add(fmt"  Total    | Current: {formatMemoryMulti(totalCurrent)} | Baseline: {formatMemoryMulti(totalBaseline)} | Delta: {formatSignedMemoryMulti(totalCurrent - totalBaseline)}")
-      lines.add(fmt"  Untagged | Current: {formatMemoryMulti(untaggedCurrent)} | Baseline: {formatMemoryMulti(untaggedBaseline)} | Delta: {formatSignedMemoryMulti(untaggedCurrent - untaggedBaseline)}")
+      lines.add(&"  Total    | Current: {formatMemoryMulti(totalCurrent)} | Baseline: {formatMemoryMulti(totalBaseline)} | Delta: {formatSignedMemoryMulti(totalCurrent - totalBaseline)}")
+      lines.add(&"  Untagged | Current: {formatMemoryMulti(untaggedCurrent)} | Baseline: {formatMemoryMulti(untaggedBaseline)} | Delta: {formatSignedMemoryMulti(untaggedCurrent - untaggedBaseline)}")
       lines.add("")
 
       lines.add("Tags (sorted by current allocation size)")
@@ -854,11 +1023,11 @@ when implModule and defined(profiler):
           if bit in ord(low(DaTag))..ord(high(DaTag)):
             $DaTag(bit)
           else:
-            fmt"Tag[{bit}]"
+            &"Tag[{bit}]"
         let currentValue = max(0, latestSnapshot.tagAllocatedBytes[bit])
         let baselineValue = max(0, self.baselineSeriesValue(sskTag, bit, currentValue))
         let deltaValue = currentValue - baselineValue
-        lines.add(fmt"  {tagName:<20} | Current: {formatMemoryMulti(currentValue)} | Baseline: {formatMemoryMulti(baselineValue)} | Delta: {formatSignedMemoryMulti(deltaValue)}")
+        lines.add(&"  {tagName:<20} | Current: {formatMemoryMulti(currentValue)} | Baseline: {formatMemoryMulti(baselineValue)} | Delta: {formatSignedMemoryMulti(deltaValue)}")
       lines.add("")
 
       var stacks = newSeqOfCap[StackAllocationSummary](self.stackAllocationsByHash.len)
@@ -866,7 +1035,7 @@ when implModule and defined(profiler):
         stacks.add(summary)
       stacks.sort(proc(a, b: StackAllocationSummary): int = cmp(b.totalAllocatedSize, a.totalAllocatedSize))
 
-      lines.add(fmt"Stack Traces ({stacks.len})")
+      lines.add(&"Stack Traces ({stacks.len})")
       if stacks.len == 0:
         lines.add("  <none>")
       else:
@@ -874,11 +1043,11 @@ when implModule and defined(profiler):
           let currentSize = max(0, stackSummary.totalAllocatedSize)
           let baselineSize = max(0, stackSummary.baselineSize)
           lines.add("")
-          lines.add(fmt"  [{i + 1}] Hash: 0x{stackSummary.returnAddressHash.toHex}")
-          lines.add(fmt"      Allocations: {stackSummary.allocationCount}")
-          lines.add(fmt"      Current: {formatMemoryMulti(currentSize)}")
-          lines.add(fmt"      Baseline: {formatMemoryMulti(baselineSize)}")
-          lines.add(fmt"      Delta: {formatSignedMemoryMulti(currentSize - baselineSize)}")
+          lines.add(&"  [{i + 1}] Hash: 0x{stackSummary.returnAddressHash.toHex}")
+          lines.add(&"      Allocations: {stackSummary.allocationCount}")
+          lines.add(&"      Current: {formatMemoryMulti(currentSize)}")
+          lines.add(&"      Baseline: {formatMemoryMulti(baselineSize)}")
+          lines.add(&"      Delta: {formatSignedMemoryMulti(currentSize - baselineSize)}")
           lines.add("      Stack Trace:")
           let traceText = formatLeakStackTrace(stackSummary.stackTrace, maxLen = int.high)
           for traceLine in traceText.splitLines():
@@ -897,7 +1066,7 @@ when implModule and defined(profiler):
           0
       let baselineValue = self.baselineSeriesValue(seriesKind, tagBit, currentSeriesValue)
       let deltaValue = currentSeriesValue - baselineValue
-      let headerText = fmt"{seriesLabel(seriesKind, tagBit)}: {formatMemoryMulti(currentSeriesValue)} | Delta {formatSignedMemoryMulti(deltaValue)}"
+      let headerText = &"{seriesLabel(seriesKind, tagBit)}: {formatMemoryMulti(currentSeriesValue)} | Delta {formatSignedMemoryMulti(deltaValue)}"
       textPanel(builder, headerText, barUpColor, fontScale = 0.9)
       builder.panel(&{FillX, SizeToContentY, FillBackground, MouseHover}, h = chartHeight, backgroundColor = chartBackgroundColor, tag = "profiler-chart"):
         let boundsAbsolute = currentNode.boundsAbsolute
@@ -1090,6 +1259,7 @@ when implModule and defined(profiler):
 
       if hoveredVisibleIndex >= 0:
         let hoveredStack = self.stackScratch[hoveredVisibleIndex]
+        let hoveredStackHash = hoveredStack.returnAddressHash
         let baselineMetric = stackBaselineMetricValue(hoveredStack, sortMode)
         let currentMetric = stackMetricValue(hoveredStack, sortMode)
         var biggerTotalSize = 0
@@ -1112,9 +1282,22 @@ when implModule and defined(profiler):
         textPanel(builder, &"delta:    {formatStackMetricValue(currentMetric - baselineMetric, sortMode)}", textColor, fontScale = 0.9)
         textPanel(builder, &"> Hover:  {formatMemoryMulti(biggerTotalSize)} | allocs: {biggerTotalCount}", textColor, fontScale = 0.9)
         textPanel(builder, &"< Hover:  {formatMemoryMulti(smallerTotalSize)} | allocs: {smallerTotalCount}", textColor, fontScale = 0.9)
+        button(builder, " Dump Stack Graph ", textColor, chartBackgroundColor.lighten(0.2), proc() {.gcsafe, raises: [].} =
+          var i = 0
+          for allocation in self.allocationsForStackHash(hoveredStackHash):
+            let dumpPath = "logs/allocation-graph-" & hoveredStackHash.toHex & "-" & allocation.ptrValue.toHex & ".dot"
+            if self.dumpAllocationGraphToFile(cast[pointer](allocation.ptrValue), 10, dumpPath = dumpPath):
+              inc i
+            if i > 10:
+              break
+        )
         textPanel(builder, &"Hidden:   {formatMemoryMulti(hiddenTotalSize)} | allocs: {hiddenTotalCount}", textColor, fontScale = 0.9)
         builder.panel(&{DrawText, TextMultiline, TextWrap, SizeToContentX, SizeToContentY},
           text = &"  {formatLeakStackTrace(hoveredStack.stackTrace)}", textColor = textColor, fontScale = 0.9)
+      else:
+        button(builder, " Dump Stack Graph ", textColor, chartBackgroundColor.lighten(0.2), proc() {.gcsafe, raises: [].} =
+          discard
+        )
 
   proc renderMemoryTab(self: ProfilerView, builder: UINodeBuilder,
       backgroundColor: Color, textColor: Color, numberColor: Color,
@@ -1125,9 +1308,9 @@ when implModule and defined(profiler):
     let allocatedMb = allocatedBytes.float / (1024.0 * 1024.0)
     let allocatedGb = allocatedBytes.float / (1024.0 * 1024.0 * 1024.0)
     let allocatedKb = allocatedBytes.float / 1024.0
-    let gbText = fmt"{allocatedGb:.2f}"
-    let mbText = fmt"{allocatedMb:.2f}"
-    let kbText = fmt"{allocatedKb:.2f}"
+    let gbText = &"{allocatedGb:.2f}"
+    let mbText = &"{allocatedMb:.2f}"
+    let kbText = &"{allocatedKb:.2f}"
     let byteText = $allocatedBytes
     let stackTraceCacheBytes = max(0, daGetStackTraceCacheBytes())
     let debugAllocatorStaticBytes = max(0, daGetDebugAllocatorStaticBytes())
@@ -1184,7 +1367,7 @@ when implModule and defined(profiler):
       let hoveredKb = hoveredValue.float / 1024.0
       let hoveredMb = hoveredValue.float / (1024.0 * 1024.0)
       let hoveredGb = hoveredValue.float / (1024.0 * 1024.0 * 1024.0)
-      let hoveredText = fmt"Hover {seriesLabel(self.hoveredSeriesKind, self.hoveredSeriesTagBit)}: {hoveredValue} B | {hoveredKb:.2f} KB | {hoveredMb:.2f} MB | {hoveredGb:.2f} GB | Delta {formatSignedMemoryMulti(hoveredDelta)}"
+      let hoveredText = &"Hover {seriesLabel(self.hoveredSeriesKind, self.hoveredSeriesTagBit)}: {hoveredValue} B | {hoveredKb:.2f} KB | {hoveredMb:.2f} MB | {hoveredGb:.2f} GB | Delta {formatSignedMemoryMulti(hoveredDelta)}"
       builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
         textPanel(builder, hoveredText, textColor)
     else:
@@ -1368,3 +1551,11 @@ when implModule and defined(profiler):
       else:
         layout.addView(view, slot = "#small-left", focus = true)
         view.markDirty()
+
+    defineCommand("graph", "Dump allocation graph for pointer argument"):
+      let pointerValue = parsePointerValue(args)
+      if pointerValue.isSome:
+        let pointerUInt = pointerValue.get()
+        # let dumpPath = "logs/allocation-graph-cmd-" & pointerUInt.toHex & ".dot"
+        let dumpPath = "logs/allocation-graph-cmd.dot"
+        discard view.dumpAllocationGraphToFile(cast[pointer](pointerUInt), 10, dumpPath = dumpPath)
