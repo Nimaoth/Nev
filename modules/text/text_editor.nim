@@ -6,7 +6,7 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, generational_seq, render_command]
 import misc/[custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex, case_swap]
-import misc/[expose, diff]
+import misc/[expose, diff, arena]
 import platform
 import document, document_editor, input_handler/input_handler, vmath, bumpy, text_document
 import selector_popup/builder, dispatch_tables, register
@@ -681,7 +681,7 @@ proc textEditorSetDocument(self: DocumentEditor, document: Document) {.gcsafe, r
     self.handleLanguageServerAttached(self.document, ls)
 
   if self.document.createLanguageServer:
-    if self.config.get("text.completion.document.snippet", true):
+    if self.config.get("text.completion.snippet.enable", true):
       self.completionEngine.addProvider newCompletionProviderSnippet(self.config, self.document)
         .withMergeStrategy(MergeStrategy(kind: TakeAll))
         .withPriority(1)
@@ -2784,6 +2784,12 @@ proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
       if doc.languageId == self.document.languageId:
         doc.reloadTreesitterLanguage()
 
+proc clearTreesitterTrees*(self: TextDocumentEditor) {.expose("editor.text").} =
+  for editor in self.editors.allEditors:
+    if editor.currentDocument of TextDocument:
+      let doc = editor.currentDocument.TextDocument
+      doc.treesitterComponent.syntaxMap.resetTree(self.document.rope)
+
 proc getCommandCount*(self: TextDocumentEditor): int =
   return self.commandComponent.commandCount
 
@@ -4544,9 +4550,10 @@ proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocume
     languageServer: LanguageServer) =
   # log lvlInfo, fmt"[handleLanguageServerAttached] '{self.document.filename}'"
   if languageServer.capabilities.completionProvider.isSome:
-    self.completionEngine.addProvider newCompletionProviderLsp(document, languageServer)
-      .withMergeStrategy(MergeStrategy(kind: TakeAll))
-      .withPriority(2)
+    if self.config.get("text.completion.lsp.enable", true):
+      self.completionEngine.addProvider newCompletionProviderLsp(document, languageServer)
+        .withMergeStrategy(MergeStrategy(kind: TakeAll))
+        .withPriority(2)
 
   self.inlayHints.updateInlayHints()
 
