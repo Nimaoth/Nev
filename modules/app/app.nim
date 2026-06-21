@@ -29,7 +29,6 @@ when implModule:
   import nimsumtree/[rope]
   import misc/[id, util, event, myjsonutils, rect_utils, custom_logger, custom_async,
     delayed_task, regex, custom_unicode, jsonex, generational_seq, fuzzy_matching, rope_utils]
-  import misc/[expose]
   import workspace
   import config_provider
   import input_handler/input_handler, document, document_editor, popup, dispatch_tables, theme, view, register
@@ -952,14 +951,6 @@ when implModule:
       let str = substituteLog("", level, args)
       self.toast.showToast("Error", str, "error")
 
-  proc getEditor(): Option[App] =
-    {.gcsafe.}:
-      if gApp.isNil: return App.none
-      return gApp.some
-
-  static:
-    addInjector(App, getEditor)
-
   proc reapplyConfigKeybindingsAsync(self: App, app: bool = false, home: bool = false, workspace: bool = false)
       {.async.} =
     log lvlInfo, &"reapplyConfigKeybindingsAsync app={app}, home={home}, workspace={workspace}"
@@ -970,8 +961,7 @@ when implModule:
     if workspace and self.workspace.path != "":
       await self.loadKeybindings(workspaceConfigDir, loadConfigFileFrom)
 
-  proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false, wait: bool = false)
-      {.expose("editor").} =
+  proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false, wait: bool = false) =
     if wait:
       try:
         waitFor self.reapplyConfigKeybindingsAsync(app, home, workspace)
@@ -980,11 +970,11 @@ when implModule:
     else:
       asyncSpawn self.reapplyConfigKeybindingsAsync(app, home, workspace)
 
-  proc loadSession*(self: App, path: string) {.expose("editor").} =
+  proc loadSession*(self: App, path: string) =
     self.sessionFile = path
     asyncSpawn self.loadSession()
 
-  proc runExternalCommand*(self: App, command: string, args: seq[string] = @[], workingDir: string = "") {.expose("editor").} =
+  proc runExternalCommand*(self: App, command: string, args: seq[string] = @[], workingDir: string = "") =
     proc handleOutput(line: string) {.gcsafe.} =
       {.gcsafe.}:
         log lvlInfo, &"[{command}] {line}"
@@ -993,14 +983,14 @@ when implModule:
         log lvlError, &"[{command}] {line}"
     asyncSpawn runProcessAsyncCallback(command, args, workingDir, handleOutput, handleError)
 
-  proc disableLogFrameTime*(self: App, disable: bool) {.expose("editor").} =
+  proc disableLogFrameTime*(self: App, disable: bool) =
     self.disableLogFrameTime = disable
 
-  proc enableDebugPrintAsyncAwaitStackTrace*(self: App, enable: bool) {.expose("editor").} =
+  proc enableDebugPrintAsyncAwaitStackTrace*(self: App, enable: bool) =
     when defined(debugAsyncAwaitMacro):
       debugPrintAsyncAwaitStackTrace = enable
 
-  # proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
+  # proc setLocationListFromCurrentPopup*(self: App) =
   #   if self.layout.popups.len == 0:
   #     return
 
@@ -1020,10 +1010,10 @@ when implModule:
 
   #   self.setLocationList(items, selector.previewer.clone())
 
-  proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
+  proc toggleShowDrawnNodes*(self: App) =
     self.platform.showDrawnNodes = not self.platform.showDrawnNodes
 
-  proc saveAppState*(self: App) {.expose("editor").} =
+  proc saveAppState*(self: App) =
     var state = EditorState()
 
     let eventBus = getServices().getServiceChecked(EventService)
@@ -1057,7 +1047,7 @@ when implModule:
       except IOError as e:
         log lvlError, &"Failed to save app state: {e.msg}\n{e.getStackTrace()}"
 
-  proc requestRender*(self: App, redrawEverything: bool = false) {.expose("editor").} =
+  proc requestRender*(self: App, redrawEverything: bool = false) =
     self.platform.requestRender(redrawEverything)
 
   proc prompt(self: App, choices: seq[string], title: string = ""): Future[Option[string]] =
@@ -1095,7 +1085,7 @@ when implModule:
 
     return fut
 
-  proc quit*(self: App) {.expose("editor").} =
+  proc quit*(self: App) =
     let unsavedChanges = self.editors.anyUnsavedChanges()
     if self.generalSettings.promptBeforeQuit.get() or unsavedChanges:
       var title = "Quit?"
@@ -1107,7 +1097,7 @@ when implModule:
     else:
       self.closeRequested = true
 
-  proc quitImmediately*(self: App, exitCode: int = 0) {.expose("editor").} =
+  proc quitImmediately*(self: App, exitCode: int = 0) =
     let unsavedChanges = self.editors.anyUnsavedChanges()
     if self.generalSettings.promptBeforeQuit.get() or unsavedChanges:
       var title = "Quit?"
@@ -1119,34 +1109,34 @@ when implModule:
     else:
       quit(exitCode)
 
-  proc help*(self: App, about: string = "") {.expose("editor").} =
+  proc help*(self: App, about: string = "") =
     let textDocument = self.editors.openDocument("app://docs/getting_started.md").getOr:
       log lvlError, &"[help] File not found"
       return
     discard self.layout.createAndAddView(textDocument)
 
-  proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
+  proc changeFontSize*(self: App, amount: float32) =
     self.platform.fontSize = self.platform.fontSize + amount.float
     log lvlInfo, fmt"current font size: {self.platform.fontSize}"
     self.toast.showToast("Info", &"Font Size: {self.platform.fontSize}", "info")
     self.platform.requestRender(true)
 
-  proc changeLineDistance*(self: App, amount: float32) {.expose("editor").} =
+  proc changeLineDistance*(self: App, amount: float32) =
     self.platform.lineDistance = self.platform.lineDistance + amount.float
     self.toast.showToast("Info", &"Line Distance: {self.platform.lineDistance}", "info")
     self.platform.requestRender(true)
 
-  proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
+  proc toggleStatusBarLocation*(self: App) =
     self.statusBarOnTop = not self.statusBarOnTop
     self.platform.requestRender(true)
 
-  proc logs*(self: App, slot: string = "") {.expose("editor").} =
+  proc logs*(self: App, slot: string = "") =
     let textDocument = self.editors.openDocument("app://logs/messages.log").getOr:
       log lvlError, &"[help] File not found"
       return
     discard self.layout.createAndAddView(textDocument, slot)
 
-  proc toggleConsoleLogger*(self: App) {.expose("editor").} =
+  proc toggleConsoleLogger*(self: App) =
     {.gcsafe.}:
       logger().toggleConsoleLogger()
 
@@ -1164,7 +1154,7 @@ when implModule:
       # Only close one document on each iteration so we don't create spikes
       break
 
-  proc writeFile*(self: App, path: string = "") {.expose("editor").} =
+  proc writeFile*(self: App, path: string = "") =
     defer:
       self.platform.requestRender()
 
@@ -1175,7 +1165,7 @@ when implModule:
         log(lvlError, fmt"Failed to write file '{path}': {getCurrentExceptionMsg()}")
         log(lvlError, getCurrentException().getStackTrace())
 
-  proc loadFile*(self: App, path: string = "") {.expose("editor").} =
+  proc loadFile*(self: App, path: string = "") =
     defer:
       self.platform.requestRender()
 
@@ -1186,7 +1176,7 @@ when implModule:
         log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
         log(lvlError, getCurrentException().getStackTrace())
 
-  proc loadTheme*(self: App, name: string, force: bool = false) {.expose("editor").} =
+  proc loadTheme*(self: App, name: string, force: bool = false) =
     asyncSpawn self.setTheme(fmt"app://themes/{name}.json", force)
 
   proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
@@ -1242,7 +1232,7 @@ when implModule:
     except:
       log lvlError, &"Failed to load session '{session}': {getCurrentExceptionMsg()}"
 
-  proc openSession*(self: App, newWindow: bool = false, root: string = "home://", preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
+  proc openSession*(self: App, newWindow: bool = false, root: string = "home://", preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) =
     proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
       let sessions = await self.vfs.findFiles(root, r".nev-session$", options = FindFilesOptions(maxDepth: 2))
       var items = newSeq[FinderItem]()
@@ -1275,7 +1265,7 @@ when implModule:
 
     self.layout.pushPopup popup
 
-  proc openRecentSession*(self: App, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
+  proc openRecentSession*(self: App, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) =
     proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
       var items = newSeq[FinderItem]()
 
@@ -1319,7 +1309,7 @@ when implModule:
 
     self.layout.pushPopup popup
 
-  proc chooseTheme*(self: App) {.expose("editor").} =
+  proc chooseTheme*(self: App) =
     defer:
       self.platform.requestRender()
 
@@ -1369,16 +1359,16 @@ when implModule:
 
     self.layout.pushPopup popup
 
-  proc crash*(self: App, message: string = "") {.expose("editor").} =
+  proc crash*(self: App, message: string = "") =
     ## This command will cause the editor to crash by failing an assertion.
     assert false, message
 
-  proc crash2*(self: App) {.expose("editor").} =
+  proc crash2*(self: App) =
     ## This command will cause the editor to crash by accessing a nil reference.
     var app: App = nil
     echo app.commands.executeCommand("crash")
 
-  proc createFile*(self: App, path: string) {.expose("editor").} =
+  proc createFile*(self: App, path: string) =
     let fullPath = if path.isVfsPath:
       path
     elif path.isAbsolute:
@@ -1425,14 +1415,14 @@ when implModule:
     result.closeImpl = workspaceFilesDataSourceClose
     result.setQueryImpl = workspaceFilesDataSourceSetQuery
 
-  proc recomputeWorkspaceCache*(self: App) {.expose("editor").} =
+  proc recomputeWorkspaceCache*(self: App) =
     self.workspace.recomputeFileCache()
 
-  proc reloadWorkspaceIgnore*(self: App) {.expose("editor").} =
+  proc reloadWorkspaceIgnore*(self: App) =
     self.workspace.loadDefaultIgnoreFile()
     self.workspace.recomputeFileCache()
 
-  proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4, slot: string = "") {.expose("editor").} =
+  proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4, slot: string = "") =
     defer:
       self.platform.requestRender()
 
@@ -1491,7 +1481,7 @@ when implModule:
 
     self.layout.pushPopup popup, slot
 
-  proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5, slot: string = "") {.expose("editor").} =
+  proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5, slot: string = "") =
     defer:
       self.platform.requestRender()
 
@@ -1746,7 +1736,7 @@ when implModule:
 
     self.layout.pushPopup popup, slot
 
-  proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5, slot: string = "") {.expose("editor").} =
+  proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5, slot: string = "") =
     ## Opens a file dialog which shows all files in the currently open workspaces
     ## Press <ENTER> to select a file
     ## Press <ESCAPE> to close the dialogue
@@ -1780,7 +1770,7 @@ when implModule:
 
     self.layout.pushPopup popup, slot
 
-  proc chooseOpenDocument*(self: App, slot: string = "") {.expose("editor").} =
+  proc chooseOpenDocument*(self: App, slot: string = "") =
     defer:
       self.platform.requestRender()
 
@@ -1833,7 +1823,7 @@ when implModule:
 
     self.layout.pushPopup popup, slot
 
-  proc showPlugins*(self: App, scaleX: float = 0.9, scaleY: float = 0.9, previewScale: float = 0.6, slot: string = "") {.expose("editor").} =
+  proc showPlugins*(self: App, scaleX: float = 0.9, scaleY: float = 0.9, previewScale: float = 0.6, slot: string = "") =
     defer:
       self.requestRender()
 
@@ -1926,7 +1916,7 @@ when implModule:
 
     self.layout.pushPopup popup, slot
 
-  proc gotoNextLocation*(self: App) {.expose("editor").} =
+  proc gotoNextLocation*(self: App) =
     if self.finderItems.len == 0:
       return
 
@@ -1945,7 +1935,7 @@ when implModule:
       te.targetSelection = location.get.toPoint.toRange
       te.centerCursor(location.get.toPoint)
 
-  proc gotoPrevLocation*(self: App) {.expose("editor").} =
+  proc gotoPrevLocation*(self: App) =
     if self.finderItems.len == 0:
       return
 
@@ -1964,7 +1954,7 @@ when implModule:
       te.targetSelection = location.get.toPoint.toRange
       te.centerCursor(location.get.toPoint)
 
-  proc chooseLocation*(self: App, slot: string = "") {.expose("editor").} =
+  proc chooseLocation*(self: App, slot: string = "") =
     defer:
       self.platform.requestRender()
 
@@ -2065,7 +2055,7 @@ when implModule:
     result.closeImpl = workspaceSearchDataSourceClose
     result.setQueryImpl = workspaceSearchDataSourceSetQuery
 
-  proc searchGlobalInteractive*(self: App, path: string = "", slot: string = "") {.expose("editor").} =
+  proc searchGlobalInteractive*(self: App, path: string = "", slot: string = "") =
     defer:
       self.platform.requestRender()
 
@@ -2098,7 +2088,7 @@ when implModule:
 
     self.layout.pushPopup popup, slot
 
-  proc searchGlobal*(self: App, query: string, slot: string = "") {.expose("editor").} =
+  proc searchGlobal*(self: App, query: string, slot: string = "") =
     defer:
       self.platform.requestRender()
 
@@ -2208,8 +2198,7 @@ when implModule:
     except:
       log lvlError, &"Failed to install treesitter parser for {languageOrRepoName}: {getCurrentExceptionMsg()}"
 
-  proc installTreesitterParser*(self: App, language: string, host: string = "github.com") {.
-      expose("editor").} =
+  proc installTreesitterParser*(self: App, language: string, host: string = "github.com") =
 
     ## Install a treesitter parser by downloading the repository and building a wasm module.
     ## `language` can either be a language id (`nim`, `cpp`, `markdown`, etc), `<username>/<repository>`
@@ -2268,7 +2257,7 @@ when implModule:
     except CatchableError as e:
       self.toast.showToast "Treesitter", &"Failed to install prebuilt treesitter parser for {language}: {e.msg}", "error"
 
-  proc installTreesitterParserPrebuilt*(self: App, language: string) {.expose("editor").} =
+  proc installTreesitterParserPrebuilt*(self: App, language: string) =
     ## Install a treesitter parser by downloading a prebuilt wasm binary from `https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/tag/v0.3`
 
     asyncSpawn self.installTreesitterParserPrebuiltAsync(language)
@@ -2284,7 +2273,7 @@ when implModule:
     if language.isSome:
       await self.installTreesitterParserPrebuiltAsync(language.get)
 
-  proc installTreesitterParserPrebuiltFromList*(self: App) {.expose("editor").} =
+  proc installTreesitterParserPrebuiltFromList*(self: App) =
     ## Install a treesitter parser by downloading a prebuilt wasm binary from `https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/tag/v0.3`
     asyncSpawn self.installTreesitterParserPrebuiltFromListAsync()
 
@@ -2335,7 +2324,7 @@ when implModule:
 
     return list
 
-  proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normalize: bool = true, diff: bool = false, previewScale: float = 0.5, slot: string = "") {.expose("editor").} =
+  proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normalize: bool = true, diff: bool = false, previewScale: float = 0.5, slot: string = "") =
     ## Open a file explorer at `root`. If `diff` is true then files will be show as a diff if applicable
     defer:
       self.platform.requestRender()
@@ -2552,10 +2541,10 @@ when implModule:
 
     self.layout.pushPopup popup, slot
 
-  proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
+  proc exploreWorkspacePrimary*(self: App) =
     self.exploreFiles(self.workspace.getWorkspacePath())
 
-  proc exploreCurrentFileDirectory*(self: App) {.expose("editor").} =
+  proc exploreCurrentFileDirectory*(self: App) =
     if self.layout.getActiveEditor().getSome(editor) and editor.currentDocument.isNotNil:
       self.exploreFiles(editor.currentDocument.filename.splitPath.head)
 
@@ -2565,26 +2554,26 @@ when implModule:
       await self.loadConfigFrom(homeConfigDir, "home")
     await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
-  proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
+  proc reloadConfig*(self: App, clearOptions: bool = false) =
     ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace
     log lvlInfo, &"Reload config"
     if clearOptions:
       self.config.runtime.setSettings(newJexObject())
     asyncSpawn self.reloadConfigAsync()
 
-  proc reloadTheme*(self: App) {.expose("editor").} =
+  proc reloadTheme*(self: App) =
     log lvlInfo, &"Reload theme"
     asyncSpawn self.setTheme(self.themes.theme.path, force = true)
 
-  proc currentFilePath*(self: App): string {.expose("editor").} =
+  proc currentFilePath*(self: App): string =
     if self.layout.getActiveEditor().getSome(editor) and editor.currentDocument.isNotNil:
       return editor.currentDocument.filename
 
-  proc currentLocalFilePath*(self: App): string {.expose("editor").} =
+  proc currentLocalFilePath*(self: App): string =
     if self.layout.getActiveEditor().getSome(editor) and editor.currentDocument.isNotNil:
       return editor.currentDocument.localizedPath()
 
-  proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
+  proc saveSession*(self: App, sessionFile: string = "") =
     ## Reloads some of the state stored in the session file (default: config/config.json)
     let sessionFile = if sessionFile == "": defaultSessionName else: sessionFile
     try:
@@ -2596,7 +2585,7 @@ when implModule:
     except Exception as e:
       log lvlError, &"Failed to save session: {e.msg}\n{e.getStackTrace()}"
 
-  proc dumpKeymapGraphViz*(self: App, context: string = "") {.expose("editor").} =
+  proc dumpKeymapGraphViz*(self: App, context: string = "") =
     for handler in self.currentEventHandlers():
       if context == "" or handler.config.context == context:
         try:
@@ -2607,7 +2596,7 @@ when implModule:
   proc getModeConfig(self: App, mode: string): EventHandlerConfig =
     return self.events.getEventHandlerConfig("editor." & mode)
 
-  proc setMode*(self: App, mode: string) {.expose("editor").} =
+  proc setMode*(self: App, mode: string) =
     defer:
       self.platform.requestRender()
     if mode.len == 0:
@@ -2845,7 +2834,7 @@ when implModule:
     document.getTextComponent().get.content = content
     discard self.layout.createAndAddView(document)
 
-  proc changeAnimationSpeed*(self: App, factor: float) {.expose("editor").} =
+  proc changeAnimationSpeed*(self: App, factor: float) =
     self.platform.builder.animationSpeedModifier *= factor
     log lvlInfo, fmt"{self.platform.builder.animationSpeedModifier}"
 
@@ -2906,11 +2895,11 @@ when implModule:
     return DocumentEditor.none
 
   # todo move to layout
-  proc logRootNode*(self: App) {.expose("editor").} =
+  proc logRootNode*(self: App) =
     let str = self.platform.builder.root.dump(true)
     debugf"logRootNode: {str}"
 
-  proc replayKeys*(self: App, register: string) {.expose("editor").} =
+  proc replayKeys*(self: App, register: string) =
     if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
       log lvlError, fmt"No commands recorded in register '{register}'"
       return
@@ -2927,21 +2916,21 @@ when implModule:
     for (inputCode, mods, _) in parseInputs(self.registers.registers[register].text):
       self.handleKeyPress(inputCode.a, mods)
 
-  proc inputKeys*(self: App, input: string) {.expose("editor").} =
+  proc inputKeys*(self: App, input: string) =
     for (inputCode, mods, _) in parseInputs(input):
       self.handleKeyPress(inputCode.a, mods)
 
-  proc collectGarbage*(self: App) {.expose("editor").} =
+  proc collectGarbage*(self: App) =
     log lvlInfo, "collectGarbage"
     try:
       GC_FullCollect()
     except:
       log lvlError, &"Failed to collect garbage: {getCurrentExceptionMsg()}"
 
-  proc echoArgs*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
+  proc echoArgs*(self: App, args: JsonNode) =
     log lvlInfo, &"echoArgs: {args}"
 
-  proc all*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
+  proc all*(self: App, args: JsonNode) =
     log lvlInfo, &"run all commands: {args}"
     if args.kind == JArray:
       try:
@@ -2952,7 +2941,7 @@ when implModule:
       except CatchableError:
         log lvlError, &"Failed to run all commands {args}: {getCurrentExceptionMsg()}"
 
-  proc printStatistics*(self: App) {.expose("editor").} =
+  proc printStatistics*(self: App) =
     {.gcsafe.}:
       try:
         var result = "\n"
@@ -2998,8 +2987,8 @@ when implModule:
       except:
         discard
 
-  genDispatcher("editor")
-  addGlobalDispatchTable "editor", genDispatchTable("editor")
+  # genDispatcher("editor")
+  # addGlobalDispatchTable "editor", genDispatchTable("editor")
 
   proc toStringResult(res: Option[JsonNode]): Option[string] =
     return res.flatmapIt(if it == nil: string.none elif it.kind == JNull: "".some else: some($it))
@@ -3048,15 +3037,6 @@ when implModule:
             except JsonCallError as e:
               log lvlError, &"Failed to dispatch '{action} {args}' in {t.namespace}: {e.msg}"
 
-      try:
-        result = dispatch(action, args).toStringResult()
-        if result.isSome:
-          # debugf"[defaultHandleCommand] '{command}' handled by app dispatch"
-          return
-      except CatchableError:
-        log(lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}")
-        log(lvlError, getCurrentException().getStackTrace())
-
     except:
       discard
 
@@ -3065,5 +3045,10 @@ when implModule:
 
   import app_render
 
+  include generated/app_commands
+
   proc appRenderImpl(self: AppBase, builder: UINodeBuilder, frameIndex: int) =
     self.App.updateWidgetTree(builder, frameIndex)
+
+  proc init_module_app*() {.cdecl, exportc, dynlib.} =
+    registerCommands(getServiceChecked(CommandService))

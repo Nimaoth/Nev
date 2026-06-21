@@ -3036,6 +3036,14 @@ when implModule:
 
     discard self.layout.pushSelectorPopup(builder)
 
+  proc escape*(self: TerminalServiceImpl) =
+    if self.getActiveView().getSome(view):
+      view.setMode(self.settings.defaultMode.get())
+
+  proc scroll*(self: TerminalServiceImpl, amount: int) =
+    if self.getActiveView().getSome(view):
+      view.handleScroll(amount, {})
+
   proc handleAction(self: TerminalServiceImpl, view: TerminalView, action: string, arg: string): Option[string] =
     self.withActiveView(view):
       let res = self.commands.executeCommand(action & " " & arg)
@@ -3083,6 +3091,8 @@ when implModule:
     let name = fun.name.repr.splitCase.parts.joinCase(Kebab)
     return exposeImpl(newLit(""), name, fun, active=false)
 
+  include generated/terminal_commands
+
   proc init_module_terminal*() {.cdecl, exportc, dynlib.} =
     log lvlWarn, &"init_module_terminal"
     let services = getServices()
@@ -3096,65 +3106,7 @@ when implModule:
 
     services.addService(service)
 
-    template registerCommand(inName: string, inDesc: string, inParams: untyped, inRet: string, wrapper: untyped): untyped =
-      discard service.commands.registerCommand(command_service.Command(
-        namespace: "",
-        name: "terminal." & inName,
-        description: inDesc,
-        parameters: inParams,
-        returnType: inRet,
-        execute: proc(argsString: string): string {.gcsafe, raises: [].} =
-          var args = newJArray()
-          try:
-            for a in newStringStream(argsString).parseJsonFragments():
-              args.add a
-            return $wrapper(args)
-          except CatchableError as e:
-            log lvlError, "Failed to run command '" & inName & "': " & e.msg
-            return ""
-      ))
-
-    proc createTerminal(command: string = "", options: CreateTerminalOptions = CreateTerminalOptions()) {.command.} =
-      service.createTerminal(command, options)
-    registerCommand("create", "Create Terminal", @[("command", "string"), ("options", "object")], "void", createTerminalJson)
-
-    proc runInTerminal(shell: string, command: string, options: RunInTerminalOptions = RunInTerminalOptions()) {.command.} =
-      service.runInTerminal(shell, command, options)
-    registerCommand("run", "Create Terminal", @[("shell", "string"), ("command", "string"), ("options", "object")], "void", runInTerminalJson)
-
-    proc sendTerminalInput(input: string, noKitty: bool = false) {.command.} =
-      service.sendTerminalInput(input, noKitty)
-    registerCommand("send-terminal-input", "...", @[], "void", sendTerminalInputJson)
-
-    proc sendTerminalInputAndSetMode(input: string, mode: string) {.command.} =
-      service.sendTerminalInputAndSetMode(input, mode)
-    registerCommand("send-terminal-input-and-set-mode", "...", @[], "void", sendTerminalInputAndSetModeJson)
-
-    proc setTerminalMode(mode: string) {.command.} =
-      service.setTerminalMode(mode)
-    registerCommand("set-terminal-mode", "...", @[], "void", setTerminalModeJson)
-
-    proc escape() {.command.} =
-      if service.getActiveView().getSome(view):
-        view.setMode(service.settings.defaultMode.get())
-    registerCommand("escape", "...", @[], "void", escapeJson)
-
-    proc scroll(amount: int) {.command.} =
-      if service.getActiveView().getSome(view):
-        view.handleScroll(amount, {})
-    registerCommand("scroll", "...", @[], "void", scrollJson)
-
-    proc selectTerminal(preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.9, previewScale: float = 0.6) {.command.} =
-      service.selectTerminal(preview, scaleX, scaleY, previewScale)
-    registerCommand("select", "...", @[], "void", selectTerminalJson)
-
-    proc editTerminalBuffer() {.command.} =
-      service.editTerminalBuffer()
-    registerCommand("edit-terminal-buffer", "...", @[], "void", editTerminalBufferJson)
-
-    proc pasteTerminal(register: string = "") {.command.} =
-      service.pasteTerminal(register)
-    registerCommand("paste", "Paste from register into terminal", @[("register", "string")], "void", pasteTerminalJson)
+    registerCommands(getServiceChecked(CommandService))
 
   proc shutdown_module_terminal*() {.cdecl, exportc, dynlib.} =
     let services = getServices()

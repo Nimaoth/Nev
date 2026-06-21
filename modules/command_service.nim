@@ -60,12 +60,19 @@ proc checkPermissions*(self: CommandService, command: string, permissions: Comma
 
 import std/[macros, genasts]
 
-proc getArg*[T](args: JsonNodeEx, namedArgs: JsonNodeEx, index: int, name: string): T {.gcsafe.} =
+proc getArg*[T](args: JsonNodeEx, namedArgs: JsonNodeEx, index: int, name: string, opt = Joptions()): T {.gcsafe.} =
+  result = T.default
   if args != nil and index < args.elems.len:
-    return args.elems[index].jsonTo(T)
+    result.fromJsonEx(args.elems[index], Joptions(allowMissingKeys: true, allowExtraKeys: true))
   if namedArgs != nil and name in namedArgs.fields:
-    return namedArgs.fields[name].jsonTo(T)
-  return T.default
+    result.fromJsonEx(namedArgs.fields[name], Joptions(allowMissingKeys: true, allowExtraKeys: true))
+
+proc getArg*[T](args: JsonNodeEx, namedArgs: JsonNodeEx, index: int, name: string, default: T, opt = Joptions()): T {.gcsafe.} =
+  result = default
+  if args != nil and index < args.elems.len:
+    result.fromJsonEx(args.elems[index], Joptions(allowMissingKeys: true, allowExtraKeys: true))
+  if namedArgs != nil and name in namedArgs.fields:
+    result.fromJsonEx(namedArgs.fields[name], Joptions(allowMissingKeys: true, allowExtraKeys: true))
 
 macro registerCommandImpl(self: CommandService, name: string, impl: typed): untyped =
   let typ = impl.getTypeImpl[0]
@@ -260,19 +267,24 @@ when implModule:
       log lvlError, &"Trying to register command with no name"
       return
 
-    if not override and self.commands.contains(command.name):
-      log lvlError, &"Trying to register command '{command.name}' which already exists"
+    let fullName = if command.namespace != "":
+      command.namespace & "." & command.name
+    else:
+      command.name
+
+    if not override and self.commands.contains(fullName):
+      log lvlError, &"Trying to register command '{fullName}' which already exists"
       return
 
     let id = self.commandIdCounter.CommandId
     inc self.commandIdCounter
 
-    self.unregisterCommand(command.name)
+    self.unregisterCommand(fullName)
 
     command.id = id
     command.signature = "(" & command.parameters.mapIt(it.name & ": " & it.`type`).join(", ") & ") " & command.returnType
-    self.idToCommand[id] = command.name
-    self.commands[command.name] = command.ensureMove
+    self.idToCommand[id] = fullName
+    self.commands[fullName] = command.ensureMove
 
     return id
 

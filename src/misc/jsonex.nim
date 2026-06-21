@@ -93,6 +93,10 @@ proc newJexArray*(): JsonNodeEx =
   ## Creates a new `JArray JsonNodeEx`
   result = JsonNodeEx(kind: JsonexNodeKind.JArray, elems: @[])
 
+proc newJexArray*(elems: sink seq[JsonNodeEx]): JsonNodeEx =
+  ## Creates a new `JArray JsonNodeEx`
+  result = JsonNodeEx(kind: JsonexNodeKind.JArray, elems: elems)
+
 proc getStr*(n: JsonNodeEx, default: string = ""): string =
   ## Retrieves the string value of a `JString JsonNodeEx`.
   ##
@@ -1698,6 +1702,26 @@ proc toJsonEx*(node: JsonNode, opt = initToJsonOptions()): JsonNodeEx =
 
 proc fromJsonExHook*(a: var JsonNode, b: JsonNodeEx, opt = Joptions()) =
   a = b.toJson()
+
+proc parseJsonexValues*(buffer: string): JsonNodeEx =
+  result = newJexArray()
+  for a in newStringStream(buffer).parseJsonexFragments():
+    result.add a
+
+proc parseJsonexArgs*(buffer: string): tuple[unnamed: JsonNodeEx, named: JsonNodeEx] =
+  result.unnamed = newJexArray()
+  result.named = newJexObject()
+  var name = ""
+  for a in newStringStream(buffer).parseJsonexFragments():
+    if a.kind == JLispVal and a.lval.kind == Symbol and a.lval.sym.startsWith(":"):
+      name = a.lval.sym[1..^1]
+    else:
+      if name != "":
+        result.named[name] = a
+      else:
+        result.unnamed.add a
+      name = ""
+
 
 when isMainModule:
   echo pretty(parseJsonex """
