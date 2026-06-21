@@ -208,7 +208,7 @@ type
   KittyState* = object
     active*: bool
     colors*: seq[chroma.Color]
-    iter*: iterator(s: ptr TerminalThreadState) {.gcsafe, raises: [].}
+    iter*: iterator(s: ptr TerminalThreadState): bool {.gcsafe, raises: [].}
     frag*: VTermStringFragment
     pos*: tuple[line, column: int]
     pathPrefix*: string

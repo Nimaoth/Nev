@@ -31,7 +31,7 @@ when implModule and defined(profiler):
     stackChartMinTotalSize = 200 * 1024
     stackChartMinAllocationCount = 500
     stackChartMinTotalAllocationCount = 40000
-    stackChartMinAllocationsPerSecond = 50.0
+    stackChartMinAllocationsPerSecond = 20.0
     stackHistoryEntries = 50
     leakMaxResults = 10
     leakScanBatchPerTick = 10

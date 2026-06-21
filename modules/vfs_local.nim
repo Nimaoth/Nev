@@ -32,7 +32,7 @@ when implModule:
 
     VFSLocal2* = object
       watcher: Watcher
-      updateRate: int
+      updateRate: int = 200
       cache: Table[string, CachedFile]
 
   proc cacheFile*(self: VFS, path: string) =

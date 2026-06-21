@@ -1149,7 +1149,7 @@ when implModule:
     for ids in placementsToRemove:
       s.deletePlacement(ids[0], ids[1], deleteImageWhenUnused)
 
-  iterator parseKittyData(s: ptr TerminalThreadState) {.closure, gcsafe, raises: [].} =
+  iterator parseKittyData(s: ptr TerminalThreadState): bool {.closure, gcsafe, raises: [].} =
     var i = 1
     var suppressOk = false
     var suppressFailure = false
@@ -1158,7 +1158,7 @@ when implModule:
       if i >= s.kitty.frag.len.int and s.kitty.frag.final:
         break
       while i >= s.kitty.frag.len.int:
-        yield
+        yield false
         i = 0
 
     template sendResponse(keys: untyped, body: untyped): untyped =
@@ -1319,7 +1319,7 @@ when implModule:
         if not chunked:
           break
 
-        yield
+        yield false
         i = 1
 
       # kittyDebugf"[kitty] '{keys}', {buffer.len} payload bytes, action = {action}"
@@ -1510,7 +1510,7 @@ when implModule:
     if s.kitty.iter == nil:
       s.kitty.iter = parseKittyData
     s.kitty.frag = frag
-    s.kitty.iter(s)
+    discard s.kitty.iter(s)
     if finished(s.kitty.iter):
       s.kitty.iter = nil
 

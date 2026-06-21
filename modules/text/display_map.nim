@@ -322,6 +322,8 @@ proc next*(self: var DisplayChunkIterator): Option[DisplayChunk] =
   if self.insideIndent and self.indentGuideColumn.getSome(indentGuideColumn) and self.displayChunk.getSome(chunk) and not chunk.diffChunk.wrapChunk.tabChunk.wasTab:
     var maxEnd = 0
     while maxEnd < chunk.len:
+      if maxEnd >= chunk.toOpenArray().len:
+        break
       if chunk.toOpenArray()[maxEnd] notin Whitespace:
         break
       inc maxEnd

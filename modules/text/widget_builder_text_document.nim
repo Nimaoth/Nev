@@ -1582,6 +1582,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
   selectionsNode.markDirty(builder)
   currentNode.markDirty(builder)
 
+  # todo: avoid allocations for these two. We could store the states persistently on the editor/editor component
   let chunkBounds = @(state.chunkBounds.toOpenArray(0, state.chunkBounds.high))
   let charBounds = @(state.charBounds.toOpenArray(0, state.charBounds.high))
   type MouseEventKind = enum Click, Drag, Hover

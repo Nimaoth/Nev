@@ -124,7 +124,7 @@ proc fillDefaultSettings*(s: ConfigStore) =
   s.set("text.mode-changed-handler-command", "")
   s.set("text.signature-help-enabled", true)
   s.set("text.signature-help-delay", 200)
-  s.set("text.signature-help-move", "(ts \\'call.inner\\') (overlapping) (last)")
+  s.set("text.signature-help-move", "(ts 'call.inner') (overlapping) (last)")
   s.set("text.signature-help-trigger-chars", %*["("])
   s.set("text.signature-help-trigger-on-edit-in-args", true)
   s.set("text.auto-insert-close", true)
