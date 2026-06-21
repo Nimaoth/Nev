@@ -51,6 +51,9 @@ type
     parsing: bool = false
     fileLoadQueue: seq[tuple[path: string, content: string]]
 
+proc newLanguageServerCTags*(services: Services): LanguageServerCTags {.modrtl, gcsafe, raises: [].}
+proc getLanguageServerCTags*(): LanguageServerCTags {.modrtl, gcsafe, raises: [].}
+
 when implModule:
   import std/sugar
   import language_server_component, config_component, move_component, text_component, treesitter_component, language_component
@@ -516,6 +519,11 @@ when implModule:
     except CatchableError as e:
       log lvlWarn, &"Failed to update ctag files: {e.msg}"
 
+  var gLanguageServerCtags: LanguageServerCTags = nil
+  proc getLanguageServerCTags*(): LanguageServerCTags =
+    {.gcsafe.}:
+      return gLanguageServerCtags
+
   proc init_module_language_server_ctags*() {.cdecl, exportc, dynlib.} =
     let services = getServices()
     if services == nil:
@@ -523,6 +531,7 @@ when implModule:
       return
 
     var ls: LanguageServerCTags = newLanguageServerCTags(services)
+    gLanguageServerCtags = ls
 
     let events = services.getService(EventService)
     let documents = services.getServiceChecked(DocumentEditorService)

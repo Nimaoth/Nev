@@ -903,6 +903,10 @@ when implModule:
         log lvlDebug, &"applyMoveLisp '{move}', {env.env}, {originalSelections}"
 
       var expr = move.parseLisp()
+      if expr == nil:
+        log lvlWarn, &"Failed to apply move '{move}'"
+        return @originalSelections
+
       self.applyMove(displayMap, expr, originalSelections, env, fallback)
     except CatchableError as e:
       log lvlWarn, &"Failed to apply move '{move}': {e.msg}"

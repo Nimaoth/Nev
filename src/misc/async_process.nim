@@ -52,6 +52,7 @@ type AsyncProcess* = ref object
   name: string
   info: ProcessInfo
   args: seq[string]
+  workingDir: string
   onRestarted*: proc(): Future[void] {.gcsafe, raises: [].}
   onRestartFailed*: proc(): Future[void] {.gcsafe, raises: [].}
   dontRestart: bool
@@ -240,14 +241,14 @@ proc writeOutput(chan: Arc[OwnedChannel[Option[ProcessObj]]], stdin: Arc[BaseCha
       discard
 
 proc start*(process: AsyncProcess): bool =
-  log(lvlInfo, fmt"start process {process.name} {process.args}")
+  log(lvlInfo, fmt"start process {process.name} {process.args} (working dir = '{process.workingDir}')")
   try:
     var options: set[ProcessOption] = {poUsePath, poDaemon}
     if process.eval:
       options.incl poEvalCommand
     if process.errToOut:
       options.incl poStdErrToStdOut
-    process.process = startProcess(process.name, args=process.args, options=options)
+    process.process = startProcess(process.name, args=process.args, options=options, workingDir=process.workingDir)
   except CatchableError as e:
     log(lvlError, fmt"Failed to start {process.name}: {e.msg}")
     return false
@@ -268,13 +269,13 @@ proc start*(process: AsyncProcess): bool =
   return true
 
 proc start2*(process: AsyncProcess) {.raises: [OSError, IOError, ValueError].} =
-  log(lvlInfo, fmt"start process {process.name} {process.args}")
+  log(lvlInfo, fmt"start process {process.name} {process.args} (working dir = '{process.workingDir}')")
   var options: set[ProcessOption] = {poUsePath, poDaemon}
   if process.eval:
     options.incl poEvalCommand
   if process.errToOut:
     options.incl poStdErrToStdOut
-  process.process = startProcess(process.name, args=process.args, options=options)
+  process.process = startProcess(process.name, args=process.args, options=options, workingDir=process.workingDir)
 
   when defined(windows):
     if process.killOnExit:
@@ -317,7 +318,7 @@ proc restartServer(process: AsyncProcess) {.async, gcsafe.} =
     if not process.onRestarted.isNil:
       process.onRestarted().await
 
-proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = true, autoStart = true, killOnExit = false, eval: bool = false, errToOut: bool = false): AsyncProcess {.gcsafe.} =
+proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = true, autoStart = true, killOnExit = false, eval: bool = false, errToOut: bool = false, workingDir: string = ""): AsyncProcess {.gcsafe.} =
   let process = AsyncProcess()
   process.name = name
   process.info.name = name
@@ -329,6 +330,7 @@ proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = tru
   process.killOnExit = killOnExit
   process.eval = eval
   process.errToOut = errToOut
+  process.workingDir = workingDir
 
   process.inputStreamChannel = Arc[OwnedChannel[Option[ProcessObj]]].new()
   process.inputStreamChannel.getMutUnsafe.open("inputStreamChannel")

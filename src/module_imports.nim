@@ -64,12 +64,13 @@ when not defined(useDynlib):
   import "../modules/angelscript_formatter.nim"
   import "../modules/profiler.nim"
   import "../modules/debugger/debugger.nim"
-  import "../modules/dashboard.nim"
-  import "../modules/vcs_git.nim"
-  import "../modules/vcs_perforce.nim"
   import "../modules/language_server_ctags.nim"
   import "../modules/language_server_regex.nim"
   import "../modules/language_server_lsp/language_server_lsp.nim"
+  import "../modules/language_server_nimony.nim"
+  import "../modules/dashboard.nim"
+  import "../modules/vcs_git.nim"
+  import "../modules/vcs_perforce.nim"
   import "../modules/language_server_ue_cpp.nim"
   import "../modules/language_server_ue_as.nim"
   import "../modules/lsp_server.nim"
@@ -143,12 +144,13 @@ proc initModules*() =
   when declared(init_module_angelscript_formatter): init_module_angelscript_formatter()
   when declared(init_module_profiler): init_module_profiler()
   when declared(init_module_debugger): init_module_debugger()
-  when declared(init_module_dashboard): init_module_dashboard()
-  when declared(init_module_vcs_git): init_module_vcs_git()
-  when declared(init_module_vcs_perforce): init_module_vcs_perforce()
   when declared(init_module_language_server_ctags): init_module_language_server_ctags()
   when declared(init_module_language_server_regex): init_module_language_server_regex()
   when declared(init_module_language_server_lsp): init_module_language_server_lsp()
+  when declared(init_module_language_server_nimony): init_module_language_server_nimony()
+  when declared(init_module_dashboard): init_module_dashboard()
+  when declared(init_module_vcs_git): init_module_vcs_git()
+  when declared(init_module_vcs_perforce): init_module_vcs_perforce()
   when declared(init_module_language_server_ue_cpp): init_module_language_server_ue_cpp()
   when declared(init_module_language_server_ue_as): init_module_language_server_ue_as()
   when declared(init_module_lsp_server): init_module_lsp_server()
@@ -171,12 +173,13 @@ proc shutdownModules*() =
   when declared(shutdown_module_lsp_server): shutdown_module_lsp_server()
   when declared(shutdown_module_language_server_ue_as): shutdown_module_language_server_ue_as()
   when declared(shutdown_module_language_server_ue_cpp): shutdown_module_language_server_ue_cpp()
-  when declared(shutdown_module_language_server_lsp): shutdown_module_language_server_lsp()
-  when declared(shutdown_module_language_server_regex): shutdown_module_language_server_regex()
-  when declared(shutdown_module_language_server_ctags): shutdown_module_language_server_ctags()
   when declared(shutdown_module_vcs_perforce): shutdown_module_vcs_perforce()
   when declared(shutdown_module_vcs_git): shutdown_module_vcs_git()
   when declared(shutdown_module_dashboard): shutdown_module_dashboard()
+  when declared(shutdown_module_language_server_nimony): shutdown_module_language_server_nimony()
+  when declared(shutdown_module_language_server_lsp): shutdown_module_language_server_lsp()
+  when declared(shutdown_module_language_server_regex): shutdown_module_language_server_regex()
+  when declared(shutdown_module_language_server_ctags): shutdown_module_language_server_ctags()
   when declared(shutdown_module_debugger): shutdown_module_debugger()
   when declared(shutdown_module_profiler): shutdown_module_profiler()
   when declared(shutdown_module_angelscript_formatter): shutdown_module_angelscript_formatter()
@@ -301,12 +304,13 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("angelscript_formatter")
   loadModule("profiler")
   loadModule("debugger")
-  loadModule("dashboard")
-  loadModule("vcs_git")
-  loadModule("vcs_perforce")
   loadModule("language_server_ctags")
   loadModule("language_server_regex")
   loadModule("language_server_lsp")
+  loadModule("language_server_nimony")
+  loadModule("dashboard")
+  loadModule("vcs_git")
+  loadModule("vcs_perforce")
   loadModule("language_server_ue_cpp")
   loadModule("language_server_ue_as")
   loadModule("lsp_server")
