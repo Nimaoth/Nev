@@ -438,9 +438,8 @@ when implModule:
     if self.commands.contains(action):
       try:
         let command = self.commands[action]
-        if command.active:
-          let contextStr = if context == nil: "null" else: $context
-          arg = contextStr & " " & arg
+        if command.active and context != nil:
+          arg = $context & " " & arg
         return command.execute(arg).some
       except Exception as e:
         log lvlError, &"Failed to run command '{command}': {e.msg}"

@@ -5,7 +5,7 @@ import misc/[jsonex]
 import scripting_api
 
 
-proc reapplyConfigKeybindingsWrapper(args: string): string =
+proc reapplyConfigKeybindingsWrapper(args: string): string {.gcsafe.} =
   ## Reapply keybindings from config files
   try:
     let args {.used.} = args.parseJsonexArgs()
@@ -16,18 +16,18 @@ proc reapplyConfigKeybindingsWrapper(args: string): string =
       getArg[bool](args.unnamed, args.named, 3, "wait", false))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .reapply-config-keybindings: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc loadSessionWrapper(args: string): string =
+proc loadSessionWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     loadSession(self, getArg[string](args.unnamed, args.named, 0, "path"))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .load-session: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc runExternalCommandWrapper(args: string): string =
+proc runExternalCommandWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
@@ -36,144 +36,144 @@ proc runExternalCommandWrapper(args: string): string =
       getArg[string](args.unnamed, args.named, 2, "workingDir", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .run-external-command: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc disableLogFrameTimeWrapper(args: string): string =
+proc disableLogFrameTimeWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     disableLogFrameTime(self, getArg[bool](args.unnamed, args.named, 0, "disable"))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .disable-log-frame-time: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc enableDebugPrintAsyncAwaitStackTraceWrapper(args: string): string =
+proc enableDebugPrintAsyncAwaitStackTraceWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     enableDebugPrintAsyncAwaitStackTrace(self, getArg[bool](args.unnamed, args.named, 0, "enable"))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .enable-debug-print-async-await-stack-trace: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc toggleShowDrawnNodesWrapper(args: string): string =
+proc toggleShowDrawnNodesWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     toggleShowDrawnNodes(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .toggle-show-drawn-nodes: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc saveAppStateWrapper(args: string): string =
+proc saveAppStateWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     saveAppState(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .save-app-state: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc requestRenderWrapper(args: string): string =
+proc requestRenderWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     requestRender(self, getArg[bool](args.unnamed, args.named, 0, "redrawEverything", false))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .request-render: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc quitWrapper(args: string): string =
+proc quitWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     quit(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .quit: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc quitImmediatelyWrapper(args: string): string =
+proc quitImmediatelyWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     quitImmediately(self, getArg[int](args.unnamed, args.named, 0, "exitCode", 0))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .quit-immediately: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc helpWrapper(args: string): string =
+proc helpWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     help(self, getArg[string](args.unnamed, args.named, 0, "about", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .help: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc changeFontSizeWrapper(args: string): string =
+proc changeFontSizeWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     changeFontSize(self, getArg[float32](args.unnamed, args.named, 0, "amount"))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .change-font-size: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc changeLineDistanceWrapper(args: string): string =
+proc changeLineDistanceWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     changeLineDistance(self, getArg[float32](args.unnamed, args.named, 0, "amount"))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .change-line-distance: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc toggleStatusBarLocationWrapper(args: string): string =
+proc toggleStatusBarLocationWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     toggleStatusBarLocation(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .toggle-status-bar-location: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc logsWrapper(args: string): string =
+proc logsWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     logs(self, getArg[string](args.unnamed, args.named, 0, "slot", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .logs: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc toggleConsoleLoggerWrapper(args: string): string =
+proc toggleConsoleLoggerWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     toggleConsoleLogger(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .toggle-console-logger: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc writeFileWrapper(args: string): string =
+proc writeFileWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     writeFile(self, getArg[string](args.unnamed, args.named, 0, "path", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .write-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc loadFileWrapper(args: string): string =
+proc loadFileWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     loadFile(self, getArg[string](args.unnamed, args.named, 0, "path", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .load-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc loadThemeWrapper(args: string): string =
+proc loadThemeWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
@@ -181,9 +181,9 @@ proc loadThemeWrapper(args: string): string =
       getArg[bool](args.unnamed, args.named, 1, "force", false))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .load-theme: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc openSessionWrapper(args: string): string =
+proc openSessionWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
@@ -195,9 +195,9 @@ proc openSessionWrapper(args: string): string =
       getArg[float](args.unnamed, args.named, 5, "previewScale", 0.4))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .open-session: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc openRecentSessionWrapper(args: string): string =
+proc openRecentSessionWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
@@ -207,18 +207,18 @@ proc openRecentSessionWrapper(args: string): string =
       getArg[float](args.unnamed, args.named, 3, "previewScale", 0.4))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .open-recent-session: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc chooseThemeWrapper(args: string): string =
+proc chooseThemeWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     chooseTheme(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .choose-theme: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc crashWrapper(args: string): string =
+proc crashWrapper(args: string): string {.gcsafe.} =
   ## This command will cause the editor to crash by failing an assertion.
   try:
     let args {.used.} = args.parseJsonexArgs()
@@ -226,9 +226,9 @@ proc crashWrapper(args: string): string =
     crash(self, getArg[string](args.unnamed, args.named, 0, "message", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .crash: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc crash2Wrapper(args: string): string =
+proc crash2Wrapper(args: string): string {.gcsafe.} =
   ## This command will cause the editor to crash by accessing a nil reference.
   try:
     let args {.used.} = args.parseJsonexArgs()
@@ -236,36 +236,36 @@ proc crash2Wrapper(args: string): string =
     crash2(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .crash-2: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc createFileWrapper(args: string): string =
+proc createFileWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     createFile(self, getArg[string](args.unnamed, args.named, 0, "path"))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .create-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc recomputeWorkspaceCacheWrapper(args: string): string =
+proc recomputeWorkspaceCacheWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     recomputeWorkspaceCache(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .recompute-workspace-cache: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc reloadWorkspaceIgnoreWrapper(args: string): string =
+proc reloadWorkspaceIgnoreWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     reloadWorkspaceIgnore(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .reload-workspace-ignore: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc browseKeybindsWrapper(args: string): string =
+proc browseKeybindsWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
@@ -276,9 +276,9 @@ proc browseKeybindsWrapper(args: string): string =
       getArg[string](args.unnamed, args.named, 4, "slot", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .browse-keybinds: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc browseSettingsWrapper(args: string): string =
+proc browseSettingsWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
@@ -289,9 +289,9 @@ proc browseSettingsWrapper(args: string): string =
       getArg[string](args.unnamed, args.named, 4, "slot", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .browse-settings: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc chooseFileWrapper(args: string): string =
+proc chooseFileWrapper(args: string): string {.gcsafe.} =
   ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file
   ## Press <ESCAPE> to close the dialogue
@@ -305,18 +305,18 @@ proc chooseFileWrapper(args: string): string =
       getArg[string](args.unnamed, args.named, 4, "slot", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .choose-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc chooseOpenDocumentWrapper(args: string): string =
+proc chooseOpenDocumentWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     chooseOpenDocument(self, getArg[string](args.unnamed, args.named, 0, "slot", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .choose-open-document: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc showPluginsWrapper(args: string): string =
+proc showPluginsWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
@@ -326,36 +326,36 @@ proc showPluginsWrapper(args: string): string =
       getArg[string](args.unnamed, args.named, 3, "slot", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .show-plugins: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc gotoNextLocationWrapper(args: string): string =
+proc gotoNextLocationWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     gotoNextLocation(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .goto-next-location: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc gotoPrevLocationWrapper(args: string): string =
+proc gotoPrevLocationWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     gotoPrevLocation(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .goto-prev-location: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc chooseLocationWrapper(args: string): string =
+proc chooseLocationWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     chooseLocation(self, getArg[string](args.unnamed, args.named, 0, "slot", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .choose-location: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc searchGlobalInteractiveWrapper(args: string): string =
+proc searchGlobalInteractiveWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
@@ -363,9 +363,9 @@ proc searchGlobalInteractiveWrapper(args: string): string =
       getArg[string](args.unnamed, args.named, 1, "slot", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .search-global-interactive: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc searchGlobalWrapper(args: string): string =
+proc searchGlobalWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
@@ -373,9 +373,9 @@ proc searchGlobalWrapper(args: string): string =
       getArg[string](args.unnamed, args.named, 1, "slot", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .search-global: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc installTreesitterParserWrapper(args: string): string =
+proc installTreesitterParserWrapper(args: string): string {.gcsafe.} =
   ## Install a treesitter parser by downloading the repository and building a wasm module.
   ## `language` can either be a language id (`nim`, `cpp`, `markdown`, etc), `<username>/<repository>`
   ## or `<username>/<repository>/<some/path>`.
@@ -406,9 +406,9 @@ proc installTreesitterParserWrapper(args: string): string =
       getArg[string](args.unnamed, args.named, 1, "host", "github.com"))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .install-treesitter-parser: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc installTreesitterParserPrebuiltWrapper(args: string): string =
+proc installTreesitterParserPrebuiltWrapper(args: string): string {.gcsafe.} =
   ## Install a treesitter parser by downloading a prebuilt wasm binary from `https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/tag/v0.3`
   try:
     let args {.used.} = args.parseJsonexArgs()
@@ -416,9 +416,9 @@ proc installTreesitterParserPrebuiltWrapper(args: string): string =
     installTreesitterParserPrebuilt(self, getArg[string](args.unnamed, args.named, 0, "language"))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .install-treesitter-parser-prebuilt: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc installTreesitterParserPrebuiltFromListWrapper(args: string): string =
+proc installTreesitterParserPrebuiltFromListWrapper(args: string): string {.gcsafe.} =
   ## Install a treesitter parser by downloading a prebuilt wasm binary from `https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/tag/v0.3`
   try:
     let args {.used.} = args.parseJsonexArgs()
@@ -426,9 +426,9 @@ proc installTreesitterParserPrebuiltFromListWrapper(args: string): string =
     installTreesitterParserPrebuiltFromList(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .install-treesitter-parser-prebuilt-from-list: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc exploreFilesWrapper(args: string): string =
+proc exploreFilesWrapper(args: string): string {.gcsafe.} =
   ## Open a file explorer at `root`. If `diff` is true then files will be show as a diff if applicable
   try:
     let args {.used.} = args.parseJsonexArgs()
@@ -441,27 +441,27 @@ proc exploreFilesWrapper(args: string): string =
       getArg[string](args.unnamed, args.named, 5, "slot", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .explore-files: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc exploreWorkspacePrimaryWrapper(args: string): string =
+proc exploreWorkspacePrimaryWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     exploreWorkspacePrimary(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .explore-workspace-primary: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc exploreCurrentFileDirectoryWrapper(args: string): string =
+proc exploreCurrentFileDirectoryWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     exploreCurrentFileDirectory(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .explore-current-file-directory: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc reloadConfigWrapper(args: string): string =
+proc reloadConfigWrapper(args: string): string {.gcsafe.} =
   ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace
   try:
     let args {.used.} = args.parseJsonexArgs()
@@ -469,36 +469,36 @@ proc reloadConfigWrapper(args: string): string =
     reloadConfig(self, getArg[bool](args.unnamed, args.named, 0, "clearOptions", false))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .reload-config: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc reloadThemeWrapper(args: string): string =
+proc reloadThemeWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     reloadTheme(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .reload-theme: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc currentFilePathWrapper(args: string): string =
+proc currentFilePathWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     let res = currentFilePath(self)
-    return $res.toJsonEx
+    return ({.gcsafe.}: $res.toJsonEx)
   except CatchableError:
-    return ""
+    return "Failed to execute command .current-file-path: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc currentLocalFilePathWrapper(args: string): string =
+proc currentLocalFilePathWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     let res = currentLocalFilePath(self)
-    return $res.toJsonEx
+    return ({.gcsafe.}: $res.toJsonEx)
   except CatchableError:
-    return ""
+    return "Failed to execute command .current-local-file-path: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc saveSessionWrapper(args: string): string =
+proc saveSessionWrapper(args: string): string {.gcsafe.} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
   try:
     let args {.used.} = args.parseJsonexArgs()
@@ -506,181 +506,181 @@ proc saveSessionWrapper(args: string): string =
     saveSession(self, getArg[string](args.unnamed, args.named, 0, "sessionFile", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .save-session: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc dumpKeymapGraphVizWrapper(args: string): string =
+proc dumpKeymapGraphVizWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     dumpKeymapGraphViz(self, getArg[string](args.unnamed, args.named, 0, "context", ""))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .dump-keymap-graph-viz: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc setModeWrapper(args: string): string =
+proc setModeWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     setMode(self, getArg[string](args.unnamed, args.named, 0, "mode"))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .set-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc changeAnimationSpeedWrapper(args: string): string =
+proc changeAnimationSpeedWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     changeAnimationSpeed(self, getArg[float](args.unnamed, args.named, 0, "factor"))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .change-animation-speed: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc logRootNodeWrapper(args: string): string =
+proc logRootNodeWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     logRootNode(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .log-root-node: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc replayKeysWrapper(args: string): string =
+proc replayKeysWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     replayKeys(self, getArg[string](args.unnamed, args.named, 0, "register"))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .replay-keys: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc inputKeysWrapper(args: string): string =
+proc inputKeysWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     inputKeys(self, getArg[string](args.unnamed, args.named, 0, "input"))
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .input-keys: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc collectGarbageWrapper(args: string): string =
+proc collectGarbageWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     collectGarbage(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .collect-garbage: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc echoArgsWrapper(args: string): string =
+proc echoArgsWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     echoArgs(self, newJexArray(args.unnamed.elems[0..^1]).toJson)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .echo-args: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc allWrapper(args: string): string =
+proc allWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     all(self, newJexArray(args.unnamed.elems[0..^1]).toJson)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .all: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc printStatisticsWrapper(args: string): string =
+proc printStatisticsWrapper(args: string): string {.gcsafe.} =
   try:
     let args {.used.} = args.parseJsonexArgs()
     let self: App = ({.gcsafe.}: gApp)
     printStatistics(self)
     return ""
   except CatchableError:
-    return ""
+    return "Failed to execute command .print-statistics: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
   discard commands.registerCommand(command_service.Command(
-    name: "reapply-config-keybindings", execute: reapplyConfigKeybindingsWrapper,
+    name: "reapply-config-keybindings", execute: reapplyConfigKeybindingsWrapper, active: false,
     description: """Reapply keybindings from config files""",))
   discard commands.registerCommand(command_service.Command(
-    name: "load-session", execute: loadSessionWrapper,))
+    name: "load-session", execute: loadSessionWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "run-external-command", execute: runExternalCommandWrapper,))
+    name: "run-external-command", execute: runExternalCommandWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "disable-log-frame-time", execute: disableLogFrameTimeWrapper,))
+    name: "disable-log-frame-time", execute: disableLogFrameTimeWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "enable-debug-print-async-await-stack-trace", execute: enableDebugPrintAsyncAwaitStackTraceWrapper,))
+    name: "enable-debug-print-async-await-stack-trace", execute: enableDebugPrintAsyncAwaitStackTraceWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "toggle-show-drawn-nodes", execute: toggleShowDrawnNodesWrapper,))
+    name: "toggle-show-drawn-nodes", execute: toggleShowDrawnNodesWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "save-app-state", execute: saveAppStateWrapper,))
+    name: "save-app-state", execute: saveAppStateWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "request-render", execute: requestRenderWrapper,))
+    name: "request-render", execute: requestRenderWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "quit", execute: quitWrapper,))
+    name: "quit", execute: quitWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "quit-immediately", execute: quitImmediatelyWrapper,))
+    name: "quit-immediately", execute: quitImmediatelyWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "help", execute: helpWrapper,))
+    name: "help", execute: helpWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "change-font-size", execute: changeFontSizeWrapper,))
+    name: "change-font-size", execute: changeFontSizeWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "change-line-distance", execute: changeLineDistanceWrapper,))
+    name: "change-line-distance", execute: changeLineDistanceWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "toggle-status-bar-location", execute: toggleStatusBarLocationWrapper,))
+    name: "toggle-status-bar-location", execute: toggleStatusBarLocationWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "logs", execute: logsWrapper,))
+    name: "logs", execute: logsWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "toggle-console-logger", execute: toggleConsoleLoggerWrapper,))
+    name: "toggle-console-logger", execute: toggleConsoleLoggerWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "write-file", execute: writeFileWrapper,))
+    name: "write-file", execute: writeFileWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "load-file", execute: loadFileWrapper,))
+    name: "load-file", execute: loadFileWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "load-theme", execute: loadThemeWrapper,))
+    name: "load-theme", execute: loadThemeWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "open-session", execute: openSessionWrapper,))
+    name: "open-session", execute: openSessionWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "open-recent-session", execute: openRecentSessionWrapper,))
+    name: "open-recent-session", execute: openRecentSessionWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "choose-theme", execute: chooseThemeWrapper,))
+    name: "choose-theme", execute: chooseThemeWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "crash", execute: crashWrapper,
+    name: "crash", execute: crashWrapper, active: false,
     description: """This command will cause the editor to crash by failing an assertion.""",))
   discard commands.registerCommand(command_service.Command(
-    name: "crash-2", execute: crash2Wrapper,
+    name: "crash-2", execute: crash2Wrapper, active: false,
     description: """This command will cause the editor to crash by accessing a nil reference.""",))
   discard commands.registerCommand(command_service.Command(
-    name: "create-file", execute: createFileWrapper,))
+    name: "create-file", execute: createFileWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "recompute-workspace-cache", execute: recomputeWorkspaceCacheWrapper,))
+    name: "recompute-workspace-cache", execute: recomputeWorkspaceCacheWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "reload-workspace-ignore", execute: reloadWorkspaceIgnoreWrapper,))
+    name: "reload-workspace-ignore", execute: reloadWorkspaceIgnoreWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "browse-keybinds", execute: browseKeybindsWrapper,))
+    name: "browse-keybinds", execute: browseKeybindsWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "browse-settings", execute: browseSettingsWrapper,))
+    name: "browse-settings", execute: browseSettingsWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "choose-file", execute: chooseFileWrapper,
+    name: "choose-file", execute: chooseFileWrapper, active: false,
     description: """Opens a file dialog which shows all files in the currently open workspaces
     Press <ENTER> to select a file
     Press <ESCAPE> to close the dialogue""",))
   discard commands.registerCommand(command_service.Command(
-    name: "choose-open-document", execute: chooseOpenDocumentWrapper,))
+    name: "choose-open-document", execute: chooseOpenDocumentWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "show-plugins", execute: showPluginsWrapper,))
+    name: "show-plugins", execute: showPluginsWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "goto-next-location", execute: gotoNextLocationWrapper,))
+    name: "goto-next-location", execute: gotoNextLocationWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "goto-prev-location", execute: gotoPrevLocationWrapper,))
+    name: "goto-prev-location", execute: gotoPrevLocationWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "choose-location", execute: chooseLocationWrapper,))
+    name: "choose-location", execute: chooseLocationWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "search-global-interactive", execute: searchGlobalInteractiveWrapper,))
+    name: "search-global-interactive", execute: searchGlobalInteractiveWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "search-global", execute: searchGlobalWrapper,))
+    name: "search-global", execute: searchGlobalWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "install-treesitter-parser", execute: installTreesitterParserWrapper,
+    name: "install-treesitter-parser", execute: installTreesitterParserWrapper, active: false,
     description: """Install a treesitter parser by downloading the repository and building a wasm module.
     `language` can either be a language id (`nim`, `cpp`, `markdown`, etc), `<username>/<repository>`
     or `<username>/<repository>/<some/path>`.
@@ -705,47 +705,47 @@ proc registerCommands(commands: CommandService) =
       the repository `https://github.com/tree-sitter/tree-sitter-ocaml` and then build the parser from
       the directory `<installdir>/languages/tree-sitter-ocaml/grammars/ocaml`""",))
   discard commands.registerCommand(command_service.Command(
-    name: "install-treesitter-parser-prebuilt", execute: installTreesitterParserPrebuiltWrapper,
+    name: "install-treesitter-parser-prebuilt", execute: installTreesitterParserPrebuiltWrapper, active: false,
     description: """Install a treesitter parser by downloading a prebuilt wasm binary from `https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/tag/v0.3`""",))
   discard commands.registerCommand(command_service.Command(
-    name: "install-treesitter-parser-prebuilt-from-list", execute: installTreesitterParserPrebuiltFromListWrapper,
+    name: "install-treesitter-parser-prebuilt-from-list", execute: installTreesitterParserPrebuiltFromListWrapper, active: false,
     description: """Install a treesitter parser by downloading a prebuilt wasm binary from `https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/tag/v0.3`""",))
   discard commands.registerCommand(command_service.Command(
-    name: "explore-files", execute: exploreFilesWrapper,
+    name: "explore-files", execute: exploreFilesWrapper, active: false,
     description: """Open a file explorer at `root`. If `diff` is true then files will be show as a diff if applicable""",))
   discard commands.registerCommand(command_service.Command(
-    name: "explore-workspace-primary", execute: exploreWorkspacePrimaryWrapper,))
+    name: "explore-workspace-primary", execute: exploreWorkspacePrimaryWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "explore-current-file-directory", execute: exploreCurrentFileDirectoryWrapper,))
+    name: "explore-current-file-directory", execute: exploreCurrentFileDirectoryWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "reload-config", execute: reloadConfigWrapper,
+    name: "reload-config", execute: reloadConfigWrapper, active: false,
     description: """Reloads settings.json and keybindings.json from the app directory, home directory and workspace""",))
   discard commands.registerCommand(command_service.Command(
-    name: "reload-theme", execute: reloadThemeWrapper,))
+    name: "reload-theme", execute: reloadThemeWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "current-file-path", execute: currentFilePathWrapper,))
+    name: "current-file-path", execute: currentFilePathWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "current-local-file-path", execute: currentLocalFilePathWrapper,))
+    name: "current-local-file-path", execute: currentLocalFilePathWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "save-session", execute: saveSessionWrapper,
+    name: "save-session", execute: saveSessionWrapper, active: false,
     description: """Reloads some of the state stored in the session file (default: config/config.json)""",))
   discard commands.registerCommand(command_service.Command(
-    name: "dump-keymap-graph-viz", execute: dumpKeymapGraphVizWrapper,))
+    name: "dump-keymap-graph-viz", execute: dumpKeymapGraphVizWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "set-mode", execute: setModeWrapper,))
+    name: "set-mode", execute: setModeWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "change-animation-speed", execute: changeAnimationSpeedWrapper,))
+    name: "change-animation-speed", execute: changeAnimationSpeedWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "log-root-node", execute: logRootNodeWrapper,))
+    name: "log-root-node", execute: logRootNodeWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "replay-keys", execute: replayKeysWrapper,))
+    name: "replay-keys", execute: replayKeysWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "input-keys", execute: inputKeysWrapper,))
+    name: "input-keys", execute: inputKeysWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "collect-garbage", execute: collectGarbageWrapper,))
+    name: "collect-garbage", execute: collectGarbageWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "echo-args", execute: echoArgsWrapper,))
+    name: "echo-args", execute: echoArgsWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "all", execute: allWrapper,))
+    name: "all", execute: allWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
-    name: "print-statistics", execute: printStatisticsWrapper,))
+    name: "print-statistics", execute: printStatisticsWrapper, active: false,))

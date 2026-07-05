@@ -44,13 +44,15 @@ proc generateCommands(path: string, input: string) =
 
   var context = ""
   var injections: seq[(string, string, string)] = @[]
+  var argInjections: seq[LispVal] = @[]
   var numCommands = 0
 
   let root = parseLispSingle(input)[0]
   for entry in root.elems:
     # echo entry.elems[1]
 
-    case entry.elems[0].sym
+    let action = entry.elems[0].sym
+    case action
     of "context":
       if entry.elems[1].kind == String:
         context = entry.elems[1].str
@@ -60,14 +62,18 @@ proc generateCommands(path: string, input: string) =
       registerCode.add &"  const namespace = \"{context}\"\n"
 
     of "inject":
-      let name = entry.elems[1]
-      let typ = entry.elems[2]
-      let init = entry.elems[3]
-      injections.add (name.sym, typ.toNimType(), init.str)
+      if entry.elems.len == 2:
+        argInjections.add entry.elems[1]
+      else:
+        let name = entry.elems[1]
+        let typ = entry.elems[2]
+        let init = entry.elems[3]
+        injections.add (name.sym, typ.toNimType(), init.str)
 
-    of "command":
+    of "command", "active-command":
       inc numCommands
 
+      let active = action == "active-command"
       var entryArgIndex = 1
 
       let rawName = entry.elems[entryArgIndex].sym
@@ -78,7 +84,7 @@ proc generateCommands(path: string, input: string) =
       else:
         rawName
 
-      let params = entry.elems[entryArgIndex]
+      var params = entry.elems[entryArgIndex].elems
       inc entryArgIndex
       let ret = entry.elems[entryArgIndex]
       inc entryArgIndex
@@ -91,9 +97,9 @@ proc generateCommands(path: string, input: string) =
       nimCode.add &"\nproc {wrapperName}(args: string"
       nimCode.add &"): string"
 
-      let hasReturn = (ret.kind == List and ret.elems.len > 0) or ret.kind == Symbol
+      let hasReturn = (ret.kind == List and ret.elems.len > 0) or ret.kind == Symbol or ret.kind == String
 
-      nimCode.add &" =\n"
+      nimCode.add &" {{.gcsafe.}} =\n"
 
       # docs
       if docs.str.len > 0:
@@ -150,8 +156,9 @@ proc generateCommands(path: string, input: string) =
         inc numArgs
 
       # args
-      for i in 0..params.elems.high:
-        let param = params.elems[i]
+      params.insert(argInjections, 0)
+      for i in 0..params.high:
+        let param = params[i]
         let name = param.elems[0].sym
         let typ = param.elems[1]
         let default = if param.elems.len >= 3:
@@ -193,20 +200,20 @@ proc generateCommands(path: string, input: string) =
       nimCode.add(")\n")
 
       if hasReturn:
-        nimCode.add "    return $res.toJsonEx\n"
+        nimCode.add "    return ({.gcsafe.}: $res.toJsonEx)\n"
       else:
         nimCode.add "    return \"\"\n"
 
       nimCode.add &"  except CatchableError:\n"
       if debugPrint:
         nimCode.add &"    echo \"Failed to execute command {context}.{commandName}: \", getCurrentExceptionMsg(), \" \", getCurrentException().getStackTrace()\n"
-      nimCode.add &"    return \"\"\n"
+      nimCode.add &"    return \"Failed to execute command {context}.{commandName}: \" & getCurrentExceptionMsg() & \" \" & getCurrentException().getStackTrace()\n"
 
       registerCode.add &"  discard commands.registerCommand(command_service.Command(\n"
       registerCode.add "    "
       if context != "":
         registerCode.add &"namespace: namespace, "
-      registerCode.add &"name: \"{commandName}\", execute: {wrapperName},"
+      registerCode.add &"name: \"{commandName}\", execute: {wrapperName}, active: {active},"
       if docs.str.len > 0:
         registerCode.add &"\n    description: \"\"\"{docs.str.strip}\"\"\","
       registerCode.add &"))\n"

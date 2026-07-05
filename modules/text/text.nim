@@ -10,10 +10,32 @@ include module_base
 # Implementation
 when implModule:
   import std/[options]
-  import misc/[jsonex, id]
-  import text_editor, text_document, service, document_editor, event_service, log
+  import misc/[jsonex, id, myjsonutils, util]
+  import text_editor, text_document, service, document_editor, event_service, log, command_service
+  import overlay_map
+  from scripting_api import nil
 
   logCategory "text"
+
+  proc fromJsonExHook*(t: var TextDocumentEditor, jsonNode: JsonNodeEx) =
+    if getServices().getService(DocumentEditorService).getSome(editors):
+      if jsonNode.kind == JInt:
+        if editors.getEditor(jsonNode.getInt().EditorIdNew).getSome(editor):
+          if editor of TextDocumentEditor:
+            t = editor.TextDocumentEditor
+            return
+      let wrapper = try:
+        jsonNode.jsonTo(scripting_api.TextDocumentEditor)
+      except CatchableError:
+        raise newException(ValueError, "Invalid editor id: " & $jsonNode)
+
+      if editors.getEditor(wrapper.id.EditorIdNew).getSome(editor):
+        if editor of TextDocumentEditor:
+          t = editor.TextDocumentEditor
+          return
+    raise newException(ValueError, "Invalid editor id: " & $jsonNode)
+
+  include generated/text_editor_commands
 
   proc init_module_text*() {.cdecl, exportc, dynlib.} =
     let editors = getServiceChecked(DocumentEditorService)
@@ -28,4 +50,6 @@ when implModule:
       createEditorImpl: proc(self: DocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor {.gcsafe, raises: [].} = createEditor(self.TextDocumentEditorFactory, services, document, options),
     ))
     registerTextEditorCommands()
+
+    registerCommands(getServiceChecked(CommandService))
     getServiceChecked(EventService).emit("text-factory/registered", "")

@@ -1086,10 +1086,10 @@ proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode 
 proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) {.raises: [ValueError].} =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
-# proc logOverlayMap(self: TextDocumentEditor) {.expose: "editor.text".} =
+# proc logOverlayMap(self: TextDocumentEditor) =
 #   debug &"\n{self.displayMap.overlay.snapshot}"
 
-proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor.text".} =
+proc enableAutoReload*(self: TextDocumentEditor, enabled: bool) =
   self.document.enableAutoReload(enabled)
 
 proc setLanguageAsync(self: TextDocumentEditor) {.async.} =
@@ -1118,10 +1118,10 @@ proc setLanguageAsync(self: TextDocumentEditor) {.async.} =
 
   discard self.layout.pushSelectorPopup(builder)
 
-proc changeLanguage(self: TextDocumentEditor) {.expose("editor.text").} =
+proc changeLanguage*(self: TextDocumentEditor) =
   asyncSpawn self.setLanguageAsync()
 
-proc setLanguage(self: TextDocumentEditor, language: string = "") {.expose: "editor.text".} =
+proc setLanguage*(self: TextDocumentEditor, language: string = "") =
   self.document.languageId = language
 
 proc getFileName*(self: TextDocumentEditor): string =
@@ -1281,7 +1281,7 @@ proc evaluateExpressionAsync(self: TextDocumentEditor, selections: Selections, i
       else:
         self.selections = selections
 
-proc evaluateExpressions*(self: TextDocumentEditor, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) {.expose: "editor.text".} =
+proc evaluateExpressions*(self: TextDocumentEditor, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) =
   asyncSpawn self.evaluateExpressionAsync(selections, inclusiveEnd, prefix, suffix, addSelectionIndex)
 
 # todo: remove
@@ -1298,7 +1298,7 @@ proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wra
     cursor.column = self.displayMap.toPoint(wrapPoint(wrapPoint.row.int, self.textEditorComponent.targetColumn)).column.int
   return self.clampCursor(cursor, includeAfter)
 
-proc setDefaultScrollBehaviour(self: TextDocumentEditor, scrollBehaviour: ScrollBehaviour) {.expose: "editor.text".} =
+proc setDefaultScrollBehaviour*(self: TextDocumentEditor, scrollBehaviour: ScrollBehaviour) =
   self.defaultScrollBehaviour = scrollBehaviour
 
 # todo: remove
@@ -1396,20 +1396,20 @@ proc includeSelectionEnd*(self: TextDocumentEditor, res: Selection, includeAfter
     if not includeAfter:
       result = (res.first, self.doMoveCursorColumn(res.last, -1, wrap = false))
 
-proc toggleFlag*(self: TextDocumentEditor, key: string) {.expose("editor.text").} =
+proc toggleFlag*(self: TextDocumentEditor, key: string) =
   try:
     let value = self.config.get(key, false)
     self.config.set(key, not value)
   except CatchableError:
     discard
 
-proc setConfig*(self: TextDocumentEditor, key: string, value: JsonNode) {.expose("editor.text").} =
+proc setConfig*(self: TextDocumentEditor, key: string, value: JsonNode) =
   self.config.set(key, value)
 
-proc getConfig*(self: TextDocumentEditor, key: string): JsonNode {.expose("editor.text").} =
+proc getConfig*(self: TextDocumentEditor, key: string): JsonNode =
   self.config.get(key, newJexNull()).toJson()
 
-proc removeMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
+proc removeMode*(self: TextDocumentEditor, mode: string) =
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
@@ -1428,7 +1428,7 @@ proc removeMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text")
 
   self.markDirty()
 
-proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true, forceNotify: bool = false) {.expose("editor.text").} =
+proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true, forceNotify: bool = false) =
   ## Sets the current mode of the editor.
   ## If `mode` is "", then no additional scope will be pushed on the scope stac.k
   ## If mode is e.g. "insert",
@@ -1481,7 +1481,7 @@ proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true, fo
 
   self.markDirty()
 
-proc setDefaultMode*(self: TextDocumentEditor, forceNotify: bool = false) {.expose("editor.text").} =
+proc setDefaultMode*(self: TextDocumentEditor, forceNotify: bool = false) =
   self.setMode(self.settings.defaultMode.get(), forceNotify = forceNotify)
 
 proc mode*(self: TextDocumentEditor): string =
@@ -1530,10 +1530,10 @@ proc edit*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[stri
     return @selections
   return self.document.edit(selections, self.selections, texts, notify, record, inclusiveEnd=inclusiveEnd)
 
-proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
+proc selectPrev*(self: TextDocumentEditor) =
   self.textEditorComponent.selectPrev()
 
-proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
+proc selectNext*(self: TextDocumentEditor) =
   self.textEditorComponent.selectNext()
 
 proc getParentNodeSelection(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Selection =
@@ -1556,12 +1556,12 @@ proc getParentNodeSelection(self: TextDocumentEditor, selection: Selection, incl
 proc getParentNodeSelections(self: TextDocumentEditor, selections: Selections, includeAfter: bool = true): Selections =
   return selections.mapIt(self.getParentNodeSelection(it, includeAfter))
 
-proc printTreesitterMemoryUsage*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc printTreesitterMemoryUsage*(self: TextDocumentEditor) =
   let allocated = treesitter.tsAllocated
   let freed = treesitter.tsFreed
   log lvlInfo, &"Treesitter allocated: {allocated.float / 1000000.0} MB, freed: {freed.float / 1000000.0} MB, total: {(allocated - freed).float / 1000000.0} MB"
 
-proc printTreesitterTree*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc printTreesitterTree*(self: TextDocumentEditor) =
   if self.document.tsTree.isNil:
     log lvlError, "No tree available."
     return
@@ -1571,7 +1571,7 @@ proc printTreesitterTree*(self: TextDocumentEditor) {.expose("editor.text").} =
 
     log lvlInfo, $tree.root
 
-proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) =
   if self.document.tsTree.isNil:
     log lvlError, "No tree available."
     return
@@ -1589,7 +1589,7 @@ proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.expose("editor.
   log lvlInfo, message
 
 # todo
-proc selectParentCurrentTs*(self: TextDocumentEditor, includeAfter: bool = true) {.expose("editor.text").} =
+proc selectParentCurrentTs*(self: TextDocumentEditor, includeAfter: bool = true) =
   self.`selections=`(self.getParentNodeSelections(self.selections, includeAfter), addToHistory = true.some)
 
 proc getNextNodeWithSameType*(self: TextDocumentEditor, selection: Selection, offset: int = 0,
@@ -1670,7 +1670,7 @@ proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool =
 
   return false
 
-proc autoShowSignatureHelp*(self: TextDocumentEditor, insertedText: string) {.expose("editor.text").} =
+proc autoShowSignatureHelp*(self: TextDocumentEditor, insertedText: string) =
   if self.showSignatureHelp:
     return
 
@@ -1687,7 +1687,7 @@ proc autoShowSignatureHelp*(self: TextDocumentEditor, insertedText: string) {.ex
 proc disableCompletions*(self: TextDocumentEditor): bool =
   self.settings.disableCompletions.get()
 
-proc autoShowCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc autoShowCompletions*(self: TextDocumentEditor) =
   if self.disableCompletions:
     return
   if self.shouldShowCompletionsAt(self.selection.last):
@@ -1695,7 +1695,7 @@ proc autoShowCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   else:
     self.hideCompletions()
 
-proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true, autoClose: Option[bool] = bool.none) {.expose("editor.text").} =
+proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true, autoClose: Option[bool] = bool.none) =
   if self.document.readOnly:
     return
   if self.document.singleLine and text == "\n":
@@ -1896,10 +1896,10 @@ proc insertRawAsync(self: TextDocumentEditor) {.async.} =
   except CatchableError as e:
     log lvlError, &"Failed to parse '{text}': {e.msg}"
 
-proc insertRaw*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc insertRaw*(self: TextDocumentEditor) =
   asyncSpawn self.insertRawAsync()
 
-proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc indent*(self: TextDocumentEditor) =
   var linesToIndent = initHashSet[int]()
   for selection in self.selections:
     let selection = selection.normalized
@@ -1926,7 +1926,7 @@ proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
       s.last.column += self.document.getIndentColumns()
   self.selections = selections
 
-proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc unindent*(self: TextDocumentEditor) =
   var linesToIndent = initHashSet[int]()
   for selection in self.selections:
     let selection = selection.normalized
@@ -1957,7 +1957,7 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
       s.last.column = max(0, s.last.column - self.document.getIndentColumns())
   self.selections = selections
 
-proc insertIndent*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc insertIndent*(self: TextDocumentEditor) =
   var insertTexts = newSeq[string]()
 
   # todo: for spaces, calculate alignment
@@ -1968,38 +1968,38 @@ proc insertIndent*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.edit(self.selections, self.selections, insertTexts).mapIt(
     it.last.toSelection)
 
-proc startTransaction*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc startTransaction*(self: TextDocumentEditor) =
   self.document.startTransaction()
 
-proc endTransaction*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc endTransaction*(self: TextDocumentEditor) =
   self.document.endTransaction()
 
-proc undo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("editor.text").} =
+proc undo*(self: TextDocumentEditor, checkpoint: string = "word") =
   if self.document.undo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
 
-proc redo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("editor.text").} =
+proc redo*(self: TextDocumentEditor, checkpoint: string = "word") =
   if self.document.redo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
 
-proc undoToPreviousSibling*(self: TextDocumentEditor, redoUntilBranch: bool = false) {.expose("editor.text").} =
+proc undoToPreviousSibling*(self: TextDocumentEditor, redoUntilBranch: bool = false) =
   if self.document.undoToPreviousSibling(redoUntilBranch).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
 
-proc undoToNextSibling*(self: TextDocumentEditor, redoUntilBranch: bool = false) {.expose("editor.text").} =
+proc undoToNextSibling*(self: TextDocumentEditor, redoUntilBranch: bool = false) =
   if self.document.undoToNextSibling(redoUntilBranch).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
 
-proc switchUndoBranch*(self: TextDocumentEditor, targetNode: int32) {.expose("editor.text").} =
+proc switchUndoBranch*(self: TextDocumentEditor, targetNode: int32) =
   if self.document.switchUndoBranch(targetNode).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
 
-proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string) {.expose("editor.text").} =
+proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string) =
   self.document.addNextCheckpoint checkpoint
 
 proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool): Future[void] {.async.} =
@@ -2025,7 +2025,7 @@ proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool):
 
   self.registers.setRegisterAsync(register, Register(kind: Rope, rope: text.move)).await
 
-proc copy*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool = false) {.expose("editor.text").} =
+proc copy*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool = false) =
   asyncSpawn self.copyAsync(register, inclusiveEnd)
 
 proc pasteAsync*(self: TextDocumentEditor, selections: seq[Selection], registerName: string, inclusiveEnd: bool = false):
@@ -2064,27 +2064,27 @@ proc pasteAsync*(self: TextDocumentEditor, selections: seq[Selection], registerN
   self.scrollToCursor(Last)
   self.markDirty()
 
-proc paste*(self: TextDocumentEditor, registerName: string = "", inclusiveEnd: bool = false) {.expose("editor.text").} =
+proc paste*(self: TextDocumentEditor, registerName: string = "", inclusiveEnd: bool = false) =
   asyncSpawn self.pasteAsync(self.selections, registerName, inclusiveEnd)
 
-proc pasteAt*(self: TextDocumentEditor, selections: seq[Selection], registerName: string = "", inclusiveEnd: bool = false) {.expose("editor.text").} =
+proc pasteAt*(self: TextDocumentEditor, selections: seq[Selection], registerName: string = "", inclusiveEnd: bool = false) =
   asyncSpawn self.pasteAsync(selections, registerName, inclusiveEnd)
 
-proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
+proc scrollText*(self: TextDocumentEditor, amount: float32) =
   if self.disableScrolling:
     return
   self.scrollBox.scrollWithMomentum(amount)
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
 
-proc scrollTextHorizontal*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
+proc scrollTextHorizontal*(self: TextDocumentEditor, amount: float32) =
   if self.disableScrolling:
     return
   self.scrollBox.scrollWithMomentum(vec2(amount * self.platform.charWidth, 0))
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
 
-proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").} =
+proc scrollLines*(self: TextDocumentEditor, amount: int) =
   ## Scroll the text up (positive) or down (negative) by the given number of lines
 
   if self.disableScrolling:
@@ -2096,13 +2096,13 @@ proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").
   self.markDirty()
 
 # todo
-proc addCursorBelow*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc addCursorBelow*(self: TextDocumentEditor) =
   let newCursor = self.doMoveCursorLine(self.selections[self.selections.high].last, 1).toSelection
   if not self.selections.contains(newCursor):
     self.selections = self.selections & @[newCursor]
 
 # todo
-proc addCursorAbove*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc addCursorAbove*(self: TextDocumentEditor) =
   let newCursor = self.doMoveCursorLine(self.selections[self.selections.high].last, -1).toSelection
   if not self.selections.contains(newCursor):
     self.selections = self.selections & @[newCursor]
@@ -2199,7 +2199,7 @@ proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
       return wrapped
   return cursor.toSelection
 
-proc closeDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc closeDiff*(self: TextDocumentEditor) =
   if self.diffDocument.isNil:
     return
   self.showDiff = false
@@ -2352,25 +2352,25 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool = false, for
   except CatchableError as e:
     log lvlWarn, &"Failed to update diff: {e.msg}"
 
-proc rerender*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc rerender*(self: TextDocumentEditor) =
   self.markDirty()
 
-proc clearOverlays*(self: TextDocumentEditor, id: int = -1) {.expose("editor.text").} =
+proc clearOverlays*(self: TextDocumentEditor, id: int = -1) =
   self.displayMap.overlay.clear(id)
   self.markDirty()
 
-proc addOverlay*(self: TextDocumentEditor, selection: Selection, text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: overlay_map.OverlayRenderLocation = overlay_map.OverlayRenderLocation.Inline) {.expose("editor.text").} =
+proc addOverlay*(self: TextDocumentEditor, selection: Selection, text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: overlay_map.OverlayRenderLocation = overlay_map.OverlayRenderLocation.Inline) =
   self.displayMap.overlay.addOverlay(selection.toRange, text, id, scope, bias, renderId, location)
   self.markDirty()
 
-proc startDiff*(self: TextDocumentEditor, diffTarget: string = "", gotoFirstDiff: bool = false, staged: bool = false) {.expose("editor.text").} =
+proc startDiff*(self: TextDocumentEditor, diffTarget: string = "", gotoFirstDiff: bool = false, staged: bool = false) =
   self.showDiff = true
   self.diffTarget = diffTarget
   if self.document != nil:
     self.document.staged = staged
   asyncSpawn self.updateDiffAsync(gotoFirstDiff)
 
-proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
+proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) =
   if self.document.isNil:
     return
   self.showDiff = true
@@ -2637,10 +2637,10 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
   # echo &"git apply -> \n{gitApply.output}\n--------\n{gitApply.err}\n=============="
   # asyncSpawn self.updateDiffAsync()
 
-proc revertSelected*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.expose("editor.text").} =
+proc revertSelected*(self: TextDocumentEditor, inclusiveEnd: bool = false) =
   asyncSpawn self.revertSelectedAsync(inclusiveEnd)
 
-proc stageSelected*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.expose("editor.text").} =
+proc stageSelected*(self: TextDocumentEditor, inclusiveEnd: bool = false) =
   if self.document.staged:
     asyncSpawn self.unstageSelectedAsync(inclusiveEnd)
   else:
@@ -2653,10 +2653,10 @@ proc stageFileAsync(self: TextDocumentEditor): Future[void] {.async.} =
     if self.diffDocument.isNotNil:
       asyncSpawn self.updateDiffAsync()
 
-proc stageFile*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc stageFile*(self: TextDocumentEditor) =
   asyncSpawn self.stageFileAsync()
 
-proc format*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc format*(self: TextDocumentEditor) =
   asyncSpawn self.document.format(runOnTempFile = true)
 
 proc checkoutFileAsync*(self: TextDocumentEditor, saveAfterwards: bool = false) {.async.} =
@@ -2678,26 +2678,24 @@ proc checkoutFileAsync*(self: TextDocumentEditor, saveAfterwards: bool = false) 
   asyncSpawn self.document.save()
   self.markDirty()
 
-proc checkoutFile*(self: TextDocumentEditor, saveAfterwards: bool = false) {.expose("editor.text").} =
+proc checkoutFile*(self: TextDocumentEditor, saveAfterwards: bool = false) =
   asyncSpawn self.checkoutFileAsync(saveAfterwards)
 
-proc addFileVcs*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc addFileVcs*(self: TextDocumentEditor) =
   asyncSpawn self.document.addFileVcsAsync(prompt = false)
 
 # todo
-proc addNextFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true,
-    wrap: bool = true) {.expose("editor.text").} =
+proc addNextFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true, wrap: bool = true) =
   self.selections = self.selections &
     @[self.getNextFindResult(self.selection.last, includeAfter=includeAfter)]
 
 # todo
-proc addPrevFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true,
-    wrap: bool = true) {.expose("editor.text").} =
+proc addPrevFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true, wrap: bool = true) =
   self.selections = self.selections &
     @[self.getPrevFindResult(self.selection.first, includeAfter=includeAfter)]
 
 # todo
-proc setAllFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc setAllFindResultToSelection*(self: TextDocumentEditor) =
   self.searchComponent.updateSearchResults()
 
   var selections: seq[Selection] = @[]
@@ -2707,9 +2705,7 @@ proc setAllFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.tex
     self.selections = selections
 
 # todo
-proc moveCursorVisualLine*(self: TextDocumentEditor, distance: int,
-    cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true,
-    includeAfter: bool = true) {.expose("editor.text").} =
+proc moveCursorVisualLine*(self: TextDocumentEditor, distance: int, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true, includeAfter: bool = true) =
 
   var minLine = int.high
   var maxLine = int.low
@@ -2727,23 +2723,19 @@ proc moveCursorVisualLine*(self: TextDocumentEditor, distance: int,
   self.moveCursor(cursor, doMoveCursor, distance, all, wrap, includeAfter)
 
 # todo
-proc moveCursorVisualPage*(self: TextDocumentEditor, distance: float,
-    cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true,
-    includeAfter: bool = true) {.expose("editor.text").} =
+proc moveCursorVisualPage*(self: TextDocumentEditor, distance: float, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true, includeAfter: bool = true) =
 
   let visibleLines = self.screenLineCount()
   let linesToMove = int(visibleLines.float * distance)
   self.moveCursorVisualLine(linesToMove, cursor, all, wrap, includeAfter)
 
 # todo
-proc moveCursorLineCenter*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
-    all: bool = true) {.expose("editor.text").} =
+proc moveCursorLineCenter*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) =
   self.moveCursor(cursor, doMoveCursorLineCenter, 0, all)
   self.updateTargetColumn(cursor)
 
 # todo
-proc moveCursorCenter*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
-    all: bool = true) {.expose("editor.text").} =
+proc moveCursorCenter*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) =
   self.moveCursor(cursor, doMoveCursorCenter, 0, all)
 
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
@@ -2753,10 +2745,10 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = Selecti
 proc setNextScrollBehaviour*(self: TextDocumentEditor, scrollBehaviour: ScrollBehaviour) =
   self.nextScrollBehaviour = scrollBehaviour.some
 
-proc setDefaultSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour) {.expose("editor.text").} =
+proc setDefaultSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour) =
   self.defaultSnapBehaviour = snapBehaviour
 
-proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
+proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float, cursor: SelectionCursor = SelectionCursor.Config) =
   let displayPoint = self.displayMap.toDisplayPoint(self.getCursor(cursor).toPoint)
   self.scrollBox.scrollToY(displayPoint.row.int, offset)
   self.markDirty()
@@ -2770,10 +2762,10 @@ proc getContentBounds*(self: TextDocumentEditor): Vec2 =
   # todo
   return self.lastContentBounds.wh
 
-proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, snap: bool = false) {.expose("editor.text").} =
+proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, snap: bool = false) =
   self.centerCursor(self.getCursor(cursor), snap = snap)
 
-proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc reloadTreesitter*(self: TextDocumentEditor) =
   ## Reload the treesitter parser and queries for the language of the current document.
   log(lvlInfo, "reloadTreesitter")
 
@@ -2784,7 +2776,7 @@ proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
       if doc.languageId == self.document.languageId:
         doc.reloadTreesitterLanguage()
 
-proc clearTreesitterTrees*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc clearTreesitterTrees*(self: TextDocumentEditor) =
   for editor in self.editors.allEditors:
     if editor.currentDocument of TextDocument:
       let doc = editor.currentDocument.TextDocument
@@ -2802,7 +2794,7 @@ proc setCommandCountRestore*(self: TextDocumentEditor, count: int) =
 proc updateCommandCount*(self: TextDocumentEditor, digit: int) =
   self.commandComponent.commandCount = self.commandComponent.commandCount * 10 + digit
 
-proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] {.expose("editor.text").} =
+proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] {.gcsafe.} =
   # echo "runAction ", action, ", ", $args
   return self.handleActionInternal(action, args)
 
@@ -3110,7 +3102,7 @@ proc cursor(self: TextDocumentEditor, selection: Selection, which: SelectionCurs
   of Last, LastToFirst:
     return selection.last
 
-proc deleteMove*(self: TextDocumentEditor, move: string, updateTargetColumn: bool = true, options {.varargs.}: JsonNode = newJObject()) {.expose("editor.text").} =
+proc deleteMove*(self: TextDocumentEditor, move: string, updateTargetColumn: bool = true, options {.varargs.}: JsonNode = newJObject()) =
   ## Deletes text based on the current selections.
   ##
   ## `move` specifies which move should be applied to each selection.
@@ -3120,8 +3112,7 @@ proc deleteMove*(self: TextDocumentEditor, move: string, updateTargetColumn: boo
   if updateTargetColumn:
     self.updateTargetColumn(Last)
 
-proc extendSelectMove*(self: TextDocumentEditor, move: string, inside: bool = false,
-    which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+proc extendSelectMove*(self: TextDocumentEditor, move: string, inside: bool = false, which: SelectionCursor = SelectionCursor.Config, all: bool = true) =
   let count = self.config.get("text.move-count", 0)
 
   self.selections = if inside:
@@ -3135,7 +3126,7 @@ proc extendSelectMove*(self: TextDocumentEditor, move: string, inside: bool = fa
   self.scrollToCursor(Last)
   self.updateTargetColumn(Last)
 
-proc move*(self: TextDocumentEditor, move: string, updateTargetColumn: bool = true, options {.varargs.}: JsonNode = newJObject()) {.expose("editor.text").} =
+proc move*(self: TextDocumentEditor, move: string, updateTargetColumn: bool = true, options {.varargs.}: JsonNode = newJObject()) =
   self.selections = self.getSelectionsForMove(self.selections, move, 1, true, true, options)
   self.scrollToCursor(Last)
   if updateTargetColumn:
@@ -3144,10 +3135,10 @@ proc move*(self: TextDocumentEditor, move: string, updateTargetColumn: bool = tr
 proc getSearchQuery*(self: TextDocumentEditor): string =
   return self.searchComponent.searchQuery
 
-proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false, prefix: string = "", suffix: string = "", useMoveSearch: bool = false): bool {.expose("editor.text").} =
+proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false, prefix: string = "", suffix: string = "", useMoveSearch: bool = false): bool =
   return self.searchComponent.setSearchQuery(query, escapeRegex, prefix, suffix, useMoveSearch)
 
-proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPreview: bool = true, select: bool = true, useMoveSearch: bool = false) {.expose("editor.text").} =
+proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPreview: bool = true, select: bool = true, useMoveSearch: bool = false) =
   self.searchComponent.openSearchBar(query, scrollToPreview, select, useMoveSearch)
 
 proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int = 0, prefix: string = "", suffix: string = ""): Selection =
@@ -3156,10 +3147,10 @@ proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int 
   discard self.setSearchQuery(searchText, escapeRegex=true, prefix, suffix)
   return selection
 
-proc toggleDebugMoves*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc toggleDebugMoves*(self: TextDocumentEditor) =
   self.moveDatabase.toggleDebugMoves()
 
-proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc toggleLineComment*(self: TextDocumentEditor) =
   self.document.withTransaction:
     self.selections = self.document.toggleLineComment(self.selections)
 
@@ -3572,25 +3563,25 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = "", slot
 
     discard self.layout.pushSelectorPopup(builder)
 
-proc gotoDefinition*(self: TextDocumentEditor, popupSlot: string = "") {.expose("editor.text").} =
+proc gotoDefinition*(self: TextDocumentEditor, popupSlot: string = "") =
   asyncSpawn self.gotoDefinitionAsync(popupSlot)
 
-proc gotoDeclaration*(self: TextDocumentEditor, popupSlot: string = "") {.expose("editor.text").} =
+proc gotoDeclaration*(self: TextDocumentEditor, popupSlot: string = "") =
   asyncSpawn self.gotoDeclarationAsync(popupSlot)
 
-proc gotoTypeDefinition*(self: TextDocumentEditor, popupSlot: string = "") {.expose("editor.text").} =
+proc gotoTypeDefinition*(self: TextDocumentEditor, popupSlot: string = "") =
   asyncSpawn self.gotoTypeDefinitionAsync(popupSlot)
 
-proc gotoImplementation*(self: TextDocumentEditor, popupSlot: string = "") {.expose("editor.text").} =
+proc gotoImplementation*(self: TextDocumentEditor, popupSlot: string = "") =
   asyncSpawn self.gotoImplementationAsync(popupSlot)
 
-proc gotoReferences*(self: TextDocumentEditor, popupSlot: string = "") {.expose("editor.text").} =
+proc gotoReferences*(self: TextDocumentEditor, popupSlot: string = "") =
   asyncSpawn self.gotoReferencesAsync(popupSlot)
 
-proc switchSourceHeader*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc switchSourceHeader*(self: TextDocumentEditor) =
   asyncSpawn self.switchSourceHeaderAsync()
 
-proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc getCompletions*(self: TextDocumentEditor) =
   if self.completionEngine.isNotNil:
     self.completionEngine.setCurrentLocations(self.selections)
     self.completionEngine.updateCompletions()
@@ -3598,13 +3589,13 @@ proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.completionsDirty = true
   self.showCompletionWindow()
 
-proc gotoSymbol*(self: TextDocumentEditor, popupSlot: string = "") {.expose("editor.text").} =
+proc gotoSymbol*(self: TextDocumentEditor, popupSlot: string = "") =
   asyncSpawn self.gotoSymbolAsync(popupSlot)
 
-proc fuzzySearchLines*(self: TextDocumentEditor, minScore: float = 0.2, sort: bool = true, popupSlot: string = "") {.expose("editor.text").} =
+proc fuzzySearchLines*(self: TextDocumentEditor, minScore: float = 0.2, sort: bool = true, popupSlot: string = "") =
   self.openLineSelectorPopup(minScore, sort, popupSlot)
 
-proc gotoWorkspaceSymbol*(self: TextDocumentEditor, query: string = "", popupSlot: string = "") {.expose("editor.text").} =
+proc gotoWorkspaceSymbol*(self: TextDocumentEditor, query: string = "", popupSlot: string = "") =
   asyncSpawn self.gotoWorkspaceSymbolAsync(query, popupSlot)
 
 proc renameAsync(self: TextDocumentEditor) {.async.} =
@@ -3640,15 +3631,15 @@ proc renameAsync(self: TextDocumentEditor) {.async.} =
   commandLineEditor.settings.disableCompletions.set(true)
   commandLineEditor.move("(file) (end)")
 
-proc rename*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc rename*(self: TextDocumentEditor) =
   asyncSpawn self.renameAsync()
 
-proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc hideCompletions*(self: TextDocumentEditor) =
   # log lvlInfo, fmt"hideCompletions {self.document.filename}"
   self.showCompletions = false
   self.markDirty()
 
-proc selectPrevCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc selectPrevCompletion*(self: TextDocumentEditor) =
   if self.completionMatches.len > 0:
     let len = self.completionMatches.len
     self.selectedCompletion = (self.selectedCompletion - 1 + len) mod len
@@ -3657,7 +3648,7 @@ proc selectPrevCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.scrollToCompletion = self.selectedCompletion.some
   self.markDirty()
 
-proc selectNextCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc selectNextCompletion*(self: TextDocumentEditor) =
   if self.completionMatches.len > 0:
     self.selectedCompletion = (self.selectedCompletion + 1) mod self.completionMatches.len
   else:
@@ -3665,13 +3656,13 @@ proc selectNextCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.scrollToCompletion = self.selectedCompletion.some
   self.markDirty()
 
-proc selectPrevCompletionVisual*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc selectPrevCompletionVisual*(self: TextDocumentEditor) =
   if self.completionsDrawnInReverse:
     self.selectNextCompletion()
   else:
     self.selectPrevCompletion()
 
-proc selectNextCompletionVisual*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc selectNextCompletionVisual*(self: TextDocumentEditor) =
   if self.completionsDrawnInReverse:
     self.selectPrevCompletion()
   else:
@@ -3680,7 +3671,7 @@ proc selectNextCompletionVisual*(self: TextDocumentEditor) {.expose("editor.text
 proc hasTabStops*(self: TextDocumentEditor): bool =
   return self.snippetComponent.currentSnippetData.isSome
 
-proc clearTabStops*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc clearTabStops*(self: TextDocumentEditor) =
   self.snippetComponent.currentSnippetData = SnippetData.none
 
 proc applyAutoIndent(self: TextDocumentEditor, edits: var seq[Selection], texts: var seq[string]) =
@@ -3732,7 +3723,7 @@ proc joinSnippetBody(body: JsonNode): string {.raises: [ValueError].} =
     text.add line.getStr
   return text
 
-proc createCompletionFromSnippet(self: TextDocumentEditor, snippet: JsonNode): Completion {.expose("editor.text").} =
+proc createCompletionFromSnippet*(self: TextDocumentEditor, snippet: JsonNode): Completion =
   try:
     let prefix = if snippet.kind == JObject and snippet.hasKey("prefix"): snippet["prefix"].getStr else: "temp"
     let text = if snippet.kind == JObject and snippet.hasKey("body"):
@@ -3890,7 +3881,7 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   if completion.item.showCompletionsAgain.get(false):
     self.autoShowCompletions()
 
-proc applyCompletion*(self: TextDocumentEditor, completion: JsonNode) {.expose("editor.text").} =
+proc applyCompletion*(self: TextDocumentEditor, completion: JsonNode) =
   try:
     let completion = completion.jsonTo(Completion)
     self.applyCompletion(completion)
@@ -3900,7 +3891,7 @@ proc applyCompletion*(self: TextDocumentEditor, completion: JsonNode) {.expose("
 proc isShowingCompletions*(self: TextDocumentEditor): bool =
   return self.showCompletions and self.completions.len > 0
 
-proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc applySelectedCompletion*(self: TextDocumentEditor) =
   if not self.showCompletions:
     return
 
@@ -3984,12 +3975,12 @@ proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpt
 
   self.markDirty()
 
-proc showSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc showSignatureHelp*(self: TextDocumentEditor) =
   ## Shows lsp signature information for the current selection.
   ## Does nothing if no language server is available or the language server doesn't return any info.
   asyncSpawn self.showSignatureHelpAsync(self.selection.last, hideIfEmpty = false)
 
-proc toggleSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc toggleSignatureHelp*(self: TextDocumentEditor) =
   ## Shows lsp signature information for the current selection.
   ## Does nothing if no language server is available or the language server doesn't return any info.
   if self.showSignatureHelp:
@@ -3998,7 +3989,7 @@ proc toggleSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
   else:
     asyncSpawn self.showSignatureHelpAsync(self.selection.last, hideIfEmpty = false)
 
-proc hideSignatureHelp*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc hideSignatureHelp*(self: TextDocumentEditor) =
   ## Hides the hover information.
   self.showSignatureHelp = false
   self.markDirty()
@@ -4153,7 +4144,7 @@ proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
 
   discard self.layout.pushSelectorPopup(builder)
 
-proc selectCodeAction(self: TextDocumentEditor) {.expose("editor.text").} =
+proc selectCodeAction*(self: TextDocumentEditor) =
   asyncSpawn self.selectCodeActionAsync()
 
 proc updateCodeActionsAsync*(self: TextDocumentEditor, languageServer: Option[LanguageServer]): Future[void] {.async.} =
@@ -4182,21 +4173,21 @@ proc updateCodeActionsAsync*(self: TextDocumentEditor, languageServer: Option[La
         (d.`range`.`end`.line, d.`range`.`end`.character))
       asyncSpawn self.updateCodeActionAsync(ls, selection, versionId, diagnosticsVersion, addSign = true)
 
-proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc clearDiagnostics*(self: TextDocumentEditor) =
   self.document.clearDiagnostics()
   self.markDirty()
 
-proc updateInlayHints*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc updateInlayHints*(self: TextDocumentEditor) =
   self.inlayHints.updateInlayHints()
 
-proc updateCodeActions*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc updateCodeActions*(self: TextDocumentEditor) =
   if self.codeActionsTask.isNil:
     self.codeActionsTask = startDelayed(200, repeat=false):
       asyncSpawn self.updateCodeActionsAsync(LanguageServer.none)
   else:
     self.codeActionsTask.reschedule()
 
-proc lspInfo(self: TextDocumentEditor) {.expose("editor.text").} =
+proc lspInfo*(self: TextDocumentEditor) =
   var builder = SelectorPopupBuilder()
   builder.scope = "lsp-info".some
   builder.scaleX = 0.4
@@ -4213,7 +4204,7 @@ proc lspInfo(self: TextDocumentEditor) {.expose("editor.text").} =
 
   discard self.layout.pushSelectorPopup(builder)
 
-proc setReadOnly*(self: TextDocumentEditor, readOnly: bool) {.expose("editor.text").} =
+proc setReadOnly*(self: TextDocumentEditor, readOnly: bool) =
   ## Sets the internal readOnly flag, but doesn't not change permissions of the underlying file
   self.document.setReadOnly(readOnly)
   self.markDirty()
@@ -4226,7 +4217,7 @@ proc setFileReadOnlyAsync*(self: TextDocumentEditor, readOnly: bool) {.async.} =
 
   self.markDirty()
 
-proc setFileReadOnly*(self: TextDocumentEditor, readOnly: bool) {.expose("editor.text").} =
+proc setFileReadOnly*(self: TextDocumentEditor, readOnly: bool) =
   asyncSpawn self.setFileReadOnlyAsync(readOnly)
 
 proc getAvailableCursors*(self: TextDocumentEditor): seq[Cursor] =
@@ -4306,7 +4297,7 @@ proc setSelections*(self: TextDocumentEditor, selections: Selections, addToHisto
 proc setTargetSelection*(self: TextDocumentEditor, selection: Selection) =
   self.targetSelection = selection
 
-proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("editor.text").} =
+proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) =
   const mode = "temp.choose-cursor"
   let cursors = self.getAvailableCursors()
   let keys = self.assignKeys(cursors)
@@ -4429,14 +4420,14 @@ proc runDragCommand*(self: TextDocumentEditor) =
 proc getCurrentEventHandlers*(self: TextDocumentEditor): seq[string] =
   return self.settings.modes.get()
 
-proc setCustomHeader*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
+proc setCustomHeader*(self: TextDocumentEditor, text: string) =
   self.customHeader = text
   self.markDirty()
 
 proc cycleCase*(self: TextDocumentEditor, selection: Selection, inclusiveEnd: bool = false): string =
   return self.document.contentString(selection, inclusiveEnd).cycleCase()
 
-proc cycleSelectedCase*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc cycleSelectedCase*(self: TextDocumentEditor) =
   var newTexts = self.selections.mapIt(self.cycleCase(it, self.useInclusiveSelections))
   self.selections = self.document.edit(self.selections, self.selections, newTexts, inclusiveEnd=self.useInclusiveSelections)
   if self.useInclusiveSelections:
@@ -4523,6 +4514,11 @@ proc textEditorHandleAction(self: DocumentEditor, action: string, arg: string, r
       result = self.handleActionInternal(action, args)
       if result.isSome:
         return
+
+    let action = if action.contains("."):
+      action
+    else:
+      "editor.text." & action
 
     let res = self.commands.executeCommand(action & " " & arg, record = false, context = newJexInt(self.id.int))
     if res.isSome:
