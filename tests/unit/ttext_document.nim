@@ -10,7 +10,7 @@ import std/[unittest, options, json, sequtils]
 import misc/[util, custom_logger]
 import text/text_document
 import config_provider, scripting_api, service
-import platform, event_service, move_database, vfs_service, workspace
+import platform, event_service, move_database, vfs_service, workspace, command_service
 
 type
   NilPlatform* = ref object of Platform
@@ -19,6 +19,7 @@ gServices = Services()
 gServices.addBuiltinServices()
 gServices.getServiceChecked(PlatformService).setPlatform(NilPlatform())
 
+init_module_command_service()
 init_module_vfs_service()
 init_module_workspace()
 init_module_event_service()
