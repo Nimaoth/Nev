@@ -231,6 +231,8 @@ when implModule:
     let layout = self.services.getServiceChecked(LayoutService)
     discard layout.pushSelectorPopup popup
 
+  include generated/vcs_commands_commands
+
   proc init_module_vcs_commands*() {.cdecl, exportc, dynlib.} =
     let commands = getServiceChecked(CommandService)
-    commands.registerCommand "choose-git-active-files", proc(all: bool) = chooseGitActiveFiles(all)
+    registerCommands(commands)

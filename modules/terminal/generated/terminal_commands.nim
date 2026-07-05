@@ -6,102 +6,112 @@ import scripting_api
 
 
 proc createTerminalWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
-    createTerminal(self, getArg[string](args.unnamed, args.named, 0, "command", ""),
-      getArg[CreateTerminalOptions](args.unnamed, args.named, 1, "options", CreateTerminalOptions()))
-    return ""
-  except CatchableError:
-    return "Failed to execute command terminal.create: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
+      createTerminal(self, getArg[string](args.unnamed, args.named, 0, "command", ""),
+        getArg[CreateTerminalOptions](args.unnamed, args.named, 1, "options", CreateTerminalOptions()))
+      return ""
+    except CatchableError:
+      return "Failed to execute command terminal.create: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc runInTerminalWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
-    runInTerminal(self, getArg[string](args.unnamed, args.named, 0, "shell"),
-      getArg[string](args.unnamed, args.named, 1, "command"),
-      getArg[RunInTerminalOptions](args.unnamed, args.named, 2, "options", RunInTerminalOptions()))
-    return ""
-  except CatchableError:
-    return "Failed to execute command terminal.run: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
+      runInTerminal(self, getArg[string](args.unnamed, args.named, 0, "shell"),
+        getArg[string](args.unnamed, args.named, 1, "command"),
+        getArg[RunInTerminalOptions](args.unnamed, args.named, 2, "options", RunInTerminalOptions()))
+      return ""
+    except CatchableError:
+      return "Failed to execute command terminal.run: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc sendTerminalInputWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
-    sendTerminalInput(self, getArg[string](args.unnamed, args.named, 0, "input"),
-      getArg[bool](args.unnamed, args.named, 1, "noKitty", false))
-    return ""
-  except CatchableError:
-    return "Failed to execute command terminal.send-terminal-input: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
+      sendTerminalInput(self, getArg[string](args.unnamed, args.named, 0, "input"),
+        getArg[bool](args.unnamed, args.named, 1, "noKitty", false))
+      return ""
+    except CatchableError:
+      return "Failed to execute command terminal.send-terminal-input: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc sendTerminalInputAndSetModeWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
-    sendTerminalInputAndSetMode(self, getArg[string](args.unnamed, args.named, 0, "input"),
-      getArg[string](args.unnamed, args.named, 1, "mode"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command terminal.send-terminal-input-and-set-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
+      sendTerminalInputAndSetMode(self, getArg[string](args.unnamed, args.named, 0, "input"),
+        getArg[string](args.unnamed, args.named, 1, "mode"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command terminal.send-terminal-input-and-set-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setTerminalModeWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
-    setTerminalMode(self, getArg[string](args.unnamed, args.named, 0, "mode"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command terminal.set-terminal-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
+      setTerminalMode(self, getArg[string](args.unnamed, args.named, 0, "mode"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command terminal.set-terminal-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc escapeWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
-    escape(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command terminal.escape: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
+      escape(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command terminal.escape: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc scrollWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
-    scroll(self, getArg[int](args.unnamed, args.named, 0, "amount"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command terminal.scroll: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
+      scroll(self, getArg[int](args.unnamed, args.named, 0, "amount"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command terminal.scroll: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc selectTerminalWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
-    selectTerminal(self, getArg[bool](args.unnamed, args.named, 0, "preview", true),
-      getArg[float](args.unnamed, args.named, 1, "scaleX", 0.9),
-      getArg[float](args.unnamed, args.named, 2, "scaleY", 0.9),
-      getArg[float](args.unnamed, args.named, 3, "previewScale", 0.6))
-    return ""
-  except CatchableError:
-    return "Failed to execute command terminal.select: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
+      selectTerminal(self, getArg[bool](args.unnamed, args.named, 0, "preview", true),
+        getArg[float](args.unnamed, args.named, 1, "scaleX", 0.9),
+        getArg[float](args.unnamed, args.named, 2, "scaleY", 0.9),
+        getArg[float](args.unnamed, args.named, 3, "previewScale", 0.6))
+      return ""
+    except CatchableError:
+      return "Failed to execute command terminal.select: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc editTerminalBufferWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
-    editTerminalBuffer(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command terminal.edit-terminal-buffer: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
+      editTerminalBuffer(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command terminal.edit-terminal-buffer: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc pasteTerminalWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
-    pasteTerminal(self, getArg[string](args.unnamed, args.named, 0, "register", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command terminal.paste: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: TerminalServiceImpl = getServiceChecked(TerminalServiceImpl)
+      pasteTerminal(self, getArg[string](args.unnamed, args.named, 0, "register", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command terminal.paste: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
   const namespace = "terminal"

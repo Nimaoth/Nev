@@ -6,71 +6,80 @@ import scripting_api
 
 
 proc logOptionsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: ConfigService = getServiceChecked(ConfigService)
-    logOptions(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command config.log-options: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: ConfigService = getServiceChecked(ConfigService)
+      logOptions(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command config.log-options: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setOptionWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: ConfigService = getServiceChecked(ConfigService)
-    setOption(self, getArg[string](args.unnamed, args.named, 0, "option"),
-      getArg[JsonNode](args.unnamed, args.named, 1, "value"), getArg[bool](args.unnamed, args.named, 2, "override", true))
-    return ""
-  except CatchableError:
-    return "Failed to execute command config.set-option: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: ConfigService = getServiceChecked(ConfigService)
+      setOption(self, getArg[string](args.unnamed, args.named, 0, "option"),
+        getArg[JsonNode](args.unnamed, args.named, 1, "value"),
+        getArg[bool](args.unnamed, args.named, 2, "override", true))
+      return ""
+    except CatchableError:
+      return "Failed to execute command config.set-option: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc cycleOptionWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: ConfigService = getServiceChecked(ConfigService)
-    cycleOption(self, getArg[string](args.unnamed, args.named, 0, "path"),
-      getArg[JsonNode](args.unnamed, args.named, 1, "values"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command config.cycle-option: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: ConfigService = getServiceChecked(ConfigService)
+      cycleOption(self, getArg[string](args.unnamed, args.named, 0, "path"),
+        getArg[JsonNode](args.unnamed, args.named, 1, "values"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command config.cycle-option: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc getOptionJsonWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: ConfigService = getServiceChecked(ConfigService)
-    let res = getOptionJson(self, getArg[string](args.unnamed, args.named, 0, "path"),
-      getArg[JsonNode](args.unnamed, args.named, 1, "default", newJNull()))
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command config.get-option-json: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: ConfigService = getServiceChecked(ConfigService)
+      let res = getOptionJson(self, getArg[string](args.unnamed, args.named, 0, "path"),
+        getArg[JsonNode](args.unnamed, args.named, 1, "default", newJNull()))
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command config.get-option-json: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc getFlagWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: ConfigService = getServiceChecked(ConfigService)
-    let res = getFlag(self, getArg[string](args.unnamed, args.named, 0, "flag"),
-      getArg[bool](args.unnamed, args.named, 1, "default", false))
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command config.get-flag: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: ConfigService = getServiceChecked(ConfigService)
+      let res = getFlag(self, getArg[string](args.unnamed, args.named, 0, "flag"),
+        getArg[bool](args.unnamed, args.named, 1, "default", false))
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command config.get-flag: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setFlagWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: ConfigService = getServiceChecked(ConfigService)
-    setFlag(self, getArg[string](args.unnamed, args.named, 0, "flag"), getArg[bool](args.unnamed, args.named, 1, "value"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command config.set-flag: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: ConfigService = getServiceChecked(ConfigService)
+      setFlag(self, getArg[string](args.unnamed, args.named, 0, "flag"),
+        getArg[bool](args.unnamed, args.named, 1, "value"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command config.set-flag: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc toggleFlagWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: ConfigService = getServiceChecked(ConfigService)
-    toggleFlag(self, getArg[string](args.unnamed, args.named, 0, "flag"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command config.toggle-flag: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: ConfigService = getServiceChecked(ConfigService)
+      toggleFlag(self, getArg[string](args.unnamed, args.named, 0, "flag"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command config.toggle-flag: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
   const namespace = "config"

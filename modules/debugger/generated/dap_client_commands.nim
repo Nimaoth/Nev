@@ -6,28 +6,31 @@ import scripting_api
 
 
 proc dapLogVerboseWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    dapLogVerbose(getArg[bool](args.unnamed, args.named, 0, "val"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command dap.dap-log-verbose: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      dapLogVerbose(getArg[bool](args.unnamed, args.named, 0, "val"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command dap.dap-log-verbose: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc dapToggleLogServerDebugWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    dapToggleLogServerDebug()
-    return ""
-  except CatchableError:
-    return "Failed to execute command dap.dap-toggle-log-server-debug: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      dapToggleLogServerDebug()
+      return ""
+    except CatchableError:
+      return "Failed to execute command dap.dap-toggle-log-server-debug: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc dapLogServerDebugWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    dapLogServerDebug(getArg[bool](args.unnamed, args.named, 0, "val"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command dap.dap-log-server-debug: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      dapLogServerDebug(getArg[bool](args.unnamed, args.named, 0, "val"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command dap.dap-log-server-debug: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
   const namespace = "dap"

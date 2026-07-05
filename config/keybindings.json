@@ -4,9 +4,9 @@
 
     "vim.command-line-low": {
         "<ESCAPE>": "vim.exit-command-line",
-        "<ENTER>": "execute-command-line",
-        "<UP>": "select-previous-command-in-history",
-        "<DOWN>": "select-next-command-in-history",
+        "<ENTER>": "commands.execute-command-line",
+        "<UP>": "commands.select-previous-command-in-history",
+        "<DOWN>": "commands.select-next-command-in-history",
     },
     "vim.command-line-result-low": {
         "<ESCAPE>": "vim.exit-command-line",
@@ -90,7 +90,7 @@
         "<A-9>": ["set-active-view-index", "", 8],
 
         "<C-s>": ["write-file"],
-        "<LEADER><LEADER>": ["command-line"],
+        "<LEADER><LEADER>": ["commands.command-line"],
         "<LEADER>gt": ["choose-theme"],
         "<LEADER>gf": ["choose-file"],
         "<LEADER>go": ["choose-open"],
@@ -808,8 +808,8 @@
     "vscode.base": {
         "<A-F4>": ["quit"],
         "<C-o>": ["explore-workspace"],
-        "<CS-p>": ["command-line"],
-        "<F1>": ["command-line"],
+        "<CS-p>": ["commands.command-line"],
+        "<F1>": ["commands.command-line"],
         "<C-p>": ["choose-file"],
         "<CS-f>": ["search-global-interactive"],
 
@@ -976,9 +976,9 @@
 
     "vscode.command-line-low": {
         "<ESCAPE>": "commands.exit-command-line",
-        "<ENTER>": "execute-command-line",
-        "<UP>": "select-previous-command-in-history",
-        "<DOWN>": "select-next-command-in-history",
+        "<ENTER>": "commands.execute-command-line",
+        "<UP>": "commands.select-previous-command-in-history",
+        "<DOWN>": "commands.select-next-command-in-history",
     },
     "vscode.command-line-result-low": {
         "<ESCAPE>": "commands.exit-command-line",

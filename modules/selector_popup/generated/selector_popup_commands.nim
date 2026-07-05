@@ -6,90 +6,100 @@ import scripting_api
 
 
 proc setPreviewVisibleWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    setPreviewVisible(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
-      getArg[bool](args.unnamed, args.named, 1, "visible"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command selector.set-preview-visible: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      setPreviewVisible(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
+        getArg[bool](args.unnamed, args.named, 1, "visible"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command selector.set-preview-visible: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc togglePreviewWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    togglePreview(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command selector.toggle-preview: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      togglePreview(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command selector.toggle-preview: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc getSelectedItemJsonWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let res = getSelectedItemJson(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"))
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command selector.get-selected-item-json: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let res = getSelectedItemJson(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"))
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command selector.get-selected-item-json: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc acceptWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    accept(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command selector.accept: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      accept(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command selector.accept: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc sortWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    sort(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
-      getArg[ToggleBool](args.unnamed, args.named, 1, "sort"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command selector.sort: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      sort(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
+        getArg[ToggleBool](args.unnamed, args.named, 1, "sort"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command selector.sort: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setMinScoreWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    setMinScore(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
-      getArg[float](args.unnamed, args.named, 1, "value"), getArg[bool](args.unnamed, args.named, 2, "add", false))
-    return ""
-  except CatchableError:
-    return "Failed to execute command selector.set-min-score: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      setMinScore(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
+        getArg[float](args.unnamed, args.named, 1, "value"), getArg[bool](args.unnamed, args.named, 2, "add", false))
+      return ""
+    except CatchableError:
+      return "Failed to execute command selector.set-min-score: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc prevWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    prev(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
-      getArg[int](args.unnamed, args.named, 1, "count", 1))
-    return ""
-  except CatchableError:
-    return "Failed to execute command selector.prev: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      prev(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
+        getArg[int](args.unnamed, args.named, 1, "count", 1))
+      return ""
+    except CatchableError:
+      return "Failed to execute command selector.prev: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc nextWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    next(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
-      getArg[int](args.unnamed, args.named, 1, "count", 1))
-    return ""
-  except CatchableError:
-    return "Failed to execute command selector.next: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      next(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
+        getArg[int](args.unnamed, args.named, 1, "count", 1))
+      return ""
+    except CatchableError:
+      return "Failed to execute command selector.next: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setFocusPreviewWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    setFocusPreview(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
-      getArg[bool](args.unnamed, args.named, 1, "focus"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command selector.set-focus-preview: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      setFocusPreview(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
+        getArg[bool](args.unnamed, args.named, 1, "focus"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command selector.set-focus-preview: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc toggleFocusPreviewWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    toggleFocusPreview(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command selector.toggle-focus-preview: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      toggleFocusPreview(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command selector.toggle-focus-preview: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
   const namespace = "selector"

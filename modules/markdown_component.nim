@@ -8,13 +8,13 @@ when implModule:
   import std/[tables, sets, sequtils, algorithm]
   import chroma
   import nimsumtree/[buffer, sumtree, rope]
-  import misc/[util, custom_logger, rope_utils, delayed_task, custom_async, arena, array_view, id]
+  import misc/[util, custom_logger, rope_utils, delayed_task, custom_async, arena, array_view, id, jsonex]
   import misc/[event, render_command]
   import text/[syntax_map, snippet]
   import treesitter/[treesitter, treesitter_types, treesitter_type_conv]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import service, event_service, document_editor, document, decoration_component, treesitter_component
-  import text_component, language_component, text_editor_component, command_component, move_component
+  import text_component, language_component, text_editor_component, command_component, move_component, command_service
   import snippet_component, config_component, platform, component, config_provider
 
   {.push warning[Deprecated]:off.}
@@ -133,6 +133,13 @@ when implModule:
 
   proc getMarkdownComponent*(self: ComponentOwner): Option[MarkdownComponent] {.gcsafe, raises: [].} =
     return self.getComponent(MarkdownComponentId).mapIt(it.MarkdownComponent)
+
+  proc getMarkdownFromEditorId(editorId: int): Option[MarkdownComponent] =
+    let editors = getServices().getService(DocumentEditorService).getOr:
+      return MarkdownComponent.none
+    let editor = editors.getEditor(editorId.EditorIdNew).getOr:
+      return MarkdownComponent.none
+    editor.getMarkdownComponent()
 
   proc updateTablesAsync(self: MarkdownComponent): Future[void] {.async.} =
     if self.owner == nil or self.tableOverlayId.isNone:
@@ -735,23 +742,14 @@ when implModule:
     if editor.currentDocument.isNotNil:
       res.handleDocumentChanged(nil, editor.currentDocument)
 
-    let commands = editor.getCommandComponent().get
-    commands.registerCommand "markdown.toggle-bold", res, proc(handler: RootRef, args: string): string {.gcsafe, raises: [].} =
-      let self = handler.MarkdownComponent
-      asyncSpawn self.toggleBold()
-
-    commands.registerCommand "markdown.toggle-italic", res, proc(handler: RootRef, args: string): string {.gcsafe, raises: [].} =
-      let self = handler.MarkdownComponent
-      asyncSpawn self.toggleItalic()
-
-    commands.registerCommand "markdown.toggle-code", res, proc(handler: RootRef, args: string): string {.gcsafe, raises: [].} =
-      let self = handler.MarkdownComponent
-      asyncSpawn self.toggleCode()
-
-    commands.registerCommand "markdown.toggle-strikethrough", res, proc(handler: RootRef, args: string): string {.gcsafe, raises: [].} =
-      let self = handler.MarkdownComponent
-      asyncSpawn self.toggleStrikethrough()
     return res
+
+  proc getMarkdownComponent(arg: JsonNodeEx): MarkdownComponent {.raises: [ValueError].} =
+    let editorId = arg.jsonTo(int)
+    return getMarkdownFromEditorId(editorId).getOr:
+      raise newException(ValueError, "Markdown component not found for editor id: " & $editorId)
+
+  include generated/markdown_component_commands
 
   proc init_module_markdown_component*() {.cdecl, exportc, dynlib.} =
     let services = getServices()
@@ -761,6 +759,7 @@ when implModule:
 
     let events = services.getService(EventService)
     let documents = services.getServiceChecked(DocumentEditorService)
+    registerCommands(getServiceChecked(CommandService))
 
     proc handleEditorRegistered(event, payload: string) {.gcsafe, raises: [].} =
       try:

@@ -1470,6 +1470,38 @@ when implModule:
 
   proc chooseOpen*(self: LayoutService, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6)
 
+  proc layoutChangeSplitSizeCurrent(self: LayoutService, change: float, vertical: bool, add: Option[bool]) =
+    self.layoutChangeSplitSize("", change, vertical, add.get(true))
+
+  proc setMaxViewsCommand(self: LayoutService, slot: string, maxViews: Option[int]) =
+    self.setMaxViews(slot, maxViews.get(int.high))
+
+  proc hideActiveViewCommand(self: LayoutService, closeOpenPopup: Option[bool]) =
+    self.hideActiveView(closeOpenPopup.get(true))
+
+  proc closeActiveViewCommand(self: LayoutService, closeOpenPopup: Option[bool], restoreHidden: Option[bool]) =
+    self.layoutServiceCloseActiveView(closeOpenPopup.get(true), restoreHidden.get(true))
+
+  proc focusNextViewCommand(self: LayoutService, slot: Option[string]) =
+    self.focusNextView(slot.get(""))
+
+  proc focusPrevViewCommand(self: LayoutService, slot: Option[string]) =
+    self.focusPrevView(slot.get(""))
+
+  proc splitViewCommand(self: LayoutService, slot: Option[string]) =
+    self.splitView(slot.get(""))
+
+  proc wrapLayoutCommand(self: LayoutService, layout: JsonNode, slot: Option[string]) =
+    self.wrapLayout(layout, slot.get("**"))
+
+  proc openCommand(self: LayoutService, path: string, slot: Option[string]) =
+    self.open(path, slot.get(""))
+
+  proc chooseOpenCommand(self: LayoutService, preview: Option[bool], scaleX: Option[float], scaleY: Option[float], previewScale: Option[float]) =
+    self.chooseOpen(preview.get(true), scaleX.get(0.8), scaleY.get(0.8), previewScale.get(0.6))
+
+  include generated/layout_commands
+
   proc init_module_layout*() {.cdecl, exportc, dynlib.} =
     getServices().addService(LayoutServiceImpl(
       initImpl: proc(self: Service): Future[Result[void, ref CatchableError]] {.gcsafe, async: (raises: []).} =
@@ -1487,6 +1519,7 @@ when implModule:
 
     let cmds = getServiceChecked(CommandService)
     let self = getServiceChecked(LayoutServiceImpl)
+    registerCommands(cmds)
     if getService(StatusLineService).getSome(statusLine):
       statusLine.addRenderer "layout", proc(builder: UINodeBuilder): seq[OverlayFunction] =
         let layout = self.layout.activeLeafLayout()
@@ -1519,43 +1552,6 @@ when implModule:
         let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[{maximizedText}]")
         return @[]
-
-    cmds.registerCommand "change-split-size", proc(change: float, vertical: bool, add: Option[bool]) = self.layoutChangeSplitSize("", change, vertical, add.get(true))
-    cmds.registerCommand "toggle-maximize-view-local", proc(slot: Option[string]) = self.toggleMaximizeViewLocal(slot.get("**"))
-    cmds.registerCommand "toggle-maximize-view", proc() = self.toggleMaximizeView()
-    cmds.registerCommand "set-max-views", proc(slot: string, maxViews: Option[int]) = self.setMaxViews(slot, maxViews.get(int.high))
-    cmds.registerCommand "get-num-visible-views", proc(): int = self.getNumVisibleViews()
-    cmds.registerCommand "get-num-hidden-views", proc(): int = self.getNumHiddenViews()
-    cmds.registerCommand "get-or-open-editor", proc(path: string): Option[EditorId] = self.getOrOpenEditor(path)
-    cmds.registerCommand "hide-active-view", proc(closeOpenPopup: Option[bool]) = self.hideActiveView(closeOpenPopup.get(true))
-    cmds.registerCommand "close-active-view", proc(closeOpenPopup: Option[bool], restoreHidden: Option[bool]) = self.layoutServiceCloseActiveView(closeOpenPopup.get(true), restoreHidden.get(true))
-    cmds.registerCommand "hide-other-views", proc() = self.hideOtherViews()
-    cmds.registerCommand "close-other-views", proc() = self.closeOtherViews()
-    cmds.registerCommand "focus-view-left", proc() = self.focusViewLeft()
-    cmds.registerCommand "focus-view-right", proc() = self.focusViewRight()
-    cmds.registerCommand "focus-view-up", proc() = self.focusViewUp()
-    cmds.registerCommand "focus-view-down", proc() = self.focusViewDown()
-    cmds.registerCommand "focus-view", proc(slot: string) = self.layoutServiceFocusView(slot)
-    cmds.registerCommand "focus-next-view", proc(slot: Option[string]) = self.focusNextView(slot.get(""))
-    cmds.registerCommand "focus-prev-view", proc(slot: Option[string]) = self.focusPrevView(slot.get(""))
-    cmds.registerCommand "open-prev-view", proc() = self.openPrevView()
-    cmds.registerCommand "open-next-view", proc() = self.openNextView()
-    cmds.registerCommand "open-last-view", proc() = self.openLastView()
-    cmds.registerCommand "set-layout", proc(layout: string) = self.setLayout(layout)
-    cmds.registerCommand "set-active-view-index", proc(slot: string, index: int) = self.setActiveViewIndex(slot, index)
-    cmds.registerCommand "move-active-view-first", proc() = self.moveActiveViewFirst()
-    cmds.registerCommand "move-active-view-prev", proc() = self.moveActiveViewPrev()
-    cmds.registerCommand "move-active-view-next", proc() = self.moveActiveViewNext()
-    cmds.registerCommand "move-active-view-next-and-go-back", proc() = self.moveActiveViewNextAndGoBack()
-    cmds.registerCommand "split-view", proc(slot: Option[string]) = self.splitView(slot.get(""))
-    cmds.registerCommand "move-view", proc(slot: string) = self.moveView(slot)
-    cmds.registerCommand "wrap-layout", proc(layout: JsonNode, slot: Option[string]) = self.wrapLayout(layout, slot.get("**"))
-    cmds.registerCommand "pop-popup-into-slot", proc(slot: string) = self.layoutServicePopPopupIntoSlot(slot)
-    cmds.registerCommand "choose-layout", proc() = self.chooseLayout()
-    cmds.registerCommand "log-layout", proc() = self.logLayout()
-    cmds.registerCommand "log-views", proc() = self.logViews()
-    cmds.registerCommand "open", proc(path: string, slot: Option[string]) = self.open(path, slot.get(""))
-    cmds.registerCommand "choose-open", proc(preview: Option[bool], scaleX: Option[float], scaleY: Option[float], previewScale: Option[float]) = self.chooseOpen(preview.get(true), scaleX.get(0.8), scaleY.get(0.8), previewScale.get(0.6))
 
   import open_editor_previewer
   proc chooseOpen*(self: LayoutService, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) =

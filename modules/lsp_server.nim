@@ -727,6 +727,12 @@ when implModule and defined(appLspServer):
     except IOError:
       discard
 
+  proc lspServerStart(self: LspServerService) =
+    self.createLogTerminal()
+    self.startConnection()
+
+  include generated/lsp_server_commands
+
   proc initService(self: LspServerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     self.terminals = self.services.getService(TerminalService).get(nil)
     self.layout = self.services.getServiceChecked(LayoutService)
@@ -734,19 +740,7 @@ when implModule and defined(appLspServer):
     self.workspace = self.services.getService(Workspace).get(nil)
     self.vfs = self.services.getServiceChecked(VFSService).vfs
 
-    let commands = self.services.getServiceChecked(CommandService)
-
-    discard commands.registerCommand(command_service.Command(
-      namespace: "",
-      name: "lsp-server.start",
-      description: "Start LSP server, reading from stdin",
-      parameters: @[],
-      returnType: "void",
-      execute: proc(args: string): string {.gcsafe, raises: [CatchableError].} =
-        self.createLogTerminal()
-        self.startConnection()
-        return ""
-    ))
+    registerCommands(self.services.getServiceChecked(CommandService))
 
     return ok()
 

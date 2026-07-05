@@ -1012,7 +1012,7 @@ Server Capabilities: {lsp.serverCapabilities.toJson.pretty}"""
 
     discard getServiceChecked(LayoutService).pushSelectorPopup(builder)
 
-  include generated/lsp_client_commands
+  include generated/language_server_lsp_commands
 
   proc init_module_language_server_lsp*() {.cdecl, exportc, dynlib.} =
     log lvlWarn, &"init_module_language_server_lsp"
@@ -1053,23 +1053,6 @@ Server Capabilities: {lsp.serverCapabilities.toJson.pretty}"""
 
     let commands = getServiceChecked(CommandService)
     registerCommands(commands)
-    template defineCommand(inName: string, desc: string, body: untyped): untyped =
-      discard commands.registerCommand(command_service.Command(
-        namespace: "",
-        name: "lsp." & inName,
-        description: desc,
-        parameters: @[],
-        returnType: "void",
-        execute: proc(args {.inject.}: string): string {.gcsafe, raises: [].} =
-          try:
-            body
-            return ""
-          except CatchableError:
-            return ""
-      ))
-
-    defineCommand("list", "List all language servers (excluding builtins)"):
-      lspService.listLanguageServers()
 
   proc shutdown_module_language_server_lsp*() {.cdecl, exportc, dynlib.} =
     log lvlInfo, &"shutdown_module_language_server_lsp"

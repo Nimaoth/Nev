@@ -6,14 +6,15 @@ import scripting_api
 
 
 proc showToastWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: ToastService = getServiceChecked(ToastService)
-    showToast(self, getArg[string](args.unnamed, args.named, 0, "title"),
-      getArg[string](args.unnamed, args.named, 1, "message"), getArg[string](args.unnamed, args.named, 2, "color"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command toast.show-toast: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: ToastService = getServiceChecked(ToastService)
+      showToast(self, getArg[string](args.unnamed, args.named, 0, "title"),
+        getArg[string](args.unnamed, args.named, 1, "message"), getArg[string](args.unnamed, args.named, 2, "color"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command toast.show-toast: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
   const namespace = "toast"

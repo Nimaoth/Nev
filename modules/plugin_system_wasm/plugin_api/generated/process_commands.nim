@@ -6,16 +6,17 @@ import scripting_api
 
 
 proc runProcessWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: PluginService = getServiceChecked(PluginService)
-    runProcess(self, getArg[string](args.unnamed, args.named, 0, "process"),
-      getArg[seq[string]](args.unnamed, args.named, 1, "args"),
-      getArg[Option[string]](args.unnamed, args.named, 2, "workingDir", string.none),
-      getArg[bool](args.unnamed, args.named, 3, "eval", false))
-    return ""
-  except CatchableError:
-    return "Failed to execute command process.run-process: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: PluginService = getServiceChecked(PluginService)
+      runProcess(self, getArg[string](args.unnamed, args.named, 0, "process"),
+        getArg[seq[string]](args.unnamed, args.named, 1, "args"),
+        getArg[Option[string]](args.unnamed, args.named, 2, "workingDir", string.none),
+        getArg[bool](args.unnamed, args.named, 3, "eval", false))
+      return ""
+    except CatchableError:
+      return "Failed to execute command process.run-process: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
   const namespace = "process"

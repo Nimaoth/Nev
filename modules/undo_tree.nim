@@ -42,6 +42,8 @@ when implModule:
       scrollBox*: ScrollBox
       autoApply*: bool = false
 
+  var gUndoTreeView: UndoTreeView
+
   proc add(line: var seq[AsciiGraphCell], item: tuple[col: int, char: char]) =
     line.add (item.col, item.char, -1, color(0, 0, 0), 0.UINodeFlags)
 
@@ -531,100 +533,75 @@ when implModule:
     result.saveLayoutImpl = proc(self: View, discardedViews: HashSet[Id]): JsonNode = saveLayout(self.UndoTreeView, discardedViews)
     result.saveStateImpl = proc(self: View): JsonNode = saveState(self.UndoTreeView)
 
-  proc init_module_undo_tree*() {.cdecl, exportc, dynlib.} =
-    let services = getServices()
-    if services == nil:
-      log lvlWarn, "Failed to initialize init_module_undo_tree: no services found"
-      return
+  proc getUndoTreeView(): UndoTreeView =
+    {.gcsafe.}:
+      if gUndoTreeView.isNil:
+        raise newException(ValueError, "Undo tree view not initialized")
+      gUndoTreeView
 
-    let layout = services.getServiceChecked(LayoutService)
-    let commands = services.getServiceChecked(CommandService)
+  proc parseUndoTreeTime(args: string): int =
+    try:
+      let args = args.parseJson.jsonTo(string)
+      var unitIndex = 0
+      while unitIndex < args.len and args[unitIndex] in {'0'..'9'}:
+        inc unitIndex
+      let num = args[0..<unitIndex].parseInt.catch:
+        return 0
+      let unit = case args[unitIndex..^1]
+      of "s": 1
+      of "m": 60
+      of "h": 60 * 60
+      of "d": 60 * 60 * 24
+      else: 60
+      return num * unit
+    except CatchableError:
+      discard
+    0
 
-    var view: UndoTreeView = newUndoTreeView()
+  template withUndoTreeContext(view: UndoTreeView, body: untyped): untyped =
+    if view.lastEditor.isSome:
+      if view.lastEditor.get.currentDocument.getTextComponent.getSome(textComp):
+        let editor {.inject, used.} = view.lastEditor.get
+        let document {.inject, used.} = editor.currentDocument
+        let text {.inject, used.} = textComp
+        body
 
-    layout.addViewFactory "undotree", proc(config: JsonNode): View {.raises: [].} =
-      return view
+  proc applySelected(view: UndoTreeView, editor: DocumentEditor, force = false) =
+    view.scrollBox.scrollTo(view.selected)
+    if (view.autoApply or force) and editor.getCommandComponent().getSome(cmd):
+      if view.selected in 0..view.cachedLines.high:
+        let nodeIndex = view.cachedLines[view.selected].nodeIdx
+        if nodeIndex != -1:
+          cmd.executeCommand(&"switch-undo-branch {nodeIndex}")
 
-    proc parseTime(args: string): int =
-      try:
-        let args = args.parseJson.jsonTo(string)
-        var unitIndex = 0
-        while unitIndex < args.len and args[unitIndex] in {'0'..'9'}:
-          inc unitIndex
-        let num = args[0..<unitIndex].parseInt.catch:
-          return 0
-        let unit = case args[unitIndex..^1]
-        of "s": 1
-        of "m": 60
-        of "h": 60 * 60
-        of "d": 60 * 60 * 24
-        else: 60
-        return num * unit
-      except CatchableError:
-        discard
+  proc undoTreeToggle(view: UndoTreeView) =
+    let layout = getServiceChecked(LayoutService)
+    if layout.isViewVisible(view):
+      layout.closeView(view, keepHidden = false, restoreHidden = false)
+    else:
+      layout.addView(view, slot = "#small-left", focus = false)
 
-    template defineCommand(inName: string, desc: string, body: untyped): untyped =
-      discard commands.registerCommand(command_service.Command(
-        namespace: "undotree",
-        name: inName,
-        description: desc,
-        parameters: @[],
-        returnType: "void",
-        execute: proc(args {.inject.}: string): string {.gcsafe, raises: [].} =
-          try:
-            if view.lastEditor.isSome:
-              if view.lastEditor.get.currentDocument.getTextComponent.getSome(textComp):
-                let editor {.inject, used.} = view.lastEditor.get
-                let document {.inject, used.} = editor.currentDocument
-                let text {.inject, used.} = textComp
-                body
-          except CatchableError:
-            discard
-          return ""
-      ))
-
-    discard commands.registerCommand(command_service.Command(
-      namespace: "undotree",
-      name: "toggle",
-      description: "Show undo tree for current buffer",
-      parameters: @[],
-      returnType: "void",
-      execute: proc(argsString: string): string {.gcsafe, raises: [].} =
-        try:
-          if layout.isViewVisible(view):
-            layout.closeView(view, keepHidden = false, restoreHidden = false)
-          else:
-            layout.addView(view, slot = "#small-left", focus = false)
-        except CatchableError:
-          discard
-        return ""
-    ))
-
-    proc applySelected(editor: DocumentEditor, force = false) =
-      view.scrollBox.scrollTo(view.selected)
-      if (view.autoApply or force) and editor.getCommandComponent().getSome(cmd):
-        if view.selected in 0..view.cachedLines.high:
-          let nodeIndex = view.cachedLines[view.selected].nodeIdx
-          if nodeIndex != -1:
-            cmd.executeCommand(&"switch-undo-branch {nodeIndex}")
-
-    defineCommand("toggle-auto-apply", "Toggle the auto apply setting"):
+  proc undoTreeToggleAutoApply(view: UndoTreeView) =
+    withUndoTreeContext(view):
       view.autoApply = not view.autoApply
 
-    defineCommand("prev-change", "Go to previous change in undo tree"):
+  proc undoTreePrevChange(view: UndoTreeView) =
+    withUndoTreeContext(view):
       if view.selected < view.cachedLines.high:
         inc view.selected
-        applySelected(editor)
+        applySelected(view, editor)
 
-    defineCommand("next-change", "Go to next change in undo tree"):
+  proc undoTreeNextChange(view: UndoTreeView) =
+    withUndoTreeContext(view):
       if view.selected > 0:
         dec view.selected
-        applySelected(editor)
+        applySelected(view, editor)
 
-    defineCommand("prev-change-time", "Go to previous change by stepping by a certain time interval in undo tree"):
+  proc undoTreePrevChangeTime(view: UndoTreeView, args: string = "") =
+    withUndoTreeContext(view):
       let tree = text.buffer.history.undoTree
       if view.selected >= 0 and view.selected < view.cachedLines.high:
-        let time = parseTime(args)
+        let time = parseUndoTreeTime(args)
         var current = view.selected
         while current < view.cachedLines.high and view.cachedLines[current].nodeIdx == -1:
           inc current
@@ -637,12 +614,13 @@ when implModule:
           if nodeIdx != -1 and currentTime - tree.nodes[nodeIdx].transaction.timestampUnix >= time:
             break
         view.selected = current
-        applySelected(editor)
+        applySelected(view, editor)
 
-    defineCommand("next-change-time", "Go to next change by stepping by a certain time interval in undo tree"):
+  proc undoTreeNextChangeTime(view: UndoTreeView, args: string = "") =
+    withUndoTreeContext(view):
       let tree = text.buffer.history.undoTree
       if view.selected > 0 and view.selected <= view.cachedLines.high:
-        let time = parseTime(args)
+        let time = parseUndoTreeTime(args)
         var current = view.selected
         while current > 0 and view.cachedLines[current].nodeIdx == -1:
           dec current
@@ -655,37 +633,42 @@ when implModule:
           if nodeIdx != -1 and tree.nodes[nodeIdx].transaction.timestampUnix - currentTime >= time:
             break
         view.selected = current
-        applySelected(editor)
+        applySelected(view, editor)
 
-    defineCommand("first-change", "Go to first change in undo tree"):
+  proc undoTreeFirstChange(view: UndoTreeView) =
+    withUndoTreeContext(view):
       view.selected = view.cachedLines.high
-      applySelected(editor)
+      applySelected(view, editor)
 
-    defineCommand("last-change", "Go to last change in undo tree"):
+  proc undoTreeLastChange(view: UndoTreeView) =
+    withUndoTreeContext(view):
       view.selected = 0
-      applySelected(editor)
+      applySelected(view, editor)
 
-    defineCommand("left-change", "Go to next change on the left branch in the undo tree"):
+  proc undoTreeLeftChange(view: UndoTreeView) =
+    withUndoTreeContext(view):
       if view.selected in 0..view.cachedLines.high:
         let line {.cursor.} = view.cachedLines[view.selected]
         for i in 0..<line.cells.high:
           if line.cells[i].char == '|' and line.cells[i + 1].char == '/':
             if line.cells[i].nodeLineIndex != -1:
               view.selected = line.cells[i].nodeLineIndex
-              applySelected(editor)
+              applySelected(view, editor)
               break
 
-    defineCommand("right-change", "Go to next change on the right branch in the undo tree"):
+  proc undoTreeRightChange(view: UndoTreeView) =
+    withUndoTreeContext(view):
       if view.selected in 0..view.cachedLines.high:
         let line {.cursor.} = view.cachedLines[view.selected]
         for i in 0..<line.cells.high:
           if line.cells[i].char == '|' and line.cells[i + 1].char == '/':
             if line.cells[i + 1].nodeLineIndex != -1:
               view.selected = line.cells[i + 1].nodeLineIndex
-              applySelected(editor)
+              applySelected(view, editor)
               break
 
-    defineCommand("active-child", "Go to the active child of the current change in the undo tree"):
+  proc undoTreeActiveChild(view: UndoTreeView) =
+    withUndoTreeContext(view):
       let tree = text.buffer.history.undoTree
       if view.selected in 0..view.cachedLines.high:
         let line {.cursor.} = view.cachedLines[view.selected]
@@ -694,10 +677,11 @@ when implModule:
           for i in countdown(view.selected, 0):
             if view.cachedLines[i].nodeIdx == activeChild:
               view.selected = i
-              applySelected(editor)
+              applySelected(view, editor)
               break
 
-    defineCommand("parent-change", "Go to parent of the current change in the undo tree"):
+  proc undoTreeParentChange(view: UndoTreeView) =
+    withUndoTreeContext(view):
       let tree = text.buffer.history.undoTree
       if view.selected in 0..view.cachedLines.high:
         let line {.cursor.} = view.cachedLines[view.selected]
@@ -706,15 +690,35 @@ when implModule:
           for i in view.selected..view.cachedLines.high:
             if view.cachedLines[i].nodeIdx == parent:
               view.selected = i
-              applySelected(editor)
+              applySelected(view, editor)
               break
 
-    defineCommand("select-current", "Go to current change in undo tree"):
+  proc undoTreeSelectCurrent(view: UndoTreeView) =
+    withUndoTreeContext(view):
       let tree = text.buffer.history.undoTree
       for i in 0..view.cachedLines.high:
         if view.cachedLines[i].nodeIdx == tree.current:
           view.selected = i
           view.scrollBox.scrollTo(view.selected)
 
-    defineCommand("apply-selected", "Make the selected change the current one."):
-      applySelected(editor, force=true)
+  proc undoTreeApplySelected(view: UndoTreeView) =
+    withUndoTreeContext(view):
+      applySelected(view, editor, force = true)
+
+  include generated/undo_tree_commands
+
+  proc init_module_undo_tree*() {.cdecl, exportc, dynlib.} =
+    let services = getServices()
+    if services == nil:
+      log lvlWarn, "Failed to initialize init_module_undo_tree: no services found"
+      return
+
+    let layout = services.getServiceChecked(LayoutService)
+
+    gUndoTreeView = newUndoTreeView()
+    let view = gUndoTreeView
+
+    layout.addViewFactory "undotree", proc(config: JsonNode): View {.raises: [].} =
+      return view
+
+    registerCommands(getServiceChecked(CommandService))

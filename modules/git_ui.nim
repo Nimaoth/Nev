@@ -61,8 +61,16 @@ when implModule:
 
       lastUpdate: int = 0
 
+  var gitUiViewInstance: GitUiView
+
   proc commitMessage(view: GitUiView): string =
     $view.commitDoc.getTextComponent().get.content
+
+  proc getGitUiView(): GitUiView =
+    {.gcsafe.}:
+      if gitUiViewInstance.isNil:
+        raise newException(ValueError, "Git UI not initialized")
+      gitUiViewInstance
 
   proc `commitMessage=`(view: GitUiView, message: string) =
     let text = view.commitDoc.getTextComponent().get
@@ -537,6 +545,365 @@ when implModule:
         discard text.edit([range], [range], [view.savedCommitMessage])
       view.commitEditor.getTextEditorComponent().get.selection = text.content.endPoint.toRange
 
+  template runGitAsync(view: GitUiView, args: seq[string], onComplete: untyped): untyped =
+    let root = view.getGitRoot()
+    if root.len == 0:
+      view.setError("No git repository found")
+      return
+    proc gitTask() {.async: (raises: []).} =
+      try:
+        let output = await runProcessAsync("git", args, workingDir = root)
+        let msg = output.join("\n").strip()
+        if msg != "":
+          view.setMessage(msg)
+        onComplete
+      except CatchableError as e:
+        log lvlWarn, "Failed to run git command: " & $e.msg
+    asyncSpawn gitTask()
+
+  proc gitUiToggle(view: GitUiView) =
+    let layout = getServiceChecked(LayoutService)
+    if layout.isViewVisible(view):
+      layout.closeView(view, keepHidden = false, restoreHidden = false)
+    else:
+      layout.addView(view, slot = "#small-left", focus = true)
+      view.cursor = UiCursor(panel: Changelists, changelistIndex: 0, fileIndex: 0)
+      asyncSpawn view.refreshStatusAsync()
+      asyncSpawn view.refreshBranchesAsync()
+      asyncSpawn view.refreshCommitsAsync()
+      asyncSpawn view.refreshChangelistsAsync()
+      view.markDirty()
+
+  proc gitUiCursorDown(view: GitUiView) =
+    case view.cursor.panel
+    of Changelists:
+      let totalFiles = view.changelists.foldl(a + b.changelist.files.len, 0)
+      if totalFiles == 0:
+        view.cursor = UiCursor(panel: Commits, commitIndex: 0)
+      else:
+        var clIdx = view.cursor.changelistIndex
+        var fIdx = view.cursor.fileIndex
+        inc fIdx
+        while clIdx < view.changelists.len:
+          if fIdx < view.changelists[clIdx].changelist.files.len:
+            view.cursor = UiCursor(panel: Changelists, changelistIndex: clIdx, fileIndex: fIdx)
+            break
+          inc clIdx
+          fIdx = 0
+        if clIdx >= view.changelists.len:
+          view.cursor = UiCursor(panel: Commits, commitIndex: 0)
+    of Commits:
+      if view.commits.len == 0:
+        view.cursor = UiCursor(panel: Branches, branchIndex: 0)
+      else:
+        var idx = view.cursor.commitIndex
+        inc idx
+        if idx >= view.commits.len:
+          view.cursor = UiCursor(panel: Branches, branchIndex: 0)
+        else:
+          view.cursor = UiCursor(panel: Commits, commitIndex: idx)
+    of Branches:
+      var idx = view.cursor.branchIndex
+      inc idx
+      if idx >= view.branches.len:
+        view.cursor = UiCursor(panel: Changelists, changelistIndex: 0, fileIndex: 0)
+      else:
+        view.cursor = UiCursor(panel: Branches, branchIndex: idx)
+    view.markDirty()
+    view.platform.requestRender()
+
+  proc gitUiCursorUp(view: GitUiView) =
+    case view.cursor.panel
+    of Changelists:
+      var clIdx = view.cursor.changelistIndex
+      var fIdx = view.cursor.fileIndex
+      if clIdx == 0 and fIdx == 0:
+        if view.branches.len > 0:
+          view.cursor = UiCursor(panel: Branches, branchIndex: view.branches.high)
+        elif view.commits.len > 0:
+          view.cursor = UiCursor(panel: Commits, commitIndex: view.commits.high)
+      else:
+        dec fIdx
+        while clIdx >= 0:
+          if fIdx >= 0 and fIdx < view.changelists[clIdx].changelist.files.len:
+            view.cursor = UiCursor(panel: Changelists, changelistIndex: clIdx, fileIndex: fIdx)
+            break
+          dec clIdx
+          if clIdx >= 0:
+            fIdx = view.changelists[clIdx].changelist.files.len - 1
+        if clIdx < 0:
+          if view.commits.len > 0:
+            view.cursor = UiCursor(panel: Commits, commitIndex: view.commits.high)
+          else:
+            view.cursor = UiCursor(panel: Branches, branchIndex: view.branches.high)
+    of Commits:
+      var idx = view.cursor.commitIndex
+      if idx == 0:
+        if view.changelists.len > 0:
+          var clIdx = view.changelists.high
+          var fIdx = view.changelists[clIdx].changelist.files.len - 1
+          view.cursor = UiCursor(panel: Changelists, changelistIndex: clIdx, fileIndex: fIdx)
+        else:
+          view.cursor = UiCursor(panel: Changelists, changelistIndex: 0, fileIndex: 0)
+      else:
+        dec idx
+        view.cursor = UiCursor(panel: Commits, commitIndex: idx)
+    of Branches:
+      var idx = view.cursor.branchIndex
+      if idx == 0:
+        if view.commits.len > 0:
+          view.cursor = UiCursor(panel: Commits, commitIndex: view.commits.high)
+        elif view.changelists.len > 0:
+          var clIdx = view.changelists.high
+          var fIdx = view.changelists[clIdx].changelist.files.len - 1
+          view.cursor = UiCursor(panel: Changelists, changelistIndex: clIdx, fileIndex: fIdx)
+        else:
+          view.cursor = UiCursor(panel: Changelists, changelistIndex: 0, fileIndex: 0)
+      else:
+        dec idx
+        view.cursor = UiCursor(panel: Branches, branchIndex: idx)
+    view.markDirty()
+    view.platform.requestRender()
+
+  proc gitUiPush(view: GitUiView) =
+    if view.editCommit:
+      view.setError("Finish editing first")
+      return
+    view.runGitAsync(@["push"]):
+      view.setMessage("Pushed")
+      asyncSpawn view.refreshStatusAsync()
+
+  proc gitUiPull(view: GitUiView) =
+    if view.editCommit:
+      view.setError("Finish editing first")
+      return
+    view.runGitAsync(@["pull"]):
+      view.setMessage("Pulled")
+      asyncSpawn view.refreshStatusAsync()
+      asyncSpawn view.refreshBranchesAsync()
+      asyncSpawn view.refreshCommitsAsync()
+      asyncSpawn view.refreshChangelistsAsync()
+
+  proc gitUiStash(view: GitUiView) =
+    if view.editCommit:
+      view.setError("Finish editing first")
+      return
+    view.runGitAsync(@["stash"]):
+      asyncSpawn view.refreshStatusAsync()
+      asyncSpawn view.refreshChangelistsAsync()
+
+  proc gitUiStashPop(view: GitUiView) =
+    if view.editCommit:
+      view.setError("Finish editing first")
+      return
+    view.runGitAsync(@["stash", "pop"]):
+      asyncSpawn view.refreshStatusAsync()
+      asyncSpawn view.refreshChangelistsAsync()
+
+  proc gitUiCommit(view: GitUiView) =
+    if view.editCommit:
+      view.setError("Finish editing first")
+      return
+    let msg = view.commitMessage
+    if msg.strip().len == 0:
+      view.savedCommitMessage = view.commitMessage
+      view.commitOnMessageSave = true
+      if view.commitEditor != nil:
+        view.editCommit = true
+        view.commitEditor.getCommandComponent().get.executeCommand("""set-mode "vim.insert" true true""")
+        view.markDirty()
+      else:
+        view.setError("No commit message specified")
+      return
+    view.runGitAsync(@["commit", "-m", msg.strip()]):
+      view.commitMessage = ""
+      asyncSpawn view.refreshStatusAsync()
+      asyncSpawn view.refreshCommitsAsync()
+      asyncSpawn view.refreshChangelistsAsync()
+
+  proc gitUiCommitAmend(view: GitUiView) =
+    if view.editCommit:
+      view.setError("Finish editing first")
+      return
+    let msg = view.commitMessage
+    view.runGitAsync(@["commit", "--amend", "-m", msg.strip()]):
+      view.commitMessage = ""
+      asyncSpawn view.refreshStatusAsync()
+      asyncSpawn view.refreshCommitsAsync()
+      asyncSpawn view.refreshChangelistsAsync()
+
+  proc gitUiCommitEditStart(view: GitUiView) =
+    if view.editCommit:
+      return
+    view.commitOnMessageSave = false
+    view.savedCommitMessage = view.commitMessage
+    if view.commitEditor != nil:
+      view.editCommit = true
+      view.commitEditor.getCommandComponent().get.executeCommand("""set-mode "vim.insert" true true""")
+      view.markDirty()
+
+  proc gitUiCommitEditCancel(view: GitUiView) =
+    view.commitMessage = view.savedCommitMessage
+    view.savedCommitMessage = ""
+    view.editCommit = false
+    view.setMessage("Edit cancelled")
+
+  proc gitUiCommitEditConfirm(view: GitUiView) =
+    view.savedCommitMessage = ""
+    view.editCommit = false
+    view.setMessage("Message updated")
+    if view.commitOnMessageSave:
+      let msg = view.commitMessage
+      view.runGitAsync(@["commit", "-m", msg.strip()]):
+        view.commitMessage = ""
+        asyncSpawn view.refreshStatusAsync()
+        asyncSpawn view.refreshCommitsAsync()
+        asyncSpawn view.refreshChangelistsAsync()
+
+  proc gitUiSwitchBranch(view: GitUiView) =
+    if view.editCommit:
+      view.setError("Finish editing first")
+      return
+    case view.cursor.panel
+    of Commits:
+      let commitIndex = view.cursor.commitIndex
+      if commitIndex >= view.commits.len:
+        view.setError("Invalid selection")
+        return
+      let commit = view.commits[commitIndex]
+      view.runGitAsync(@["checkout", commit.id]):
+        asyncSpawn view.refreshStatusAsync()
+    of Branches:
+      let branchIndex = view.cursor.branchIndex
+      if branchIndex >= view.branches.len:
+        view.setError("Invalid selection")
+        return
+      let branch = view.branches[branchIndex]
+      view.runGitAsync(@["checkout", branch]):
+        asyncSpawn view.refreshStatusAsync()
+    else:
+      view.setError("Select a commit or branch first")
+
+  proc gitUiFetch(view: GitUiView) =
+    if view.editCommit:
+      view.setError("Finish editing first")
+      return
+    view.runGitAsync(@["fetch", "--all"]):
+      asyncSpawn view.refreshStatusAsync()
+
+  proc gitUiResetSoft(view: GitUiView) =
+    if view.editCommit:
+      view.setError("Finish editing first")
+      return
+    view.runGitAsync(@["reset", "--soft", "HEAD~1"]):
+      discard
+
+  proc gitUiStageAll(view: GitUiView) =
+    if view.editCommit:
+      view.setError("Finish editing first")
+      return
+    view.runGitAsync(@["add", "-A"]):
+      asyncSpawn view.refreshStatusAsync()
+      asyncSpawn view.refreshChangelistsAsync()
+
+  proc gitUiStageSelected(view: GitUiView) =
+    if view.cursor.panel != Changelists:
+      view.setError("Select a file first")
+      return
+    let clIdx = view.cursor.changelistIndex
+    let fIdx = view.cursor.fileIndex
+    if clIdx >= view.changelists.len or fIdx >= view.changelists[clIdx].changelist.files.len:
+      view.setError("Invalid selection")
+      return
+    let file = view.changelists[clIdx].changelist.files[fIdx]
+    if file.stagedStatus != None:
+      view.setError("Already staged")
+      return
+    let localizedPath = file.path
+    for vcs in view.vcsService.versionControlSystems:
+      let vcs = vcs
+      proc stageTask() {.async: (raises: []).} =
+        let res = await vcs.stageFile(localizedPath)
+        view.setMessage(res)
+        asyncSpawn view.refreshChangelistsAsync()
+      asyncSpawn stageTask()
+      break
+
+  proc gitUiUnstageSelected(view: GitUiView) =
+    if view.cursor.panel != Changelists:
+      view.setError("Select a file first")
+      return
+    let clIdx = view.cursor.changelistIndex
+    let fIdx = view.cursor.fileIndex
+    if clIdx >= view.changelists.len or fIdx >= view.changelists[clIdx].changelist.files.len:
+      view.setError("Invalid selection")
+      return
+    let vcs = view.changelists[clIdx].vcs
+    let file = view.changelists[clIdx].changelist.files[fIdx]
+    if file.stagedStatus == None:
+      view.setError("Not staged")
+      return
+    let localizedPath = file.path
+    proc unstageTask() {.async: (raises: []).} =
+      let res = await vcs.unstageFile(localizedPath)
+      view.setMessage(res)
+      asyncSpawn view.refreshChangelistsAsync()
+    asyncSpawn unstageTask()
+
+  proc gitUiRevertSelected(view: GitUiView) =
+    if view.cursor.panel != Changelists:
+      view.setError("Select a file first")
+      return
+    let clIdx = view.cursor.changelistIndex
+    let fIdx = view.cursor.fileIndex
+    if clIdx >= view.changelists.len or fIdx >= view.changelists[clIdx].changelist.files.len:
+      view.setError("Invalid selection")
+      return
+    let vcs = view.changelists[clIdx].vcs
+    let file = view.changelists[clIdx].changelist.files[fIdx]
+    let localizedPath = file.path
+    proc revertTask() {.async: (raises: []).} =
+      let res = await vcs.revertFile(localizedPath)
+      view.setMessage(res)
+      asyncSpawn view.refreshChangelistsAsync()
+    asyncSpawn revertTask()
+
+  proc gitUiDiffSelected(view: GitUiView) =
+    let layout = getServiceChecked(LayoutService)
+    let commands = getServiceChecked(CommandService)
+    case view.cursor.panel
+    of Changelists:
+      let clIdx = view.cursor.changelistIndex
+      let fIdx = view.cursor.fileIndex
+      if clIdx >= view.changelists.len or fIdx >= view.changelists[clIdx].changelist.files.len:
+        view.setError("Invalid selection")
+        return
+      let file = view.changelists[clIdx].changelist.files[fIdx]
+      let relPath = file.path
+      if file.stagedStatus == None:
+        if layout.openFile(file.path).getSome(editor):
+          editor.getCommandComponent().get.executeCommand(&"""start-diff "git://@/staged/{relPath}" true""")
+      else:
+        if layout.openFile("git://@/staged/" & relPath).getSome(editor):
+          editor.getCommandComponent().get.executeCommand(&"""start-diff "git://@/HEAD/{relPath}" true""")
+    of Commits:
+      let commitIndex = view.cursor.commitIndex
+      if commitIndex >= view.commits.len:
+        view.setError("Invalid selection")
+        return
+      let commit = view.commits[commitIndex]
+      discard commands.executeCommand(&"""explore-files "git://@/{commit.id}" false true true 0.8""")
+    else:
+      view.setError("Select a file first")
+
+  proc gitUiRefresh(view: GitUiView) =
+    asyncSpawn view.refreshStatusAsync()
+    asyncSpawn view.refreshBranchesAsync()
+    asyncSpawn view.refreshCommitsAsync()
+    asyncSpawn view.refreshChangelistsAsync()
+
+  include generated/git_ui_commands
+
   proc init_module_git_ui*() {.cdecl, exportc, dynlib.} =
     let services = getServices()
     if services == nil:
@@ -544,7 +911,6 @@ when implModule:
       return
 
     let layout = services.getServiceChecked(LayoutService)
-    let commands = services.getServiceChecked(CommandService)
     let vcsService = services.getService(VCSService).getOr:
       log lvlWarn, "Failed to get VCSService for git_ui"
       return
@@ -552,7 +918,8 @@ when implModule:
     let events = getServiceChecked(EventHandlerService)
     let platform = services.getServiceChecked(PlatformService).platform
 
-    var view: GitUiView = newGitUiView()
+    gitUiViewInstance = newGitUiView()
+    let view = gitUiViewInstance
     view.vcsService = vcsService
     view.events = events
     view.editors = services.getServiceChecked(DocumentEditorService)
@@ -577,373 +944,4 @@ when implModule:
         discard
       return view
 
-    template runGitAsync(args: seq[string], onComplete: untyped): untyped =
-      let root = view.getGitRoot()
-      if root.len == 0:
-        view.setError("No git repository found")
-        return
-      proc gitTask() {.async: (raises: []).} =
-        try:
-          let output = await runProcessAsync("git", args, workingDir = root)
-          let msg = output.join("\n").strip()
-          if msg != "":
-            view.setMessage(msg)
-          onComplete
-        except CatchableError as e:
-          log lvlWarn, "Failed to run git command: " & $e.msg
-      asyncSpawn gitTask()
-
-    template defineCommand(inName: string, desc: string, body: untyped): untyped =
-      discard commands.registerCommand(command_service.Command(
-        namespace: "",
-        name: "gitui." & inName,
-        description: desc,
-        parameters: @[],
-        returnType: "void",
-        execute: proc(args {.inject.}: string): string {.gcsafe, raises: [].} =
-          try:
-            body
-            return ""
-          except CatchableError:
-            return ""
-      ))
-
-    defineCommand("toggle", "Toggle git ui"):
-      if layout.isViewVisible(view):
-        layout.closeView(view, keepHidden = false, restoreHidden = false)
-      else:
-        layout.addView(view, slot = "#small-left", focus = true)
-        view.cursor = UiCursor(panel: Changelists, changelistIndex: 0, fileIndex: 0)
-        asyncSpawn view.refreshStatusAsync()
-        asyncSpawn view.refreshBranchesAsync()
-        asyncSpawn view.refreshCommitsAsync()
-        asyncSpawn view.refreshChangelistsAsync()
-        view.markDirty()
-
-    defineCommand("cursor-down", "Move cursor down"):
-      case view.cursor.panel
-      of Changelists:
-        let totalFiles = view.changelists.foldl(a + b.changelist.files.len, 0)
-        if totalFiles == 0:
-          view.cursor = UiCursor(panel: Commits, commitIndex: 0)
-        else:
-          var clIdx = view.cursor.changelistIndex
-          var fIdx = view.cursor.fileIndex
-          inc fIdx
-          while clIdx < view.changelists.len:
-            if fIdx < view.changelists[clIdx].changelist.files.len:
-              view.cursor = UiCursor(panel: Changelists, changelistIndex: clIdx, fileIndex: fIdx)
-              break
-            inc clIdx
-            fIdx = 0
-          if clIdx >= view.changelists.len:
-            view.cursor = UiCursor(panel: Commits, commitIndex: 0)
-      of Commits:
-        if view.commits.len == 0:
-          view.cursor = UiCursor(panel: Branches, branchIndex: 0)
-        else:
-          var idx = view.cursor.commitIndex
-          inc idx
-          if idx >= view.commits.len:
-            view.cursor = UiCursor(panel: Branches, branchIndex: 0)
-          else:
-            view.cursor = UiCursor(panel: Commits, commitIndex: idx)
-      of Branches:
-        var idx = view.cursor.branchIndex
-        inc idx
-        if idx >= view.branches.len:
-          view.cursor = UiCursor(panel: Changelists, changelistIndex: 0, fileIndex: 0)
-        else:
-          view.cursor = UiCursor(panel: Branches, branchIndex: idx)
-      view.markDirty()
-      view.platform.requestRender()
-
-    defineCommand("cursor-up", "Move cursor up"):
-      case view.cursor.panel
-      of Changelists:
-        var clIdx = view.cursor.changelistIndex
-        var fIdx = view.cursor.fileIndex
-        if clIdx == 0 and fIdx == 0:
-          if view.branches.len > 0:
-            view.cursor = UiCursor(panel: Branches, branchIndex: view.branches.high)
-          elif view.commits.len > 0:
-            view.cursor = UiCursor(panel: Commits, commitIndex: view.commits.high)
-        else:
-          dec fIdx
-          while clIdx >= 0:
-            if fIdx >= 0 and fIdx < view.changelists[clIdx].changelist.files.len:
-              view.cursor = UiCursor(panel: Changelists, changelistIndex: clIdx, fileIndex: fIdx)
-              break
-            dec clIdx
-            if clIdx >= 0:
-              fIdx = view.changelists[clIdx].changelist.files.len - 1
-          if clIdx < 0:
-            if view.commits.len > 0:
-              view.cursor = UiCursor(panel: Commits, commitIndex: view.commits.high)
-            else:
-              view.cursor = UiCursor(panel: Branches, branchIndex: view.branches.high)
-      of Commits:
-        var idx = view.cursor.commitIndex
-        if idx == 0:
-          if view.changelists.len > 0:
-            var clIdx = view.changelists.high
-            var fIdx = view.changelists[clIdx].changelist.files.len - 1
-            view.cursor = UiCursor(panel: Changelists, changelistIndex: clIdx, fileIndex: fIdx)
-          else:
-            view.cursor = UiCursor(panel: Changelists, changelistIndex: 0, fileIndex: 0)
-        else:
-          dec idx
-          view.cursor = UiCursor(panel: Commits, commitIndex: idx)
-      of Branches:
-        var idx = view.cursor.branchIndex
-        if idx == 0:
-          if view.commits.len > 0:
-            view.cursor = UiCursor(panel: Commits, commitIndex: view.commits.high)
-          elif view.changelists.len > 0:
-            var clIdx = view.changelists.high
-            var fIdx = view.changelists[clIdx].changelist.files.len - 1
-            view.cursor = UiCursor(panel: Changelists, changelistIndex: clIdx, fileIndex: fIdx)
-          else:
-            view.cursor = UiCursor(panel: Changelists, changelistIndex: 0, fileIndex: 0)
-        else:
-          dec idx
-          view.cursor = UiCursor(panel: Branches, branchIndex: idx)
-      view.markDirty()
-      view.platform.requestRender()
-
-    defineCommand("push", "Push"):
-      if view.editCommit:
-        view.setError("Finish editing first")
-        return
-      runGitAsync(@["push"]):
-        view.setMessage("Pushed")
-        asyncSpawn view.refreshStatusAsync()
-
-    defineCommand("pull", "Pull"):
-      if view.editCommit:
-        view.setError("Finish editing first")
-        return
-      runGitAsync(@["pull"]):
-        view.setMessage("Pulled")
-        asyncSpawn view.refreshStatusAsync()
-        asyncSpawn view.refreshBranchesAsync()
-        asyncSpawn view.refreshCommitsAsync()
-        asyncSpawn view.refreshChangelistsAsync()
-
-    defineCommand("stash", "Stash changes"):
-      if view.editCommit:
-        view.setError("Finish editing first")
-        return
-      runGitAsync(@["stash"]):
-        asyncSpawn view.refreshStatusAsync()
-        asyncSpawn view.refreshChangelistsAsync()
-
-    defineCommand("stash-pop", "Pop latest stash"):
-      if view.editCommit:
-        view.setError("Finish editing first")
-        return
-      runGitAsync(@["stash", "pop"]):
-        asyncSpawn view.refreshStatusAsync()
-        asyncSpawn view.refreshChangelistsAsync()
-
-    defineCommand("commit", "Commit"):
-      if view.editCommit:
-        view.setError("Finish editing first")
-        return
-      let msg = view.commitMessage
-      if msg.strip().len == 0:
-        view.savedCommitMessage = view.commitMessage
-        view.commitOnMessageSave = true
-        if view.commitEditor != nil:
-          view.editCommit = true
-          view.commitEditor.getCommandComponent().get.executeCommand("""set-mode "vim.insert" true true""")
-          view.markDirty()
-        else:
-          view.setError("No commit message specified")
-        return
-      runGitAsync(@["commit", "-m", msg.strip()]):
-        view.commitMessage = ""
-        asyncSpawn view.refreshStatusAsync()
-        asyncSpawn view.refreshCommitsAsync()
-        asyncSpawn view.refreshChangelistsAsync()
-
-    defineCommand("commit-amend", "Amend latest commit"):
-      if view.editCommit:
-        view.setError("Finish editing first")
-        return
-      let msg = view.commitMessage
-      runGitAsync(@["commit", "--amend", "-m", msg.strip()]):
-        view.commitMessage = ""
-        asyncSpawn view.refreshStatusAsync()
-        asyncSpawn view.refreshCommitsAsync()
-        asyncSpawn view.refreshChangelistsAsync()
-
-    defineCommand("commit-edit-start", "Start editing commit message"):
-      if view.editCommit:
-        return
-      view.commitOnMessageSave = false
-      view.savedCommitMessage = view.commitMessage
-      if view.commitEditor != nil:
-        view.editCommit = true
-        view.commitEditor.getCommandComponent().get.executeCommand("""set-mode "vim.insert" true true""")
-        view.markDirty()
-
-    defineCommand("commit-edit-cancel", "Cancel editing commit message"):
-      view.commitMessage = view.savedCommitMessage
-      view.savedCommitMessage = ""
-      view.editCommit = false
-      view.setMessage("Edit cancelled")
-
-    defineCommand("commit-edit-confirm", "Confirm commit message"):
-      view.savedCommitMessage = ""
-      view.editCommit = false
-      view.setMessage("Message updated")
-      if view.commitOnMessageSave:
-        let msg = view.commitMessage
-        runGitAsync(@["commit", "-m", msg.strip()]):
-          view.commitMessage = ""
-          asyncSpawn view.refreshStatusAsync()
-          asyncSpawn view.refreshCommitsAsync()
-          asyncSpawn view.refreshChangelistsAsync()
-
-    defineCommand("switch-branch", "Switch branch"):
-      if view.editCommit:
-        view.setError("Finish editing first")
-        return
-      case view.cursor.panel
-      of Commits:
-        let commitIndex = view.cursor.commitIndex
-        if commitIndex >= view.commits.len:
-          view.setError("Invalid selection")
-          return
-        let commit = view.commits[commitIndex]
-        runGitAsync(@["checkout", commit.id]):
-          asyncSpawn view.refreshStatusAsync()
-      of Branches:
-        let branchIndex = view.cursor.branchIndex
-        if branchIndex >= view.branches.len:
-          view.setError("Invalid selection")
-          return
-        let branch = view.branches[branchIndex]
-        runGitAsync(@["checkout", branch]):
-          asyncSpawn view.refreshStatusAsync()
-      else:
-        view.setError("Select a commit or branch first")
-        return
-
-    defineCommand("fetch", "Fetch"):
-      if view.editCommit:
-        view.setError("Finish editing first")
-        return
-      runGitAsync(@["fetch", "--all"]):
-        asyncSpawn view.refreshStatusAsync()
-
-    defineCommand("reset-soft", "Soft reset"):
-      if view.editCommit:
-        view.setError("Finish editing first")
-        return
-      runGitAsync(@["reset", "--soft", "HEAD~1"]):
-        discard
-
-    defineCommand("stage-all", "Stage all files"):
-      if view.editCommit:
-        view.setError("Finish editing first")
-        return
-      runGitAsync(@["add", "-A"]):
-        asyncSpawn view.refreshStatusAsync()
-        asyncSpawn view.refreshChangelistsAsync()
-
-    defineCommand("stage-selected", "Stage selected file"):
-      if view.cursor.panel != Changelists:
-        view.setError("Select a file first")
-        return
-      let clIdx = view.cursor.changelistIndex
-      let fIdx = view.cursor.fileIndex
-      if clIdx >= view.changelists.len or fIdx >= view.changelists[clIdx].changelist.files.len:
-        view.setError("Invalid selection")
-        return
-      let file = view.changelists[clIdx].changelist.files[fIdx]
-      if file.stagedStatus != None:
-        view.setError("Already staged")
-        return
-      let localizedPath = file.path
-      for vcs in view.vcsService.versionControlSystems:
-        let vcs = vcs
-        proc stageTask() {.async: (raises: []).} =
-          let res = await vcs.stageFile(localizedPath)
-          view.setMessage(res)
-          asyncSpawn view.refreshChangelistsAsync()
-        asyncSpawn stageTask()
-        break
-
-    defineCommand("unstage-selected", "Unstage selected file"):
-      if view.cursor.panel != Changelists:
-        view.setError("Select a file first")
-        return
-      let clIdx = view.cursor.changelistIndex
-      let fIdx = view.cursor.fileIndex
-      if clIdx >= view.changelists.len or fIdx >= view.changelists[clIdx].changelist.files.len:
-        view.setError("Invalid selection")
-        return
-      let vcs = view.changelists[clIdx].vcs
-      let file = view.changelists[clIdx].changelist.files[fIdx]
-      if file.stagedStatus == None:
-        view.setError("Not staged")
-        return
-      let localizedPath = file.path
-      proc unstageTask() {.async: (raises: []).} =
-        let res = await vcs.unstageFile(localizedPath)
-        view.setMessage(res)
-        asyncSpawn view.refreshChangelistsAsync()
-      asyncSpawn unstageTask()
-
-    defineCommand("revert-selected", "Revert selected file"):
-      if view.cursor.panel != Changelists:
-        view.setError("Select a file first")
-        return
-      let clIdx = view.cursor.changelistIndex
-      let fIdx = view.cursor.fileIndex
-      if clIdx >= view.changelists.len or fIdx >= view.changelists[clIdx].changelist.files.len:
-        view.setError("Invalid selection")
-        return
-      let vcs = view.changelists[clIdx].vcs
-      let file = view.changelists[clIdx].changelist.files[fIdx]
-      let localizedPath = file.path
-      proc revertTask() {.async: (raises: []).} =
-        let res = await vcs.revertFile(localizedPath)
-        view.setMessage(res)
-        asyncSpawn view.refreshChangelistsAsync()
-      asyncSpawn revertTask()
-
-    defineCommand("diff-selected", "Diff selected file, commit or stash"):
-      case view.cursor.panel
-      of Changelists:
-        let clIdx = view.cursor.changelistIndex
-        let fIdx = view.cursor.fileIndex
-        if clIdx >= view.changelists.len or fIdx >= view.changelists[clIdx].changelist.files.len:
-          view.setError("Invalid selection")
-          return
-        let file = view.changelists[clIdx].changelist.files[fIdx]
-        let relPath = file.path
-        if file.stagedStatus == None:
-          if layout.openFile(file.path).getSome(editor):
-            editor.getCommandComponent().get.executeCommand(&"""start-diff "git://@/staged/{relPath}" true""")
-        else:
-          if layout.openFile("git://@/staged/" & relPath).getSome(editor):
-            editor.getCommandComponent().get.executeCommand(&"""start-diff "git://@/HEAD/{relPath}" true""")
-      of Commits:
-        let commitIndex = view.cursor.commitIndex
-        if commitIndex >= view.commits.len:
-          view.setError("Invalid selection")
-          return
-        let commit = view.commits[commitIndex]
-        discard commands.executeCommand(&"""explore-files "git://@/{commit.id}" false true true 0.8""")
-      else:
-        view.setError("Select a file first")
-        return
-
-    defineCommand("refresh", "Refresh UI"):
-      asyncSpawn view.refreshStatusAsync()
-      asyncSpawn view.refreshBranchesAsync()
-      asyncSpawn view.refreshCommitsAsync()
-      asyncSpawn view.refreshChangelistsAsync()
+    registerCommands(getServiceChecked(CommandService))

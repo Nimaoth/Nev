@@ -14,7 +14,7 @@ when implModule:
   import std/[options, json, tables, sugar, strtabs, streams, sets, sequtils, enumerate, osproc, macros, genasts]
   import vmath, bumpy, chroma
   import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, wrap, case_swap, arena, array_view, rope_utils, array_set, tui]
-  import dap_client, config_provider, selector_popup/builder, input_handler/input_handler, document, document_editor, layout/layout, session
+  import dap_client, dap_client_commands_reg, config_provider, selector_popup/builder, input_handler/input_handler, document, document_editor, layout/layout, session
   import language_server except Range
   import treesitter/[treesitter_type_conv]
   import platform
@@ -2456,7 +2456,51 @@ when implModule:
     let name = fun.name.repr.splitCase.parts.joinCase(Kebab)
     return exposeImpl(newLit(""), name, fun, active=false)
 
-  include generated/dap_client_commands
+  proc debuggerDeleteLastVariableFilterChar(self: Debugger) =
+    if getVariablesView().getSome(view):
+      view.deleteLastVariableFilterChar()
+
+  proc debuggerClearVariableFilter(self: Debugger) =
+    if getVariablesView().getSome(view):
+      view.clearVariableFilter()
+
+  proc debuggerSelectFirstVariable(self: Debugger) =
+    if getVariablesView().getSome(view):
+      view.selectFirstVariable()
+
+  proc debuggerSelectLastVariable(self: Debugger) =
+    if getVariablesView().getSome(view):
+      view.selectLastVariable()
+
+  proc debuggerPrevVariable(self: Debugger, skipChildren: bool = false) =
+    if getVariablesView().getSome(view):
+      view.prevVariable(skipChildren)
+
+  proc debuggerNextVariable(self: Debugger, skipChildren: bool = false) =
+    if getVariablesView().getSome(view):
+      view.nextVariable(skipChildren)
+
+  proc debuggerExpandVariable(self: Debugger) =
+    if getVariablesView().getSome(view):
+      asyncSpawn view.expandVariable()
+
+  proc debuggerExpandVariableChildren(self: Debugger) =
+    if getVariablesView().getSome(view):
+      asyncSpawn view.expandVariableChildren()
+
+  proc debuggerCollapseVariable(self: Debugger) =
+    if getVariablesView().getSome(view):
+      view.collapseVariable()
+
+  proc debuggerExpandOrCollapseVariable(self: Debugger) =
+    if getVariablesView().getSome(view):
+      view.expandOrCollapseVariable()
+
+  proc debuggerCollapseVariableChildren(self: Debugger) =
+    if getVariablesView().getSome(view):
+      view.collapseVariableChildren()
+
+  include generated/debugger_commands
 
   proc init_module_debugger*() {.cdecl, exportc, dynlib.} =
     log lvlWarn, &"init_module_debugger"
@@ -2470,203 +2514,9 @@ when implModule:
       return await service.initService()
 
     services.addService(service)
+    registerDapClientCommands(service.commands)
     registerCommands(service.commands)
     # addBuiltinService(Debugger, SessionService, DocumentEditorService, LayoutService, EventHandlerService, ConfigService)
-
-    template registerCommand(inName: string, inDesc: string, inParams: untyped, inRet: string, wrapper: untyped): untyped =
-      discard service.commands.registerCommand(command_service.Command(
-        namespace: "",
-        name: "" & inName,
-        description: inDesc,
-        parameters: inParams,
-        returnType: inRet,
-        execute: proc(argsString: string): string {.gcsafe.} =
-          log lvlDebug, "execute '", argsString, "'"
-          var args = newJArray()
-          try:
-            for a in newStringStream(argsString).parseJsonFragments():
-              args.add a
-            return $wrapper(args)
-          except CatchableError as e:
-            log lvlError, "Failed to run command '" & inName & "': " & e.msg
-            return ""
-      ))
-
-    proc chooseRunConfiguration() {.command.} =
-      service.chooseRunConfiguration()
-    registerCommand("choose-run-configuration", "...", @[], "void", chooseRunConfigurationJson)
-
-    proc runLastConfiguration() {.command.} =
-      service.runLastConfiguration()
-    registerCommand("run-last-configuration", "...", @[], "void", runLastConfigurationJson)
-
-    proc toggleDebuggerThreads(focus: bool = true, slot: string = "#debugger-threads") {.command.} =
-      service.toggleDebuggerThreads(focus, slot)
-    registerCommand("toggle-debugger-threads", "...", @[], "void", toggleDebuggerThreadsJson)
-
-    proc toggleDebuggerStacktrace(focus: bool = true, slot: string = "#debugger-stacktrace") {.command.} =
-      service.toggleDebuggerStacktrace(focus, slot)
-    registerCommand("toggle-debugger-stacktrace", "...", @[], "void", toggleDebuggerStacktraceJson)
-
-    proc toggleDebuggerVariables(focus: bool = true, slot: string = "#debugger-variables") {.command.} =
-      service.toggleDebuggerVariables(focus, slot)
-    registerCommand("toggle-debugger-variables", "...", @[], "void", toggleDebuggerVariablesJson)
-
-    proc toggleDebuggerOutput(focus: bool = true, slot: string = "#debugger-output") {.command.} =
-      service.toggleDebuggerOutput(focus, slot)
-    registerCommand("toggle-debugger-output", "...", @[], "void", toggleDebuggerOutputJson)
-
-    proc toggleDebuggerToolbar(focus: bool = true, slot: string = "#debugger-toolbar") {.command.} =
-      service.toggleDebuggerToolbar(focus, slot)
-    registerCommand("toggle-debugger-toolbar", "...", @[], "void", toggleDebuggerToolbarJson)
-
-    proc deleteLastVariableFilterChar() {.command.} =
-      if getVariablesView().getSome(view): view.deleteLastVariableFilterChar()
-    registerCommand("delete-last-variable-filter-char", "...", @[], "void", deleteLastVariableFilterCharJson)
-    proc clearVariableFilter() {.command.} =
-      if getVariablesView().getSome(view): view.clearVariableFilter()
-    registerCommand("clear-variable-filter", "...", @[], "void", clearVariableFilterJson)
-    proc selectFirstVariable() {.command.} =
-      if getVariablesView().getSome(view): view.selectFirstVariable()
-    registerCommand("select-first-variable", "...", @[], "void", selectFirstVariableJson)
-    proc selectLastVariable() {.command.} =
-      if getVariablesView().getSome(view): view.selectLastVariable()
-    registerCommand("select-last-variable", "...", @[], "void", selectLastVariableJson)
-    proc prevThread() {.command.} =
-      service.prevThread()
-    registerCommand("prev-thread", "...", @[], "void", prevThreadJson)
-    proc nextThread() {.command.} =
-      service.nextThread()
-    registerCommand("next-thread", "...", @[], "void", nextThreadJson)
-    proc prevStackFrame() {.command.} =
-      service.prevStackFrame()
-    registerCommand("prev-stack-frame", "...", @[], "void", prevStackFrameJson)
-    proc nextStackFrame() {.command.} =
-      service.nextStackFrame()
-    registerCommand("next-stack-frame", "...", @[], "void", nextStackFrameJson)
-    proc openFileForCurrentFrame(slot: string = "") {.command.} =
-      service.openFileForCurrentFrame(slot)
-    registerCommand("open-file-for-current-frame", "...", @[], "void", openFileForCurrentFrameJson)
-    proc prevVariable(skipChildren: bool = false) {.command.} =
-      if getVariablesView().getSome(view): view.prevVariable(skipChildren)
-    registerCommand("prev-variable", "...", @[], "void", prevVariableJson)
-    proc nextVariable(skipChildren: bool = false) {.command.} =
-      if getVariablesView().getSome(view): view.nextVariable(skipChildren)
-    registerCommand("next-variable", "...", @[], "void", nextVariableJson)
-    proc expandVariable() {.command.} =
-      if getVariablesView().getSome(view): asyncSpawn view.expandVariable()
-    registerCommand("expand-variable", "...", @[], "void", expandVariableJson)
-    proc expandVariableChildren() {.command.} =
-      if getVariablesView().getSome(view): asyncSpawn view.expandVariableChildren()
-    registerCommand("expand-variable-children", "...", @[], "void", expandVariableChildrenJson)
-    proc collapseVariable() {.command.} =
-      if getVariablesView().getSome(view): view.collapseVariable()
-    registerCommand("collapse-variable", "...", @[], "void", collapseVariableJson)
-    proc expandOrCollapseVariable() {.command.} =
-      if getVariablesView().getSome(view): view.expandOrCollapseVariable()
-    registerCommand("expand-or-collapse-variable", "...", @[], "void", expandOrCollapseVariableJson)
-    proc collapseVariableChildren() {.command.} =
-      if getVariablesView().getSome(view): view.collapseVariableChildren()
-    registerCommand("collapse-variable-children", "...", @[], "void", collapseVariableChildrenJson)
-    proc evaluateHover() {.command.} =
-      service.evaluateHover()
-    registerCommand("evaluate-hover", "...", @[], "void", evaluateHoverJson)
-    proc evaluateMouseHover() {.command.} =
-      service.evaluateMouseHover()
-    registerCommand("evaluate-mouse-hover", "...", @[], "void", evaluateMouseHoverJson)
-    proc addWatch(expression: string) {.command.} =
-      service.addWatch(expression)
-    registerCommand("add-watch", "...", @[], "void", addWatchJson)
-    proc addWatchPrompt() {.command.} =
-      asyncSpawn service.addWatchPrompt()
-    registerCommand("add-watch-prompt", "...", @[], "void", addWatchPromptJson)
-    proc addWatchFromSelection() {.command.} =
-      service.addWatchFromSelection()
-    registerCommand("add-watch-from-selection", "...", @[], "void", addWatchFromSelectionJson)
-    proc removeWatch(expression: string) {.command.} =
-      service.removeWatch(expression)
-    registerCommand("remove-watch", "...", @[], "void", removeWatchJson)
-    proc removeWatchAtCursor() {.command.} =
-      service.removeWatchAtCursor()
-    registerCommand("remove-watch-at-cursor", "...", @[], "void", removeWatchAtCursorJson)
-    proc stopDebugSession() {.command.} =
-      service.stopDebugSession()
-    registerCommand("stop-debug-session", "...", @[], "void", stopDebugSessionJson)
-    proc stopDebugSessionDelayed() {.command.} =
-      service.stopDebugSessionDelayed()
-    registerCommand("stop-debug-session-delayed", "...", @[], "void", stopDebugSessionDelayedJson)
-    proc runConfiguration(name: string) {.command.} =
-      service.runConfiguration(name)
-    registerCommand("run-configuration", "...", @[], "void", runConfigurationJson)
-    proc toggleBreakpointAt(editorId: EditorId, line: int) {.command.} =
-      service.toggleBreakpointAt(editorId, line)
-    registerCommand("toggle-breakpoint-at", "...", @[], "void", toggleBreakpointAtJson)
-    proc toggleBreakpoint() {.command.} =
-      service.toggleBreakpoint()
-    registerCommand("toggle-breakpoint", "...", @[], "void", toggleBreakpointJson)
-    proc removeBreakpoint(path: string, line: int) {.command.} =
-      service.removeBreakpoint(path, line)
-    registerCommand("remove-breakpoint", "...", @[], "void", removeBreakpointJson)
-    proc toggleBreakpointEnabled(path: string, line: int) {.command.} =
-      service.toggleBreakpointEnabled(path, line)
-    registerCommand("toggle-breakpoint-enabled", "...", @[], "void", toggleBreakpointEnabledJson)
-    proc toggleAllBreakpointsEnabled() {.command.} =
-      service.toggleAllBreakpointsEnabled()
-    registerCommand("toggle-all-breakpoints-enabled", "...", @[], "void", toggleAllBreakpointsEnabledJson)
-    proc toggleBreakpointsEnabled() {.command.} =
-      service.toggleBreakpointsEnabled()
-    registerCommand("toggle-breakpoints-enabled", "...", @[], "void", toggleBreakpointsEnabledJson)
-    proc editBreakpoints() {.command.} =
-      service.editBreakpoints()
-    registerCommand("edit-breakpoints", "...", @[], "void", editBreakpointsJson)
-    proc pauseExecution() {.command.} =
-      service.pauseExecution()
-    registerCommand("pause-execution", "...", @[], "void", pauseExecutionJson)
-    proc continueExecution() {.command.} =
-      service.continueExecution()
-    registerCommand("continue-execution", "...", @[], "void", continueExecutionJson)
-    proc stepOver() {.command.} =
-      service.stepOver()
-    registerCommand("step-over", "...", @[], "void", stepOverJson)
-    proc stepIn() {.command.} =
-      service.stepIn()
-    registerCommand("step-in", "...", @[], "void", stepInJson)
-    proc stepOut() {.command.} =
-      service.stepOut()
-    registerCommand("step-out", "...", @[], "void", stepOutJson)
-    proc closeDebuggerViews() {.command.} =
-      service.closeDebuggerViews()
-    registerCommand("close-debugger-views", "...", @[], "void", closeDebuggerViewsJson)
-    proc closeDebuggerThreads() {.command.} =
-      service.closeDebuggerThreads()
-    registerCommand("close-debugger-threads", "...", @[], "void", closeDebuggerThreadsJson)
-    proc closeDebuggerStacktrace() {.command.} =
-      service.closeDebuggerStacktrace()
-    registerCommand("close-debugger-stacktrace", "...", @[], "void", closeDebuggerStacktraceJson)
-    proc closeDebuggerVariables() {.command.} =
-      service.closeDebuggerVariables()
-    registerCommand("close-debugger-variables", "...", @[], "void", closeDebuggerVariablesJson)
-    proc closeDebuggerOutput() {.command.} =
-      service.closeDebuggerOutput()
-    registerCommand("close-debugger-output", "...", @[], "void", closeDebuggerOutputJson)
-    proc closeDebuggerToolbar() {.command.} =
-      service.closeDebuggerToolbar()
-    registerCommand("close-debugger-toolbar", "...", @[], "void", closeDebuggerToolbarJson)
-    proc showDebuggerThreads(focus: bool = true, slot: string = "#debugger-threads") {.command.} =
-      service.showDebuggerThreads(focus, slot)
-    registerCommand("show-debugger-threads", "...", @[], "void", showDebuggerThreadsJson)
-    proc showDebuggerStacktrace(focus: bool = true, slot: string = "#debugger-stacktrace") {.command.} =
-      service.showDebuggerStacktrace(focus, slot)
-    registerCommand("show-debugger-stacktrace", "...", @[], "void", showDebuggerStacktraceJson)
-    proc showDebuggerVariables(focus: bool = true, slot: string = "#debugger-variables") {.command.} =
-      service.showDebuggerVariables(focus, slot)
-    registerCommand("show-debugger-variables", "...", @[], "void", showDebuggerVariablesJson)
-    proc showDebuggerOutput(focus: bool = true, slot: string = "#debugger-output") {.command.} =
-      service.showDebuggerOutput(focus, slot)
-    registerCommand("show-debugger-output", "...", @[], "void", showDebuggerOutputJson)
-    proc showDebuggerToolbar(focus: bool = true, slot: string = "#debugger-toolbar") {.command.} =
-      service.showDebuggerToolbar(focus, slot)
-    registerCommand("show-debugger-toolbar", "...", @[], "void", showDebuggerToolbarJson)
 
   proc shutdown_module_debugger*() {.cdecl, exportc, dynlib.} =
     discard

@@ -1,0 +1,20 @@
+(
+  (context undotree)
+
+  (inject view UndoTreeView "getUndoTreeView()")
+
+  (command toggle undoTreeToggle [] () "Show undo tree for current buffer")
+  (command toggle-auto-apply undoTreeToggleAutoApply [] () "Toggle the auto apply setting")
+  (command prev-change undoTreePrevChange [] () "Go to previous change in undo tree")
+  (command next-change undoTreeNextChange [] () "Go to next change in undo tree")
+  (command prev-change-time undoTreePrevChangeTime [(args string "")] () "Go to previous change by stepping by a certain time interval in undo tree")
+  (command next-change-time undoTreeNextChangeTime [(args string "")] () "Go to next change by stepping by a certain time interval in undo tree")
+  (command first-change undoTreeFirstChange [] () "Go to first change in undo tree")
+  (command last-change undoTreeLastChange [] () "Go to last change in undo tree")
+  (command left-change undoTreeLeftChange [] () "Go to next change on the left branch in the undo tree")
+  (command right-change undoTreeRightChange [] () "Go to next change on the right branch in the undo tree")
+  (command active-child undoTreeActiveChild [] () "Go to the active child of the current change in the undo tree")
+  (command parent-change undoTreeParentChange [] () "Go to parent of the current change in the undo tree")
+  (command select-current undoTreeSelectCurrent [] () "Go to current change in undo tree")
+  (command apply-selected undoTreeApplySelected [] () "Make the selected change the current one.")
+)

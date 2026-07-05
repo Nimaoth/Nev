@@ -6,90 +6,99 @@ import scripting_api
 
 
 proc commandLineWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: CommandLineService = getServiceChecked(CommandLineService)
-    commandLine(self, getArg[string](args.unnamed, args.named, 0, "initialValue", ""),
-      getArg[string](args.unnamed, args.named, 1, "prefix", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command commands.command-line: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: CommandLineService = getServiceChecked(CommandLineService)
+      commandLine(self, getArg[string](args.unnamed, args.named, 0, "initialValue", ""),
+        getArg[string](args.unnamed, args.named, 1, "prefix", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command commands.command-line: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc exitCommandLineWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: CommandLineService = getServiceChecked(CommandLineService)
-    exitCommandLine(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command commands.exit-command-line: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: CommandLineService = getServiceChecked(CommandLineService)
+      exitCommandLine(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command commands.exit-command-line: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc commandLineResultWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: CommandLineService = getServiceChecked(CommandLineService)
-    commandLineResult(self, getArg[string](args.unnamed, args.named, 0, "value"),
-      getArg[bool](args.unnamed, args.named, 1, "showInCommandLine", false),
-      getArg[bool](args.unnamed, args.named, 2, "appendAndShowInFile", false),
-      getArg[string](args.unnamed, args.named, 3, "filename", "ed://.shell-command-results"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command commands.command-line-result: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: CommandLineService = getServiceChecked(CommandLineService)
+      commandLineResult(self, getArg[string](args.unnamed, args.named, 0, "value"),
+        getArg[bool](args.unnamed, args.named, 1, "showInCommandLine", false),
+        getArg[bool](args.unnamed, args.named, 2, "appendAndShowInFile", false),
+        getArg[string](args.unnamed, args.named, 3, "filename", "ed://.shell-command-results"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command commands.command-line-result: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc clearCommandLineResultsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: CommandLineService = getServiceChecked(CommandLineService)
-    clearCommandLineResults(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command commands.clear-command-line-results: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: CommandLineService = getServiceChecked(CommandLineService)
+      clearCommandLineResults(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command commands.clear-command-line-results: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc executeCommandLineWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: CommandLineService = getServiceChecked(CommandLineService)
-    let res = executeCommandLine(self)
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command commands.execute-command-line: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: CommandLineService = getServiceChecked(CommandLineService)
+      let res = executeCommandLine(self)
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command commands.execute-command-line: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc selectPreviousCommandInHistoryWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: CommandLineService = getServiceChecked(CommandLineService)
-    selectPreviousCommandInHistory(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command commands.select-previous-command-in-history: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: CommandLineService = getServiceChecked(CommandLineService)
+      selectPreviousCommandInHistory(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command commands.select-previous-command-in-history: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc selectNextCommandInHistoryWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: CommandLineService = getServiceChecked(CommandLineService)
-    selectNextCommandInHistory(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command commands.select-next-command-in-history: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: CommandLineService = getServiceChecked(CommandLineService)
+      selectNextCommandInHistory(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command commands.select-next-command-in-history: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc runShellCommandWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: CommandLineService = getServiceChecked(CommandLineService)
-    runShellCommand(self,
-      getArg[RunShellCommandOptions](args.unnamed, args.named, 0, "options", RunShellCommandOptions()))
-    return ""
-  except CatchableError:
-    return "Failed to execute command commands.run-shell-command: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: CommandLineService = getServiceChecked(CommandLineService)
+      runShellCommand(self,
+        getArg[RunShellCommandOptions](args.unnamed, args.named, 0, "options", RunShellCommandOptions()))
+      return ""
+    except CatchableError:
+      return "Failed to execute command commands.run-shell-command: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc replayCommandsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: CommandLineService = getServiceChecked(CommandLineService)
-    replayCommands(self, getArg[string](args.unnamed, args.named, 0, "register"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command commands.replay-commands: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: CommandLineService = getServiceChecked(CommandLineService)
+      replayCommands(self, getArg[string](args.unnamed, args.named, 0, "register"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command commands.replay-commands: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
   const namespace = "commands"

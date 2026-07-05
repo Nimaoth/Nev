@@ -6,73 +6,80 @@ import scripting_api
 
 
 proc mountVfsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: VFSService = getServiceChecked(VFSService)
-    mountVfs(self, getArg[Option[string]](args.unnamed, args.named, 0, "parentPath"),
-      getArg[string](args.unnamed, args.named, 1, "prefix"), getArg[JsonNode](args.unnamed, args.named, 2, "config"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command vfs.mount-vfs: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: VFSService = getServiceChecked(VFSService)
+      mountVfs(self, getArg[Option[string]](args.unnamed, args.named, 0, "parentPath"),
+        getArg[string](args.unnamed, args.named, 1, "prefix"), getArg[JsonNode](args.unnamed, args.named, 2, "config"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command vfs.mount-vfs: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc normalizePathWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: VFSService = getServiceChecked(VFSService)
-    let res = normalizePath(self, getArg[string](args.unnamed, args.named, 0, "path"))
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command vfs.normalize-path: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: VFSService = getServiceChecked(VFSService)
+      let res = normalizePath(self, getArg[string](args.unnamed, args.named, 0, "path"))
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command vfs.normalize-path: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc localizePathWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: VFSService = getServiceChecked(VFSService)
-    let res = localizePath(self, getArg[string](args.unnamed, args.named, 0, "path"))
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command vfs.localize-path: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: VFSService = getServiceChecked(VFSService)
+      let res = localizePath(self, getArg[string](args.unnamed, args.named, 0, "path"))
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command vfs.localize-path: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc writeFileSyncWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: VFSService = getServiceChecked(VFSService)
-    writeFileSync(self, getArg[string](args.unnamed, args.named, 0, "path"),
-      getArg[string](args.unnamed, args.named, 1, "content"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command vfs.write-file-sync: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: VFSService = getServiceChecked(VFSService)
+      writeFileSync(self, getArg[string](args.unnamed, args.named, 0, "path"),
+        getArg[string](args.unnamed, args.named, 1, "content"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command vfs.write-file-sync: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc readFileSyncWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: VFSService = getServiceChecked(VFSService)
-    let res = readFileSync(self, getArg[string](args.unnamed, args.named, 0, "path"))
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command vfs.read-file-sync: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: VFSService = getServiceChecked(VFSService)
+      let res = readFileSync(self, getArg[string](args.unnamed, args.named, 0, "path"))
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command vfs.read-file-sync: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc deleteFileSyncWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: VFSService = getServiceChecked(VFSService)
-    deleteFileSync(self, getArg[string](args.unnamed, args.named, 0, "path"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command vfs.delete-file-sync: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: VFSService = getServiceChecked(VFSService)
+      deleteFileSync(self, getArg[string](args.unnamed, args.named, 0, "path"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command vfs.delete-file-sync: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc genTempPathWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: VFSService = getServiceChecked(VFSService)
-    let res = genTempPath(self, getArg[string](args.unnamed, args.named, 0, "prefix"),
-      getArg[string](args.unnamed, args.named, 1, "suffix"),
-      getArg[string](args.unnamed, args.named, 2, "dir", "temp://"),
-      getArg[int](args.unnamed, args.named, 3, "randLen", 8),
-      getArg[bool](args.unnamed, args.named, 4, "checkExists", true))
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command vfs.gen-temp-path: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: VFSService = getServiceChecked(VFSService)
+      let res = genTempPath(self, getArg[string](args.unnamed, args.named, 0, "prefix"),
+        getArg[string](args.unnamed, args.named, 1, "suffix"),
+        getArg[string](args.unnamed, args.named, 2, "dir", "temp://"),
+        getArg[int](args.unnamed, args.named, 3, "randLen", 8),
+        getArg[bool](args.unnamed, args.named, 4, "checkExists", true))
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command vfs.gen-temp-path: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
   const namespace = "vfs"

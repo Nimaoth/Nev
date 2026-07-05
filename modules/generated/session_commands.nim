@@ -6,24 +6,27 @@ import scripting_api
 
 
 proc setSessionDataJsonWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: SessionService = getServiceChecked(SessionService)
-    setSessionDataJson(self, getArg[string](args.unnamed, args.named, 0, "path"),
-      getArg[JsonNode](args.unnamed, args.named, 1, "value"), getArg[bool](args.unnamed, args.named, 2, "override", true))
-    return ""
-  except CatchableError:
-    return "Failed to execute command session.set-session-data-json: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: SessionService = getServiceChecked(SessionService)
+      setSessionDataJson(self, getArg[string](args.unnamed, args.named, 0, "path"),
+        getArg[JsonNode](args.unnamed, args.named, 1, "value"),
+        getArg[bool](args.unnamed, args.named, 2, "override", true))
+      return ""
+    except CatchableError:
+      return "Failed to execute command session.set-session-data-json: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc getSessionDataJsonWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: SessionService = getServiceChecked(SessionService)
-    let res = getSessionDataJson(self, getArg[string](args.unnamed, args.named, 0, "path"),
-      getArg[JsonNode](args.unnamed, args.named, 1, "default"))
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command session.get-session-data-json: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: SessionService = getServiceChecked(SessionService)
+      let res = getSessionDataJson(self, getArg[string](args.unnamed, args.named, 0, "path"),
+        getArg[JsonNode](args.unnamed, args.named, 1, "default"))
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command session.get-session-data-json: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
   const namespace = "session"

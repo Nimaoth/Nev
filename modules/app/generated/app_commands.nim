@@ -7,373 +7,410 @@ import scripting_api
 
 proc reapplyConfigKeybindingsWrapper(args: string): string {.gcsafe.} =
   ## Reapply keybindings from config files
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    reapplyConfigKeybindings(self, getArg[bool](args.unnamed, args.named, 0, "app", false),
-      getArg[bool](args.unnamed, args.named, 1, "home", false),
-      getArg[bool](args.unnamed, args.named, 2, "workspace", false),
-      getArg[bool](args.unnamed, args.named, 3, "wait", false))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .reapply-config-keybindings: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      reapplyConfigKeybindings(self, getArg[bool](args.unnamed, args.named, 0, "app", false),
+        getArg[bool](args.unnamed, args.named, 1, "home", false),
+        getArg[bool](args.unnamed, args.named, 2, "workspace", false),
+        getArg[bool](args.unnamed, args.named, 3, "wait", false))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .reapply-config-keybindings: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc loadSessionWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    loadSession(self, getArg[string](args.unnamed, args.named, 0, "path"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .load-session: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      loadSession(self, getArg[string](args.unnamed, args.named, 0, "path"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .load-session: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc runExternalCommandWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    runExternalCommand(self, getArg[string](args.unnamed, args.named, 0, "command"),
-      getArg[seq[string]](args.unnamed, args.named, 1, "args", @[]),
-      getArg[string](args.unnamed, args.named, 2, "workingDir", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .run-external-command: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      runExternalCommand(self, getArg[string](args.unnamed, args.named, 0, "command"),
+        getArg[seq[string]](args.unnamed, args.named, 1, "args", @[]),
+        getArg[string](args.unnamed, args.named, 2, "workingDir", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .run-external-command: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc disableLogFrameTimeWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    disableLogFrameTime(self, getArg[bool](args.unnamed, args.named, 0, "disable"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .disable-log-frame-time: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      disableLogFrameTime(self, getArg[bool](args.unnamed, args.named, 0, "disable"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .disable-log-frame-time: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc enableDebugPrintAsyncAwaitStackTraceWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    enableDebugPrintAsyncAwaitStackTrace(self, getArg[bool](args.unnamed, args.named, 0, "enable"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .enable-debug-print-async-await-stack-trace: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      enableDebugPrintAsyncAwaitStackTrace(self, getArg[bool](args.unnamed, args.named, 0, "enable"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .enable-debug-print-async-await-stack-trace: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc toggleShowDrawnNodesWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    toggleShowDrawnNodes(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .toggle-show-drawn-nodes: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      toggleShowDrawnNodes(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .toggle-show-drawn-nodes: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc saveAppStateWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    saveAppState(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .save-app-state: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      saveAppState(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .save-app-state: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc requestRenderWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    requestRender(self, getArg[bool](args.unnamed, args.named, 0, "redrawEverything", false))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .request-render: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      requestRender(self, getArg[bool](args.unnamed, args.named, 0, "redrawEverything", false))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .request-render: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc quitWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    quit(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .quit: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      quit(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .quit: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc quitImmediatelyWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    quitImmediately(self, getArg[int](args.unnamed, args.named, 0, "exitCode", 0))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .quit-immediately: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      quitImmediately(self, getArg[int](args.unnamed, args.named, 0, "exitCode", 0))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .quit-immediately: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc helpWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    help(self, getArg[string](args.unnamed, args.named, 0, "about", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .help: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      help(self, getArg[string](args.unnamed, args.named, 0, "about", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .help: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc changeFontSizeWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    changeFontSize(self, getArg[float32](args.unnamed, args.named, 0, "amount"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .change-font-size: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      changeFontSize(self, getArg[float32](args.unnamed, args.named, 0, "amount"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .change-font-size: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc changeLineDistanceWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    changeLineDistance(self, getArg[float32](args.unnamed, args.named, 0, "amount"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .change-line-distance: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      changeLineDistance(self, getArg[float32](args.unnamed, args.named, 0, "amount"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .change-line-distance: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc toggleStatusBarLocationWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    toggleStatusBarLocation(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .toggle-status-bar-location: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      toggleStatusBarLocation(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .toggle-status-bar-location: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc logsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    logs(self, getArg[string](args.unnamed, args.named, 0, "slot", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .logs: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      logs(self, getArg[string](args.unnamed, args.named, 0, "slot", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .logs: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc toggleConsoleLoggerWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    toggleConsoleLogger(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .toggle-console-logger: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      toggleConsoleLogger(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .toggle-console-logger: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc writeFileWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    writeFile(self, getArg[string](args.unnamed, args.named, 0, "path", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .write-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      writeFile(self, getArg[string](args.unnamed, args.named, 0, "path", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .write-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc loadFileWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    loadFile(self, getArg[string](args.unnamed, args.named, 0, "path", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .load-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      loadFile(self, getArg[string](args.unnamed, args.named, 0, "path", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .load-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc loadThemeWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    loadTheme(self, getArg[string](args.unnamed, args.named, 0, "name"),
-      getArg[bool](args.unnamed, args.named, 1, "force", false))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .load-theme: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      loadTheme(self, getArg[string](args.unnamed, args.named, 0, "name"),
+        getArg[bool](args.unnamed, args.named, 1, "force", false))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .load-theme: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc openSessionWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    openSession(self, getArg[bool](args.unnamed, args.named, 0, "newWindow", false),
-      getArg[string](args.unnamed, args.named, 1, "root", "home://"),
-      getArg[bool](args.unnamed, args.named, 2, "preview", true),
-      getArg[float](args.unnamed, args.named, 3, "scaleX", 0.9),
-      getArg[float](args.unnamed, args.named, 4, "scaleY", 0.8),
-      getArg[float](args.unnamed, args.named, 5, "previewScale", 0.4))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .open-session: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      openSession(self, getArg[bool](args.unnamed, args.named, 0, "newWindow", false),
+        getArg[string](args.unnamed, args.named, 1, "root", "home://"),
+        getArg[bool](args.unnamed, args.named, 2, "preview", true),
+        getArg[float](args.unnamed, args.named, 3, "scaleX", 0.9),
+        getArg[float](args.unnamed, args.named, 4, "scaleY", 0.8),
+        getArg[float](args.unnamed, args.named, 5, "previewScale", 0.4))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .open-session: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc openRecentSessionWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    openRecentSession(self, getArg[bool](args.unnamed, args.named, 0, "preview", true),
-      getArg[float](args.unnamed, args.named, 1, "scaleX", 0.9),
-      getArg[float](args.unnamed, args.named, 2, "scaleY", 0.8),
-      getArg[float](args.unnamed, args.named, 3, "previewScale", 0.4))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .open-recent-session: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      openRecentSession(self, getArg[bool](args.unnamed, args.named, 0, "preview", true),
+        getArg[float](args.unnamed, args.named, 1, "scaleX", 0.9),
+        getArg[float](args.unnamed, args.named, 2, "scaleY", 0.8),
+        getArg[float](args.unnamed, args.named, 3, "previewScale", 0.4))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .open-recent-session: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc chooseThemeWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    chooseTheme(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .choose-theme: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      chooseTheme(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .choose-theme: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc crashWrapper(args: string): string {.gcsafe.} =
   ## This command will cause the editor to crash by failing an assertion.
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    crash(self, getArg[string](args.unnamed, args.named, 0, "message", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .crash: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      crash(self, getArg[string](args.unnamed, args.named, 0, "message", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .crash: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc crash2Wrapper(args: string): string {.gcsafe.} =
   ## This command will cause the editor to crash by accessing a nil reference.
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    crash2(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .crash-2: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      crash2(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .crash-2: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc createFileWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    createFile(self, getArg[string](args.unnamed, args.named, 0, "path"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .create-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      createFile(self, getArg[string](args.unnamed, args.named, 0, "path"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .create-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc recomputeWorkspaceCacheWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    recomputeWorkspaceCache(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .recompute-workspace-cache: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      recomputeWorkspaceCache(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .recompute-workspace-cache: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc reloadWorkspaceIgnoreWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    reloadWorkspaceIgnore(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .reload-workspace-ignore: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      reloadWorkspaceIgnore(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .reload-workspace-ignore: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc browseKeybindsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    browseKeybinds(self, getArg[bool](args.unnamed, args.named, 0, "preview", true),
-      getArg[float](args.unnamed, args.named, 1, "scaleX", 0.9),
-      getArg[float](args.unnamed, args.named, 2, "scaleY", 0.8),
-      getArg[float](args.unnamed, args.named, 3, "previewScale", 0.4),
-      getArg[string](args.unnamed, args.named, 4, "slot", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .browse-keybinds: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      browseKeybinds(self, getArg[bool](args.unnamed, args.named, 0, "preview", true),
+        getArg[float](args.unnamed, args.named, 1, "scaleX", 0.9),
+        getArg[float](args.unnamed, args.named, 2, "scaleY", 0.8),
+        getArg[float](args.unnamed, args.named, 3, "previewScale", 0.4),
+        getArg[string](args.unnamed, args.named, 4, "slot", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .browse-keybinds: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc browseSettingsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    browseSettings(self, getArg[bool](args.unnamed, args.named, 0, "includeActiveEditor", false),
-      getArg[float](args.unnamed, args.named, 1, "scaleX", 0.8),
-      getArg[float](args.unnamed, args.named, 2, "scaleY", 0.8),
-      getArg[float](args.unnamed, args.named, 3, "previewScale", 0.5),
-      getArg[string](args.unnamed, args.named, 4, "slot", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .browse-settings: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      browseSettings(self, getArg[bool](args.unnamed, args.named, 0, "includeActiveEditor", false),
+        getArg[float](args.unnamed, args.named, 1, "scaleX", 0.8),
+        getArg[float](args.unnamed, args.named, 2, "scaleY", 0.8),
+        getArg[float](args.unnamed, args.named, 3, "previewScale", 0.5),
+        getArg[string](args.unnamed, args.named, 4, "slot", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .browse-settings: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc chooseFileWrapper(args: string): string {.gcsafe.} =
   ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file
   ## Press <ESCAPE> to close the dialogue
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    chooseFile(self, getArg[bool](args.unnamed, args.named, 0, "preview", true),
-      getArg[float](args.unnamed, args.named, 1, "scaleX", 0.8),
-      getArg[float](args.unnamed, args.named, 2, "scaleY", 0.8),
-      getArg[float](args.unnamed, args.named, 3, "previewScale", 0.5),
-      getArg[string](args.unnamed, args.named, 4, "slot", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .choose-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      chooseFile(self, getArg[bool](args.unnamed, args.named, 0, "preview", true),
+        getArg[float](args.unnamed, args.named, 1, "scaleX", 0.8),
+        getArg[float](args.unnamed, args.named, 2, "scaleY", 0.8),
+        getArg[float](args.unnamed, args.named, 3, "previewScale", 0.5),
+        getArg[string](args.unnamed, args.named, 4, "slot", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .choose-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc chooseOpenDocumentWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    chooseOpenDocument(self, getArg[string](args.unnamed, args.named, 0, "slot", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .choose-open-document: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      chooseOpenDocument(self, getArg[string](args.unnamed, args.named, 0, "slot", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .choose-open-document: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc showPluginsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    showPlugins(self, getArg[float](args.unnamed, args.named, 0, "scaleX", 0.9),
-      getArg[float](args.unnamed, args.named, 1, "scaleY", 0.9),
-      getArg[float](args.unnamed, args.named, 2, "previewScale", 0.6),
-      getArg[string](args.unnamed, args.named, 3, "slot", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .show-plugins: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      showPlugins(self, getArg[float](args.unnamed, args.named, 0, "scaleX", 0.9),
+        getArg[float](args.unnamed, args.named, 1, "scaleY", 0.9),
+        getArg[float](args.unnamed, args.named, 2, "previewScale", 0.6),
+        getArg[string](args.unnamed, args.named, 3, "slot", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .show-plugins: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc gotoNextLocationWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    gotoNextLocation(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .goto-next-location: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      gotoNextLocation(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .goto-next-location: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc gotoPrevLocationWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    gotoPrevLocation(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .goto-prev-location: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      gotoPrevLocation(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .goto-prev-location: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc chooseLocationWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    chooseLocation(self, getArg[string](args.unnamed, args.named, 0, "slot", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .choose-location: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      chooseLocation(self, getArg[string](args.unnamed, args.named, 0, "slot", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .choose-location: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc searchGlobalInteractiveWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    searchGlobalInteractive(self, getArg[string](args.unnamed, args.named, 0, "path", ""),
-      getArg[string](args.unnamed, args.named, 1, "slot", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .search-global-interactive: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      searchGlobalInteractive(self, getArg[string](args.unnamed, args.named, 0, "path", ""),
+        getArg[string](args.unnamed, args.named, 1, "slot", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .search-global-interactive: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc searchGlobalWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    searchGlobal(self, getArg[string](args.unnamed, args.named, 0, "query"),
-      getArg[string](args.unnamed, args.named, 1, "slot", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .search-global: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      searchGlobal(self, getArg[string](args.unnamed, args.named, 0, "query"),
+        getArg[string](args.unnamed, args.named, 1, "slot", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .search-global: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc installTreesitterParserWrapper(args: string): string {.gcsafe.} =
   ## Install a treesitter parser by downloading the repository and building a wasm module.
@@ -399,204 +436,225 @@ proc installTreesitterParserWrapper(args: string): string {.gcsafe.} =
   ## - `install-treesitter-parser "tree-sitter/tree-sitter-ocaml/grammars/ocaml"` will clone/pull
   ## the repository `https://github.com/tree-sitter/tree-sitter-ocaml` and then build the parser from
   ## the directory `<installdir>/languages/tree-sitter-ocaml/grammars/ocaml`
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    installTreesitterParser(self, getArg[string](args.unnamed, args.named, 0, "language"),
-      getArg[string](args.unnamed, args.named, 1, "host", "github.com"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .install-treesitter-parser: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      installTreesitterParser(self, getArg[string](args.unnamed, args.named, 0, "language"),
+        getArg[string](args.unnamed, args.named, 1, "host", "github.com"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .install-treesitter-parser: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc installTreesitterParserPrebuiltWrapper(args: string): string {.gcsafe.} =
   ## Install a treesitter parser by downloading a prebuilt wasm binary from `https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/tag/v0.3`
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    installTreesitterParserPrebuilt(self, getArg[string](args.unnamed, args.named, 0, "language"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .install-treesitter-parser-prebuilt: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      installTreesitterParserPrebuilt(self, getArg[string](args.unnamed, args.named, 0, "language"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .install-treesitter-parser-prebuilt: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc installTreesitterParserPrebuiltFromListWrapper(args: string): string {.gcsafe.} =
   ## Install a treesitter parser by downloading a prebuilt wasm binary from `https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/tag/v0.3`
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    installTreesitterParserPrebuiltFromList(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .install-treesitter-parser-prebuilt-from-list: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      installTreesitterParserPrebuiltFromList(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .install-treesitter-parser-prebuilt-from-list: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc exploreFilesWrapper(args: string): string {.gcsafe.} =
   ## Open a file explorer at `root`. If `diff` is true then files will be show as a diff if applicable
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    exploreFiles(self, getArg[string](args.unnamed, args.named, 0, "root", ""),
-      getArg[bool](args.unnamed, args.named, 1, "showVFS", false),
-      getArg[bool](args.unnamed, args.named, 2, "normalize", true),
-      getArg[bool](args.unnamed, args.named, 3, "diff", false),
-      getArg[float](args.unnamed, args.named, 4, "previewScale", 0.5),
-      getArg[string](args.unnamed, args.named, 5, "slot", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .explore-files: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      exploreFiles(self, getArg[string](args.unnamed, args.named, 0, "root", ""),
+        getArg[bool](args.unnamed, args.named, 1, "showVFS", false),
+        getArg[bool](args.unnamed, args.named, 2, "normalize", true),
+        getArg[bool](args.unnamed, args.named, 3, "diff", false),
+        getArg[float](args.unnamed, args.named, 4, "previewScale", 0.5),
+        getArg[string](args.unnamed, args.named, 5, "slot", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .explore-files: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc exploreWorkspacePrimaryWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    exploreWorkspacePrimary(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .explore-workspace-primary: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      exploreWorkspacePrimary(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .explore-workspace-primary: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc exploreCurrentFileDirectoryWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    exploreCurrentFileDirectory(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .explore-current-file-directory: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      exploreCurrentFileDirectory(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .explore-current-file-directory: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc reloadConfigWrapper(args: string): string {.gcsafe.} =
   ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    reloadConfig(self, getArg[bool](args.unnamed, args.named, 0, "clearOptions", false))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .reload-config: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      reloadConfig(self, getArg[bool](args.unnamed, args.named, 0, "clearOptions", false))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .reload-config: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc reloadThemeWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    reloadTheme(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .reload-theme: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      reloadTheme(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .reload-theme: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc currentFilePathWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    let res = currentFilePath(self)
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command .current-file-path: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      let res = currentFilePath(self)
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command .current-file-path: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc currentLocalFilePathWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    let res = currentLocalFilePath(self)
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command .current-local-file-path: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      let res = currentLocalFilePath(self)
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command .current-local-file-path: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc saveSessionWrapper(args: string): string {.gcsafe.} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    saveSession(self, getArg[string](args.unnamed, args.named, 0, "sessionFile", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .save-session: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      saveSession(self, getArg[string](args.unnamed, args.named, 0, "sessionFile", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .save-session: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc dumpKeymapGraphVizWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    dumpKeymapGraphViz(self, getArg[string](args.unnamed, args.named, 0, "context", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .dump-keymap-graph-viz: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      dumpKeymapGraphViz(self, getArg[string](args.unnamed, args.named, 0, "context", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .dump-keymap-graph-viz: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setModeWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    setMode(self, getArg[string](args.unnamed, args.named, 0, "mode"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .set-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      setMode(self, getArg[string](args.unnamed, args.named, 0, "mode"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .set-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc changeAnimationSpeedWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    changeAnimationSpeed(self, getArg[float](args.unnamed, args.named, 0, "factor"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .change-animation-speed: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      changeAnimationSpeed(self, getArg[float](args.unnamed, args.named, 0, "factor"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .change-animation-speed: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc logRootNodeWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    logRootNode(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .log-root-node: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      logRootNode(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .log-root-node: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc replayKeysWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    replayKeys(self, getArg[string](args.unnamed, args.named, 0, "register"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .replay-keys: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      replayKeys(self, getArg[string](args.unnamed, args.named, 0, "register"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .replay-keys: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc inputKeysWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    inputKeys(self, getArg[string](args.unnamed, args.named, 0, "input"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command .input-keys: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      inputKeys(self, getArg[string](args.unnamed, args.named, 0, "input"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command .input-keys: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc collectGarbageWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    collectGarbage(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .collect-garbage: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      collectGarbage(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .collect-garbage: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc echoArgsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    echoArgs(self, newJexArray(args.unnamed.elems[0..^1]).toJson)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .echo-args: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      echoArgs(self, newJexArray(args.unnamed.elems[0..^1]).toJson)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .echo-args: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc allWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    all(self, newJexArray(args.unnamed.elems[0..^1]).toJson)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .all: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      all(self, newJexArray(args.unnamed.elems[0..^1]).toJson)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .all: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc printStatisticsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: App = ({.gcsafe.}: gApp)
-    printStatistics(self)
-    return ""
-  except CatchableError:
-    return "Failed to execute command .print-statistics: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: App = ({.gcsafe.}: gApp)
+      printStatistics(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .print-statistics: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
   discard commands.registerCommand(command_service.Command(

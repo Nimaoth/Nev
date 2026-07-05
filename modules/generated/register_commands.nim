@@ -6,86 +6,95 @@ import scripting_api
 
 
 proc registersSetRegisterTextWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: Registers = getServiceChecked(Registers)
-    registersSetRegisterText(self, getArg[string](args.unnamed, args.named, 0, "text"),
-      getArg[string](args.unnamed, args.named, 1, "register", ""))
-    return ""
-  except CatchableError:
-    return "Failed to execute command registers.registers-set-register-text: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: Registers = getServiceChecked(Registers)
+      registersSetRegisterText(self, getArg[string](args.unnamed, args.named, 0, "text"),
+        getArg[string](args.unnamed, args.named, 1, "register", ""))
+      return ""
+    except CatchableError:
+      return "Failed to execute command registers.registers-set-register-text: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registersGetRegisterTextWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: Registers = getServiceChecked(Registers)
-    let res = registersGetRegisterText(self, getArg[string](args.unnamed, args.named, 0, "register"))
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command registers.registers-get-register-text: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: Registers = getServiceChecked(Registers)
+      let res = registersGetRegisterText(self, getArg[string](args.unnamed, args.named, 0, "register"))
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command registers.registers-get-register-text: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc startRecordingKeysWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: Registers = getServiceChecked(Registers)
-    startRecordingKeys(self, getArg[string](args.unnamed, args.named, 0, "register"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command registers.start-recording-keys: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: Registers = getServiceChecked(Registers)
+      startRecordingKeys(self, getArg[string](args.unnamed, args.named, 0, "register"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command registers.start-recording-keys: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc stopRecordingKeysWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: Registers = getServiceChecked(Registers)
-    stopRecordingKeys(self, getArg[string](args.unnamed, args.named, 0, "register"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command registers.stop-recording-keys: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: Registers = getServiceChecked(Registers)
+      stopRecordingKeys(self, getArg[string](args.unnamed, args.named, 0, "register"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command registers.stop-recording-keys: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc startRecordingCommandsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: Registers = getServiceChecked(Registers)
-    startRecordingCommands(self, getArg[string](args.unnamed, args.named, 0, "register"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command registers.start-recording-commands: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: Registers = getServiceChecked(Registers)
+      startRecordingCommands(self, getArg[string](args.unnamed, args.named, 0, "register"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command registers.start-recording-commands: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc stopRecordingCommandsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: Registers = getServiceChecked(Registers)
-    stopRecordingCommands(self, getArg[string](args.unnamed, args.named, 0, "register"))
-    return ""
-  except CatchableError:
-    return "Failed to execute command registers.stop-recording-commands: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: Registers = getServiceChecked(Registers)
+      stopRecordingCommands(self, getArg[string](args.unnamed, args.named, 0, "register"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command registers.stop-recording-commands: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc isReplayingCommandsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: Registers = getServiceChecked(Registers)
-    let res = isReplayingCommands(self)
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command registers.is-replaying-commands: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: Registers = getServiceChecked(Registers)
+      let res = isReplayingCommands(self)
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command registers.is-replaying-commands: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc isReplayingKeysWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: Registers = getServiceChecked(Registers)
-    let res = isReplayingKeys(self)
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command registers.is-replaying-keys: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: Registers = getServiceChecked(Registers)
+      let res = isReplayingKeys(self)
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command registers.is-replaying-keys: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc isRecordingCommandsWrapper(args: string): string {.gcsafe.} =
-  try:
-    let args {.used.} = args.parseJsonexArgs()
-    let self: Registers = getServiceChecked(Registers)
-    let res = isRecordingCommands(self, getArg[string](args.unnamed, args.named, 0, "registry"))
-    return ({.gcsafe.}: $res.toJsonEx)
-  except CatchableError:
-    return "Failed to execute command registers.is-recording-commands: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: Registers = getServiceChecked(Registers)
+      let res = isRecordingCommands(self, getArg[string](args.unnamed, args.named, 0, "registry"))
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command registers.is-recording-commands: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
   const namespace = "registers"

@@ -1494,6 +1494,24 @@ when implModule and defined(profiler):
     daTag(daProfiler)
     result.add self.getEventHandler("profiler")
 
+  proc profilerToggle(view: ProfilerView) =
+    let layout = getServiceChecked(LayoutService)
+    if layout.isViewVisible(view):
+      layout.closeView(view, keepHidden = false, restoreHidden = false)
+    else:
+      layout.addView(view, slot = "#small-left", focus = true)
+      view.markDirty()
+
+  proc profilerGraph(view: ProfilerView, arg: string = "") =
+    let pointerValue = parsePointerValue(arg)
+    if pointerValue.isSome:
+      let pointerUInt = pointerValue.get()
+      # let dumpPath = "logs/allocation-graph-cmd-" & pointerUInt.toHex & ".dot"
+      let dumpPath = "logs/allocation-graph-cmd.dot"
+      discard view.dumpAllocationGraphToFile(cast[pointer](pointerUInt), 10, dumpPath = dumpPath)
+
+  include generated/profiler_commands
+
   proc init_module_profiler*() {.cdecl, exportc, dynlib.} =
     daTag(daProfiler)
     var view: ProfilerView = getProfiler()
@@ -1513,7 +1531,6 @@ when implModule and defined(profiler):
     view.copyImpl = proc(self: View): View = self
 
     let layout = getServiceChecked(LayoutService)
-    let commands = getServiceChecked(CommandService)
     discard getServiceChecked(PlatformService).platform.onPreRender.subscribe proc(_: Platform) =
       withDaTag(daProfiler):
         view.allocatorEventsSinceLastSnapshot += view.processAllocatorEvents()
@@ -1530,32 +1547,4 @@ when implModule and defined(profiler):
     layout.addViewFactory "Profiler", proc(config: JsonNode): View {.raises: [].} =
       return view
 
-    template defineCommand(inName: string, desc: string, body: untyped): untyped =
-      discard commands.registerCommand(command_service.Command(
-        namespace: "",
-        name: "profiler." & inName,
-        description: desc,
-        parameters: @[],
-        returnType: "void",
-        execute: proc(args {.inject.}: string): string {.gcsafe, raises: [].} =
-          try:
-            body
-            return ""
-          except CatchableError:
-            return ""
-      ))
-
-    defineCommand("toggle", "Toggle Profiler UI"):
-      if layout.isViewVisible(view):
-        layout.closeView(view, keepHidden = false, restoreHidden = false)
-      else:
-        layout.addView(view, slot = "#small-left", focus = true)
-        view.markDirty()
-
-    defineCommand("graph", "Dump allocation graph for pointer argument"):
-      let pointerValue = parsePointerValue(args)
-      if pointerValue.isSome:
-        let pointerUInt = pointerValue.get()
-        # let dumpPath = "logs/allocation-graph-cmd-" & pointerUInt.toHex & ".dot"
-        let dumpPath = "logs/allocation-graph-cmd.dot"
-        discard view.dumpAllocationGraphToFile(cast[pointer](pointerUInt), 10, dumpPath = dumpPath)
+    registerCommands(getServiceChecked(CommandService))
