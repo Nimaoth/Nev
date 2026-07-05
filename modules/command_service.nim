@@ -1,6 +1,6 @@
-#use register
+#use
 import std/[options, strutils, sequtils, strformat, json, streams, tables]
-import misc/[jsonex, myjsonutils]
+import misc/[jsonex, myjsonutils, event]
 import service, lisp, log
 
 const currentSourcePath2 = currentSourcePath()
@@ -35,27 +35,26 @@ type
     dontRecord*: bool = false
     commands*: Table[string, Command]
     defaultCommandHandler*: CommandHandler
+    onRecordCommand*: Event[string]
 
 func serviceName*(_: typedesc[CommandService]): string = "CommandService"
 
 # DLL API
 {.push rtl, gcsafe, raises: [].}
 proc commandServiceRegisterCommand(self: CommandService, command: sink Command, override: bool = false): CommandId
-proc commandServiceExecuteCommand(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil): Option[string]
+proc commandServiceExecuteCommand(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil, namespace: string = ""): Option[string]
 proc commandServiceUnregisterCommandByName(self: CommandService, command: string)
 proc commandServiceUnregisterCommandById(self: CommandService, id: CommandId)
 proc commandServiceAddPrefixCommandHandler(self: CommandService, prefix: string, handler: CommandHandler)
-proc commandServiceAddScopedCommandHandler(self: CommandService, prefix: string, handler: CommandHandler)
 proc commandServiceCheckPermissions(self: CommandService, command: string, permissions: CommandPermissions): bool
 {.pop.}
 
 # Nice wrappers
 proc registerCommand*(self: CommandService, command: sink Command, override: bool = false): CommandId {.inline.} = commandServiceRegisterCommand(self, command, override)
-proc executeCommand*(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil): Option[string] {.inline.} = commandServiceExecuteCommand(self, command, record, context)
+proc executeCommand*(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil, namespace: string = ""): Option[string] {.inline.} = commandServiceExecuteCommand(self, command, record, context, namespace)
 proc unregisterCommand*(self: CommandService, command: string) {.inline.} = commandServiceUnregisterCommandByName(self, command)
 proc unregisterCommand*(self: CommandService, id: CommandId) {.inline.} = commandServiceUnregisterCommandById(self, id)
 proc addPrefixCommandHandler*(self: CommandService, prefix: string, handler: CommandHandler) {.inline.} = commandServiceAddPrefixCommandHandler(self, prefix, handler)
-proc addScopedCommandHandler*(self: CommandService, prefix: string, handler: CommandHandler) {.inline.} = commandServiceAddScopedCommandHandler(self, prefix, handler)
 proc checkPermissions*(self: CommandService, command: string, permissions: CommandPermissions): bool {.inline.} = commandServiceCheckPermissions(self, command, permissions)
 
 import std/[macros, genasts]
@@ -168,16 +167,13 @@ proc parseCommand*(json: JsonNodeEx): tuple[command: string, args: string, ok: b
 when implModule:
   import std/[sugar, hashes]
   import misc/[util, custom_async, custom_unicode, parsejsonex, timer]
-  import config_provider, misc/input_api, register, dispatch_tables
+  import config_provider, misc/input_api
 
   {.push gcsafe.}
   {.push raises: [].}
 
   type
     CommandServiceImpl* = ref object of CommandService
-      mRegisters*: Registers
-
-      scopedCommandHandlers: Table[string, CommandHandler]
       prefixCommandHandlers: seq[tuple[prefix: string, execute: CommandHandler]]
       commandIdCounter: int = 1
       idToCommand*: Table[CommandId, string]
@@ -198,40 +194,9 @@ when implModule:
         return $node
     return ""
 
-  proc registers*(self: CommandServiceImpl): Registers =
-    if self.mRegisters == nil:
-      self.mRegisters = getService(Registers).get(nil)
-    return self.mRegisters
-
   proc newCommandService(): CommandServiceImpl =
     log lvlInfo, &"newCommandService"
     let self = CommandServiceImpl()
-
-    {.gcsafe.}:
-      for table in globalDispatchTables.mitems:
-        for value in table.functions.values:
-          capture value:
-            discard self.registerCommand(Command(
-              name: value.name,
-              parameters: value.params.mapIt((it.name, it.typ)),
-              description: value.docs,
-              returnType: value.returnType,
-              execute: (proc(args: string): string =
-                try:
-                  var argsJson = newJArray()
-                  try:
-                    for a in newStringStream(args).parseJsonFragments():
-                      argsJson.add a
-                  except CatchableError as e:
-                    log(lvlError, fmt"Failed to parse arguments '{args}': {e.msg}")
-
-                  return value.dispatch(argsJson).toStringResult()
-                except CatchableError as e:
-                  log lvlError, &"Failed to execute command '{value.name}': {e.msg}"
-                  return ""
-              )
-            ))
-
     return self
 
   # todo
@@ -291,10 +256,6 @@ when implModule:
   proc commandServiceAddPrefixCommandHandler(self: CommandService, prefix: string, handler: CommandHandler) =
     let self = self.CommandServiceImpl
     self.prefixCommandHandlers.add((prefix, handler))
-
-  proc commandServiceAddScopedCommandHandler(self: CommandService, prefix: string, handler: CommandHandler) =
-    let self = self.CommandServiceImpl
-    self.scopedCommandHandlers[prefix] = handler
 
   iterator parseJsonFragmentsAndSubstituteArgs(s: Stream, args: seq[JsonNodeEx], index: var int): JsonNodeEx =
     var p: JsonexParser
@@ -378,7 +339,7 @@ when implModule:
       log lvlError, &"Failed to run alias '{action}': invalid configuration. Expected string | string[], got '{alias}'"
       return string.none
 
-  proc commandServiceExecuteCommand(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil): Option[string] =
+  proc commandServiceExecuteCommand(self: CommandService, command: string, record: bool = true, context: JsonNodeEx = nil, namespace: string = ""): Option[string] =
     let self = self.CommandServiceImpl
 
     if command == "toggle-log-commands":
@@ -397,15 +358,15 @@ when implModule:
         self.dontRecord = oldDontRecord
 
     let t = startTimer()
-    if not self.registers.bIsReplayingCommands and self.logCommands:
+    if self.logCommands:
       log lvlInfo, &"[executeCommand] '{command}'"
     defer:
-      if not self.registers.bIsReplayingCommands and self.logCommands:
+      if self.logCommands:
         let elapsed = t.elapsed
         log lvlInfo, &"[executeCommand] '{command}' took {elapsed.ms} ms -> {result}"
 
-    if not self.registers.bIsReplayingCommands and doRecord:
-      self.registers.recordCommand(command)
+    if doRecord:
+      self.onRecordCommand.invoke(command)
 
     # todo
     # if self.commandsThisFrame > self.config.get("max-commands-per-frame", 1000):
@@ -417,16 +378,6 @@ when implModule:
       if command.startsWith(handler.prefix):
         return handler.execute(command.some)
 
-    let i = command.find('.')
-    let (prefix, rawCommand) = if i <= 0:
-      ("", command)
-    else:
-      (command[0..<i], command[(i + 1)..^1])
-
-    if prefix in self.scopedCommandHandlers:
-      let handler = self.scopedCommandHandlers[prefix]
-      return handler(rawCommand.some)
-
     var (action, arg) = command.parseAction
     if arg.startsWith("\\"):
       arg = $newJString(arg[1..^1])
@@ -434,6 +385,9 @@ when implModule:
     let alias = if self.config != nil: self.config.get("alias." & action, newJNull()) else: nil
     if alias != nil and alias.kind != JNull:
       return self.handleAlias(action, arg, alias)
+
+    if namespace != "" and not action.startsWith(namespace & ".") and self.commands.contains(namespace & "." & action):
+      action = namespace & "." & action
 
     if self.commands.contains(action):
       try:

@@ -60,7 +60,7 @@ when implModule:
 
   var editorStates: Table[EditorId, EditorVimState]
 
-  const editorContext = "editor.text"
+  const editorContext = "text"
 
   type IdentifierCase = enum Camel, Pascal, Kebab, Snake, ScreamingSnake
 
@@ -344,8 +344,8 @@ when implModule:
       impl: proc(argsString: string): string {.cdecl, raises: [CatchableError].}) =
     let vimCommands = ({.gcsafe.}: vimCommands.addr)
     vimCommands[].add Command(
-      namespace: "",
-      name: "vim." & name,
+      namespace: "vim",
+      name: name,
       description: docs,
       parameters: params,
       returnType: returnType,
@@ -1212,7 +1212,7 @@ when implModule:
     if activeTextEditor(includeCommandLine = true).getSome(editor):
       let mode = $editor.mode
       if mode == "vim.normal":
-        discard runCommand("exit-command-line", "")
+        discard runCommand("commands.exit-command-line", "")
         return
 
       editor.setMode("vim.normal")
@@ -1416,7 +1416,7 @@ when implModule:
     else:
       name
 
-    discard runCommand("replay-commands", &"\"{register}\"")
+    discard runCommand("commands.replay-commands", &"\"{register}\"")
 
   proc stopMacro(editor: TextEditor) {.exposeActive(editorContext).} =
     if isReplayingCommands():

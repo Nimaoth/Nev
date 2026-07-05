@@ -36,9 +36,8 @@ proc showToast*(self: ToastService, title: string, message: string, color: strin
 when implModule:
   import std/[options, json]
   import results
-  import misc/expose
   import misc/[myjsonutils]
-  import dispatch_tables
+  import command_service
 
   logCategory "toast"
 
@@ -70,21 +69,13 @@ when implModule:
 
   ###########################################################################
 
-  proc getToastService(): Option[ToastService] =
-    {.gcsafe.}:
-      if getServices().isNil: return ToastService.none
-      return getServices().getService(ToastService)
-
-  static:
-    addInjector(ToastService, getToastService)
-
-  proc showToast*(self: ToastService, title: string, message: string, color: string) {.expose("toast").} =
+  proc showToast*(self: ToastService, title: string, message: string, color: string) =
     log lvlInfo, &"[{title}] {message}"
     self.toasts.add(Toast(timer: startTimer(), title: title, message: message, color: color))
     asyncSpawn self.updateToasts()
     self.platform.requestRender()
 
-  addGlobalDispatchTable "toast", genDispatchTable("toast")
+  include generated/toast_commands
 
   proc init_module_toast*() {.cdecl, exportc, dynlib.} =
     getServices().addService(ToastService(
@@ -92,3 +83,4 @@ when implModule:
         initToastService(self.ToastService)
         return ok()
     ))
+    registerCommands(getServiceChecked(CommandService))

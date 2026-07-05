@@ -467,7 +467,7 @@
     },
 
     "vim.base": {
-        ":": ["command-line"],
+        ":": ["commands.command-line"],
 
         "<C-w>h": ["focus-view-left"],
         "<C-w><C-h>": ["focus-view-left"],
@@ -539,7 +539,7 @@
         "gc": ["toggle-line-comment"],
         "*": ["vim.set-search-query-from-word"],
 
-        ".": ["replay-commands", "."],
+        ".": ["commands.replay-commands", "."],
         "L": ["vim.select-word-or-add-cursor"],
         "H": ["vim.move-last-selection-to-next-search-result"],
 
@@ -975,13 +975,13 @@
     },
 
     "vscode.command-line-low": {
-        "<ESCAPE>": "exit-command-line",
+        "<ESCAPE>": "commands.exit-command-line",
         "<ENTER>": "execute-command-line",
         "<UP>": "select-previous-command-in-history",
         "<DOWN>": "select-next-command-in-history",
     },
     "vscode.command-line-result-low": {
-        "<ESCAPE>": "exit-command-line",
+        "<ESCAPE>": "commands.exit-command-line",
     },
     "vscode.terminal": {
         "<A-F4>": ["quit"],

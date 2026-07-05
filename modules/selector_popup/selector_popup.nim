@@ -74,8 +74,6 @@ when implModule:
   import search_component, document_editor, text_component, text_editor_component, config_component
   import ui/node
 
-  import misc/expose, dispatch_tables
-
   logCategory "selector"
 
   type
@@ -225,9 +223,6 @@ when implModule:
           return view.SelectorPopupImpl.some
       return SelectorPopupImpl.none
 
-  static:
-    addTypeMap(SelectorPopupImpl, api.SelectorPopup, getSelectorPopup)
-
   proc toJson*(self: api.SelectorPopup, opt = initToJsonOptions()): JsonNode =
     result = newJObject()
     result["type"] = newJString("popup.selector")
@@ -235,6 +230,25 @@ when implModule:
 
   proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
     t.id = api.EditorId(jsonNode["id"].jsonTo(int))
+
+  proc fromJsonExHook*(t: var SelectorPopupImpl, jsonNode: JsonNodeEx) =
+    if getServices().getService(LayoutService).getSome(layout):
+      if jsonNode.kind == JInt:
+        if layout.getView(jsonNode.getInt().int32).getSome(view):
+          if view of SelectorPopupImpl:
+            t = view.SelectorPopupImpl
+            return
+
+      let wrapper = try:
+        jsonNode.jsonTo(api.SelectorPopup)
+      except CatchableError:
+        raise newException(ValueError, "Invalid selector popup id: " & $jsonNode)
+
+      if layout.getView(wrapper.id.int32).getSome(view):
+        if view of SelectorPopupImpl:
+          t = view.SelectorPopupImpl
+          return
+    raise newException(ValueError, "Invalid selector popup id: " & $jsonNode)
 
   proc updatePreview(self: SelectorPopupImpl, item: FinderItem) =
     if self.previewer.isSome and self.previewVisible:
@@ -256,7 +270,7 @@ when implModule:
     if self.previewer.isSome and self.finder.filteredItems.getSome(list) and list.filteredLen > 0 and list.isValidIndex(self.selected):
       self.updatePreview(list[self.selected])
 
-  proc setPreviewVisible*(self: SelectorPopupImpl, visible: bool) {.expose("popup.selector").} =
+  proc setPreviewVisible*(self: SelectorPopupImpl, visible: bool) =
     if self.textEditor.isNil:
       return
 
@@ -271,10 +285,10 @@ when implModule:
 
     self.markDirty()
 
-  proc togglePreview*(self: SelectorPopupImpl) {.expose("popup.selector").} =
+  proc togglePreview*(self: SelectorPopupImpl) =
     self.setPreviewVisible(not self.previewVisible)
 
-  proc getSelectedItemJson*(self: SelectorPopupImpl): JsonNode {.expose("popup.selector").} =
+  proc getSelectedItemJson*(self: SelectorPopupImpl): JsonNode =
     if self.textEditor.isNil:
       return newJNull()
 
@@ -303,7 +317,7 @@ when implModule:
     let self = self.SelectorPopupImpl
     self.layout.popPopup(self)
 
-  proc accept*(self: SelectorPopupImpl) {.expose("popup.selector").} =
+  proc accept*(self: SelectorPopupImpl) =
     self.accepted = true
     if self.textEditor.isNil:
       return
@@ -330,7 +344,7 @@ when implModule:
     if self.handleCanceled != nil:
       self.handleCanceled()
 
-  proc sort(self: SelectorPopupImpl, sort: ToggleBool) {.expose("popup.selector").} =
+  proc sort(self: SelectorPopupImpl, sort: ToggleBool) =
     if self.textEditor.isNil:
       return
     assert self.finder.isNotNil
@@ -339,7 +353,7 @@ when implModule:
     # Retrigger filter and sort
     self.finder.setQuery(self.getSearchString())
 
-  proc setMinScore(self: SelectorPopupImpl, value: float, add: bool = false) {.expose("popup.selector").} =
+  proc setMinScore(self: SelectorPopupImpl, value: float, add: bool = false) =
     if self.textEditor.isNil:
       return
 
@@ -356,7 +370,7 @@ when implModule:
     self.finder.setQuery(self.getSearchString())
     self.markDirty()
 
-  proc prev(self: SelectorPopupImpl, count: int = 1) {.expose("popup.selector").} =
+  proc prev(self: SelectorPopupImpl, count: int = 1) =
     if self.textEditor.isNil:
       return
 
@@ -373,7 +387,7 @@ when implModule:
 
     self.markDirty()
 
-  proc next(self: SelectorPopupImpl, count: int = 1) {.expose("popup.selector").} =
+  proc next(self: SelectorPopupImpl, count: int = 1) =
     if self.textEditor.isNil:
       return
 
@@ -390,7 +404,7 @@ when implModule:
 
     self.markDirty()
 
-  proc setFocusPreview(self: SelectorPopupImpl, focus: bool) {.expose("popup.selector").} =
+  proc setFocusPreview(self: SelectorPopupImpl, focus: bool) =
     if self.previewer.isNone:
       return
 
@@ -407,11 +421,10 @@ when implModule:
     self.focusPreview = focus
     self.markDirty()
 
-  proc toggleFocusPreview*(self: SelectorPopupImpl) {.expose("popup.selector").} =
+  proc toggleFocusPreview*(self: SelectorPopupImpl) =
     self.setFocusPreview(not self.focusPreview)
 
-  genDispatcher("popup.selector")
-  addActiveDispatchTable "popup.selector", genDispatchTable("popup.selector")
+  include generated/selector_popup_commands
 
   proc selectorPopupHandleAddedToLayout(self: SelectorPopupImpl) =
     self.setPreviewVisible(false)
@@ -430,16 +443,7 @@ when implModule:
         if self.customCommands[action](self, args):
           return newJNull().some
 
-      var args = newJArray()
-      args.add api.SelectorPopup(id: self.id2.uint64).toJson
-      for a in newStringStream(arg).parseJsonFragments():
-        args.add a
-
-      let res2 = dispatch(action, args)
-      if res2.isSome:
-        return res2
-
-      let res = self.commands.executeCommand(action & " " & arg)
+      let res = self.commands.executeCommand(action & " " & arg, context = newJexInt(self.id2.int), namespace = "selector")
       if res.isSome:
         return newJString(res.get).some
     except:
@@ -589,6 +593,7 @@ when implModule:
 
   proc init_module_selector_popup*() {.cdecl, exportc, dynlib.} =
     let layout = getServiceChecked(LayoutService)
+    registerCommands(getServiceChecked(CommandService))
     layout.pushSelectorPopupImpl = proc(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup =
       var popup = newSelectorPopup(builder.scope, builder.finder, builder.previewer).SelectorPopupImpl
       popup.title = builder.title

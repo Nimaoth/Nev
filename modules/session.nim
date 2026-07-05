@@ -1,4 +1,4 @@
-#use event_service
+#use event_service command_service
 import std/[json]
 import misc/[event, id, custom_async]
 import service
@@ -42,8 +42,7 @@ proc saveSession*(self: SessionService): JsonNode = sessionSaveSession(self)
 when implModule:
   import std/[options, tables]
   import misc/[custom_logger, util, myjsonutils]
-  import misc/expose
-  import dispatch_tables, event_service, vfs_service
+  import command_service, event_service, vfs_service
   import compilation_config
 
   {.push gcsafe.}
@@ -106,15 +105,7 @@ when implModule:
 
   ###########################################################################
 
-  proc getSessionService(): Option[SessionService] =
-    {.gcsafe.}:
-      if getServices().isNil: return SessionService.none
-      return getServices().getService(SessionService)
-
-  static:
-    addInjector(SessionService, getSessionService)
-
-  proc setSessionDataJson*(self: SessionService, path: string, value: JsonNode, override: bool = true) {.expose("session").} =
+  proc setSessionDataJson*(self: SessionService, path: string, value: JsonNode, override: bool = true) =
     if self.isNil or path.len == 0:
       return
 
@@ -138,7 +129,7 @@ when implModule:
     except:
       discard
 
-  proc getSessionDataJson*(self: SessionService, path: string, default: JsonNode): JsonNode {.expose("session").} =
+  proc getSessionDataJson*(self: SessionService, path: string, default: JsonNode): JsonNode =
     if self.isNil:
       return default
     let node = self.sessionData{path.split(".")}
@@ -152,7 +143,8 @@ when implModule:
   proc sessionSetSessionData(self: SessionService, path: string, value: JsonNode, override: bool = true) =
     self.setSessionDataJson(path, value, override)
 
-  addGlobalDispatchTable "session", genDispatchTable("session")
+  include generated/session_commands
 
   proc init_module_session*() {.cdecl, exportc, dynlib.} =
     getServices().addService(SessionService(sessionData: newJObject()))
+    registerCommands(getServiceChecked(CommandService))

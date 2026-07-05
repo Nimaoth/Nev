@@ -31,7 +31,7 @@ when implModule:
     delayed_task, regex, custom_unicode, jsonex, generational_seq, fuzzy_matching, rope_utils]
   import workspace
   import config_provider
-  import input_handler/input_handler, document, document_editor, popup, dispatch_tables, theme, view, register
+  import input_handler/input_handler, document, document_editor, popup, theme, view, register
   import text_component, text_editor_component
   import finder, previewer, data_previewer
   import compilation_config, vfs, vfs_service
@@ -2987,9 +2987,6 @@ when implModule:
       except:
         discard
 
-  # genDispatcher("editor")
-  # addGlobalDispatchTable "editor", genDispatchTable("editor")
-
   proc toStringResult(res: Option[JsonNode]): Option[string] =
     return res.flatmapIt(if it == nil: string.none elif it.kind == JNull: "".some else: some($it))
 
@@ -3023,20 +3020,6 @@ when implModule:
 
         log lvlError, fmt"Failed to handle command '{action}': No popup"
         return string.none
-
-      {.gcsafe.}:
-        for t in globalDispatchTables.mitems:
-          t.functions.withValue(action, f):
-            try:
-              # debugf"[defaultHandleCommand] '{command}' handled by global dispatch"
-              let res = f[].dispatch(args)
-              if res.isNil:
-                continue
-
-              return ($res).some
-            except JsonCallError as e:
-              log lvlError, &"Failed to dispatch '{action} {args}' in {t.namespace}: {e.msg}"
-
     except:
       discard
 

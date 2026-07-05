@@ -10,7 +10,7 @@ when implModule:
   import workspace
   import finder, previewer
   import platform, file_previewer
-  import service, dispatch_tables
+  import service
   import selector_popup/builder, vcs, layout/layout, vfs, config_provider
   from scripting_api import SelectionCursor, ScrollSnapBehaviour, toSelection
   import document_editor, text_editor_component, move_component, command_component

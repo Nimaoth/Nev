@@ -148,8 +148,7 @@ proc clearCommands*(config: EventHandlerConfig) =
 when implModule:
   import std/[sequtils, sugar, unicode, algorithm]
   import misc/[custom_logger, util, custom_async]
-  import misc/expose
-  import dispatch_tables
+  import command_service
   import platform
 
   logCategory "events"
@@ -558,14 +557,6 @@ when implModule:
 
   ###########################################################################
 
-  proc getEventHandlerService(): Option[EventHandlerService] =
-    {.gcsafe.}:
-      if getServices().isNil: return EventHandlerService.none
-      return getServices().getService(EventHandlerService)
-
-  static:
-    addInjector(EventHandlerService, getEventHandlerService)
-
   proc eventsAddKeyDefinitions(self: EventHandlerService, name: string, keys: seq[string]) =
     self.keyDefinitions.mgetOrPut(name, @[]).add(keys)
     for config in self.eventHandlerConfigs.values:
@@ -576,19 +567,19 @@ when implModule:
     for config in self.eventHandlerConfigs.values:
       config.setKeyDefinitions(self.keyDefinitions)
 
-  proc setLeader*(self: EventHandlerService, leader: string) {.expose("events").} =
+  proc setLeader*(self: EventHandlerService, leader: string) =
     self.setKeyDefinitions("LEADER", @[leader])
 
-  proc setLeaders*(self: EventHandlerService, leaders: seq[string]) {.expose("events").} =
+  proc setLeaders*(self: EventHandlerService, leaders: seq[string]) =
     self.setKeyDefinitions("LEADER", leaders)
 
-  proc addLeader*(self: EventHandlerService, leader: string) {.expose("events").} =
+  proc addLeader*(self: EventHandlerService, leader: string) =
     self.addKeyDefinitions("LEADER", @[leader])
 
-  proc addLeaders*(self: EventHandlerService, leaders: seq[string]) {.expose("events").} =
+  proc addLeaders*(self: EventHandlerService, leaders: seq[string]) =
     self.addKeyDefinitions("LEADER", leaders)
 
-  proc clearCommands*(self: EventHandlerService, context: string) {.expose("events").} =
+  proc clearCommands*(self: EventHandlerService, context: string) =
     log(lvlInfo, fmt"Clearing keybindings for {context}")
     self.getEventHandlerConfig(context).clearCommands()
     self.invalidateCommandToKeysMap()
@@ -613,7 +604,7 @@ when implModule:
 
     self.getEventHandlerConfig(context).addCommandDescription(keys, description)
 
-  addGlobalDispatchTable "events", genDispatchTable("events")
+  include generated/input_handler_commands
 
   proc inputHandlerInputToString(key: int64, modifiers: Modifiers = {}): string =
     input.inputToString(key, modifiers)
@@ -626,6 +617,7 @@ when implModule:
       commandInfos: CommandInfos(),
       settings: getServiceChecked(ConfigService).runtime,
     ))
+    registerCommands(getServiceChecked(CommandService))
 
 template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, handlerBody: untyped): untyped =
   block:

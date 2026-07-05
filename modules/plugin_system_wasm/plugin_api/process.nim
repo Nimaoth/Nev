@@ -1,9 +1,8 @@
 import std/[options, json, strutils]
 import results
 import misc/[custom_async, custom_logger, myjsonutils, util, async_process]
-import misc/expose
 import workspace
-import service, dispatch_tables, vfs, vfs_service, plugin_service
+import service, vfs, vfs_service, plugin_service
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -29,7 +28,5 @@ proc runProcessImpl(self: PluginService, process: string, args: seq[string], wor
   except CatchableError as e:
     log lvlError, &"Failed to run process '{process}': {e.msg}"
 
-proc runProcess*(self: PluginService, process: string, args: seq[string], workingDir: Option[string] = string.none, eval: bool = false) {.expose("process").} =
+proc runProcess*(self: PluginService, process: string, args: seq[string], workingDir: Option[string] = string.none, eval: bool = false) =
   asyncSpawn self.runProcessImpl(process, args, workingDir, eval)
-
-addGlobalDispatchTable "process", genDispatchTable("process")

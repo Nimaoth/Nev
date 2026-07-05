@@ -237,10 +237,11 @@ proc generateCommands(path: string, input: string) =
 
 var t = startTimer()
 var numFiles = 0
-for file in walkDirRec("modules"):
-  if file.endsWith(".commands.lisp"):
-    inc numFiles
-    let f = readFile(file)
-    generateCommands(file, f)
+for root in ["modules", "src"]:
+  for file in walkDirRec(root):
+    if file.endsWith(".commands.lisp"):
+      inc numFiles
+      let f = readFile(file)
+      generateCommands(file, f)
 
 echo "Processed ", numFiles, " files in ", t.elapsed.ms, "ms"

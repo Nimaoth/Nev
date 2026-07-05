@@ -19,8 +19,7 @@ when implModule:
   import std/[tables, options, json]
   import results
   import misc/[custom_async, custom_logger, myjsonutils, util, regex]
-  import misc/expose
-  import dispatch_tables, vfs_config, app_options
+  import command_service, vfs_config, app_options
   import vfs_local
 
   logCategory "vfs-service"
@@ -127,15 +126,7 @@ when implModule:
 
   ###########################################################################
 
-  proc getVfsService(): Option[VFSService] =
-    {.gcsafe.}:
-      if getServices().isNil: return VFSService.none
-      return getServices().getService(VFSService)
-
-  static:
-    addInjector(VFSService, getVfsService)
-
-  proc mountVfs*(self: VFSService, parentPath: Option[string], prefix: string, config: JsonNode) {.expose("vfs").} =
+  proc mountVfs*(self: VFSService, parentPath: Option[string], prefix: string, config: JsonNode) =
     log lvlInfo, &"Mount VFS '{parentPath}', '{prefix}', {config}"
     let vfs = if parentPath.getSome(p):
       self.vfs.getVFS(p).vfs
@@ -145,37 +136,38 @@ when implModule:
     if self.createVfs2(config).getSome(newVFS):
       vfs.mount(prefix, newVFS)
 
-  proc normalizePath*(self: VFSService, path: string): string {.expose("vfs").} =
+  proc normalizePath*(self: VFSService, path: string): string =
     return self.vfs.normalize(path)
 
-  proc localizePath*(self: VFSService, path: string): string {.expose("vfs").} =
+  proc localizePath*(self: VFSService, path: string): string =
     return self.vfs.localize(path)
 
-  proc writeFileSync*(self: VFSService, path: string, content: string) {.expose("vfs").} =
+  proc writeFileSync*(self: VFSService, path: string, content: string) =
     try:
       waitFor self.vfs.write(path, content)
     except IOError as e:
       log lvlError, &"Failed to write file '{path}': {e.msg}"
 
-  proc readFileSync*(self: VFSService, path: string): string {.expose("vfs").} =
+  proc readFileSync*(self: VFSService, path: string): string =
     try:
       return waitFor self.vfs.read(path)
     except IOError as e:
       log lvlError, &"Failed to read file '{path}': {e.msg}"
 
-  proc deleteFileSync*(self: VFSService, path: string) {.expose("vfs").} =
+  proc deleteFileSync*(self: VFSService, path: string) =
     try:
       discard waitFor self.vfs.delete(path)
     except IOError as e:
       log lvlError, &"Failed to delete file '{path}': {e.msg}"
 
-  proc genTempPath*(self: VFSService, prefix: string, suffix: string, dir: string = "temp://", randLen: int = 8, checkExists: bool = true): string {.expose("vfs").} =
+  proc genTempPath*(self: VFSService, prefix: string, suffix: string, dir: string = "temp://", randLen: int = 8, checkExists: bool = true): string =
     self.vfs.genTempPath(prefix, suffix, dir, randLen, checkExists).waitFor
 
   # proc dumpVfsHierarchy*(self: VFSService) {.expose("vfs").} =
   #   log lvlInfo, "\n" & self.vfs.prettyHierarchy()
 
-  addGlobalDispatchTable "vfs", genDispatchTable("vfs")
+  include generated/vfs_service_commands
 
   proc init_module_vfs_service*() {.cdecl, exportc, dynlib.} =
     getServices().addService(newVFSService())
+    registerCommands(getServiceChecked(CommandService))

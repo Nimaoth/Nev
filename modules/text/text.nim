@@ -49,7 +49,6 @@ when implModule:
       canEditDocumentImpl: proc(self: DocumentEditorFactory, document: Document, options: JsonNodeEx = nil): bool {.gcsafe, raises: [].} = canEditDocument(self.TextDocumentEditorFactory, document, options),
       createEditorImpl: proc(self: DocumentEditorFactory, services: Services, document: Document, options: JsonNodeEx = nil): DocumentEditor {.gcsafe, raises: [].} = createEditor(self.TextDocumentEditorFactory, services, document, options),
     ))
-    registerTextEditorCommands()
 
     registerCommands(getServiceChecked(CommandService))
     getServiceChecked(EventService).emit("text-factory/registered", "")

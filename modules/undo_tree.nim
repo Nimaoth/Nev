@@ -566,7 +566,7 @@ when implModule:
     template defineCommand(inName: string, desc: string, body: untyped): untyped =
       discard commands.registerCommand(command_service.Command(
         namespace: "undotree",
-        name: "undotree." & inName,
+        name: inName,
         description: desc,
         parameters: @[],
         returnType: "void",
@@ -585,7 +585,7 @@ when implModule:
 
     discard commands.registerCommand(command_service.Command(
       namespace: "undotree",
-      name: "undotree.toggle",
+      name: "toggle",
       description: "Show undo tree for current buffer",
       parameters: @[],
       returnType: "void",

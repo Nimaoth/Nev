@@ -37,10 +37,9 @@ when implModule:
   import std/[strformat, tables, sugar, json, streams, sequtils]
   import misc/[util, custom_async, custom_unicode, myjsonutils, timer, rope_utils, async_process, delayed_task, jsonex]
   import nimsumtree/[rope, sumtree]
-  import misc/[expose]
   import platform
   import layout/layout
-  import config_provider, dispatch_tables, input_handler/input_handler
+  import config_provider, input_handler/input_handler
   import decoration_component, document, vfs_service, vfs, register
   import language_server_command_line, command_component, text_editor_component, text_component
   import scripting_api, event_service
@@ -171,15 +170,7 @@ when implModule:
       self.requestRender()
       self.commandHandler = handler
 
-  proc getCommandLineService(): Option[CommandLineService] =
-    {.gcsafe.}:
-      if getServices().isNil: return CommandLineService.none
-      return getServices().getService(CommandLineService)
-
-  static:
-    addInjector(CommandLineService, getCommandLineService)
-
-  proc commandLine(self: CommandLineService, initialValue: string = "", prefix: string = "") {.expose("commands").} =
+  proc commandLine(self: CommandLineService, initialValue: string = "", prefix: string = "") =
     self.commandServiceOpenCommandLine(initialValue, prefix)
 
   proc commandLineExitCommandLine(self: CommandLineService) =
@@ -208,11 +199,11 @@ when implModule:
     self.commandHandler = nil
     self.requestRender()
 
-  proc exitCommandLine*(self: CommandLineService) {.expose("commands").} =
+  proc exitCommandLine*(self: CommandLineService) =
     commandLineExitCommandLine(self)
 
   proc commandLineResult*(self: CommandLineService, value: string, showInCommandLine: bool = false,
-      appendAndShowInFile: bool = false, filename: string = "ed://.shell-command-results") {.expose("commands").} =
+      appendAndShowInFile: bool = false, filename: string = "ed://.shell-command-results") =
     let self = self.CommandLineServiceImpl
     let editor = self.commandLineEditor
     if showInCommandLine:
@@ -248,13 +239,13 @@ when implModule:
         let layout = self.services.getServiceChecked(LayoutService)
         discard layout.openFile(filename)
 
-  proc clearCommandLineResults*(self: CommandLineService) {.expose("commands").} =
+  proc clearCommandLineResults*(self: CommandLineService) =
     let self = self.CommandLineServiceImpl
     self.shellCommandOutput = Rope.new("")
     let vfsService = getServiceChecked(VFSService)
     asyncSpawn vfsService.vfs.write("ed://.shell-command-results", self.shellCommandOutput)
 
-  proc executeCommandLine*(self: CommandLineService): bool {.expose("commands").} =
+  proc executeCommandLine*(self: CommandLineService): bool =
     let self = self.CommandLineServiceImpl
     defer:
       self.requestRender()
@@ -312,7 +303,7 @@ when implModule:
       self.commandLineResult(allResults, showInCommandLine = true, appendAndShowInFile = false)
     return true
 
-  proc selectPreviousCommandInHistory*(self: CommandLineService) {.expose("commands").} =
+  proc selectPreviousCommandInHistory*(self: CommandLineService) =
     let self = self.CommandLineServiceImpl
     let editor = self.commandLineEditor
     if self.languageServerCommandLine.commandHistory.len == 0:
@@ -337,7 +328,7 @@ when implModule:
           decos.addOverlay(point(0, 0)...point(0, 0), self.prefix, self.prefixOverlayId.get, scope = "comment", bias = Bias.Left)
     self.requestRender()
 
-  proc selectNextCommandInHistory*(self: CommandLineService) {.expose("commands").} =
+  proc selectNextCommandInHistory*(self: CommandLineService) =
     let self = self.CommandLineServiceImpl
     let editor = self.commandLineEditor
     if self.languageServerCommandLine.commandHistory.len == 0:
@@ -414,7 +405,7 @@ when implModule:
     except Exception as e:
       log lvlError, &"Failed to run shell command '{command}': {e.msg}\n{e.getStackTrace()}"
 
-  proc runShellCommand*(self: CommandLineService, options: RunShellCommandOptions = RunShellCommandOptions()) {.expose("commands").} =
+  proc runShellCommand*(self: CommandLineService, options: RunShellCommandOptions = RunShellCommandOptions()) =
     ## Opens the command line where you can enter a shell command.
     ## The command is run using the specified shell, which can be configured using `editor.shells.xyz`.
     ## `options.shell`               - Name of the shell (not the exe name). If the name is `xyz` then the configuration for the shell is in `editor.shells.xyz`.
@@ -449,42 +440,14 @@ when implModule:
     for command in self.registers.registers[register].text.splitLines:
       discard self.handleCommand(command)
 
-  proc replayCommands*(self: CommandLineService, register: string) {.expose("commands").} =
+  proc replayCommands*(self: CommandLineService, register: string) =
     commandLineReplayCommands(self, register)
 
-  addGlobalDispatchTable "commands", genDispatchTable("commands")
-
-  proc toStringResult(node: JsonNode): string =
-    if node != nil and node.kind != JNull:
-        return $node
-    return ""
+  include generated/command_line_commands
 
   proc init_module_command_line*() {.cdecl, exportc, dynlib.} =
     getServices().addService(newCommandLineService())
-    let commands = getServiceChecked(CommandService)
-    let table = genDispatchTable("commands")
-    for value in table:
-      capture value:
-        discard commands.registerCommand(command_service.Command(
-          name: value.name,
-          parameters: value.params.mapIt((it.name, it.typ)),
-          description: value.docs,
-          returnType: value.returnType,
-          execute: (proc(args: string): string =
-            try:
-              var argsJson = newJArray()
-              try:
-                for a in newStringStream(args).parseJsonFragments():
-                  argsJson.add a
-              except CatchableError as e:
-                log(lvlError, fmt"Failed to parse arguments '{args}': {e.msg}")
-
-              return value.dispatch(argsJson).toStringResult()
-            except CatchableError as e:
-              log lvlError, &"Failed to execute command '{value.name}': {e.msg}"
-              return ""
-          )
-        ), override = true)
+    registerCommands(getServiceChecked(CommandService))
 
 else:
   proc replayCommands*(self: CommandLineService, register: string) =

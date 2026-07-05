@@ -1,6 +1,6 @@
 
 (
-  (context editor.text)
+  (context text)
 
   (inject (self text_editor.TextDocumentEditor))
 

@@ -20,7 +20,7 @@ when implModule:
   import nimsumtree/rope
   import misc/[custom_logger, custom_async, util, response, rope_utils, event, myjsonutils]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-  import dispatch_tables, document_editor, layout/layout, input_handler/input_handler, config_provider, command_service
+  import document_editor, layout/layout, input_handler/input_handler, config_provider, command_service
   import document, text_component, language_component, language_server_component, session
 
   logCategory "language-server-command-line"
@@ -85,34 +85,9 @@ when implModule:
 
     if useActive:
       let currentNamespace = if layout.popups.len > 0:
-        "popup.selector".some
+        "selector".some
       else:
         layout.getActiveEditor(includeCommandLine = false).mapIt(it.namespace)
-      {.gcsafe.}:
-        for table in activeDispatchTables.mitems:
-          if not table.global and table.namespace.some != currentNamespace:
-            continue
-
-          for value in table.functions.values:
-
-            var docs = ""
-            if events.commandInfos.getInfos(value.name).getSome(infos):
-              for i, info in infos:
-                if i > 0:
-                  docs.add "\n"
-                docs.add &"[{info.context}] {info.keys} -> {info.command}"
-              docs.add "\n\n"
-
-            docs.add value.docs
-
-            completions.add CompletionItem(
-              label: value.name,
-              # scope: table.scope,
-              kind: CompletionKind.Function,
-              detail: value.signature.some,
-              documentation: CompletionItemDocumentationVariant.init(docs).some,
-            )
-
     else:
       let commands = getServiceChecked(CommandService)
       {.gcsafe.}:

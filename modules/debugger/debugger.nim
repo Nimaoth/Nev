@@ -2456,6 +2456,8 @@ when implModule:
     let name = fun.name.repr.splitCase.parts.joinCase(Kebab)
     return exposeImpl(newLit(""), name, fun, active=false)
 
+  include generated/dap_client_commands
+
   proc init_module_debugger*() {.cdecl, exportc, dynlib.} =
     log lvlWarn, &"init_module_debugger"
     let services = getServices()
@@ -2468,6 +2470,7 @@ when implModule:
       return await service.initService()
 
     services.addService(service)
+    registerCommands(service.commands)
     # addBuiltinService(Debugger, SessionService, DocumentEditorService, LayoutService, EventHandlerService, ConfigService)
 
     template registerCommand(inName: string, inDesc: string, inParams: untyped, inRet: string, wrapper: untyped): untyped =

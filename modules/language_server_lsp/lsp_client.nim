@@ -2,9 +2,8 @@ import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequt
 import prof
 import misc/[util, myjsonutils, custom_async, response]
 import language_server
-import misc/expose
 from workspace as ws import nil
-import dispatch_tables, vfs
+import vfs
 import misc/channel
 
 import misc/async_process
@@ -1139,19 +1138,17 @@ proc run*(client: LSPClient) =
 
 # exposed api
 
-proc lspLogVerbose*(val: bool) {.expose("lsp").} =
+proc lspLogVerbose*(val: bool) =
   # log lvlDebug, &"lspLogVerbose {val}"
   logVerbose = val
 
-proc lspToggleLogServerDebug*() {.expose("lsp").} =
+proc lspToggleLogServerDebug*() =
   logServerDebug = not logServerDebug
   # log lvlDebug, &"lspToggleLogServerDebug {logServerDebug}"
 
-proc lspLogServerDebug*(val: bool) {.expose("lsp").} =
+proc lspLogServerDebug*(val: bool) =
   # log lvlDebug, &"lspLogServerDebug {val}"
   logServerDebug = val
-
-addGlobalDispatchTable "lsp", genDispatchTable("lsp")
 
 proc handleNotifiesConfigurationChanged(client: LSPClient) {.async, gcsafe.} =
   while client != nil and not client.exit:

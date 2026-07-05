@@ -12,6 +12,7 @@ when implModule:
   import config_provider, compilation_config, command_service
   import plugin_service, wasm_engine
   import lisp
+  import plugin_api/process
 
   import wasmtime
   import plugin_api/plugin_api_base
@@ -20,6 +21,8 @@ when implModule:
   from plugin_api/plugin_api_dynamic import nil
   when enableOldPluginVersions:
     from plugin_api/plugin_api_1 as v1 import nil
+
+  include plugin_api/generated/process_commands
 
   logCategory "plugins-v2"
 
@@ -269,3 +272,4 @@ when implModule:
 
   proc init_module_plugin_system_wasm*() {.cdecl, exportc, dynlib.} =
     getServices().getServiceChecked(PluginService).addPluginSystem(newPluginSystemWasm(getServices()))
+    registerCommands(getServiceChecked(CommandService))

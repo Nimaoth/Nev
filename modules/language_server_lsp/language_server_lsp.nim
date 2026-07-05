@@ -1012,6 +1012,8 @@ Server Capabilities: {lsp.serverCapabilities.toJson.pretty}"""
 
     discard getServiceChecked(LayoutService).pushSelectorPopup(builder)
 
+  include generated/lsp_client_commands
+
   proc init_module_language_server_lsp*() {.cdecl, exportc, dynlib.} =
     log lvlWarn, &"init_module_language_server_lsp"
     let services = getServices()
@@ -1050,6 +1052,7 @@ Server Capabilities: {lsp.serverCapabilities.toJson.pretty}"""
     events.get.listen(newId(), "editor/*/registered", handleEditorRegistered)
 
     let commands = getServiceChecked(CommandService)
+    registerCommands(commands)
     template defineCommand(inName: string, desc: string, body: untyped): untyped =
       discard commands.registerCommand(command_service.Command(
         namespace: "",

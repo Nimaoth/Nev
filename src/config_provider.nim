@@ -270,9 +270,7 @@ macro declareSettingsTemplate*(name: untyped, prefix: static string, body: untyp
 
 when implModule:
   import std/[algorithm, macrocache]
-  import misc/expose
   import platform
-  import dispatch_tables
   import default_settings
 
   {.push gcsafe.}
@@ -433,18 +431,10 @@ when implModule:
 
   ###########################################################################
 
-  proc getConfigService(): Option[ConfigService] =
-    {.gcsafe.}:
-      if getServices().isNil: return ConfigService.none
-      return getServices().getService(ConfigService)
-
-  static:
-    addInjector(ConfigService, getConfigService)
-
-  proc logOptions*(self: ConfigService) {.expose("config").} =
+  proc logOptions*(self: ConfigService) =
     log lvlInfo, self.runtime.mergedSettings.pretty()
 
-  proc setOption*(self: ConfigService, option: string, value: JsonNode, override: bool = true) {.expose("config").} =
+  proc setOption*(self: ConfigService, option: string, value: JsonNode, override: bool = true) =
     if self.isNil:
       return
 
@@ -452,7 +442,7 @@ when implModule:
     self.onConfigChanged.invoke()
     self.services.getServiceChecked(PlatformService).platform.requestRender(true)
 
-  proc cycleOption*(self: ConfigService, path: string, values: JsonNode) {.expose("config").} =
+  proc cycleOption*(self: ConfigService, path: string, values: JsonNode) =
     if self.isNil:
       return
 
@@ -472,21 +462,19 @@ when implModule:
         self.onConfigChanged.invoke()
         self.services.getServiceChecked(PlatformService).platform.requestRender(true)
 
-  proc getOptionJson*(self: ConfigService, path: string, default: JsonNode = newJNull()): JsonNode {.expose("editor").} =
+  proc getOptionJson*(self: ConfigService, path: string, default: JsonNode = newJNull()): JsonNode =
     return self.runtime.get(path, default)
 
-  proc getFlag*(self: ConfigService, flag: string, default: bool = false): bool {.expose("config").} =
+  proc getFlag*(self: ConfigService, flag: string, default: bool = false): bool =
     return self.runtime.get(flag, bool, default)
 
-  proc setFlag*(self: ConfigService, flag: string, value: bool) {.expose("config").} =
+  proc setFlag*(self: ConfigService, flag: string, value: bool) =
     self.runtime.set(flag, value)
 
-  proc toggleFlag*(self: ConfigService, flag: string) {.expose("config").} =
+  proc toggleFlag*(self: ConfigService, flag: string) =
     let newValue = not self.getFlag(flag)
     log lvlInfo, fmt"toggleFlag '{flag}' -> {newValue}"
     self.setFlag(flag, newValue)
-
-  addGlobalDispatchTable "config", genDispatchTable("config")
 
   {.pop.} # raises: []
   {.pop.} # gcsafe

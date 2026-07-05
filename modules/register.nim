@@ -72,9 +72,7 @@ proc setRegisterAsync*(self: Registers, register: string, value: sink Register):
 proc recordCommand*(self: Registers, command: string, registers: openArray[string] = []) = registersRecordCommand(self, command, registers)
 
 when implModule:
-  import misc/expose
   import misc/[custom_logger, util, rope_utils, array_set]
-  import dispatch_tables
   import platform
 
   logCategory "register"
@@ -149,20 +147,12 @@ when implModule:
 
   ###########################################################################
 
-  proc getRegisters(): Option[Registers] =
-    {.gcsafe.}:
-      if getServices().isNil: return Registers.none
-      return getServices().getService(Registers)
-
-  static:
-    addInjector(Registers, getRegisters)
-
-  proc registersSetRegisterText*(self: Registers, text: string, register: string = "") {.expose("registers").} =
+  proc registersSetRegisterText*(self: Registers, text: string, register: string = "") =
     if register.len == 0:
       setSystemClipboardText(text)
     self.registers[register] = Register(kind: RegisterKind.Text, text: text)
 
-  proc registersGetRegisterText*(self: Registers, register: string): string {.expose("registers").} =
+  proc registersGetRegisterText*(self: Registers, register: string): string =
     if register.len == 0:
       log lvlError, fmt"getRegisterText: Register name must not be empty. Use getRegisterTextAsync() instead."
       return ""
@@ -172,32 +162,42 @@ when implModule:
 
     return ""
 
-  proc startRecordingKeys*(self: Registers, register: string) {.expose("registers").} =
+  proc startRecordingKeys*(self: Registers, register: string) =
     log lvlInfo, &"Start recording keys into '{register}'"
     self.recordingKeys.incl register
 
-  proc stopRecordingKeys*(self: Registers, register: string) {.expose("registers").} =
+  proc stopRecordingKeys*(self: Registers, register: string) =
     log lvlInfo, &"Stop recording keys into '{register}'"
     self.recordingKeys.excl register
 
-  proc startRecordingCommands*(self: Registers, register: string) {.expose("registers").} =
+  proc startRecordingCommands*(self: Registers, register: string) =
     log lvlInfo, &"Start recording commands into '{register}'"
     self.recordingCommands.incl register
 
-  proc stopRecordingCommands*(self: Registers, register: string) {.expose("registers").} =
+  proc stopRecordingCommands*(self: Registers, register: string) =
     log lvlInfo, &"Stop recording commands into '{register}'"
     self.recordingCommands.excl register
 
-  proc isReplayingCommands*(self: Registers): bool {.expose("registers").} =
+  proc isReplayingCommands*(self: Registers): bool =
     self.bIsReplayingCommands
 
-  proc isReplayingKeys*(self: Registers): bool {.expose("registers").} =
+  proc isReplayingKeys*(self: Registers): bool =
     self.bIsReplayingKeys
 
-  proc isRecordingCommands*(self: Registers, registry: string): bool {.expose("registers").} =
+  proc isRecordingCommands*(self: Registers, registry: string): bool =
     self.recordingCommands.contains(registry)
 
-  addGlobalDispatchTable "registers", genDispatchTable("registers")
+  proc handleRecordCommand(self: Registers, command: string) =
+    if not self.bIsReplayingCommands:
+      self.recordCommand(command)
+
+  import command_service
+
+  include generated/register_commands
 
   proc init_module_register*() {.cdecl, exportc, dynlib.} =
-    getServices().addService(Registers())
+    let self = Registers()
+    getServices().addService(self)
+    let commands = getServiceChecked(CommandService)
+    discard commands.onRecordCommand.subscribe proc(command: string) = self.handleRecordCommand(command)
+    registerCommands(commands)

@@ -6,10 +6,10 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, generational_seq, render_command]
 import misc/[custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex, case_swap]
-import misc/[expose, diff, arena]
+import misc/[diff, arena]
 import platform
 import document, document_editor, input_handler/input_handler, vmath, bumpy, text_document
-import selector_popup/builder, dispatch_tables, register
+import selector_popup/builder, register
 import config_provider, service, layout/layout, vfs, vfs_service, command_service, toast
 import move_database, event_service
 import workspace
@@ -435,7 +435,6 @@ proc textEditorGetMemoryStats(self: DocumentEditor): JsonNode {.gcsafe, raises: 
   except:
     return newJObject()
 
-proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode]
 proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse
 proc showCompletionWindow(self: TextDocumentEditor)
 proc updateCompletionsFromEngine(self: TextDocumentEditor)
@@ -1067,17 +1066,6 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor,
       self.selections = selections
     self.scrollToCursor(self.selection.last)
 
-proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
-  {.gcsafe.}:
-    if getServices().getService(DocumentEditorService).getSome(editors):
-      if editors.getEditor(wrapper.id.EditorIdNew).getSome(editor):
-        if editor of TextDocumentEditor:
-          return editor.TextDocumentEditor.some
-  return TextDocumentEditor.none
-
-static:
-  addTypeMap(TextDocumentEditor, api.TextDocumentEditor, getTextDocumentEditor)
-
 proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode =
   result = newJObject()
   result["type"] = newJString("editor.text")
@@ -1424,7 +1412,7 @@ proc removeMode*(self: TextDocumentEditor, mode: string) =
 
   let handler = self.settings.modeChangedHandlerCommand.get()
   if handler != "":
-    discard self.handleActionInternal(handler, [[mode].toJson, newJArray()].toJson)
+    discard self.handleAction(handler, &"{self.id} {[mode].toJson} []", record = false)
 
   self.markDirty()
 
@@ -2796,7 +2784,7 @@ proc updateCommandCount*(self: TextDocumentEditor, digit: int) =
 
 proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] {.gcsafe.} =
   # echo "runAction ", action, ", ", $args
-  return self.handleActionInternal(action, args)
+  return self.handleAction(action, args.mapIt($it).join(" "), record=false)
 
 proc findWordBoundary*(self: TextDocumentEditor, cursor: Cursor): Selection =
   self.document.findWordBoundary(cursor)
@@ -3102,7 +3090,7 @@ proc cursor(self: TextDocumentEditor, selection: Selection, which: SelectionCurs
   of Last, LastToFirst:
     return selection.last
 
-proc deleteMove*(self: TextDocumentEditor, move: string, updateTargetColumn: bool = true, options {.varargs.}: JsonNode = newJObject()) =
+proc deleteMove*(self: TextDocumentEditor, move: string, updateTargetColumn: bool = true, options: JsonNode = newJObject()) =
   ## Deletes text based on the current selections.
   ##
   ## `move` specifies which move should be applied to each selection.
@@ -3126,7 +3114,7 @@ proc extendSelectMove*(self: TextDocumentEditor, move: string, inside: bool = fa
   self.scrollToCursor(Last)
   self.updateTargetColumn(Last)
 
-proc move*(self: TextDocumentEditor, move: string, updateTargetColumn: bool = true, options {.varargs.}: JsonNode = newJObject()) =
+proc move*(self: TextDocumentEditor, move: string, updateTargetColumn: bool = true, options: JsonNode = newJObject()) =
   self.selections = self.getSelectionsForMove(self.selections, move, 1, true, true, options)
   self.scrollToCursor(Last)
   if updateTargetColumn:
@@ -4435,33 +4423,6 @@ proc cycleSelectedCase*(self: TextDocumentEditor) =
   self.updateTargetColumn()
   self.markDirty()
 
-genDispatcher("editor.text")
-addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
-
-proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] =
-  # debugf"[textedit] handleActionInternal {action}, '{args}'"
-
-  var args = args.copy
-  args.elems.insert api.TextDocumentEditor(id: self.id.EditorId).toJson, 0
-
-  try:
-    # debugf"dispatch {action}, {args}"
-    if dispatch(action, args).getSome(res):
-      dec self.commandComponent.commandCount
-      while self.commandComponent.commandCount > 0:
-        if dispatch(action, args).isNone:
-          break
-        dec self.commandComponent.commandCount
-      self.commandComponent.commandCount = self.commandComponent.commandCountRestore
-      self.commandComponent.commandCountRestore = 0
-      return res.some
-  except:
-    let argsText = if args.isNil: "nil" else: $args
-    log(lvlError, fmt"Failed to dispatch command '{action} {argsText}': {getCurrentExceptionMsg()}")
-    return JsonNode.none
-
-  return JsonNode.none
-
 proc textEditorHandleAction(self: DocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
   daTag(daTextEditorCommand)
   let self = self.TextDocumentEditor
@@ -4511,16 +4472,7 @@ proc textEditorHandleAction(self: DocumentEditor, action: string, arg: string, r
       for a in newStringStream(arg).parseJsonFragments():
         args.add a
 
-      result = self.handleActionInternal(action, args)
-      if result.isSome:
-        return
-
-    let action = if action.contains("."):
-      action
-    else:
-      "editor.text." & action
-
-    let res = self.commands.executeCommand(action & " " & arg, record = false, context = newJexInt(self.id.int))
+    let res = self.commands.executeCommand(action & " " & arg, record = false, context = newJexInt(self.id.int), namespace = "text")
     if res.isSome:
       return newJString(res.get).some
   except CatchableError:
@@ -4900,119 +4852,3 @@ proc textEditorRestoreStateJson*(self: DocumentEditor, state: JsonNode) =
       self.markDirty()
   except:
     log lvlError, &"Failed to restore state from json: {getCurrentExceptionMsg()}\n{state}"
-
-# todo: this currently causes some memory corruption, figure out why
-proc registerTextEditorCommands*() =
-  discard
-  # let cmds = getServiceChecked(CommandService)
-  # let editors = getServiceChecked(DocumentEditorService)
-  # proc doGetEditor(id: EditorIdNew): TextDocumentEditor =
-  #   echo "doGetEditor ", id
-  #   assert editors != nil
-  #   result = editors.getEditor(id).mapIt(it.TextDocumentEditor).get(nil)
-  #   assert result != nil
-
-  # cmds.registerActiveCommand "enable-auto-reload", proc(editor: EditorIdNew, enabled: bool) = enableAutoReload(doGetEditor(editor), enabled)
-  # cmds.registerActiveCommand "set-language", proc(editor: EditorIdNew, language: string = "") = setLanguage(doGetEditor(editor), language)
-  # cmds.registerActiveCommand "evaluate-expressions", proc(editor: EditorIdNew, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) = evaluateExpressions(doGetEditor(editor), selections, inclusiveEnd, prefix, suffix, addSelectionIndex)
-  # cmds.registerActiveCommand "set-default-scroll-behaviour", proc(editor: EditorIdNew, scrollBehaviour: ScrollBehaviour) = setDefaultScrollBehaviour(doGetEditor(editor), scrollBehaviour)
-  # cmds.registerActiveCommand "toggle-flag", proc(editor: EditorIdNew, key: string) = toggleFlag(doGetEditor(editor), key)
-  # cmds.registerActiveCommand "set-config", proc(editor: EditorIdNew, key: string, value: JsonNode) = setConfig(doGetEditor(editor), key, value)
-  # cmds.registerActiveCommand "get-config", proc(editor: EditorIdNew, key: string): JsonNode = getConfig(doGetEditor(editor), key)
-  # cmds.registerActiveCommand "remove-mode", proc(editor: EditorIdNew, mode: string) = removeMode(doGetEditor(editor), mode)
-  # cmds.registerActiveCommand "set-mode", proc(editor: EditorIdNew, mode: string, exclusive: bool = true, forceNotify: bool = false) = setMode(doGetEditor(editor), mode, exclusive, forceNotify)
-  # cmds.registerActiveCommand "set-default-mode", proc(editor: EditorIdNew, forceNotify: bool = false) = setDefaultMode(doGetEditor(editor), forceNotify)
-  # cmds.registerActiveCommand "select-parent-current-ts", proc(editor: EditorIdNew, includeAfter: bool = true) = selectParentCurrentTs(doGetEditor(editor), includeAfter)
-  # cmds.registerActiveCommand "auto-show-signature-help", proc(editor: EditorIdNew, insertedText: string) = autoShowSignatureHelp(doGetEditor(editor), insertedText)
-  # cmds.registerActiveCommand "insert-text", proc(editor: EditorIdNew, text: string, autoIndent: bool = true, autoClose: Option[bool] = bool.none) = insertText(doGetEditor(editor), text, autoIndent, autoClose)
-  # cmds.registerActiveCommand "undo", proc(editor: EditorIdNew, checkpoint: string = "word") = undo(doGetEditor(editor), checkpoint)
-  # cmds.registerActiveCommand "redo", proc(editor: EditorIdNew, checkpoint: string = "word") = redo(doGetEditor(editor), checkpoint)
-  # cmds.registerActiveCommand "undo-to-previous-sibling", proc(editor: EditorIdNew, redoUntilBranch: bool = false) = undoToPreviousSibling(doGetEditor(editor), redoUntilBranch)
-  # cmds.registerActiveCommand "undo-to-next-sibling", proc(editor: EditorIdNew, redoUntilBranch: bool = false) = undoToNextSibling(doGetEditor(editor), redoUntilBranch)
-  # cmds.registerActiveCommand "switch-undo-branch", proc(editor: EditorIdNew, targetNode: int32) = switchUndoBranch(doGetEditor(editor), targetNode)
-  # cmds.registerActiveCommand "add-next-checkpoint", proc(editor: EditorIdNew, checkpoint: string) = addNextCheckpoint(doGetEditor(editor), checkpoint)
-  # cmds.registerActiveCommand "copy", proc(editor: EditorIdNew, register: string = "", inclusiveEnd: bool = false) = copy(doGetEditor(editor), register, inclusiveEnd)
-  # cmds.registerActiveCommand "paste", proc(editor: EditorIdNew, registerName: string = "", inclusiveEnd: bool = false) = paste(doGetEditor(editor), registerName, inclusiveEnd)
-  # cmds.registerActiveCommand "paste-at", proc(editor: EditorIdNew, selections: seq[Selection], registerName: string = "", inclusiveEnd: bool = false) = pasteAt(doGetEditor(editor), selections, registerName, inclusiveEnd)
-  # cmds.registerActiveCommand "scroll-text", proc(editor: EditorIdNew, amount: float32) = scrollText(doGetEditor(editor), amount)
-  # cmds.registerActiveCommand "scroll-text-horizontal", proc(editor: EditorIdNew, amount: float32) = scrollTextHorizontal(doGetEditor(editor), amount)
-  # cmds.registerActiveCommand "scroll-lines", proc(editor: EditorIdNew, amount: int) = scrollLines(doGetEditor(editor), amount)
-  # cmds.registerActiveCommand "clear-overlays", proc(editor: EditorIdNew, overlayId: int = -1) = clearOverlays(doGetEditor(editor), overlayId)
-  # cmds.registerActiveCommand "add-overlay", proc(editor: EditorIdNew, selection: Selection, text: string, id: int, scope: string, bias: Bias, renderId: int = 0, location: overlay_map.OverlayRenderLocation = overlay_map.OverlayRenderLocation.Inline) = addOverlay(doGetEditor(editor), selection, text, id, scope, bias, renderId, location)
-  # cmds.registerActiveCommand "start-diff", proc(editor: EditorIdNew, diffTarget: string = "", gotoFirstDiff: bool = false, staged: bool = false) = startDiff(doGetEditor(editor), diffTarget, gotoFirstDiff, staged)
-  # cmds.registerActiveCommand "update-diff", proc(editor: EditorIdNew, gotoFirstDiff: bool = false) = updateDiff(doGetEditor(editor), gotoFirstDiff)
-  # cmds.registerActiveCommand "revert-selected", proc(editor: EditorIdNew, inclusiveEnd: bool = false) = revertSelected(doGetEditor(editor), inclusiveEnd)
-  # cmds.registerActiveCommand "stage-selected", proc(editor: EditorIdNew, inclusiveEnd: bool = false) = stageSelected(doGetEditor(editor), inclusiveEnd)
-  # cmds.registerActiveCommand "checkout-file", proc(editor: EditorIdNew, saveAfterwards: bool = false) = checkoutFile(doGetEditor(editor), saveAfterwards)
-  # cmds.registerActiveCommand "add-next-find-result-to-selection", proc(editor: EditorIdNew, includeAfter: bool = true, wrap: bool = true) = addNextFindResultToSelection(doGetEditor(editor), includeAfter, wrap)
-  # cmds.registerActiveCommand "add-prev-find-result-to-selection", proc(editor: EditorIdNew, includeAfter: bool = true, wrap: bool = true) = addPrevFindResultToSelection(doGetEditor(editor), includeAfter, wrap)
-  # cmds.registerActiveCommand "move-cursor-visual-line", proc(editor: EditorIdNew, distance: int, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true, includeAfter: bool = true) = moveCursorVisualLine(doGetEditor(editor), distance, cursor, all, wrap, includeAfter)
-  # cmds.registerActiveCommand "move-cursor-visual-page", proc(editor: EditorIdNew, distance: float, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true, includeAfter: bool = true) = moveCursorVisualPage(doGetEditor(editor), distance, cursor, all, wrap, includeAfter)
-  # cmds.registerActiveCommand "move-cursor-line-center", proc(editor: EditorIdNew, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) = moveCursorLineCenter(doGetEditor(editor), cursor, all)
-  # cmds.registerActiveCommand "move-cursor-center", proc(editor: EditorIdNew, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) = moveCursorCenter(doGetEditor(editor), cursor, all)
-  # cmds.registerActiveCommand "set-default-snap-behaviour", proc(editor: EditorIdNew, snapBehaviour: ScrollSnapBehaviour) = setDefaultSnapBehaviour(doGetEditor(editor), snapBehaviour)
-  # cmds.registerActiveCommand "set-cursor-scroll-offset", proc(editor: EditorIdNew, offset: float, cursor: SelectionCursor = SelectionCursor.Config) = setCursorScrollOffset(doGetEditor(editor), offset, cursor)
-  # cmds.registerActiveCommand "center-cursor", proc(editor: EditorIdNew, cursor: SelectionCursor = SelectionCursor.Config, snap: bool = false) = centerCursor(doGetEditor(editor), cursor, snap)
-  # cmds.registerActiveCommand "delete-move", proc(editor: EditorIdNew, move: string, updateTargetColumn: bool = true, options: JsonNode = newJObject()) = deleteMove(doGetEditor(editor), move, updateTargetColumn, options)
-  # cmds.registerActiveCommand "extend-select-move", proc(editor: EditorIdNew, move: string, inside: bool = false, which: SelectionCursor = SelectionCursor.Config, all: bool = true) = extendSelectMove(doGetEditor(editor), move, inside, which, all)
-  # cmds.registerActiveCommand "move", proc(editor: EditorIdNew, move: string, updateTargetColumn: bool = true, options: JsonNode = newJObject()) = move(doGetEditor(editor), move, updateTargetColumn, options)
-  # cmds.registerActiveCommand "set-search-query", proc(editor: EditorIdNew, query: string, escapeRegex: bool = false, prefix: string = "", suffix: string = "", useMoveSearch: bool = false): bool = setSearchQuery(doGetEditor(editor), query, escapeRegex, prefix, suffix, useMoveSearch)
-  # cmds.registerActiveCommand "open-search-bar", proc(editor: EditorIdNew, query: string = "", scrollToPreview: bool = true, select: bool = true, useMoveSearch: bool = false) = openSearchBar(doGetEditor(editor), query, scrollToPreview, select, useMoveSearch)
-  # cmds.registerActiveCommand "fuzzy-search-lines", proc(editor: EditorIdNew, minScore: float = 0.2, sort: bool = true) = fuzzySearchLines(doGetEditor(editor), minScore, sort)
-  # cmds.registerActiveCommand "goto-workspace-symbol", proc(editor: EditorIdNew, query: string = "") = gotoWorkspaceSymbol(doGetEditor(editor), query)
-  # cmds.registerActiveCommand "create-completion-from-snippet", proc(editor: EditorIdNew, snippet: JsonNode): Completion = createCompletionFromSnippet(doGetEditor(editor), snippet)
-  # cmds.registerActiveCommand "apply-completion", proc(editor: EditorIdNew, completion: JsonNode) = applyCompletion(doGetEditor(editor), completion)
-  # cmds.registerActiveCommand "set-read-only", proc(editor: EditorIdNew, readOnly: bool) = setReadOnly(doGetEditor(editor), readOnly)
-  # cmds.registerActiveCommand "set-file-read-only", proc(editor: EditorIdNew, readOnly: bool) = setFileReadOnly(doGetEditor(editor), readOnly)
-  # cmds.registerActiveCommand "enter-choose-cursor-mode", proc(editor: EditorIdNew, action: string) = enterChooseCursorMode(doGetEditor(editor), action)
-  # cmds.registerActiveCommand "set-custom-header", proc(editor: EditorIdNew, text: string) = setCustomHeader(doGetEditor(editor), text)
-
-  # cmds.registerActiveCommand "change-language", proc(editor: EditorIdNew) = changeLanguage(doGetEditor(editor))
-  # cmds.registerActiveCommand "select-prev", proc(editor: EditorIdNew) = selectPrev(doGetEditor(editor))
-  # cmds.registerActiveCommand "select-next", proc(editor: EditorIdNew) = selectNext(doGetEditor(editor))
-  # cmds.registerActiveCommand "print-treesitter-memory-usage", proc(editor: EditorIdNew) = printTreesitterMemoryUsage(doGetEditor(editor))
-  # cmds.registerActiveCommand "print-treesitter-tree", proc(editor: EditorIdNew) = printTreesitterTree(doGetEditor(editor))
-  # cmds.registerActiveCommand "print-treesitter-tree-under-cursor", proc(editor: EditorIdNew) = printTreesitterTreeUnderCursor(doGetEditor(editor))
-  # cmds.registerActiveCommand "auto-show-completions", proc(editor: EditorIdNew) = autoShowCompletions(doGetEditor(editor))
-  # cmds.registerActiveCommand "insert-raw", proc(editor: EditorIdNew) = insertRaw(doGetEditor(editor))
-  # cmds.registerActiveCommand "indent", proc(editor: EditorIdNew) = indent(doGetEditor(editor))
-  # cmds.registerActiveCommand "unindent", proc(editor: EditorIdNew) = unindent(doGetEditor(editor))
-  # cmds.registerActiveCommand "insert-indent", proc(editor: EditorIdNew) = insertIndent(doGetEditor(editor))
-  # cmds.registerActiveCommand "start-transaction", proc(editor: EditorIdNew) = startTransaction(doGetEditor(editor))
-  # cmds.registerActiveCommand "end-transaction", proc(editor: EditorIdNew) = endTransaction(doGetEditor(editor))
-  # cmds.registerActiveCommand "add-cursor-below", proc(editor: EditorIdNew) = addCursorBelow(doGetEditor(editor))
-  # cmds.registerActiveCommand "add-cursor-above", proc(editor: EditorIdNew) = addCursorAbove(doGetEditor(editor))
-  # cmds.registerActiveCommand "close-diff", proc(editor: EditorIdNew) = closeDiff(doGetEditor(editor))
-  # cmds.registerActiveCommand "rerender", proc(editor: EditorIdNew) = rerender(doGetEditor(editor))
-  # cmds.registerActiveCommand "stage-file", proc(editor: EditorIdNew) = stageFile(doGetEditor(editor))
-  # cmds.registerActiveCommand "format", proc(editor: EditorIdNew) = format(doGetEditor(editor))
-  # cmds.registerActiveCommand "add-file-vcs", proc(editor: EditorIdNew) = addFileVcs(doGetEditor(editor))
-  # cmds.registerActiveCommand "set-all-find-result-to-selection", proc(editor: EditorIdNew) = setAllFindResultToSelection(doGetEditor(editor))
-  # cmds.registerActiveCommand "reload-treesitter", proc(editor: EditorIdNew) = reloadTreesitter(doGetEditor(editor))
-  # cmds.registerActiveCommand "toggle-debug-moves", proc(editor: EditorIdNew) = toggleDebugMoves(doGetEditor(editor))
-  # cmds.registerActiveCommand "toggle-line-comment", proc(editor: EditorIdNew) = toggleLineComment(doGetEditor(editor))
-  # cmds.registerActiveCommand "goto-definition", proc(editor: EditorIdNew) = gotoDefinition(doGetEditor(editor))
-  # cmds.registerActiveCommand "goto-declaration", proc(editor: EditorIdNew) = gotoDeclaration(doGetEditor(editor))
-  # cmds.registerActiveCommand "goto-type-definition", proc(editor: EditorIdNew) = gotoTypeDefinition(doGetEditor(editor))
-  # cmds.registerActiveCommand "goto-implementation", proc(editor: EditorIdNew) = gotoImplementation(doGetEditor(editor))
-  # cmds.registerActiveCommand "goto-references", proc(editor: EditorIdNew) = gotoReferences(doGetEditor(editor))
-  # cmds.registerActiveCommand "switch-source-header", proc(editor: EditorIdNew) = switchSourceHeader(doGetEditor(editor))
-  # cmds.registerActiveCommand "get-completions", proc(editor: EditorIdNew) = getCompletions(doGetEditor(editor))
-  # cmds.registerActiveCommand "goto-symbol", proc(editor: EditorIdNew) = gotoSymbol(doGetEditor(editor))
-  # cmds.registerActiveCommand "rename", proc(editor: EditorIdNew) = rename(doGetEditor(editor))
-  # cmds.registerActiveCommand "hide-completions", proc(editor: EditorIdNew) = hideCompletions(doGetEditor(editor))
-  # cmds.registerActiveCommand "select-prev-completion", proc(editor: EditorIdNew) = selectPrevCompletion(doGetEditor(editor))
-  # cmds.registerActiveCommand "select-next-completion", proc(editor: EditorIdNew) = selectNextCompletion(doGetEditor(editor))
-  # cmds.registerActiveCommand "select-prev-completion-visual", proc(editor: EditorIdNew) = selectPrevCompletionVisual(doGetEditor(editor))
-  # cmds.registerActiveCommand "select-next-completion-visual", proc(editor: EditorIdNew) = selectNextCompletionVisual(doGetEditor(editor))
-  # cmds.registerActiveCommand "clear-tab-stops", proc(editor: EditorIdNew) = clearTabStops(doGetEditor(editor))
-  # cmds.registerActiveCommand "apply-selected-completion", proc(editor: EditorIdNew) = applySelectedCompletion(doGetEditor(editor))
-  # cmds.registerActiveCommand "show-signature-help", proc(editor: EditorIdNew) = showSignatureHelp(doGetEditor(editor))
-  # cmds.registerActiveCommand "toggle-signature-help", proc(editor: EditorIdNew) = toggleSignatureHelp(doGetEditor(editor))
-  # cmds.registerActiveCommand "hide-signature-help", proc(editor: EditorIdNew) = hideSignatureHelp(doGetEditor(editor))
-  # cmds.registerActiveCommand "select-code-action", proc(editor: EditorIdNew) = selectCodeAction(doGetEditor(editor))
-  # cmds.registerActiveCommand "clear-diagnostics", proc(editor: EditorIdNew) = clearDiagnostics(doGetEditor(editor))
-  # cmds.registerActiveCommand "update-inlay-hints", proc(editor: EditorIdNew) = updateInlayHints(doGetEditor(editor))
-  # cmds.registerActiveCommand "update-code-actions", proc(editor: EditorIdNew) = updateCodeActions(doGetEditor(editor))
-  # cmds.registerActiveCommand "lsp-info", proc(editor: EditorIdNew) = lspInfo(doGetEditor(editor))
-  # cmds.registerActiveCommand "cycle-selected-case", proc(editor: EditorIdNew) = cycleSelectedCase(doGetEditor(editor))

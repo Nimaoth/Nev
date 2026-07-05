@@ -12,7 +12,7 @@ proc enableAutoReloadWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 1, "enabled"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.enable-auto-reload: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.enable-auto-reload: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc changeLanguageWrapper(args: string): string {.gcsafe.} =
   try:
@@ -20,7 +20,7 @@ proc changeLanguageWrapper(args: string): string {.gcsafe.} =
     changeLanguage(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.change-language: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.change-language: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setLanguageWrapper(args: string): string {.gcsafe.} =
   try:
@@ -29,7 +29,7 @@ proc setLanguageWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "language", ""))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.set-language: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.set-language: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc evaluateExpressionsWrapper(args: string): string {.gcsafe.} =
   try:
@@ -42,7 +42,7 @@ proc evaluateExpressionsWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 5, "addSelectionIndex", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.evaluate-expressions: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.evaluate-expressions: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setDefaultScrollBehaviourWrapper(args: string): string {.gcsafe.} =
   try:
@@ -51,7 +51,7 @@ proc setDefaultScrollBehaviourWrapper(args: string): string {.gcsafe.} =
       getArg[ScrollBehaviour](args.unnamed, args.named, 1, "scrollBehaviour"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.set-default-scroll-behaviour: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.set-default-scroll-behaviour: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc toggleFlagWrapper(args: string): string {.gcsafe.} =
   try:
@@ -60,7 +60,7 @@ proc toggleFlagWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "key"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.toggle-flag: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.toggle-flag: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setConfigWrapper(args: string): string {.gcsafe.} =
   try:
@@ -69,7 +69,7 @@ proc setConfigWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "key"), getArg[JsonNode](args.unnamed, args.named, 2, "value"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.set-config: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.set-config: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc getConfigWrapper(args: string): string {.gcsafe.} =
   try:
@@ -78,7 +78,7 @@ proc getConfigWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "key"))
     return ({.gcsafe.}: $res.toJsonEx)
   except CatchableError:
-    return "Failed to execute command editor.text.get-config: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.get-config: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc removeModeWrapper(args: string): string {.gcsafe.} =
   try:
@@ -87,7 +87,7 @@ proc removeModeWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "mode"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.remove-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.remove-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setModeWrapper(args: string): string {.gcsafe.} =
   try:
@@ -97,7 +97,7 @@ proc setModeWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 3, "forceNotify", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.set-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.set-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setDefaultModeWrapper(args: string): string {.gcsafe.} =
   try:
@@ -106,7 +106,7 @@ proc setDefaultModeWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 1, "forceNotify", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.set-default-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.set-default-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc selectPrevWrapper(args: string): string {.gcsafe.} =
   try:
@@ -114,7 +114,7 @@ proc selectPrevWrapper(args: string): string {.gcsafe.} =
     selectPrev(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.select-prev: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.select-prev: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc selectNextWrapper(args: string): string {.gcsafe.} =
   try:
@@ -122,7 +122,7 @@ proc selectNextWrapper(args: string): string {.gcsafe.} =
     selectNext(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.select-next: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.select-next: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc printTreesitterMemoryUsageWrapper(args: string): string {.gcsafe.} =
   try:
@@ -130,7 +130,7 @@ proc printTreesitterMemoryUsageWrapper(args: string): string {.gcsafe.} =
     printTreesitterMemoryUsage(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.print-treesitter-memory-usage: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.print-treesitter-memory-usage: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc printTreesitterTreeWrapper(args: string): string {.gcsafe.} =
   try:
@@ -138,7 +138,7 @@ proc printTreesitterTreeWrapper(args: string): string {.gcsafe.} =
     printTreesitterTree(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.print-treesitter-tree: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.print-treesitter-tree: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc printTreesitterTreeUnderCursorWrapper(args: string): string {.gcsafe.} =
   try:
@@ -146,7 +146,7 @@ proc printTreesitterTreeUnderCursorWrapper(args: string): string {.gcsafe.} =
     printTreesitterTreeUnderCursor(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.print-treesitter-tree-under-cursor: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.print-treesitter-tree-under-cursor: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc selectParentCurrentTsWrapper(args: string): string {.gcsafe.} =
   try:
@@ -155,7 +155,7 @@ proc selectParentCurrentTsWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 1, "includeAfter", true))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.select-parent-current-ts: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.select-parent-current-ts: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc autoShowSignatureHelpWrapper(args: string): string {.gcsafe.} =
   try:
@@ -164,7 +164,7 @@ proc autoShowSignatureHelpWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "insertedText"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.auto-show-signature-help: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.auto-show-signature-help: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc autoShowCompletionsWrapper(args: string): string {.gcsafe.} =
   try:
@@ -172,7 +172,7 @@ proc autoShowCompletionsWrapper(args: string): string {.gcsafe.} =
     autoShowCompletions(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.auto-show-completions: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.auto-show-completions: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc insertTextWrapper(args: string): string {.gcsafe.} =
   try:
@@ -182,7 +182,7 @@ proc insertTextWrapper(args: string): string {.gcsafe.} =
       getArg[Option[bool]](args.unnamed, args.named, 3, "autoClose", bool.none))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.insert-text: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.insert-text: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc insertRawWrapper(args: string): string {.gcsafe.} =
   try:
@@ -190,7 +190,7 @@ proc insertRawWrapper(args: string): string {.gcsafe.} =
     insertRaw(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.insert-raw: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.insert-raw: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc indentWrapper(args: string): string {.gcsafe.} =
   try:
@@ -198,7 +198,7 @@ proc indentWrapper(args: string): string {.gcsafe.} =
     indent(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.indent: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.indent: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc unindentWrapper(args: string): string {.gcsafe.} =
   try:
@@ -206,7 +206,7 @@ proc unindentWrapper(args: string): string {.gcsafe.} =
     unindent(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.unindent: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.unindent: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc insertIndentWrapper(args: string): string {.gcsafe.} =
   try:
@@ -214,7 +214,7 @@ proc insertIndentWrapper(args: string): string {.gcsafe.} =
     insertIndent(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.insert-indent: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.insert-indent: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc startTransactionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -222,7 +222,7 @@ proc startTransactionWrapper(args: string): string {.gcsafe.} =
     startTransaction(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.start-transaction: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.start-transaction: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc endTransactionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -230,7 +230,7 @@ proc endTransactionWrapper(args: string): string {.gcsafe.} =
     endTransaction(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.end-transaction: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.end-transaction: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc undoWrapper(args: string): string {.gcsafe.} =
   try:
@@ -239,7 +239,7 @@ proc undoWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "checkpoint", "word"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.undo: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.undo: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc redoWrapper(args: string): string {.gcsafe.} =
   try:
@@ -248,7 +248,7 @@ proc redoWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "checkpoint", "word"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.redo: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.redo: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc undoToPreviousSiblingWrapper(args: string): string {.gcsafe.} =
   try:
@@ -257,7 +257,7 @@ proc undoToPreviousSiblingWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 1, "redoUntilBranch", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.undo-to-previous-sibling: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.undo-to-previous-sibling: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc undoToNextSiblingWrapper(args: string): string {.gcsafe.} =
   try:
@@ -266,7 +266,7 @@ proc undoToNextSiblingWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 1, "redoUntilBranch", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.undo-to-next-sibling: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.undo-to-next-sibling: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc switchUndoBranchWrapper(args: string): string {.gcsafe.} =
   try:
@@ -275,7 +275,7 @@ proc switchUndoBranchWrapper(args: string): string {.gcsafe.} =
       getArg[int32](args.unnamed, args.named, 1, "targetNode"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.switch-undo-branch: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.switch-undo-branch: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc addNextCheckpointWrapper(args: string): string {.gcsafe.} =
   try:
@@ -284,7 +284,7 @@ proc addNextCheckpointWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "checkpoint"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.add-next-checkpoint: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.add-next-checkpoint: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc copyWrapper(args: string): string {.gcsafe.} =
   try:
@@ -294,7 +294,7 @@ proc copyWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 2, "inclusiveEnd", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.copy: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.copy: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc pasteWrapper(args: string): string {.gcsafe.} =
   try:
@@ -304,7 +304,7 @@ proc pasteWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 2, "inclusiveEnd", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.paste: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.paste: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc pasteAtWrapper(args: string): string {.gcsafe.} =
   try:
@@ -315,7 +315,7 @@ proc pasteAtWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 3, "inclusiveEnd", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.paste-at: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.paste-at: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc scrollTextWrapper(args: string): string {.gcsafe.} =
   try:
@@ -324,7 +324,7 @@ proc scrollTextWrapper(args: string): string {.gcsafe.} =
       getArg[float32](args.unnamed, args.named, 1, "amount"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.scroll-text: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.scroll-text: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc scrollTextHorizontalWrapper(args: string): string {.gcsafe.} =
   try:
@@ -333,7 +333,7 @@ proc scrollTextHorizontalWrapper(args: string): string {.gcsafe.} =
       getArg[float32](args.unnamed, args.named, 1, "amount"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.scroll-text-horizontal: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.scroll-text-horizontal: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc scrollLinesWrapper(args: string): string {.gcsafe.} =
   try:
@@ -342,7 +342,7 @@ proc scrollLinesWrapper(args: string): string {.gcsafe.} =
       getArg[int](args.unnamed, args.named, 1, "amount"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.scroll-lines: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.scroll-lines: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc addCursorBelowWrapper(args: string): string {.gcsafe.} =
   try:
@@ -350,7 +350,7 @@ proc addCursorBelowWrapper(args: string): string {.gcsafe.} =
     addCursorBelow(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.add-cursor-below: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.add-cursor-below: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc addCursorAboveWrapper(args: string): string {.gcsafe.} =
   try:
@@ -358,7 +358,7 @@ proc addCursorAboveWrapper(args: string): string {.gcsafe.} =
     addCursorAbove(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.add-cursor-above: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.add-cursor-above: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc closeDiffWrapper(args: string): string {.gcsafe.} =
   try:
@@ -366,7 +366,7 @@ proc closeDiffWrapper(args: string): string {.gcsafe.} =
     closeDiff(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.close-diff: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.close-diff: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc rerenderWrapper(args: string): string {.gcsafe.} =
   try:
@@ -374,7 +374,7 @@ proc rerenderWrapper(args: string): string {.gcsafe.} =
     rerender(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.rerender: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.rerender: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc clearOverlaysWrapper(args: string): string {.gcsafe.} =
   try:
@@ -383,7 +383,7 @@ proc clearOverlaysWrapper(args: string): string {.gcsafe.} =
       getArg[int](args.unnamed, args.named, 1, "id", -1))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.clear-overlays: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.clear-overlays: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc addOverlayWrapper(args: string): string {.gcsafe.} =
   try:
@@ -395,7 +395,7 @@ proc addOverlayWrapper(args: string): string {.gcsafe.} =
       getArg[overlay_map.OverlayRenderLocation](args.unnamed, args.named, 7, "location", overlay_map.OverlayRenderLocation.Inline))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.add-overlay: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.add-overlay: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc startDiffWrapper(args: string): string {.gcsafe.} =
   try:
@@ -406,7 +406,7 @@ proc startDiffWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 3, "staged", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.start-diff: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.start-diff: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc updateDiffWrapper(args: string): string {.gcsafe.} =
   try:
@@ -415,7 +415,7 @@ proc updateDiffWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 1, "gotoFirstDiff", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.update-diff: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.update-diff: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc revertSelectedWrapper(args: string): string {.gcsafe.} =
   try:
@@ -424,7 +424,7 @@ proc revertSelectedWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 1, "inclusiveEnd", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.revert-selected: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.revert-selected: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc stageSelectedWrapper(args: string): string {.gcsafe.} =
   try:
@@ -433,7 +433,7 @@ proc stageSelectedWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 1, "inclusiveEnd", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.stage-selected: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.stage-selected: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc stageFileWrapper(args: string): string {.gcsafe.} =
   try:
@@ -441,7 +441,7 @@ proc stageFileWrapper(args: string): string {.gcsafe.} =
     stageFile(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.stage-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.stage-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc formatWrapper(args: string): string {.gcsafe.} =
   try:
@@ -449,7 +449,7 @@ proc formatWrapper(args: string): string {.gcsafe.} =
     format(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.format: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.format: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc checkoutFileWrapper(args: string): string {.gcsafe.} =
   try:
@@ -458,7 +458,7 @@ proc checkoutFileWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 1, "saveAfterwards", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.checkout-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.checkout-file: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc addFileVcsWrapper(args: string): string {.gcsafe.} =
   try:
@@ -466,7 +466,7 @@ proc addFileVcsWrapper(args: string): string {.gcsafe.} =
     addFileVcs(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.add-file-vcs: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.add-file-vcs: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc addNextFindResultToSelectionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -476,7 +476,7 @@ proc addNextFindResultToSelectionWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 2, "wrap", true))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.add-next-find-result-to-selection: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.add-next-find-result-to-selection: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc addPrevFindResultToSelectionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -486,7 +486,7 @@ proc addPrevFindResultToSelectionWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 2, "wrap", true))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.add-prev-find-result-to-selection: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.add-prev-find-result-to-selection: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setAllFindResultToSelectionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -494,7 +494,7 @@ proc setAllFindResultToSelectionWrapper(args: string): string {.gcsafe.} =
     setAllFindResultToSelection(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.set-all-find-result-to-selection: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.set-all-find-result-to-selection: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc moveCursorVisualLineWrapper(args: string): string {.gcsafe.} =
   try:
@@ -506,7 +506,7 @@ proc moveCursorVisualLineWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 5, "includeAfter", true))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.move-cursor-visual-line: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.move-cursor-visual-line: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc moveCursorVisualPageWrapper(args: string): string {.gcsafe.} =
   try:
@@ -518,7 +518,7 @@ proc moveCursorVisualPageWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 5, "includeAfter", true))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.move-cursor-visual-page: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.move-cursor-visual-page: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc moveCursorLineCenterWrapper(args: string): string {.gcsafe.} =
   try:
@@ -528,7 +528,7 @@ proc moveCursorLineCenterWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 2, "all", true))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.move-cursor-line-center: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.move-cursor-line-center: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc moveCursorCenterWrapper(args: string): string {.gcsafe.} =
   try:
@@ -538,7 +538,7 @@ proc moveCursorCenterWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 2, "all", true))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.move-cursor-center: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.move-cursor-center: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setDefaultSnapBehaviourWrapper(args: string): string {.gcsafe.} =
   try:
@@ -547,7 +547,7 @@ proc setDefaultSnapBehaviourWrapper(args: string): string {.gcsafe.} =
       getArg[ScrollSnapBehaviour](args.unnamed, args.named, 1, "snapBehaviour"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.set-default-snap-behaviour: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.set-default-snap-behaviour: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setCursorScrollOffsetWrapper(args: string): string {.gcsafe.} =
   try:
@@ -557,7 +557,7 @@ proc setCursorScrollOffsetWrapper(args: string): string {.gcsafe.} =
       getArg[SelectionCursor](args.unnamed, args.named, 2, "cursor", SelectionCursor.Config))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.set-cursor-scroll-offset: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.set-cursor-scroll-offset: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc centerCursorWrapper(args: string): string {.gcsafe.} =
   try:
@@ -567,7 +567,7 @@ proc centerCursorWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 2, "snap", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.center-cursor: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.center-cursor: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc reloadTreesitterWrapper(args: string): string {.gcsafe.} =
   try:
@@ -575,7 +575,7 @@ proc reloadTreesitterWrapper(args: string): string {.gcsafe.} =
     reloadTreesitter(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.reload-treesitter: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.reload-treesitter: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc clearTreesitterTreesWrapper(args: string): string {.gcsafe.} =
   try:
@@ -583,7 +583,7 @@ proc clearTreesitterTreesWrapper(args: string): string {.gcsafe.} =
     clearTreesitterTrees(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.clear-treesitter-trees: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.clear-treesitter-trees: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc runActionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -592,7 +592,7 @@ proc runActionWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "action"), getArg[JsonNode](args.unnamed, args.named, 2, "args"))
     return ({.gcsafe.}: $res.toJsonEx)
   except CatchableError:
-    return "Failed to execute command editor.text.run-action: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.run-action: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc deleteMoveWrapper(args: string): string {.gcsafe.} =
   try:
@@ -603,7 +603,7 @@ proc deleteMoveWrapper(args: string): string {.gcsafe.} =
       newJexArray(args.unnamed.elems[3..^1]).toJson)
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.delete-move: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.delete-move: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc extendSelectMoveWrapper(args: string): string {.gcsafe.} =
   try:
@@ -614,7 +614,7 @@ proc extendSelectMoveWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 4, "all", true))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.extend-select-move: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.extend-select-move: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc moveWrapper(args: string): string {.gcsafe.} =
   try:
@@ -625,7 +625,7 @@ proc moveWrapper(args: string): string {.gcsafe.} =
       newJexArray(args.unnamed.elems[3..^1]).toJson)
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.move: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.move: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setSearchQueryWrapper(args: string): string {.gcsafe.} =
   try:
@@ -638,7 +638,7 @@ proc setSearchQueryWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 5, "useMoveSearch", false))
     return ({.gcsafe.}: $res.toJsonEx)
   except CatchableError:
-    return "Failed to execute command editor.text.set-search-query: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.set-search-query: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc openSearchBarWrapper(args: string): string {.gcsafe.} =
   try:
@@ -650,7 +650,7 @@ proc openSearchBarWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 4, "useMoveSearch", false))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.open-search-bar: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.open-search-bar: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc toggleDebugMovesWrapper(args: string): string {.gcsafe.} =
   try:
@@ -658,7 +658,7 @@ proc toggleDebugMovesWrapper(args: string): string {.gcsafe.} =
     toggleDebugMoves(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.toggle-debug-moves: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.toggle-debug-moves: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc toggleLineCommentWrapper(args: string): string {.gcsafe.} =
   try:
@@ -666,7 +666,7 @@ proc toggleLineCommentWrapper(args: string): string {.gcsafe.} =
     toggleLineComment(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.toggle-line-comment: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.toggle-line-comment: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc gotoDefinitionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -675,7 +675,7 @@ proc gotoDefinitionWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "popupSlot", ""))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.goto-definition: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.goto-definition: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc gotoDeclarationWrapper(args: string): string {.gcsafe.} =
   try:
@@ -684,7 +684,7 @@ proc gotoDeclarationWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "popupSlot", ""))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.goto-declaration: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.goto-declaration: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc gotoTypeDefinitionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -693,7 +693,7 @@ proc gotoTypeDefinitionWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "popupSlot", ""))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.goto-type-definition: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.goto-type-definition: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc gotoImplementationWrapper(args: string): string {.gcsafe.} =
   try:
@@ -702,7 +702,7 @@ proc gotoImplementationWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "popupSlot", ""))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.goto-implementation: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.goto-implementation: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc gotoReferencesWrapper(args: string): string {.gcsafe.} =
   try:
@@ -711,7 +711,7 @@ proc gotoReferencesWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "popupSlot", ""))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.goto-references: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.goto-references: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc switchSourceHeaderWrapper(args: string): string {.gcsafe.} =
   try:
@@ -719,7 +719,7 @@ proc switchSourceHeaderWrapper(args: string): string {.gcsafe.} =
     switchSourceHeader(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.switch-source-header: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.switch-source-header: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc getCompletionsWrapper(args: string): string {.gcsafe.} =
   try:
@@ -727,7 +727,7 @@ proc getCompletionsWrapper(args: string): string {.gcsafe.} =
     getCompletions(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.get-completions: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.get-completions: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc gotoSymbolWrapper(args: string): string {.gcsafe.} =
   try:
@@ -736,7 +736,7 @@ proc gotoSymbolWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "popupSlot", ""))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.goto-symbol: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.goto-symbol: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc fuzzySearchLinesWrapper(args: string): string {.gcsafe.} =
   try:
@@ -747,7 +747,7 @@ proc fuzzySearchLinesWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 3, "popupSlot", ""))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.fuzzy-search-lines: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.fuzzy-search-lines: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc gotoWorkspaceSymbolWrapper(args: string): string {.gcsafe.} =
   try:
@@ -757,7 +757,7 @@ proc gotoWorkspaceSymbolWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 2, "popupSlot", ""))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.goto-workspace-symbol: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.goto-workspace-symbol: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc renameWrapper(args: string): string {.gcsafe.} =
   try:
@@ -765,7 +765,7 @@ proc renameWrapper(args: string): string {.gcsafe.} =
     rename(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.rename: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.rename: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc hideCompletionsWrapper(args: string): string {.gcsafe.} =
   try:
@@ -773,7 +773,7 @@ proc hideCompletionsWrapper(args: string): string {.gcsafe.} =
     hideCompletions(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.hide-completions: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.hide-completions: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc selectPrevCompletionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -781,7 +781,7 @@ proc selectPrevCompletionWrapper(args: string): string {.gcsafe.} =
     selectPrevCompletion(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.select-prev-completion: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.select-prev-completion: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc selectNextCompletionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -789,7 +789,7 @@ proc selectNextCompletionWrapper(args: string): string {.gcsafe.} =
     selectNextCompletion(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.select-next-completion: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.select-next-completion: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc selectPrevCompletionVisualWrapper(args: string): string {.gcsafe.} =
   try:
@@ -797,7 +797,7 @@ proc selectPrevCompletionVisualWrapper(args: string): string {.gcsafe.} =
     selectPrevCompletionVisual(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.select-prev-completion-visual: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.select-prev-completion-visual: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc selectNextCompletionVisualWrapper(args: string): string {.gcsafe.} =
   try:
@@ -805,7 +805,7 @@ proc selectNextCompletionVisualWrapper(args: string): string {.gcsafe.} =
     selectNextCompletionVisual(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.select-next-completion-visual: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.select-next-completion-visual: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc clearTabStopsWrapper(args: string): string {.gcsafe.} =
   try:
@@ -813,7 +813,7 @@ proc clearTabStopsWrapper(args: string): string {.gcsafe.} =
     clearTabStops(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.clear-tab-stops: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.clear-tab-stops: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc createCompletionFromSnippetWrapper(args: string): string {.gcsafe.} =
   try:
@@ -822,7 +822,7 @@ proc createCompletionFromSnippetWrapper(args: string): string {.gcsafe.} =
       getArg[JsonNode](args.unnamed, args.named, 1, "snippet"))
     return ({.gcsafe.}: $res.toJsonEx)
   except CatchableError:
-    return "Failed to execute command editor.text.create-completion-from-snippet: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.create-completion-from-snippet: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc applyCompletionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -831,7 +831,7 @@ proc applyCompletionWrapper(args: string): string {.gcsafe.} =
       getArg[JsonNode](args.unnamed, args.named, 1, "completion"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.apply-completion: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.apply-completion: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc applySelectedCompletionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -839,7 +839,7 @@ proc applySelectedCompletionWrapper(args: string): string {.gcsafe.} =
     applySelectedCompletion(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.apply-selected-completion: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.apply-selected-completion: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc showSignatureHelpWrapper(args: string): string {.gcsafe.} =
   try:
@@ -847,7 +847,7 @@ proc showSignatureHelpWrapper(args: string): string {.gcsafe.} =
     showSignatureHelp(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.show-signature-help: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.show-signature-help: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc toggleSignatureHelpWrapper(args: string): string {.gcsafe.} =
   try:
@@ -855,7 +855,7 @@ proc toggleSignatureHelpWrapper(args: string): string {.gcsafe.} =
     toggleSignatureHelp(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.toggle-signature-help: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.toggle-signature-help: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc hideSignatureHelpWrapper(args: string): string {.gcsafe.} =
   try:
@@ -863,7 +863,7 @@ proc hideSignatureHelpWrapper(args: string): string {.gcsafe.} =
     hideSignatureHelp(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.hide-signature-help: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.hide-signature-help: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc selectCodeActionWrapper(args: string): string {.gcsafe.} =
   try:
@@ -871,7 +871,7 @@ proc selectCodeActionWrapper(args: string): string {.gcsafe.} =
     selectCodeAction(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.select-code-action: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.select-code-action: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc clearDiagnosticsWrapper(args: string): string {.gcsafe.} =
   try:
@@ -879,7 +879,7 @@ proc clearDiagnosticsWrapper(args: string): string {.gcsafe.} =
     clearDiagnostics(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.clear-diagnostics: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.clear-diagnostics: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc updateInlayHintsWrapper(args: string): string {.gcsafe.} =
   try:
@@ -887,7 +887,7 @@ proc updateInlayHintsWrapper(args: string): string {.gcsafe.} =
     updateInlayHints(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.update-inlay-hints: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.update-inlay-hints: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc updateCodeActionsWrapper(args: string): string {.gcsafe.} =
   try:
@@ -895,7 +895,7 @@ proc updateCodeActionsWrapper(args: string): string {.gcsafe.} =
     updateCodeActions(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.update-code-actions: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.update-code-actions: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc lspInfoWrapper(args: string): string {.gcsafe.} =
   try:
@@ -903,7 +903,7 @@ proc lspInfoWrapper(args: string): string {.gcsafe.} =
     lspInfo(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.lsp-info: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.lsp-info: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setReadOnlyWrapper(args: string): string {.gcsafe.} =
   try:
@@ -912,7 +912,7 @@ proc setReadOnlyWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 1, "readOnly"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.set-read-only: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.set-read-only: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setFileReadOnlyWrapper(args: string): string {.gcsafe.} =
   try:
@@ -921,7 +921,7 @@ proc setFileReadOnlyWrapper(args: string): string {.gcsafe.} =
       getArg[bool](args.unnamed, args.named, 1, "readOnly"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.set-file-read-only: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.set-file-read-only: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc enterChooseCursorModeWrapper(args: string): string {.gcsafe.} =
   try:
@@ -930,7 +930,7 @@ proc enterChooseCursorModeWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "action"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.enter-choose-cursor-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.enter-choose-cursor-mode: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc setCustomHeaderWrapper(args: string): string {.gcsafe.} =
   try:
@@ -939,7 +939,7 @@ proc setCustomHeaderWrapper(args: string): string {.gcsafe.} =
       getArg[string](args.unnamed, args.named, 1, "text"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.set-custom-header: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.set-custom-header: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc cycleSelectedCaseWrapper(args: string): string {.gcsafe.} =
   try:
@@ -947,10 +947,10 @@ proc cycleSelectedCaseWrapper(args: string): string {.gcsafe.} =
     cycleSelectedCase(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
     return ""
   except CatchableError:
-    return "Failed to execute command editor.text.cycle-selected-case: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+    return "Failed to execute command text.cycle-selected-case: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
 proc registerCommands(commands: CommandService) =
-  const namespace = "editor.text"
+  const namespace = "text"
   discard commands.registerCommand(command_service.Command(
     namespace: namespace, name: "enable-auto-reload", execute: enableAutoReloadWrapper, active: true,))
   discard commands.registerCommand(command_service.Command(

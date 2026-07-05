@@ -1,6 +1,5 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, hashes, genasts, os]
 import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection, async_process]
-import misc/expose
 from std/logging import nil
 
 {.push gcsafe.}
@@ -929,16 +928,14 @@ proc runAsync*(client: DAPClient) {.async.} =
 proc run*(client: DAPClient) =
   asyncSpawn client.runAsync()
 
-proc dapLogVerbose*(val: bool) {.expose("dap").} =
+proc dapLogVerbose*(val: bool) =
   debugf"dapLogVerbose {val}"
   logVerbose = val
 
-proc dapToggleLogServerDebug*() {.expose("dap").} =
+proc dapToggleLogServerDebug*() =
   logServerDebug = not logServerDebug
   debugf"dapToggleLogServerDebug {logServerDebug}"
 
-proc dapLogServerDebug*(val: bool) {.expose("dap").} =
+proc dapLogServerDebug*(val: bool) =
   debugf"dapLogServerDebug {val}"
   logServerDebug = val
-
-# addActiveDispatchTable "dap", genDispatchTable("dap"), global=true

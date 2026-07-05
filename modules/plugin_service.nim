@@ -161,8 +161,7 @@ when implModule:
   import std/[macros, os, sugar, strutils]
   import misc/[custom_logger, util, myjsonutils, event]
   import nimsumtree/[arc]
-  import misc/expose
-  import vfs_service, vfs, dispatch_tables, input_handler/input_handler, stats
+  import vfs_service, vfs, input_handler/input_handler, stats
 
   logCategory "plugins"
 
@@ -508,15 +507,7 @@ when implModule:
         self.currentPluginSystem = oldScriptContext
       body
 
-  proc getPluginService(): Option[PluginServiceImpl] =
-    {.gcsafe.}:
-      if getServices().isNil: return PluginServiceImpl.none
-      return getServices().getService(PluginServiceImpl)
-
-  static:
-    addInjector(PluginServiceImpl, getPluginService)
-
-  proc bindKeys*(self: PluginServiceImpl, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) {.expose("plugins").} =
+  proc bindKeys*(self: PluginServiceImpl, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) =
     let command = if arg.len == 0: action else: action & " " & arg
     log(lvlInfo, fmt"Adding command to '{context}': ('{subContext}', '{keys}', '{command}')")
 
@@ -535,7 +526,7 @@ when implModule:
     self.events.getEventHandlerConfig(context).addCommand(subContext, keys, command, source)
     self.events.invalidateCommandToKeysMap()
 
-  addGlobalDispatchTable "plugins", genDispatchTable("plugins")
+  include generated/plugin_service_commands
 
   proc pluginsAddPluginSystem(self: PluginService, pluginSystem: PluginSystem) =
     self.PluginServiceImpl.pluginSystems.add pluginSystem
@@ -545,3 +536,4 @@ when implModule:
       initImpl: proc(self: Service): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
         return await self.PluginServiceImpl.initPluginService()
     ), @[EventHandlerService.serviceName, VFSService.serviceName, CommandService.serviceName, ConfigService.serviceName])
+    registerCommands(getServiceChecked(CommandService))
