@@ -11,6 +11,7 @@ import platform
 import document, document_editor, input_handler/input_handler, vmath, bumpy, text_document
 import selector_popup/builder, register
 import config_provider, service, layout/layout, vfs, vfs_service, command_service, toast
+import core_settings
 import move_database, event_service
 import workspace
 import previewer, finder
@@ -38,164 +39,6 @@ export text_document, document_editor, id, Bias
 {.push raises: [].}
 
 logCategory "texted"
-
-
-type
-  ColorType* = enum Hex = "hex", Float1 = "float1", Float255 = "float255"
-
-  ScrollToChangeOnReload* {.pure.} = enum First = "first", Last = "last"
-
-proc typeNameToJson*(T: typedesc[ScrollToChangeOnReload]): string =
-  return "\"first\" | \"last\""
-
-proc typeNameToJson*(T: typedesc[ColorType]): string =
-  return "\"hex\" | \"float1\" | \"float255\""
-
-declareSettings CodeActionSettings, "":
-  ## Character to use as sign for lines where code actions are available. Empty string or null means no sign will be shown for code actions.
-  declare sign, string, "⚑"
-
-  ## How many columns the sign occupies.
-  declare signWidth, int, 1
-
-  ## What color the sign for code actions should be. Can be a theme color name or hex code (e.g. `#12AB34`).
-  declare signColor, string, "info"
-
-declareSettings ColorHighlightSettings, "":
-  ## Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language
-  ## in `text.color-highlight.{language-id}.`
-  declare enable, bool, false
-
-  ## Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kind.
-  declare regex, RegexSetting, "#([0-9a-fA-F]{6})|#([0-9a-fA-F]{8})"
-
-  ## How to interpret the number.
-  ## "hex" means the number is written as either 6 or 8 hex characters, e.g. ABBACA7.
-  ## "float1" means the number is a float with 0 being black and 1 being white.
-  ## "float255" means the number is a float or int with 0 being black and 255 being white.
-  declare kind, ColorType, ColorType.Hex
-
-declareSettings TextEditorSettings, "text":
-  use colorHighlight, ColorHighlightSettings
-
-  ## Settings for how signs are displayed
-  use signs, SignColumnSettings
-
-  ## Settings for highlighting text matching the current selection or word containing the cursor.
-  use highlightMatches, MatchingWordHighlightSettings
-
-  ## Configure search regexes.
-  use searchRegexes, SearchRegexSettings
-
-  ## Configure code actions.
-  use codeActions, CodeActionSettings
-
-  ## Configure inlay hints.
-  use inlayHints, InlayHintSettings
-
-  ## Configure hover popups.
-  use hover, HoverSettings
-
-  ## Specifies whether a selection includes the character after the end cursor.
-  ## If true then a selection like (0:0...0:4) with the text "Hello world" would select "Hello".
-  ## If false then the selected text would be "Hell".
-  ## If you use Vim motions then the Vim plugin manages this setting.
-  declare inclusiveSelection, bool, false
-
-  ## How many characters wide a tab is.
-  declare tabWidth, int, 4
-
-  ## Whether `text.cursor-margin` is relative to the screen height (0-1) or an absolute number of lines.
-  declare cursorMarginRelative, bool, true
-
-  ## How far from the edge to keep the cursor, either percentage of screen height (0-1) or number of lines,
-  ## depending on `text.cursor-margin-relative`.
-  declare cursorMargin, float, 0.15
-
-  ## Enable line wrapping.
-  declare wrapLines, bool, true
-
-  ## How many characters from the right edge to start wrapping text.
-  declare wrapMargin, int, 1
-
-  ## Default mode to set when opening/creating text documents.
-  declare defaultMode, string, ""
-
-  ## Maximum number of results to display for regex based workspace symbol search.
-  declare searchWorkspaceRegexMaxResults, int, 50_000
-
-  ## Maximum number of locations to highlight choose cursor mode.
-  declare chooseCursorMax, int, 300
-
-  ## Command to run after control clicking on some text.
-  declare controlClickCommand, string, "goto-definition"
-
-  ## Arguments to the command which is run when control clicking on some text.
-  declare controlClickCommandArgs, JsonNode, newJArray()
-
-  ## Command to run after single clicking on some text.
-  declare singleClickCommand, string, ""
-
-  ## Arguments to the command which is run when single clicking on some text.
-  declare singleClickCommandArgs, JsonNode, newJArray()
-
-  ## Command to run after double clicking on some text.
-  declare doubleClickCommand, string, "extend-select-move"
-
-  ## Arguments to the command which is run when double clicking on some text.
-  declare doubleClickCommandArgs, JsonNode, %[newJString("word"), newJBool(true)]
-
-  ## Command to run after triple clicking on some text.
-  declare tripleClickCommand, string, "extend-select-move"
-
-  ## Arguments to the command which is run when triple clicking on some text.
-  declare tripleClickCommandArgs, JsonNode, %[newJString("line"), newJBool(true)]
-
-  ## If not null then scroll to the changed region when a file is reloaded.
-  declare scrollToChangeOnReload, Option[ScrollToChangeOnReload], nil
-
-  ## If true then scroll to the end of the file when text is inserted at the end and the cursor
-  ## is already at the end.
-  declare scrollToEndOnInsert, bool, false
-
-  ## List of input modes text editors.
-  declare modes, seq[string], @["editor.text"]
-
-  ## Mode to activate while completion window is open.
-  declare completionMode, string, "editor.text.completion"
-
-  ## Mode to activate while hover window is open.
-  declare hoverMode, string, "editor.text.hover"
-
-  ## Mode to activate while hover window is open.
-  declare tabStopMode, string, "editor.text.tab-stop"
-
-  ## Command to execute when the mode of the text editor changes
-  declare modeChangedHandlerCommand, string, ""
-
-  ## Whether signature help is enabled.
-  declare signatureHelpEnabled, bool, true
-
-  ## How often (in milliseconds) to update signature help while typing.
-  declare signatureHelpDelay, int, 200
-
-  ## Which move to use to find the beginning of the argument list when showing signature help.
-  declare signatureHelpMove, string, "(ts 'call.inner') (overlapping) (last)"
-
-  ## Which characters trigger signature help when inserted.
-  declare signatureHelpTriggerChars, RuneSetSetting, %%*["("]
-
-  ## Trigger signature help when editing inside an argument list, as defined by 'signature-help-move'
-  declare signatureHelpTriggerOnEditInArgs, bool, true
-
-  ## Automatically insert closing parenthesis, braces, brackets and quotes.
-  declare autoInsertClose, bool, true
-
-  ## Disable auto completion
-  declare disableCompletions, bool, false
-
-  ## Disable scrolling
-  declare disableScrolling, bool, false
 
 type
   CodeActionKind {.pure.} = enum Command, CodeAction
@@ -340,9 +183,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   declarationRanges: seq[tuple[decl: Selection, name: Selection, value: string]]
   onDeclarationRangesUpdated*: Event[void]
 
-  uiSettings*: UiSettings
-  debugSettings*: DebugSettings
-  settings*: TextEditorSettings
 
   moveFallbacks: MoveFunction
 
@@ -561,7 +401,7 @@ proc clampSelection*(self: TextDocumentEditor) =
   self.markDirty()
 
 proc useInclusiveSelections*(self: TextDocumentEditor): bool =
-  self.settings.inclusiveSelection.get()
+  self.config.getTextInclusiveSelection()
 
 proc startBlinkCursorTask(self: TextDocumentEditor) =
   if not self.blinkCursor:
@@ -737,7 +577,7 @@ proc createEventHandler(self: TextDocumentEditor, config: EventHandlerConfig): E
         self.handleInput input, record=true
 
 proc getConfigEventHandlers(self: TextDocumentEditor): seq[EventHandler] =
-  let modes = self.settings.modes.get()
+  let modes = self.config.getTextModes()
 
   var rebuild = false
   if modes.len != self.mEventHandlers.len:
@@ -764,7 +604,7 @@ proc textEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, Even
     result.add inject["above-mode"]
 
   if self.snippetComponent.currentSnippetData.isSome:
-    let tabStopMode = self.settings.tabStopMode.get()
+    let tabStopMode = self.config.getTextTabStopMode()
     if self.tabStopEventHandler == nil or self.tabStopEventHandler.config.context != tabStopMode:
       let config = self.events.getEventHandlerConfig(tabStopMode)
       assignEventHandler(self.tabStopEventHandler, config):
@@ -785,7 +625,7 @@ proc textEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, Even
     result.add self.hoverComponent.overlayViews[^1].getEventHandlers(inject)
 
   if self.hoverComponent.showHover:
-    let hoverMode = self.settings.hoverMode.get()
+    let hoverMode = self.config.getTextHoverMode()
     if self.hoverEventHandler == nil or self.hoverEventHandler.config.context != hoverMode:
       let config = self.events.getEventHandlerConfig(hoverMode)
       assignEventHandler(self.hoverEventHandler, config):
@@ -801,7 +641,7 @@ proc textEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, Even
       result.add self.hoverEventHandler
 
   if self.showCompletions:
-    let completionMode = self.settings.completionMode.get()
+    let completionMode = self.config.getTextCompletionMode()
     if self.completionEventHandler == nil or self.completionEventHandler.config.context != completionMode:
       let config = self.events.getEventHandlerConfig(completionMode)
       assignEventHandler(self.completionEventHandler, config):
@@ -819,7 +659,7 @@ proc textEditorGetEventHandlers(self: DocumentEditor, inject: Table[string, Even
     result.add inject["above-completion"]
 
 proc tabWidth*(self: TextDocumentEditor): int =
-  result = self.settings.tabWidth.get()
+  result = self.config.getTextTabWidth()
   if result == 0:
     log lvlError, &"Invalid tab width of 0 for editor '{self.getFileName()}'"
     return 4
@@ -830,7 +670,7 @@ proc requiredSignColumnWidth*(self: TextDocumentEditor): int =
 
 proc lineNumberBounds*(self: TextDocumentEditor): Vec2 =
   # line numbers
-  let lineNumbers = self.uiSettings.lineNumbers.get()
+  let lineNumbers = self.config.getUiLineNumbers()
   let maxLineNumber = case lineNumbers
     of LineNumbers.Absolute: self.document.numLines
     of LineNumbers.Relative: 99
@@ -860,8 +700,8 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   let diff = self.diffDocument != nil and self.diffDocument.isInitialized
 
   # todo: this should account for the line number width
-  let wrapWidth = if self.settings.wrapLines.get():
-    let wrapMargin = self.settings.wrapMargin.get()
+  let wrapWidth = if self.config.getTextWrapLines():
+    let wrapMargin = self.config.getTextWrapMargin()
     let lineNumberWidth = self.lineNumberWidth()
     var wrapWidth = max(floor((bounds.w - lineNumberWidth) / self.platform.charWidth).int - wrapMargin, 10)
     if diff:
@@ -919,10 +759,10 @@ proc textEditorHandleDeactivate(self: DocumentEditor) =
     self.markDirty()
 
 proc disableScrolling*(self: TextDocumentEditor): bool =
-  self.settings.disableScrolling.get()
+  self.config.getTextDisableScrolling()
 
 proc `disableScrolling=`*(self: TextDocumentEditor, val: bool) =
-  self.settings.disableScrolling.set(val)
+  self.config.setTextDisableScrolling(val)
 
 proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none,
     scrollBehaviour = ScrollBehaviour.none, relativePosition: float = 0.5) =
@@ -956,7 +796,7 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
 
   self.scrollBox.scrollTo(displayPoint.row.int, center = centerY, centerOffscreen = centerOffscreenY)
 
-  if self.scrollBox.offset.x != 0 or not self.settings.wrapLines.get():
+  if self.scrollBox.offset.x != 0 or not self.config.getTextWrapLines():
     let cursorX = displayPoint.column.float * charWidth
     let currentX = self.scrollBox.currentOffset.x
     if centerX:
@@ -1402,15 +1242,15 @@ proc removeMode*(self: TextDocumentEditor, mode: string) =
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
 
-  var modes = self.settings.modes.get()
+  var modes = self.config.getTextModes()
   let i = modes.find(mode)
   if i == -1:
     return
 
   modes.removeShift(mode)
-  self.settings.modes.set(modes)
+  self.config.setTextModes(modes)
 
-  let handler = self.settings.modeChangedHandlerCommand.get()
+  let handler = self.config.getTextModeChangedHandlerCommand()
   if handler != "":
     discard self.handleAction(handler, &"{self.id} {[mode].toJson} []", record = false)
 
@@ -1441,7 +1281,7 @@ proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true, fo
 
   var changed = false
   var removedModes = newSeq[string]()
-  var modes = self.settings.modes.get()
+  var modes = self.config.getTextModes()
   let alreadyContained = modes.find(mode) != -1
   var i = 0
   if exclusive and prefix != "":
@@ -1460,28 +1300,28 @@ proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true, fo
   if not changed and not forceNotify:
     return
 
-  self.settings.modes.set(modes)
+  self.config.setTextModes(modes)
 
   self.onModeChanged.invoke (removedModes, @[mode])
-  let handler = self.settings.modeChangedHandlerCommand.get()
+  let handler = self.config.getTextModeChangedHandlerCommand()
   if handler != "":
     discard self.handleAction(handler, &"{self.id} {removedModes.toJson} {[mode].toJson}", record = false)
 
   self.markDirty()
 
 proc setDefaultMode*(self: TextDocumentEditor, forceNotify: bool = false) =
-  self.setMode(self.settings.defaultMode.get(), forceNotify = forceNotify)
+  self.setMode(self.config.getTextDefaultMode(), forceNotify = forceNotify)
 
 proc mode*(self: TextDocumentEditor): string =
   ## Returns the current mode of the text editor, or "" if there is no mode
-  let modes = self.settings.modes.get()
+  let modes = self.config.getTextModes()
   if modes.len > 0:
     return modes.last
   return ""
 
 proc modes*(self: TextDocumentEditor): seq[string] =
   ## Returns the current modes of the text editor
-  return self.settings.modes.get()
+  return self.config.getTextModes()
 
 proc getContextWithMode(self: TextDocumentEditor, context: string): string =
   ## Appends the current mode to context
@@ -1647,7 +1487,7 @@ proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool =
   var c = self.document.rope.cursorT(cursor.toPoint)
   c.seekPrevRune()
   let previousRune = c.currentRune()
-  let wordRunes {.cursor.} = self.document.settings.completionWordChars.get()
+  let wordRunes = self.document.config.getTextCompletionWordChars()
   let extraTriggerChars = if self.document.completionTriggerCharacters.len > 0:
     self.document.completionTriggerCharacters
   else:
@@ -1662,18 +1502,18 @@ proc autoShowSignatureHelp*(self: TextDocumentEditor, insertedText: string) =
   if self.showSignatureHelp:
     return
 
-  let triggerChars {.cursor.} = self.settings.signatureHelpTriggerChars.get()
-  if insertedText.len > 0 and insertedText[0] in triggerChars:
+  let triggerChars = self.config.getTextSignatureHelpTriggerChars()
+  if insertedText.len > 0 and $insertedText[0] in triggerChars:
     self.showSignatureHelp()
 
-  elif self.settings.signatureHelpTriggerOnEditInArgs.get():
-    let move = self.settings.signatureHelpMove.get()
+  elif self.config.getTextSignatureHelpTriggerOnEditInArgs():
+    let move = self.config.getTextSignatureHelpMove()
     let argListRanges = self.getSelectionsForMove(@[self.selection], move)
     if argListRanges.len > 0:
       self.showSignatureHelp()
 
 proc disableCompletions*(self: TextDocumentEditor): bool =
-  self.settings.disableCompletions.get()
+  self.config.getTextDisableCompletions()
 
 proc autoShowCompletions*(self: TextDocumentEditor) =
   if self.disableCompletions:
@@ -1750,9 +1590,9 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
 
         # todo: don't use getLine
         let line = $self.document.getLine(selection.last.line)
-        let indentStyle = self.document.settings.indent.get()
-        let indentWidth = self.document.settings.tabWidth.get()
-        let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, indentStyle, indentWidth, selection.last.column)
+        let indentStyle = self.document.getIndentStyle()
+        let indentWidth = self.document.config.getTextTabWidth()
+        let indent = indentForNewLine(self.document.config.getTextIndentAfter(), line, indentStyle, indentWidth, selection.last.column)
         if indent.len > 0:
           texts[i].add indent
           resultSelectionsRelative[i].column += indent.len
@@ -1804,7 +1644,7 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
       s.first.column = 0
 
   var insertedAutoClose = false
-  if not insertedExistingAutoClose and autoClose.get(self.settings.autoInsertClose.get()):
+  if not insertedExistingAutoClose and autoClose.get(self.config.getTextAutoInsertClose()):
     case text
     of "(", "{", "[", "\"", "'", "<":
       let close = case text
@@ -1928,7 +1768,7 @@ proc unindent*(self: TextDocumentEditor) =
 
   var indentSelections: Selections = @[]
   for l in linesToIndent:
-    case self.document.settings.indent.get()
+    case self.document.getIndentStyle()
     of Spaces:
       let firstNonWhitespace = self.document.rope.indentBytes(l)
       indentSelections.add ((l, 0), (l, min(self.document.getIndentColumns(), firstNonWhitespace)))
@@ -2396,7 +2236,7 @@ proc revertSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) 
     if self.diffDocument.isNil or self.diffChanges.isNone:
       return
 
-    let autoReloadEnabled = self.document.settings.autoReload.get()
+    let autoReloadEnabled = self.document.config.getTextAutoReload()
     if autoReloadEnabled:
       self.document.enableAutoReload(false)
     defer:
@@ -2444,7 +2284,7 @@ proc unstageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false)
     if self.diffDocument.isNil or self.diffChanges.isNone:
       return
 
-    let autoReloadEnabled = self.document.settings.autoReload.get()
+    let autoReloadEnabled = self.document.config.getTextAutoReload()
     if autoReloadEnabled:
       self.document.enableAutoReload(false)
     defer:
@@ -2518,7 +2358,7 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
     if self.diffDocument.isNil or self.diffChanges.isNone:
       return
 
-    let autoReloadEnabled = self.document.settings.autoReload.get()
+    let autoReloadEnabled = self.document.config.getTextAutoReload()
     if autoReloadEnabled:
       self.document.enableAutoReload(false)
     defer:
@@ -3616,7 +3456,7 @@ proc renameAsync(self: TextDocumentEditor) {.async.} =
         elif it.isError:
           log lvlError, &"Failed to rename to '{name}': {it.error}"
 
-  commandLineEditor.settings.disableCompletions.set(true)
+  commandLineEditor.config.setTextDisableCompletions(true)
   commandLineEditor.move("(file) (end)")
 
 proc rename*(self: TextDocumentEditor) =
@@ -3679,10 +3519,10 @@ proc applyAutoIndent(self: TextDocumentEditor, edits: var seq[Selection], texts:
         indentClosing = true
 
     let line = $self.document.getLine(selection.last.line)
-    let indentStyle = self.document.settings.indent.get()
-    let indentWidth = self.document.settings.tabWidth.get()
+    let indentStyle = self.document.getIndentStyle()
+    let indentWidth = self.document.config.getTextTabWidth()
     let indentLevel = indentLevelForLine(line, indentWidth)
-    let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, indentStyle, indentWidth, selection.last.column)
+    let indent = indentForNewLine(self.document.config.getTextIndentAfter(), line, indentStyle, indentWidth, selection.last.column)
 
     let originalText = texts[i]
     texts[i].setLen(0)
@@ -3900,7 +3740,7 @@ proc applySelectedCompletion*(self: TextDocumentEditor) =
     self.registers.recordCommand(".apply-completion " & $completion.toJson)
 
 proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpty: bool): Future[void] {.async.} =
-  if not self.settings.signatureHelpEnabled.get():
+  if not self.config.getTextSignatureHelpEnabled():
     return
 
   let languageServer = self.document.getLanguageServer()
@@ -3922,7 +3762,7 @@ proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpt
     if numSignatures == 0:
       # If we don't find signatures, check if we're still in the parameter list of the last successful signature help,
       # and reuse that if so.
-      let move = self.settings.signatureHelpMove.get()
+      let move = self.config.getTextSignatureHelpMove()
       let argListRanges = self.getSelectionsForMove(@[cursor.toSelection], move)
       if argListRanges.len > 0 and self.signatureHelpLocation == argListRanges[0].first:
         # Argument list still starts at same place, so assume same argument list and show the previous.
@@ -3952,7 +3792,7 @@ proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpt
       self.hoverComponent.clearHoverView()
       self.hoverComponent.showHover = false
       self.signatureHelpLocation = cursor
-      let move = self.settings.signatureHelpMove.get()
+      let move = self.config.getTextSignatureHelpMove()
       let argListRanges = self.getSelectionsForMove(@[cursor.toSelection], move)
       if argListRanges.len > 0:
         self.signatureHelpLocation = argListRanges[0].first
@@ -3984,7 +3824,7 @@ proc hideSignatureHelp*(self: TextDocumentEditor) =
 
 proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
   ## Show signature information for the given cursor after a delay.
-  let delayMs = self.settings.signatureHelpDelay.get()
+  let delayMs = self.config.getTextSignatureHelpDelay()
   if self.showSignatureHelpTask.isNil:
     self.showSignatureHelpTask = startDelayed(delayMs, repeat=false):
       asyncSpawn self.showSignatureHelpAsync(self.selection.last, hideIfEmpty = true)
@@ -4059,10 +3899,10 @@ proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selecti
     return
   if actions.kind == Success and actions.result.len > 0:
     if addSign:
-      let sign = self.settings.codeActions.sign.get()
+      let sign = self.config.getTextCodeActionsSign()
       if sign.len > 0:
-        let signWidth = self.settings.codeActions.signWidth.get()
-        let color = self.settings.codeActions.signColor.get()
+        let signWidth = self.config.getTextCodeActionsSignWidth()
+        let color = self.config.getTextCodeActionsSignColor()
         discard self.decorations.addSign(idNone(), selection.first.line, sign, group = "code-actions-" & ls.name, color = color, width = signWidth)
 
     for actionOrCommand in actions.result:
@@ -4209,10 +4049,10 @@ proc setFileReadOnly*(self: TextDocumentEditor, readOnly: bool) =
   asyncSpawn self.setFileReadOnlyAsync(readOnly)
 
 proc getAvailableCursors*(self: TextDocumentEditor): seq[Cursor] =
-  let wordRunes {.cursor.} = self.document.settings.completionWordChars.get()
+  let wordRunes = self.document.config.getTextCompletionWordChars()
   let rope {.cursor.} = self.document.rope
 
-  let max = self.settings.chooseCursorMax.get()
+  let max = self.config.getTextChooseCursorMax()
   for chunk in self.lastRenderedChunks:
     var startsWithWord = true
     if chunk.range.a.column > 0:
@@ -4370,29 +4210,29 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) =
   self.markDirty()
 
 proc runControlClickCommand*(self: TextDocumentEditor) =
-  let commandName = self.settings.controlClickCommand.get()
-  let args = self.settings.controlClickCommandArgs.get()
+  let commandName = self.config.getTextControlClickCommand()
+  let args = self.config.getTextControlClickCommandArgs()
   if commandName.len == 0:
     return
   discard self.runAction(commandName, args)
 
 proc runSingleClickCommand*(self: TextDocumentEditor) =
-  let commandName = self.settings.singleClickCommand.get()
-  let args = self.settings.singleClickCommandArgs.get()
+  let commandName = self.config.getTextSingleClickCommand()
+  let args = self.config.getTextSingleClickCommandArgs()
   if commandName.len == 0:
     return
   discard self.runAction(commandName, args)
 
 proc runDoubleClickCommand*(self: TextDocumentEditor) =
-  let commandName = self.settings.doubleClickCommand.get()
-  let args = self.settings.doubleClickCommandArgs.get()
+  let commandName = self.config.getTextDoubleClickCommand()
+  let args = self.config.getTextDoubleClickCommandArgs()
   if commandName.len == 0:
     return
   discard self.runAction(commandName, args)
 
 proc runTripleClickCommand*(self: TextDocumentEditor) =
-  let commandName = self.settings.tripleClickCommand.get()
-  let args = self.settings.tripleClickCommandArgs.get()
+  let commandName = self.config.getTextTripleClickCommand()
+  let args = self.config.getTextTripleClickCommandArgs()
   if commandName.len == 0:
     return
   discard self.runAction(commandName, args)
@@ -4406,7 +4246,7 @@ proc runDragCommand*(self: TextDocumentEditor) =
     self.runTripleClickCommand()
 
 proc getCurrentEventHandlers*(self: TextDocumentEditor): seq[string] =
-  return self.settings.modes.get()
+  return self.config.getTextModes()
 
 proc setCustomHeader*(self: TextDocumentEditor, text: string) =
   self.customHeader = text
@@ -4531,11 +4371,11 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
 
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]]) =
   self.displayMap.edit(self.document.buffer.snapshot.clone(), edits)
-  if self.settings.wrapLines.get():
+  if self.config.getTextWrapLines():
     self.displayMap.wrapMap.update(self.displayMap.tabMap.snapshot.clone(), force = true)
 
 proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
-  if not self.settings.colorHighlight.enable.get():
+  if not self.config.getTextColorHighlightEnable():
     if self.overlayIdColorHighlight.isSome:
       self.displayMap.overlay.clear(self.overlayIdColorHighlight.get)
       self.displayMap.overlay.releaseId(self.overlayIdColorHighlight.get)
@@ -4547,8 +4387,8 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
     if self.overlayIdColorHighlight.isNone:
       return
 
-  let regex = self.settings.colorHighlight.regex.getRegex()
-  let kind = self.settings.colorHighlight.kind.get()
+  let regex = self.config.getTextColorHighlightRegex().decodeRegex()
+  let kind = self.config.getTextColorHighlightKind()
   let floatRegex = re"(\d+(\.\d+)?)"
 
   try:
@@ -4600,7 +4440,7 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   let oldSnapshot = self.snapshot.move
   self.snapshot = self.document.buffer.snapshot.clone()
 
-  if self.settings.scrollToEndOnInsert.get() and self.selections.len == 1 and self.selection == oldSnapshot.visibleText.summary.lines.toCursor.toSelection:
+  if self.config.getTextScrollToEndOnInsert() and self.selections.len == 1 and self.selection == oldSnapshot.visibleText.summary.lines.toCursor.toSelection:
     self.selection = self.document.lastCursor.toSelection
     self.scrollToCursor()
 
@@ -4640,7 +4480,7 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
     self.textEditorComponent.selections = s
     self.centerCursor(snap=true)
 
-  elif self.settings.scrollToChangeOnReload.get().getSome(scrollToChangeOnReload):
+  elif self.config.get("text.scroll-to-change-on-reload", ScrollToChangeOnReload.none).getSome(scrollToChangeOnReload):
     case scrollToChangeOnReload
     of ScrollToChangeOnReload.First:
       if changes.len > 0:
@@ -4773,9 +4613,6 @@ proc newTextEditor*(document: TextDocument, services: Services, initialSettings:
     self.configChanged = true
     self.markDirty()
 
-  self.uiSettings = UiSettings.new(self.config)
-  self.debugSettings = DebugSettings.new(self.config)
-  self.settings = TextEditorSettings.new(self.config)
 
   self.snippetComponent = newSnippetComponent()
   self.addComponent(self.snippetComponent)
@@ -4793,16 +4630,16 @@ proc newTextEditor*(document: TextDocument, services: Services, initialSettings:
 
   self.addComponent(newConfigComponent(self.config))
 
-  self.decorations = newDecorationComponent(self.settings.signs, self.displayMap)
+  self.decorations = newDecorationComponent(self.displayMap)
   self.addComponent(self.decorations)
 
-  self.inlayHints = newInlayHintComponent(self.settings.inlayHints, self.displayMap)
+  self.inlayHints = newInlayHintComponent(self.displayMap)
   self.addComponent(self.inlayHints)
 
-  self.hoverComponent = newHoverComponent(self.settings.hover)
+  self.hoverComponent = newHoverComponent()
   self.addComponent(self.hoverComponent)
 
-  self.contextLineComponent = newContextLineComponent(ContextLineSettings.new(self.config))
+  self.contextLineComponent = newContextLineComponent()
   self.addComponent(self.contextLineComponent)
 
   self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] =

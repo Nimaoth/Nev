@@ -190,7 +190,6 @@ when implModule:
       platform: Platform
       workspace: Workspace
       config: ConfigService
-      uiSettings: UiSettings
       editors: DocumentEditorService
       session: SessionService
       commands: CommandService
@@ -321,7 +320,6 @@ when implModule:
     self.workspace = self.services.getServiceChecked(Workspace)
     self.session = self.services.getServiceChecked(SessionService)
     self.commands = self.services.getServiceChecked(CommandService)
-    self.uiSettings = UiSettings.new(self.config.runtime)
 
     discard self.platform.onPreRender.subscribe (_: Platform) => self.preRender()
 

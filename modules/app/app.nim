@@ -31,6 +31,7 @@ when implModule:
     delayed_task, regex, custom_unicode, jsonex, generational_seq, fuzzy_matching, rope_utils]
   import workspace
   import config_provider
+  import core_settings
   import input_handler/input_handler, document, document_editor, popup, theme, view, register
   import text_component, text_editor_component
   import finder, previewer, data_previewer
@@ -150,10 +151,6 @@ when implModule:
       showNextPossibleInputs*: bool
 
       reloadThemeFromConfig: bool
-
-      uiSettings*: UiSettings
-      generalSettings*: GeneralSettings
-      debugSettings*: DebugSettings
 
   var gApp*: App = nil
 
@@ -300,7 +297,7 @@ when implModule:
   proc loadSession*(self: App) {.async: (raises: []).} =
     try:
       let stateJson = self.vfs.read(self.sessionFile).await.parseJson
-      if self.generalSettings.keepSessionHistory.get():
+      if self.config.runtime.getEditorKeepSessionHistory():
         asyncSpawn self.addSessionToRecentSessions(self.sessionFile)
 
       var state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
@@ -339,7 +336,7 @@ when implModule:
         self.config.groups.add(workspaceConfigDir)
         await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
-      if self.generalSettings.watchWorkspaceConfig.get():
+      if self.config.runtime.getEditorWatchWorkspaceConfig():
         log lvlInfo, &"Watch workspace config files: {workspaceConfigDir}"
         discard self.vfs.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
           let changedFiles = events.mapIt(it.name)
@@ -448,7 +445,7 @@ when implModule:
   proc preRender*(self: App, bounds: Rect) =
     if self.reloadThemeFromConfig:
       self.reloadThemeFromConfig = false
-      asyncSpawn self.setTheme(self.uiSettings.theme.get())
+      asyncSpawn self.setTheme(self.config.runtime.getUiTheme())
 
   proc loadSettings*(self: App, key: string, filenames: seq[string], changedFiles: seq[string] = @[], name: string,
       loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}) {.async.} =
@@ -605,10 +602,11 @@ when implModule:
       self.config.runtime.set(path, value)
 
   proc applyFontSettings(self: App) =
-    let fontRegular = self.uiSettings.fontFamily.get
-    let fontBold = self.uiSettings.fontFamilyBold.get
-    let fontItalic = self.uiSettings.fontFamilyItalic.get
-    let fontBoldItalic = self.uiSettings.fontFamilyBoldItalic.get
+    let runtimeConfig = self.config.runtime
+    let fontRegular = runtimeConfig.getUiFontFamily()
+    let fontBold = runtimeConfig.getUiFontFamilyBold()
+    let fontItalic = runtimeConfig.getUiFontFamilyItalic()
+    let fontBoldItalic = runtimeConfig.getUiFontFamilyBoldItalic()
 
     if fontRegular != self.fontRegular or
        fontBold != self.fontBold or
@@ -675,7 +673,7 @@ when implModule:
       if key == "" or key == "ui" or key.startsWith("ui.font-family"):
         self.applyFontSettings()
       if key == "" or key == "ui" or key == "ui.vsync":
-        self.platform.setVsync(self.uiSettings.vsync.get)
+        self.platform.setVsync(self.config.runtime.getUiVsync())
 
       if key == "" or key == "finder" or key == "finder.scoring":
         finderFuzzyMatchConfig.stateScores[StartMatch] =
@@ -738,9 +736,6 @@ when implModule:
     self.frameTimer = startTimer()
 
     self.config = services.getServiceChecked(ConfigService)
-    self.uiSettings = UiSettings.new(self.config.runtime)
-    self.generalSettings = GeneralSettings.new(self.config.runtime)
-    self.debugSettings = DebugSettings.new(self.config.runtime)
 
     self.layout = services.getServiceChecked(LayoutService)
     self.editors = services.getServiceChecked(DocumentEditorService)
@@ -762,9 +757,6 @@ when implModule:
     self.fallbackFonts.add "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
     self.fallbackFonts.add "app://fonts/NotoEmoji/NotoEmoji.otf"
 
-    self.uiSettings = UiSettings.new(self.config.runtime)
-    self.generalSettings = GeneralSettings.new(self.config.runtime)
-
     self.setupDefaultKeybindings()
     self.applySettingsFromAppOptions()
     self.runEarlyCommandsFromAppOptions()
@@ -775,9 +767,9 @@ when implModule:
     self.applySettingsFromAppOptions()
     self.runConfigCommands("startup-commands")
 
-    self.platform.setVsync(self.uiSettings.vsync.get)
+    self.platform.setVsync(self.config.runtime.getUiVsync())
     self.applyFontSettings()
-    asyncSpawn self.setTheme(self.uiSettings.theme.get())
+    asyncSpawn self.setTheme(self.config.runtime.getUiTheme())
 
     self.commands.defaultCommandHandler = proc(command: Option[string]): Option[string] =
       if command.isSome:
@@ -785,18 +777,18 @@ when implModule:
       else:
         string.none
 
-    let closeUnusedDocumentsTimerS = self.generalSettings.closeUnusedDocumentsTimer.get()
+    let closeUnusedDocumentsTimerS = self.config.runtime.getEditorCloseUnusedDocumentsTimer()
     self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
       self.closeUnusedDocuments()
 
-    let showNextPossibleInputsDelay = self.uiSettings.whichKeyDelay.get()
+    let showNextPossibleInputsDelay = self.config.runtime.getUiWhichKeyDelay()
     self.showNextPossibleInputsTask = startDelayedPaused(showNextPossibleInputsDelay, repeat=false):
       self.showNextPossibleInputs = self.nextPossibleInputs.len > 0
-      if self.uiSettings.whichKeyShowWhenMod.get() and self.platform.currentModifiers != {}:
+      if self.config.runtime.getUiWhichKeyShowWhenMod() and self.platform.currentModifiers != {}:
         self.showNextPossibleInputs = true
       self.platform.requestRender()
 
-    if self.generalSettings.watchTheme.get():
+    if self.config.runtime.getEditorWatchTheme():
       discard self.vfs.watch("app://themes", proc(events: seq[PathEvent]) =
         for e in events:
           case e.action
@@ -808,14 +800,14 @@ when implModule:
             discard
       )
 
-    if self.generalSettings.watchAppConfig.get():
+    if self.config.runtime.getEditorWatchAppConfig():
       log lvlInfo, &"Watch app config files: {appConfigDir}"
       discard self.vfs.watch(appConfigDir, proc(events: seq[PathEvent]) =
         let changedFiles = events.mapIt(it.name)
         asyncSpawn self.loadConfigFrom(appConfigDir, "app", changedFiles)
       )
 
-    if not self.appOptions.skipUserSettings and self.generalSettings.watchUserConfig.get():
+    if not self.appOptions.skipUserSettings and self.config.runtime.getEditorWatchUserConfig():
       log lvlInfo, &"Watch user config files: {homeConfigDir}"
       discard self.vfs.watch(homeConfigDir, proc(events: seq[PathEvent]) =
         let changedFiles = events.mapIt(it.name)
@@ -877,7 +869,7 @@ when implModule:
           self.config.groups.add(workspaceConfigDir)
           await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
-        if self.generalSettings.watchWorkspaceConfig.get():
+        if self.config.runtime.getEditorWatchWorkspaceConfig():
           log lvlInfo, &"Watch workspace config files: {workspaceConfigDir}"
           discard self.vfs.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
             let changedFiles = events.mapIt(it.name)
@@ -902,7 +894,7 @@ when implModule:
         self.config.groups.add(workspaceConfigDir)
         await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
-        if self.generalSettings.watchWorkspaceConfig.get():
+        if self.config.runtime.getEditorWatchWorkspaceConfig():
           log lvlInfo, &"Watch workspace config files: {workspaceConfigDir}"
           discard self.vfs.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
             let changedFiles = events.mapIt(it.name)
@@ -929,7 +921,7 @@ when implModule:
 
   proc appShutdown(self: AppBase) =
     let self = self.App
-    if self.generalSettings.printStatisticsOnShutdown.get():
+    if self.config.runtime.getEditorPrintStatisticsOnShutdown():
       self.printStatistics()
 
     self.saveAppState()
@@ -1087,7 +1079,7 @@ when implModule:
 
   proc quit*(self: App) =
     let unsavedChanges = self.editors.anyUnsavedChanges()
-    if self.generalSettings.promptBeforeQuit.get() or unsavedChanges:
+    if self.config.runtime.getEditorPromptBeforeQuit() or unsavedChanges:
       var title = "Quit?"
       if unsavedChanges:
         title.add " (unsaved changes)"
@@ -1099,7 +1091,7 @@ when implModule:
 
   proc quitImmediately*(self: App, exitCode: int = 0) =
     let unsavedChanges = self.editors.anyUnsavedChanges()
-    if self.generalSettings.promptBeforeQuit.get() or unsavedChanges:
+    if self.config.runtime.getEditorPromptBeforeQuit() or unsavedChanges:
       var title = "Quit?"
       if unsavedChanges:
         title.add " (unsaved changes)"
@@ -1191,7 +1183,7 @@ when implModule:
 
       var customCommand = ""
       var customArgsRaw = newSeq[JsonNodeEx]()
-      if self.backend == Terminal and self.generalSettings.openSession.useMultiplexer.get():
+      if self.backend == Terminal and self.config.runtime.getEditorOpenSessionUseMultiplexer():
         let multiplexers = self.config.runtime.get("editor.open-session", newJexObject())
         if multiplexers != nil and multiplexers.kind == JObject:
           try:
@@ -1206,8 +1198,8 @@ when implModule:
             log lvlError, &"Invalid config 'editor.open-session': {getCurrentExceptionMsg()}"
 
       if customCommand.len == 0:
-        customCommand = self.generalSettings.openSession.command.get("")
-        customArgsRaw = self.generalSettings.openSession.args.get(@[])
+        customCommand = self.config.runtime.getEditorOpenSessionCommand().get("")
+        customArgsRaw = self.config.runtime.getEditorOpenSessionArgs().get(@[])
 
       if customCommand.len > 0:
         var customArgs = newSeq[string]()
@@ -2061,7 +2053,7 @@ when implModule:
 
     let workspace = self.workspace
 
-    let maxResults = self.generalSettings.maxSearchResults.get()
+    let maxResults = self.config.runtime.getEditorMaxSearchResults()
     let source = newWorkspaceSearchDataSource(workspace, maxResults, self.vfs.localize(path))
     var finder = newFinder(source, filterAndSort=true, skipFirstQuery=true)
 
@@ -2093,8 +2085,8 @@ when implModule:
       self.platform.requestRender()
 
     proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
-      let maxResults = self.generalSettings.maxSearchResults.get()
-      let maxLen = self.generalSettings.maxSearchResultDisplayLen.get()
+      let maxResults = self.config.runtime.getEditorMaxSearchResults()
+      let maxLen = self.config.runtime.getEditorMaxSearchResultDisplayLen()
       return self.workspace.searchWorkspaceItemList(query, @[], maxResults, maxLen).await
 
     let source = newAsyncCallbackDataSource(getItems)
@@ -2139,14 +2131,14 @@ when implModule:
         language = languageOrRepoName[first..<last].replace("tree-sitter-", "").replace("-", "_")
         repo = languageOrRepoName
 
-      let treesitterSettings = TreesitterSettings.new(self.config.getLanguageStore(language))
+      let treesitterConfig = self.config.getLanguageStore(language)
 
       if repo == "":
-        repo = treesitterSettings.repository.get().getOr:
-          log lvlError, &"No repository was configured for language '{language}'. You can specify a repository using 'lang.{language}.{treesitterSettings.repository.key}'"
+        repo = treesitterConfig.getTextTreesitterRepository().getOr:
+          log lvlError, &"No repository was configured for language '{language}'. You can specify a repository using 'lang.{language}.text.treesitter.repository'"
           return
 
-      let queriesSubDir = treesitterSettings.queries.get("")
+      let queriesSubDir = treesitterConfig.getTextTreesitterQueries().get("")
 
       log lvlInfo, &"Install treesitter parser for {language} from {repo}"
       let parts = repo.split("/")
@@ -2228,7 +2220,7 @@ when implModule:
 
   proc installTreesitterParserPrebuiltAsync*(self: App, language: string) {.async.} =
     try:
-      let urlTemplate = self.generalSettings.treesitterWasmDownloadUrl.get("https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/download/v0.3/{language}.tar.gz")
+      let urlTemplate = self.config.runtime.getEditorTreesitterWasmDownloadUrl("https://github.com/Nimaoth/tree-sitter-wasm-binaries/releases/download/v0.3/{language}.tar.gz")
       let url = urlTemplate.replace("{language}", language)
       let outputPath = self.vfs.localize(&"app://languages")
       let tarPath = self.vfs.localize(&"app://languages/{language}.tar.gz")
@@ -2580,7 +2572,7 @@ when implModule:
       self.sessionFile = os.absolutePath(sessionFile).normalizePathUnix
       self.saveAppState()
       self.requestRender()
-      if self.generalSettings.keepSessionHistory.get():
+      if self.config.runtime.getEditorKeepSessionHistory():
         asyncSpawn self.addSessionToRecentSessions(self.sessionFile)
     except Exception as e:
       log lvlError, &"Failed to save session: {e.msg}\n{e.getStackTrace()}"
@@ -2621,7 +2613,7 @@ when implModule:
     return context & "." & $self.currentMode
 
   proc baseEventHandlers(self: App): seq[EventHandler] =
-    let baseModes = self.generalSettings.baseModes.get()
+    let baseModes = self.config.runtime.getEditorBaseModes()
 
     var rebuild = false
     if baseModes.len != self.mEventHandlers.len:
@@ -2656,13 +2648,13 @@ when implModule:
       res.add self.modeEventHandler
 
     if self.commandLine.commandLineInputMode:
-      let commandLineEventHandlerLow = self.getEventHandler(self.generalSettings.commandLineModeLow.get())
+      let commandLineEventHandlerLow = self.getEventHandler(self.config.runtime.getEditorCommandLineModeLow())
       res.add self.commandLine.commandLineEditor.getEventHandlers({"above-mode": commandLineEventHandlerLow}.toTable)
-      res.add self.getEventHandler(self.generalSettings.commandLineModeHigh.get())
+      res.add self.getEventHandler(self.config.runtime.getEditorCommandLineModeHigh())
     elif self.commandLine.commandLineResultMode:
-      let commandLineResultEventHandlerLow = self.getEventHandler(self.generalSettings.commandLineResultModeLow.get())
+      let commandLineResultEventHandlerLow = self.getEventHandler(self.config.runtime.getEditorCommandLineResultModeLow())
       res.add self.commandLine.commandLineEditor.getEventHandlers({"above-mode": commandLineResultEventHandlerLow}.toTable)
-      res.add self.getEventHandler(self.generalSettings.commandLineResultModeHigh.get())
+      res.add self.getEventHandler(self.config.runtime.getEditorCommandLineResultModeHigh())
     elif self.layout.popups.len > 0:
       res.add self.layout.popups[self.layout.popups.high].getEventHandlers(initTable[string, EventHandler](0))
     elif self.layout.tryGetCurrentView().getSome(view):
@@ -2675,7 +2667,7 @@ when implModule:
     return res
 
   proc clearInputHistoryDelayed*(self: App) =
-    let clearInputHistoryDelay = self.generalSettings.clearInputHistoryDelay.get()
+    let clearInputHistoryDelay = self.config.runtime.getEditorClearInputHistoryDelay()
     if self.clearInputHistoryTask.isNil:
       self.clearInputHistoryTask = startDelayed(clearInputHistoryDelay, repeat=false):
         self.inputHistory.setLen 0
@@ -2685,7 +2677,7 @@ when implModule:
       self.clearInputHistoryTask.reschedule()
 
   proc recordInputToHistory*(self: App, input: string) =
-    let recordInput = self.generalSettings.recordInputHistory.get()
+    let recordInput = self.config.runtime.getEditorRecordInputHistory()
     if not recordInput:
       return
 
@@ -2695,13 +2687,13 @@ when implModule:
       self.inputHistory = self.inputHistory[(self.inputHistory.len - maxLen)..^1]
 
   proc updateNextPossibleInputs*(self: App) =
-    var whichKeyInProgressOnly = not self.uiSettings.whichKeyNoProgress.get()
-    if self.uiSettings.whichKeyShowWhenMod.get() and self.platform.currentModifiers != {}:
+    var whichKeyInProgressOnly = not self.config.runtime.getUiWhichKeyNoProgress()
+    if self.config.runtime.getUiWhichKeyShowWhenMod() and self.platform.currentModifiers != {}:
       whichKeyInProgressOnly = false
     self.nextPossibleInputs = self.events.getNextPossibleInputs(whichKeyInProgressOnly)
 
     if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:
-      self.showNextPossibleInputsTask.interval = self.uiSettings.whichKeyDelay.get()
+      self.showNextPossibleInputsTask.interval = self.config.runtime.getUiWhichKeyDelay()
       self.showNextPossibleInputsTask.reschedule()
 
     elif self.nextPossibleInputs.len == 0:
@@ -2718,7 +2710,7 @@ when implModule:
     self.updateNextPossibleInputs()
 
   proc scheduleHandleDelayedInput*(self: App) =
-    let insertInputDelay = self.generalSettings.insertInputDelay.get()
+    let insertInputDelay = self.config.runtime.getEditorInsertInputDelay()
     if self.insertInputTask.isNil:
       self.insertInputTask = startDelayed(insertInputDelay, repeat=false):
         self.handleDelayedInputs()

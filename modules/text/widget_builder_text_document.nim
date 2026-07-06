@@ -6,6 +6,7 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 import platform
 import ui/[widget_library]
 import document_editor, theme, config_provider, layout/layout
+import core_settings
 import language_server
 import text/[syntax_map, overlay_map, wrap_map, diff_map, display_map]
 import view, treesitter/treesitter
@@ -75,7 +76,7 @@ type
     lineNumberWidth: float
     lineNumberBounds: Vec2
     fillLineNumberBackground: bool
-    signShow: SignColumnShowKind
+    signShow: core_settings.SignColumnShowKind
     cursorLine: int
     cursorDisplayLine: int
     diffChanges: ptr seq[LineMapping] = nil
@@ -83,7 +84,7 @@ type
     signs: ptr Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color, color: string, width: int]]] = nil
     diagnosticsPerLS: ptr seq[DiagnosticsData] = nil
     lineNumbers: LineNumbers
-    diagnosticsLocation: DiagnosticsLocation
+    diagnosticsLocation: core_settings.DiagnosticsLocation
     createIter: proc(): DisplayChunkIterator {.gcsafe, raises: [].}
     renderDiff: bool
 
@@ -282,7 +283,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, cursorB
   let totalLineHeight = builder.textHeight
   let charWidth = builder.charWidth
 
-  let transparentBackground = self.uiSettings.background.transparent.get()
+  let transparentBackground = self.config.getUiBackgroundTransparent()
   var backgroundColor = builder.theme.color(@["editorSuggestWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
   let borderColor = builder.theme.color(@["editorSuggestWidget.border", "panel.background"], color(30/255, 30/255, 30/255))
   let selectedBackgroundColor = builder.theme.color(@["editorSuggestWidget.selectedBackground", "list.activeSelectionBackground"], color(200/255, 200/255, 200/255))
@@ -315,7 +316,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, cursorB
     self.completionsDrawnInReverse = reverse
 
     proc handleScroll(delta: float) =
-      let scrollAmount = delta * self.uiSettings.scrollSpeed.get()
+      let scrollAmount = delta * self.config.getUiScrollSpeed()
       self.completionsScrollOffset += scrollAmount
       self.markDirty()
 
@@ -563,8 +564,8 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, currentNode: 
   let cursorForegroundColor = builder.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
   let cursorBackgroundColor = builder.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
   let cursorTrailColor = cursorForegroundColor.darken(0.1)
-  let cursorSpeed: float = self.uiSettings.cursorTrailSpeed.get()
-  let cursorTrail: int = self.uiSettings.cursorTrailLength.get()
+  let cursorSpeed: float = self.config.getUiCursorTrailSpeed()
+  let cursorTrail: int = self.config.getUiCursorTrailLength()
   let isThickCursor = self.isThickCursor
 
   buildCommands(renderCommands):
@@ -883,9 +884,9 @@ proc drawLine*(state: var LineDrawerState, commands: var RenderCommands, lineNum
   # Draw diagnostics
   if drawDiagnostics and state.diagnosticsPerLS != nil:
     let renderBelow = case state.diagnosticsLocation
-      of DiagnosticsLocation.Below: true
-      of DiagnosticsLocation.LineEnd: false
-      of DiagnosticsLocation.LineEndOrBelow: line == state.cursorLine
+      of core_settings.DiagnosticsLocation.Below: true
+      of core_settings.DiagnosticsLocation.LineEnd: false
+      of core_settings.DiagnosticsLocation.LineEndOrBelow: line == state.cursorLine
 
     if renderBelow:
       for diagnosticsData in state.diagnosticsPerLS[].mitems:
@@ -953,7 +954,7 @@ proc drawLine*(state: var LineDrawerState, commands: var RenderCommands, lineNum
     if state.signs != nil:
       state.signs[].withValue(chunk.point.row.int, value):
         var bounds = rect(lineNumberWidth - state.signColumnPixelWidth, 0, state.signColumnPixelWidth, state.builder.textHeight)
-        if state.signShow == SignColumnShowKind.Number:
+        if state.signShow == core_settings.SignColumnShowKind.Number:
           doDrawLineNumber = false
           bounds = rect(vec2(state.builder.charWidth, 0), state.lineNumberBounds)
 
@@ -1348,7 +1349,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
   let inclusive = self.config.get("text.inclusive-selection", false)
   let isThickCursor = self.isThickCursor
   let renderDiff = self.diffDocument.isNotNil and self.diffChanges.isSome
-  let showContextLines = not renderDiff and self.contextLineComponent.settings.enabled.get()
+  let showContextLines = not renderDiff and self.config.getContextLinesEnabled()
 
   let selectionColor = builder.theme.color("selection.background", color(200/255, 200/255, 200/255))
   var insertedLineBackgroundColor = builder.theme.color(@["diffEditor.insertedLineBackground", "diffEditor.insertedTextBackground"], color(0.1, 0.2, 0.1))
@@ -1361,13 +1362,13 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
   let cursorLine = self.selection.last.line
   let cursorDisplayLine = self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int
 
-  let lineNumbers = self.uiSettings.lineNumbers.get()
-  let diagnosticsLocation = self.uiSettings.diagnosticsLocation.get()
+  let lineNumbers = self.config.getUiLineNumbers()
+  let diagnosticsLocation = self.config.getUiDiagnosticsLocation()
   let lineNumberBounds = self.lineNumberBounds()
-  let rainbowParens = self.uiSettings.rainbowParentheses.get()
+  let rainbowParens = self.config.getUiRainbowParentheses()
 
-  let highlight = self.uiSettings.syntaxHighlighting.get()
-  let indentGuide = self.uiSettings.indentGuide.get()
+  let highlight = self.config.getUiSyntaxHighlighting()
+  let indentGuide = self.config.getUiIndentGuide()
 
   proc createIter(): DisplayChunkIterator =
     var highlighter = Highlighter.none
@@ -1391,13 +1392,13 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
     var res = self.diffDisplayMap.iter(builder.arena.addr, highlighter, builder.theme)
     return res
 
-  let signShow = self.settings.signs.show.get()
+  let signShow = self.config.getTextSignsShow()
   let lineNumberWidth = self.lineNumberWidth()
-  let signColumnWidth = if signShow == SignColumnShowKind.Number:
+  let signColumnWidth = if signShow == core_settings.SignColumnShowKind.Number:
     floor(lineNumberWidth / builder.charWidth).int - 2
   else:
     self.requiredSignColumnWidth()
-  let signColumnPixelWidth = if signShow == SignColumnShowKind.Number:
+  let signColumnPixelWidth = if signShow == core_settings.SignColumnShowKind.Number:
     0.float
   else:
     signColumnWidth.float * builder.charWidth
@@ -1432,7 +1433,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
     cursorLine: cursorLine,
     cursorDisplayLine: cursorDisplayLine,
 
-    highlightInlineChanges: self.uiSettings.highlightInlineChanges.get(),
+    highlightInlineChanges: self.config.getUiHighlightInlineChanges(),
     textColor: textColor,
     errorColor: builder.theme.tokenColor("error", color(0.8, 0.2, 0.2)),
     warningColor: builder.theme.tokenColor("warning", color(0.8, 0.8, 0.2)),
@@ -1471,7 +1472,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
     cursorDisplayLine: cursorDisplayLine,
     scrollOffset: self.scrollBox.offset,
 
-    highlightInlineChanges: self.uiSettings.highlightInlineChanges.get(),
+    highlightInlineChanges: self.config.getUiHighlightInlineChanges(),
     textColor: textColor,
     errorColor: builder.theme.tokenColor("error", color(0.8, 0.2, 0.2)),
     warningColor: builder.theme.tokenColor("warning", color(0.8, 0.8, 0.2)),
@@ -1494,14 +1495,14 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
     lineNumberBounds: lineNumberBounds,
   )
 
-  let space = self.uiSettings.whitespaceChar.get()
-  let spaceColorName = self.uiSettings.whitespaceColor.get()
+  let space = self.config.getUiWhitespaceChar()
+  let spaceColorName = self.config.getUiWhitespaceColor()
   if space.len > 0:
     currentNode.renderCommands.space = space.runeAt(0)
 
   currentNode.renderCommands.spacesColor = builder.theme.tokenColor(spaceColorName, textColor)
 
-  self.scrollBox.smoothScroll = self.uiSettings.smoothScroll.get()
+  self.scrollBox.smoothScroll = self.config.getUiSmoothScroll()
   self.scrollBox.enableScrolling = not self.disableScrolling
   self.scrollBox.defaultItemHeight = builder.textHeight
   if self.disableScrolling:
@@ -1510,8 +1511,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
     self.scrollBox.margin = 0
   else:
     let height = builder.currentParent.bounds.h
-    let configMarginRelative = self.settings.cursorMarginRelative.get()
-    let configMargin = self.settings.cursorMargin.get()
+    let configMarginRelative = self.config.getTextCursorMarginRelative()
+    let configMargin = self.config.getTextCursorMargin()
     let margin = if configMarginRelative:
       clamp(configMargin, 0.0, 1.0) * 0.5 * height
     else:
@@ -1526,10 +1527,10 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
     drawDiffLines(diffState, currentNode.renderCommands, selectionsNode.renderCommands, lineNumberNode.renderCommands, self.scrollBox)
 
   elif showContextLines and self.scrollBox.items.len > 0:
-    let style = self.contextLineComponent.settings.style.get()
+    let style = self.config.getContextLinesStyle()
     let contextLines = self.contextLineComponent.getContextLines()
     if style == "breadcrumb":
-      let separator = self.contextLineComponent.settings.separator.get()
+      let separator = self.config.getContextLinesSeparator()
       const maxEntryLength = 50
       drawContextBreadcrumbs(state, currentNode.renderCommands, selectionsNode.renderCommands, lineNumberNode.renderCommands, contextLines, separator, maxEntryLength)
     else:
@@ -1565,7 +1566,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
     drawHighlight(builder, sn, selectionColor, selectionsNode.renderCommands, state, ropeCursor, false)
 
   # Scroll bar
-  if self.uiSettings.scrollBar.get():
+  if self.config.getUiScrollBar():
     buildCommands(selectionsNode.renderCommands):
       if self.scrollBox.items.len > 0:
         let scrollOffsetNorm = self.scrollBox.getScrollOffsetNorm()
@@ -1713,13 +1714,13 @@ proc createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayFun
   let dirty = self.dirty
   self.resetDirty()
 
-  let smoothScrollSpeed: float = self.uiSettings.smoothScrollSpeed.get()
+  let smoothScrollSpeed: float = self.config.getUiSmoothScrollSpeed()
   self.scrollBox.scrollSpeed = smoothScrollSpeed
   self.scrollBox.updateScroll(self.platform.deltaTime)
 
-  let logNewRenderer = self.debugSettings.logTextRenderTime.get()
-  let transparentBackground = self.uiSettings.background.transparent.get()
-  let inactiveBrightnessChange = self.uiSettings.background.inactiveBrightnessChange.get()
+  let logNewRenderer = self.config.getDebugLogTextRenderTime()
+  let transparentBackground = self.config.getUiBackgroundTransparent()
+  let inactiveBrightnessChange = self.config.getUiBackgroundInactiveBrightnessChange()
 
   let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
   var backgroundColor = if self.active: builder.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
@@ -1802,9 +1803,9 @@ proc createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayFun
 
           onScroll:
             if Shift in modifiers:
-              self.scrollTextHorizontal(delta.y * self.uiSettings.scrollSpeed.get() / builder.charWidth)
+              self.scrollTextHorizontal(delta.y * self.config.getUiScrollSpeed() / builder.charWidth)
             else:
-              self.scrollText(delta.y * self.uiSettings.scrollSpeed.get())
+              self.scrollText(delta.y * self.config.getUiScrollSpeed())
 
           var t = startTimer()
 

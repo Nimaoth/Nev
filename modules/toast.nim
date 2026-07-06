@@ -2,6 +2,7 @@
 import platform
 import misc/[custom_async, custom_logger, util, timer]
 import service, config_provider
+import core_settings
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -20,7 +21,6 @@ type
   ToastService* = ref object of DynamicService
     platform: Platform
     config: ConfigService
-    uiSettings: UiSettings
     toasts*: seq[Toast]
 
     isUpdating: bool
@@ -46,11 +46,10 @@ when implModule:
     self.platform = self.services.getServiceChecked(PlatformService).platform
     assert self.platform != nil
     self.config = self.services.getServiceChecked(ConfigService)
-    self.uiSettings = UiSettings.new(self.config.runtime)
 
   proc updateToasts(self: ToastService) {.async.} =
     boolLock(self.isUpdating)
-    let maxTime = self.uiSettings.toast.duration.get().float64
+    let maxTime = self.config.runtime.getUiToastDuration().float64
     while self.toasts.len > 0:
       var removed = false
       var i = 0

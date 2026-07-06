@@ -6,6 +6,7 @@ import misc/[event, myjsonutils, render_command, generational_seq]
 import text/[display_map]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import config_provider
+import core_settings
 import component
 
 export component
@@ -17,29 +18,12 @@ type
   CustomOverlayRenderer* = proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 {.gcsafe, raises: [].}
   CustomRendererId* = distinct uint64
 
-  SignColumnShowKind* {.pure.} = enum Auto = "auto", Yes = "yes", No = "no", Number = "number"
-
-proc typeNameToJson*(T: typedesc[SignColumnShowKind]): string =
-  return "\"auto\" | \"yes\" | \"no\" | \"number\""
-
-declareSettings SignColumnSettings, "":
-  ## Defines how the sign column is displayed.
-  ## - auto: Signs are next to line numbers, width is based on amount of signs in a line.
-  ## - yes: Signs are next to line numbers and sign column is always visible. Width is defined in `max-width`
-  ## - no: Don't show the sign column
-  ## - number: Show signs instead of the line number, no extra sign column.
-  declare show, SignColumnShowKind, SignColumnShowKind.Number
-
-  ## If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width.
-  declare maxWidth, int, 2
-
 type
   OverlayRenderLocation* {.pure.} = enum
     Inline
     Below
     Above
   DecorationComponent* = ref object of Component
-    settings*: SignColumnSettings
     signs*: Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color, color: string, width: int]]]
     customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string, tint: Color]]]
     customOverlayRenderers*: GenerationalSeq[CustomOverlayRenderer, CustomRendererId]
@@ -49,7 +33,7 @@ type
 # DLL API
 
 {.push modrtl, gcsafe, raises: [].}
-proc newDecorationComponent*(settings: SignColumnSettings, displayMap: DisplayMap): DecorationComponent
+proc newDecorationComponent*(displayMap: DisplayMap): DecorationComponent
 proc decorationComponentClearSigns(self: DecorationComponent, group: string = "")
 proc decorationComponentAddSign(self: DecorationComponent, id: Id, line: int, text: string, group: string = "", tint: Color = color(1, 1, 1), color: string = "", width: int = 1): Id
 proc decorationComponentClearCustomHighlights(self: DecorationComponent, id: Id)
@@ -103,10 +87,9 @@ when implModule:
   proc getDecorationComponent*(self: ComponentOwner): Option[DecorationComponent] {.gcsafe, raises: [].} =
     return self.getComponent(DecorationComponentId).mapIt(it.DecorationComponent)
 
-  proc newDecorationComponent*(settings: SignColumnSettings, displayMap: DisplayMap): DecorationComponent =
+  proc newDecorationComponent*(displayMap: DisplayMap): DecorationComponent =
     return DecorationComponentImpl(
       typeId: DecorationComponentId,
-      settings: settings,
       displayMap: displayMap,
     )
 
@@ -149,8 +132,9 @@ when implModule:
 
   proc decorationComponentRequiredSignColumnWidth(self: DecorationComponent, visibleLines: Range[int]): int =
     let self = self.DecorationComponentImpl
-    case self.settings.show.get()
-    of SignColumnShowKind.Auto:
+    let config = self.owner.DocumentEditor.config
+    case config.getTextSignsShow()
+    of core_settings.SignColumnShowKind.Auto:
       var width = 0
       for line in visibleLines.a..visibleLines.b:
         self.signs.withValue(line, value):
@@ -159,21 +143,21 @@ when implModule:
             subWidth += s.width
           width = max(width, subWidth)
 
-      let maxWidth = self.settings.maxWidth.get()
+      let maxWidth = config.getTextSignsMaxWidth()
       if maxWidth >= 0:
         width = min(width, maxWidth)
       return width
 
-    of SignColumnShowKind.Yes:
-      let maxWidth = self.settings.maxWidth.get()
+    of core_settings.SignColumnShowKind.Yes:
+      let maxWidth = config.getTextSignsMaxWidth()
       if maxWidth < 0:
         return 1
       return maxWidth
 
-    of SignColumnShowKind.No:
+    of core_settings.SignColumnShowKind.No:
       return 0
 
-    of SignColumnShowKind.Number:
+    of core_settings.SignColumnShowKind.Number:
       return 0
 
   iterator splitSelectionIntoLines(selection: Selection, includeAfter: bool = true): Selection =

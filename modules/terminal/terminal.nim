@@ -35,6 +35,7 @@ when implModule:
   import platform
   import finder, previewer
   import input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, selector_popup/builder, vfs, vfs_service
+  import core_settings
   import text_editor_component, config_component, register, service, command_service
   import types_impl
   import render
@@ -2489,7 +2490,8 @@ when implModule:
     return self.eventHandlers[context]
 
   proc getEventHandlers*(self: TerminalView, inject: Table[string, EventHandler]): seq[EventHandler] =
-    result = @[self.getEventHandler(self.terminals.settings.baseMode.get())]
+    let config = self.terminals.config.runtime
+    result = @[self.getEventHandler(config.getTerminalBaseMode())]
     if self.modeEventHandler != nil:
       result.add self.modeEventHandler
 
@@ -2561,15 +2563,13 @@ when implModule:
       self.handleThemeChanged(self.themes.theme)
     discard self.themes.onThemeChanged.subscribe proc(theme: Theme) = self.handleThemeChanged(theme)
 
-    self.settings = TerminalSettings.new(self.config.runtime)
-
     self.layout.addViewFactory "terminal", proc(config: JsonNode): View {.raises: [ValueError].} =
       type Config = object
         id: Id
         command: string
         options: CreateTerminalOptions
       var config = config.jsonTo(Config, Joptions(allowExtraKeys: true, allowMissingKeys: true))
-      config.options.mode = self.settings.defaultMode.get().some
+      config.options.mode = self.config.runtime.getTerminalDefaultMode().some
       return self.createTerminalView(config.command, config.options, id = config.id)
 
     asyncSpawn self.cleanupUnusedSixels()
@@ -2677,7 +2677,7 @@ when implModule:
       if options.mode.getSome(mode):
         view.mode = mode
       else:
-        view.mode = self.settings.defaultMode.get()
+        view.mode = self.config.runtime.getTerminalDefaultMode()
       self.updateModeEventHandlers(view)
 
       discard term.onUpdated.subscribe proc() =
@@ -2687,7 +2687,7 @@ when implModule:
         if not view.open:
           return
         log lvlInfo, &"Terminal process '{command}' terminated with exit code {exitCode}"
-        view.mode = self.settings.defaultMode.get()
+        view.mode = self.config.runtime.getTerminalDefaultMode()
         self.updateModeEventHandlers(view)
         if view.closeOnTerminate:
           self.layout.closeView(view)
@@ -2743,7 +2743,7 @@ when implModule:
       if options.mode.getSome(mode):
         view.mode = mode
       else:
-        view.mode = self.settings.defaultMode.get()
+        view.mode = self.config.runtime.getTerminalDefaultMode()
       self.updateModeEventHandlers(view)
 
       discard term.onUpdated.subscribe proc() =
@@ -2753,7 +2753,7 @@ when implModule:
         if not view.open:
           return
         log lvlInfo, &"Terminal process '' terminated with exit code {exitCode}"
-        view.mode = self.settings.defaultMode.get()
+        view.mode = self.config.runtime.getTerminalDefaultMode()
         self.updateModeEventHandlers(view)
         if view.closeOnTerminate:
           self.layout.closeView(view)
@@ -2814,7 +2814,7 @@ when implModule:
     if not terminal.cursor.visible or terminal.cursor.col == 0:
       # Assuming that a shell never has an empty prompt and the cursor is visible when in the prompt
       return false
-    let idleThreshold = self.settings.idleThreshold.get()
+    let idleThreshold = self.config.runtime.getTerminalIdleThreshold()
     return terminal.lastUpdateTime.elapsed.ms.int > idleThreshold
 
   proc runInTerminal*(self: TerminalServiceImpl, shell: string, command: string, options: RunInTerminalOptions = RunInTerminalOptions()) =
@@ -3038,7 +3038,7 @@ when implModule:
 
   proc escape*(self: TerminalServiceImpl) =
     if self.getActiveView().getSome(view):
-      view.setMode(self.settings.defaultMode.get())
+      view.setMode(self.config.runtime.getTerminalDefaultMode())
 
   proc scroll*(self: TerminalServiceImpl, amount: int) =
     if self.getActiveView().getSome(view):

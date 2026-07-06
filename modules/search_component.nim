@@ -3,6 +3,7 @@ import std/[options]
 import nimsumtree/[buffer, clock, rope]
 import misc/[custom_async, delayed_task, event]
 import config_provider
+import core_settings
 import component
 
 export component
@@ -10,26 +11,9 @@ export component
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-declareSettings MatchingWordHighlightSettings, "":
-  ## Enable highlighting of text matching the current selection or word containing the cursor (if the selection is empty).
-  declare enable, bool, true
-
-  ## How long after moving the cursor matching text is highlighted.
-  declare delay, int, 250
-
-  ## Don't highlight matching text if the selection spans more bytes than this.
-  declare maxSelectionLength, int, 1024
-
-  ## Don't highlight matching text if the selection spans more lines than this.
-  declare maxSelectionLines, int, 5
-
-  ## Don't highlight matching text in files above this size (in bytes).
-  declare maxFileSize, int, 1024*1024*100
-
 type
   SearchComponent* = ref object of Component
     config*: ConfigStore
-    matchingWordHiglightSettings*: MatchingWordHighlightSettings
     searchQuery*: string
     searchResults*: seq[Range[Point]]
     isUpdatingSearchResults: bool
@@ -77,7 +61,6 @@ when implModule:
     return SearchComponentImpl(
       typeId: SearchComponentId,
       config: config,
-      matchingWordHiglightSettings: MatchingWordHighlightSettings.new(config),
     )
 
   proc markDirty(self: SearchComponent) =
@@ -177,12 +160,12 @@ when implModule:
 
     while true:
       let content = text.content
-      if content.len > self.matchingWordHiglightSettings.maxFileSize.get():
+      if content.len > self.config.getTextHighlightMatchesMaxFileSize():
         return
 
       let oldSelection = edit.selection
       var selectionNorm = edit.selection.normalized
-      if selectionNorm.b.row.int - selectionNorm.a.row.int > self.matchingWordHiglightSettings.maxSelectionLines.get():
+      if selectionNorm.b.row.int - selectionNorm.a.row.int > self.config.getTextHighlightMatchesMaxSelectionLines():
         return
 
       selectionNorm = content.clampOnLine(selectionNorm)
@@ -208,7 +191,7 @@ when implModule:
       let endByte = content.pointToOffset(selection.b)
       assert endByte >= startByte
 
-      if endByte - startByte > self.matchingWordHiglightSettings.maxSelectionLength.get():
+      if endByte - startByte > self.config.getTextHighlightMatchesMaxSelectionLength():
         return
 
       let contentString = text.content(selection, inclusive)
@@ -239,7 +222,7 @@ when implModule:
   proc updateMatchingWordHighlight*(self: SearchComponent) =
     let editor = self.owner.DocumentEditor
     let decorations = editor.getDecorationComponent().get
-    if not self.matchingWordHiglightSettings.enable.get():
+    if not self.config.getTextHighlightMatchesEnable():
       decorations.clearCustomHighlights(wordHighlightId)
       return
 
@@ -252,7 +235,7 @@ when implModule:
           return
         asyncSpawn self.updateMatchingWordHighlightAsync()
 
-    self.updateMatchingWordsTask.interval = self.matchingWordHiglightSettings.delay.get()
+    self.updateMatchingWordsTask.interval = self.config.getTextHighlightMatchesDelay()
     self.updateMatchingWordsTask.schedule()
 
   proc getPrevFindResult*(self: SearchComponent, cursor: Point, offset: int = 0, includeAfter: bool = true, wrap: bool = true): Range[Point] =

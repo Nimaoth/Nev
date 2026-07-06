@@ -1,18 +1,14 @@
 #use lisp
 import language_server
 import config_provider
+import core_settings
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-declareSettings LspMergeSettings, "lsp-merge":
-  ## Timeout for LSP requests in milliseconds
-  declare timeout, int, 10000
-
 type
   LanguageServerList* = ref object of LanguageServer
     config: ConfigStore
-    mergeConfig: LspMergeSettings
     languageServers*: seq[LanguageServer]
     timeout: int
 
@@ -68,7 +64,7 @@ when implModule:
 
   template merge(self: LanguageServerList, T: untyped, subCall: untyped, name: untyped): untyped =
     try:
-      let timeout = self.mergeConfig.timeout.get()
+      let timeout = self.config.getLspMergeTimeout()
       var futs = newSeq[Future[seq[T]]]()
       var futsTimeout = newSeq[Future[bool]]()
       for lss in self.languageServers:
@@ -94,7 +90,7 @@ when implModule:
 
   template mergeOption(self: LanguageServerList, T: untyped, subCall: untyped, name: untyped): untyped =
     try:
-      let timeout = self.mergeConfig.timeout.get()
+      let timeout = self.config.getLspMergeTimeout()
       var futs = newSeq[Future[Option[T]]]()
       var futsTimeout = newSeq[Future[bool]]()
       for lss in self.languageServers:
@@ -118,7 +114,7 @@ when implModule:
 
   template mergeResponse(self: LanguageServerList, T: untyped, subCall: untyped, name: untyped): untyped =
     try:
-      let timeout = self.mergeConfig.timeout.get()
+      let timeout = self.config.getLspMergeTimeout()
       var futs = newSeq[Future[Response[seq[T]]]]()
       var futsTimeout = newSeq[Future[bool]]()
       for lss in self.languageServers:
@@ -177,7 +173,7 @@ when implModule:
   proc lslGetCompletions(self: LanguageServer, filename: string, location: Cursor): Future[Response[language_server.CompletionList]] {.async.} =
     try:
       let self = self.LanguageServerList
-      let timeout = self.mergeConfig.timeout.get()
+      let timeout = self.config.getLspMergeTimeout()
       var futs = newSeq[Future[Response[language_server.CompletionList]]]()
       var futsTimeout = newSeq[Future[bool]]()
       for ls in self.languageServers:
@@ -249,7 +245,7 @@ when implModule:
   proc lslExecuteCommand(self: LanguageServer, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
     try:
       let self = self.LanguageServerList
-      let timeout = self.mergeConfig.timeout.get()
+      let timeout = self.config.getLspMergeTimeout()
       var futs = newSeq[Future[Response[JsonNode]]]()
       var futsTimeout = newSeq[Future[bool]]()
       for ls in self.languageServers:
@@ -276,7 +272,6 @@ when implModule:
   proc newLanguageServerList*(config: ConfigStore): LanguageServerList =
     var server = new LanguageServerList
     server.config = config
-    server.mergeConfig = LspMergeSettings.new(server.config)
     server.connectImpl = lslConnect
     server.disconnectImpl = lslDisconnect
     server.getDefinitionImpl = lslGetDefinition

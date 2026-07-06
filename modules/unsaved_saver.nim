@@ -9,19 +9,10 @@ and `ws0://.nev/unsaved` for existing files.
 ]##
 
 import config_provider
+import core_settings
 
 type
   UnsavedBehaviour* = enum None = "none", Temp = "temp", Real = "real"
-
-declareSettings UnsavedSettings, "unsaved":
-  ## How often (in seconds) the editor auto saves unsaved files. Set to 0 to disable auto saving.
-  declare interval, int, 60
-
-  ## What to do with unsaved files.
-  ## `none` - Don't save unsaved files automatically. Files are only saved through the explicit `save` command
-  ## `temp` - Save unsaved files to temp files in `app://unsaved` (for non-existing files) or `ws0://.nev/unsaved` for existing files.
-  ## `real` - Save existing files to the actual real file. Non-existing files are still saved to `app://unsaved`
-  declare behaviour, UnsavedBehaviour, UnsavedBehaviour.None
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -70,8 +61,8 @@ when implModule:
     except CatchableError as e:
       log lvlError, &"Failed to delete old unsaved files: {e.msg}"
 
-  proc saveUnsavedFiles(behaviour: UnsavedBehaviour) {.async: (raises: []).} =
-    if behaviour == UnsavedBehaviour.None:
+  proc saveUnsavedFiles(behaviour: core_settings.UnsavedBehaviour) {.async: (raises: []).} =
+    if behaviour == core_settings.UnsavedBehaviour.None:
       return
 
     let services = getServices()
@@ -112,26 +103,26 @@ when implModule:
           var targetPath = ""
           if doc.filename == "":
             targetPath = &"app://unsaved/{doc.uniqueId}"
-            fileBehaviour = UnsavedBehaviour.Temp
+            fileBehaviour = core_settings.UnsavedBehaviour.Temp
           else:
             let fileKind = await vfs.getFileKind(doc.filename)
             if fileKind.isNone:
               targetPath = &"app://unsaved/{doc.uniqueId}"
-              fileBehaviour = UnsavedBehaviour.Temp
+              fileBehaviour = core_settings.UnsavedBehaviour.Temp
             else:
               targetPath = &"ws0://.nev/unsaved/{doc.filename.encodeUrl}"
 
           case fileBehaviour
-          of UnsavedBehaviour.None:
+          of core_settings.UnsavedBehaviour.None:
             discard
-          of UnsavedBehaviour.Temp:
+          of core_settings.UnsavedBehaviour.Temp:
             let text = doc.getTextComponent().getOr:
               continue
 
             log lvlInfo, &"Save unsaved '{doc.filename}' -> '{targetPath}'"
             await vfs.write(targetPath, text.content)
 
-          of UnsavedBehaviour.Real:
+          of core_settings.UnsavedBehaviour.Real:
             await doc.save()
 
     except CatchableError as e:
@@ -149,21 +140,21 @@ when implModule:
     let events = services.getServiceChecked(EventService)
     let documents = services.getServiceChecked(DocumentEditorService)
     let vfs = services.getServiceChecked(VFSService).vfs
-    let settings = UnsavedSettings.new(config.runtime)
+    let runtimeConfig = config.runtime
 
     var first = true
     var task: DelayedTask = nil
-    task = startDelayedPausedAsync(max(settings.interval.get() * 1000, 1000), true):
+    task = startDelayedPausedAsync(max(runtimeConfig.getUnsavedInterval() * 1000, 1000), true):
       if first:
         first = false
         return
-      task.interval = max(settings.interval.get() * 1000, 1000)
-      await saveUnsavedFiles(settings.behaviour.get())
+      task.interval = max(runtimeConfig.getUnsavedInterval() * 1000, 1000)
+      await saveUnsavedFiles(runtimeConfig.getUnsavedBehaviour())
     task.schedule()
 
     proc handleShutdown(event, payload: string) {.gcsafe, raises: [].} =
       log lvlWarn, &"handleShutdown {event}"
-      waitFor saveUnsavedFiles(settings.behaviour.get())
+      waitFor saveUnsavedFiles(runtimeConfig.getUnsavedBehaviour())
 
     events.listen(newId(), "app/shutdown", handleShutdown)
 

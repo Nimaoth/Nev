@@ -5,6 +5,7 @@ import ui/node
 import platform
 import ui/[widget_library]
 import document_editor, theme, layout/layout, config_provider, command_line, toast
+import core_settings
 import popup, view
 import status_line
 from scripting_api import nil
@@ -43,6 +44,7 @@ proc updateWidgetTree*(self: App, builder: UINodeBuilder, frameIndex: int) =
   let commands = getServiceChecked(CommandLineService)
   let layout = getServiceChecked(LayoutService)
   let toasts = getServiceChecked(ToastService)
+  let runtimeConfig = self.config.runtime
 
   builder.theme = themes.theme
 
@@ -87,7 +89,7 @@ proc updateWidgetTree*(self: App, builder: UINodeBuilder, frameIndex: int) =
 
         builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}, pivot = vec2(1, 0)):
 
-          for s in self.uiSettings.statusLine.get():
+          for s in runtimeConfig.getUiStatusLine():
             case s.kind
             of JString:
               case s.getStr
@@ -162,7 +164,7 @@ proc updateWidgetTree*(self: App, builder: UINodeBuilder, frameIndex: int) =
       padding = 0
 
     if self.showNextPossibleInputs:
-      let inputLines = self.uiSettings.whichKeyHeight.get()
+      let inputLines = runtimeConfig.getUiWhichKeyHeight()
       let continuesTextColor = builder.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
       let keysTextColor = builder.theme.tokenColor("number", color(225/255, 200/255, 200/255))
       builder.panel(&{FillX, SizeToContentY}, y = mainBounds.h):
@@ -171,12 +173,12 @@ proc updateWidgetTree*(self: App, builder: UINodeBuilder, frameIndex: int) =
       builder.updateSizeToContent(builder.currentChild)
       builder.currentChild.rawY = mainBounds.h - builder.currentChild.bounds.h
 
-    let toastStyle = self.uiSettings.toast.style.get()
-    let toastMaxTime = self.uiSettings.toast.duration.get().float64 * 0.001
-    let animateToasts = self.uiSettings.toast.animation.get()
-    let maxToasts = self.uiSettings.toast.max.get()
+    let toastStyle = runtimeConfig.getUiToastStyle()
+    let toastMaxTime = runtimeConfig.getUiToastDuration().float64 * 0.001
+    let animateToasts = runtimeConfig.getUiToastAnimation()
+    let maxToasts = runtimeConfig.getUiToastMax()
     case toastStyle
-    of Box:
+    of core_settings.ToastStyle.Box:
       let toastWidth = floor(currentNode.w * 0.3)
       builder.panel(&{LayoutVerticalReverse}, x = floor(currentNode.w * 0.7), y = mainBounds.y, w = toastWidth, h = mainBounds.h, border = border(builder.defaultBorderWidth), tag = "toasts"):
         let maxLen = 200
@@ -213,7 +215,7 @@ proc updateWidgetTree*(self: App, builder: UINodeBuilder, frameIndex: int) =
 
               if padding > 0: builder.panel(&{FillX}, h = padding)
 
-    of Minimal:
+    of core_settings.ToastStyle.Minimal:
       let toastWidth = max(floor(currentNode.w - builder.charWidth * 10), 1)
       builder.panel(&{LayoutVerticalReverse}, x = builder.charWidth * 5, y = mainBounds.y - builder.textHeight * 2, w = toastWidth, h = mainBounds.h, tag = "toasts"):
         for i in 0..<min(toasts.toasts.len, maxToasts):

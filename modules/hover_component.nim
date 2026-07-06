@@ -3,22 +3,15 @@ import std/[options]
 import nimsumtree/[rope]
 import misc/[event, custom_async, delayed_task, jsonex]
 import component, view, config_provider, misc/input_api
+import core_settings
 
 export component
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-declareSettings HoverSettings, "hover":
-  ## How many milliseconds after hovering a word the lsp hover request is sent.
-  declare delay, int, 200
-
-  ## Command to run when hovering something.
-  declare command, JsonNodeEx, nil
-
 type
   HoverComponent* = ref object of Component
-    settings*: HoverSettings
     hoverView*: View
     showHoverTask: DelayedTask    # for showing hover info after a delay
     hideHoverTask: DelayedTask    # for hiding hover info after a delay
@@ -41,7 +34,7 @@ type
 # DLL API
 {.push rtl.}
 proc getHoverComponent*(self: ComponentOwner): Option[HoverComponent]
-proc newHoverComponent*(settings: HoverSettings): HoverComponent
+proc newHoverComponent*(): HoverComponent
 
 proc hoverComponentClearOverlayViews(self: HoverComponent)
 proc hoverComponentClearHoverView(self: HoverComponent)
@@ -84,10 +77,9 @@ when implModule:
   proc getHoverComponent*(self: ComponentOwner): Option[HoverComponent] =
     return self.getComponent(HoverComponentId).mapIt(it.HoverComponent)
 
-  proc newHoverComponent*(settings: HoverSettings): HoverComponent =
+  proc newHoverComponent*(): HoverComponent =
     return HoverComponent(
       typeId: HoverComponentId,
-      settings: settings,
       initializeImpl: (proc(self: Component, owner: ComponentOwner) =
         let self = self.HoverComponent
         let platform = getServices().getServiceChecked(PlatformService).platform
@@ -227,10 +219,11 @@ when implModule:
 
   proc hideHoverDelayed*(self: HoverComponent) =
     ## Hides the hover information after a delay.
+    let config = self.owner.DocumentEditor.config
     if self.showHoverTask.isNotNil:
       self.showHoverTask.pause()
 
-    let hoverDelayMs = self.settings.delay.get()
+    let hoverDelayMs = config.getTextHoverDelay()
     if self.hideHoverTask.isNil:
       self.hideHoverTask = startDelayed(hoverDelayMs, repeat=false):
         self.hideHover()
@@ -240,10 +233,11 @@ when implModule:
 
   proc runHoverCommand*(self: HoverComponent) =
     try:
+      let config = self.owner.DocumentEditor.config
       let commands = self.owner.getCommandComponent().getOr:
         return
       var command = "hover.show-at-mouse "
-      var configCommand = self.settings.command.get()
+      var configCommand = config.getTextHoverCommand()
       if configCommand != nil and configCommand.kind != JNull:
         let modsKey = $self.mouseHoverMods
         if configCommand.kind == jsonex.JObject and configCommand.hasKey(modsKey):
@@ -262,11 +256,12 @@ when implModule:
 
   proc hoverComponentShowHoverDelayed(self: HoverComponent) =
     ## Show hover information after a delay.
+    let config = self.owner.DocumentEditor.config
 
     if self.hideHoverTask.isNotNil:
       self.hideHoverTask.pause()
 
-    let hoverDelayMs = self.settings.delay.get()
+    let hoverDelayMs = config.getTextHoverDelay()
     if self.showHoverTask.isNil:
       self.showHoverTask = startDelayed(hoverDelayMs, repeat=false):
         self.runHoverCommand()

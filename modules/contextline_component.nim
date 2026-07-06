@@ -3,21 +3,12 @@ import std/[options]
 import misc/[delayed_task, id, myjsonutils, jsonex]
 import nimsumtree/[rope]
 import component, config_provider
+import core_settings
 
 export component
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
-
-declareSettings ContextLineSettings, "context-lines":
-  declare enabled, bool, true
-  declare style, string, "breadcrumb"
-  declare separator, string, "»"
-  declare show, RegexSetting, """(definition\.(.*))"""
-  declare showConditionals, bool, true
-  declare showClasses, bool, true
-  declare showFunctions, bool, true
-  declare showModules, bool, true
 
 type
   ContextLineEntry* = object
@@ -29,7 +20,6 @@ type
     lineRange*: Range[Point]
 
   ContextLineComponent* = ref object of Component
-    settings*: ContextLineSettings
     contextLines*: seq[ContextLineEntry]
     updateTask: DelayedTask
     parsedHandle: Id
@@ -41,7 +31,7 @@ type
 
 {.push rtl.}
 proc getContextLineComponent*(self: ComponentOwner): Option[ContextLineComponent]
-proc newContextLineComponent*(settings: ContextLineSettings): ContextLineComponent
+proc newContextLineComponent*(): ContextLineComponent
 proc contextlineComponentGetContextLines(self: ContextLineComponent): seq[ContextLineEntry]
 {.pop.}
 
@@ -109,15 +99,16 @@ when implModule:
     return kindNames.getOrDefault(nodeType, nodeType)
 
   proc shouldShowKindName*(self: ContextLineComponent, kindName: string): bool =
+    let config = self.owner.DocumentEditor.config
     case kindName
     of "class", "struct", "implementation":
-      self.settings.showClasses.get()
+      config.getContextLinesShowClasses()
     of "proc", "func", "function", "template", "macro", "iterator", "method":
-      self.settings.showFunctions.get()
+      config.getContextLinesShowFunctions()
     of "module", "import":
-      self.settings.showModules.get()
+      config.getContextLinesShowModules()
     of "if", "elif", "else", "for", "while", "case", "block", "try", "except", "switch":
-      self.settings.showConditionals.get()
+      config.getContextLinesShowConditionals()
     else:
       false
 
@@ -134,6 +125,7 @@ when implModule:
 
   proc updateContextLines(self: ContextLineComponent, cursor: Point): Future[seq[ContextLineEntry]] {.async.} =
     let editor = self.owner.DocumentEditor
+    let config = editor.config
     let document = editor.currentDocument
     if document.isNil:
       return @[]
@@ -155,7 +147,7 @@ when implModule:
 
     var entries: seq[ContextLineEntry]
 
-    let r = re(self.settings.show.getRegex())
+    let r = re(config.getContextLinesShow().decodeRegex())
 
     for i in countdown(layers.high, 0):
       let layerIndex = layers[i]
@@ -277,10 +269,9 @@ when implModule:
 
     asyncSpawn updateTaskBody(self)
 
-  proc newContextLineComponent*(settings: ContextLineSettings): ContextLineComponent =
+  proc newContextLineComponent*(): ContextLineComponent =
     result = ContextLineComponent(
       typeId: ContextLineComponentId,
-      settings: settings,
       currentCursor: point(-1, -1),
     )
 

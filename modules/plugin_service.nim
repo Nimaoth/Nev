@@ -3,6 +3,7 @@ import std/[json, tables, options, strformat]
 import misc/[custom_async]
 import lisp
 import service, config_provider, command_service
+import core_settings
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -15,21 +16,6 @@ type PluginCommandLoadBehaviour* = enum
   AsyncRun = "async-run"
   WaitAndRun = "wait-and-run"
   AsyncOrWait = "async-or-wait"
-
-declareSettings PluginSettings, "plugins":
-  # use openSession, OpenSessionSettings
-
-  ## Whether to watch the plugin directories for changes and load new plugins
-  declare watchPluginDirectories, bool, true
-
-  ## Defines if and how to run commands which trigger a plugin to load.
-  ## "dont-run": Don't run the command after the plugin is loaded. You have to manually run the command again.
-  ## "async-run": Asynchronously load the plugin and run the command afterwards. If the command returns something
-  ##              then the return value will not be available if the command is e.g. called from a plugin.
-  ## "wait-and-run": Synchronously load the plugin and run the command afterwards. Return values work fine, but the editor
-  ##                 will freeze while loading the plugin.
-  ## "async-or-wait": Use "async-run" behaviour for commands with no return value and "wait-and-run" for commands with return values.
-  declare commandLoadBehaviour, PluginCommandLoadBehaviour, AsyncOrWait
 
 type
   WasiPermissions* = enum None = "none", Reduced = "reduced", Full = "full"
@@ -190,8 +176,6 @@ when implModule:
 
       autoLoadPlugins: bool = false
 
-      pluginSettings*: PluginSettings
-
       isHandlingVFSEvents: bool
       vfsEvents: seq[VFSEvent]
 
@@ -206,7 +190,6 @@ when implModule:
     self.commands = self.services.getServiceChecked(CommandService)
     self.configService = self.services.getServiceChecked(ConfigService)
     self.settings = self.configService.runtime
-    self.pluginSettings = PluginSettings.new(self.settings)
 
     asyncSpawn self.addPluginFolder("app://plugins")
     asyncSpawn self.addPluginFolder("config://plugins")
@@ -327,24 +310,24 @@ when implModule:
           description: desc.description,
           execute: (proc(args: string): string =
             if plugin.state == PluginState.Unloaded and plugin.loadOnCommand:
-              var commandLoadBehaviour = self.pluginSettings.commandLoadBehaviour.get()
-              if commandLoadBehaviour == AsyncOrWait:
+              var commandLoadBehaviour = self.settings.getPluginsCommandLoadBehaviour()
+              if commandLoadBehaviour == core_settings.PluginCommandLoadBehaviour.AsyncOrWait:
                 if desc.returnType == "":
-                  commandLoadBehaviour = AsyncRun
+                  commandLoadBehaviour = core_settings.PluginCommandLoadBehaviour.AsyncRun
                 else:
-                  commandLoadBehaviour = WaitAndRun
+                  commandLoadBehaviour = core_settings.PluginCommandLoadBehaviour.WaitAndRun
 
               let fut = self.loadPlugin(plugin)
               case commandLoadBehaviour
-              of DontRun:
+              of core_settings.PluginCommandLoadBehaviour.DontRun:
                 asyncSpawn fut
 
-              of AsyncRun:
+              of core_settings.PluginCommandLoadBehaviour.AsyncRun:
                 fut.thenIt:
                   if plugin.state == Loaded:
                     discard self.commands.executeCommand(name & " " & args)
 
-              of WaitAndRun:
+              of core_settings.PluginCommandLoadBehaviour.WaitAndRun:
                 try:
                   waitFor fut
                   if plugin.state == Loaded:
@@ -354,7 +337,7 @@ when implModule:
                   log lvlWarn, &"Failed to wait for plugin to load: {e.msg}"
                   return ""
 
-              of AsyncOrWait:
+              of core_settings.PluginCommandLoadBehaviour.AsyncOrWait:
                 assert false
           )
         ), override = true)
@@ -476,7 +459,7 @@ when implModule:
     for path in listing.folders:
       await self.addManifestFromFolder(pluginFolder, path)
 
-    if self.pluginSettings.watchPluginDirectories.get():
+    if self.settings.getPluginsWatchPluginDirectories():
       log lvlInfo, &"Watch plugin pluginFolder: {pluginFolder.path}"
       pluginFolder.watchHandle = self.vfs.watch(pluginFolder.path, proc(events: seq[PathEvent]) =
         var vfsEvents = newSeq[VFSEvent]()

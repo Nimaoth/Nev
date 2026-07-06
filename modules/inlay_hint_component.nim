@@ -2,6 +2,7 @@
 import std/[options]
 import text/[display_map, overlay_map]
 import config_provider
+import core_settings
 import component
 
 export component
@@ -9,17 +10,12 @@ export component
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
-declareSettings InlayHintSettings, "":
-  ## Whether inlay hints are enabled.
-  declare enable, bool, true
-
 type InlayHintComponent* = ref object of Component
-  settings*: InlayHintSettings
 
 # DLL API
 
 {.push modrtl, gcsafe, raises: [].}
-proc newInlayHintComponent*(settings: InlayHintSettings, displayMap: DisplayMap): InlayHintComponent
+proc newInlayHintComponent*(displayMap: DisplayMap): InlayHintComponent
 proc inlayHintComponentUpdateInlayHints(self: InlayHintComponent, now: bool = false)
 proc inlayHintComponentPreRender(self: InlayHintComponent)
 
@@ -64,10 +60,9 @@ when implModule:
       return
     self.documentChangedHandle = self.owner.DocumentEditor.onDocumentChanged.subscribe proc(arg: auto) {.closure, gcsafe, raises: [].} = self.handleDocumentChanged(arg.old)
 
-  proc newInlayHintComponent*(settings: InlayHintSettings, displayMap: DisplayMap): InlayHintComponent =
+  proc newInlayHintComponent*(displayMap: DisplayMap): InlayHintComponent =
     return InlayHintComponentImpl(
       typeId: InlayHintComponentId,
-      settings: settings,
       displayMap: displayMap,
       initializeImpl: (proc(self: Component, owner: ComponentOwner) =
         self.InlayHintComponentImpl.listenForDocumentChanges()
@@ -104,7 +99,8 @@ when implModule:
     if document.isNil or not self.document.isReady:
       return
 
-    if not self.settings.enable.get():
+    let config = editor.config
+    if not config.getTextInlayHintsEnable():
       return
 
     let lsComp = document.getLanguageServerComponent().getOr:

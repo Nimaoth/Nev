@@ -6,6 +6,7 @@ import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjso
 import workspace
 import text/[syntax_map, display_map, indent]
 import document, document_editor, config_provider, service, vfs, vfs_service, language_server_list
+import core_settings except IndentStyleKind
 import vcs, event_service, toast, treesitter/treesitter
 import language_server_component, config_component, move_database, move_component, text_component, treesitter_component,
   language_component, formatting_component
@@ -22,132 +23,6 @@ logCategory "text-document"
 
 {.push gcsafe.}
 {.push raises: [].}
-
-proc typeNameToJson*(T: typedesc[IndentStyleKind]): string =
-  return "\"tabs\" | \"spaces\""
-
-declareSettings SearchRegexSettings, "":
-  ## If true then the search results will only show the part of a line that matched the regex.
-  ## If false then the entire line is shown.
-  declare showOnlyMatchingPart, bool, true
-
-  ## Regex to use when using the goto-definition feature.
-  declare gotoDefinition, Option[RegexSetting], nil
-
-  ## Regex to use when using the goto-declaration feature.
-  declare gotoDeclaration, Option[RegexSetting], nil
-
-  ## Regex to use when using the goto-type-definition feature.
-  declare gotoTypeDefinition, Option[RegexSetting], nil
-
-  ## Regex to use when using the goto-implementation feature.
-  declare gotoImplementation, Option[RegexSetting], nil
-
-  ## Regex to use when using the goto-references feature.
-  declare gotoReferences, Option[RegexSetting], nil
-
-  ## Regex to use when using the symbols feature.
-  declare symbols, Option[RegexSetting], nil
-
-  ## Regex to use when using the workspace-symbols feature.
-  declare workspaceSymbols, Option[RegexSetting], nil
-
-  ## Regex to use when using the workspace-symbols feature. Keys are LSP symbol kinds, values are the corresponding regex.
-  declare workspaceSymbolsByKind, Option[Table[string, RegexSetting]], nil
-
-declareSettings RipgrepSettings, "":
-  ## Pass the --type argument to ripgrep using either the language id or the value from `file-type`.
-  declare passType, bool, true
-
-  ## Override the ripgrep type name. By default the documents language id is used.
-  declare fileType, Option[string], nil
-
-  ## Extra arguments passed to ripgrep
-  declare extraArgs, seq[string], newJArray()
-
-declareSettings TrimTrailingWhitespaceSettings, "":
-  ## If true trailing whitespace is deleted when saving files.
-  declare enabled, bool, true
-
-  ## Don't trim trailing whitespace when filesize is above this limit.
-  declare maxSize, int, 1000000
-
-declareSettings IndentDetectionSettings, "":
-  ## Enable auto detecting the indent style when opening files.
-  declare enable, bool, true
-
-  ## How many indent characters to process when detecting the indent style. Increase this if it fails for files which start with many unindented lines.
-  declare samples, int, 50
-
-  ## Max number of milliseconds to spend trying to detect the indent style.
-  declare timeout, int, 20
-
-declareSettings DiffReloadSettings, "":
-  ## When reloading a file the editor will compute the diff between the file on disk and the in memory document,
-  ## and then apply the diff to the in memory version so it matches the content on disk.
-  ## This can reduce memory usage when reloading files often (although it increases memory usage while reloading and increases load times).
-  ## It's also better for collaboration as it doesn't affect the entire file.
-  declare enable, bool, true
-
-  ## Max number of milliseconds to use for diffing. If the timeout is exceeded then the file will be reloaded normally.
-  declare timeout, int, 250
-
-declareSettings DiagnosticsSettings, "":
-  ## Enable diagnostics. Also requires a language server which supports diagnostics.
-  declare enable, bool, true
-
-  ## How many snapshots to keep when editing. Snapshots are used to fix up diagnostic locations when receiving diagnostics
-  ## for an older version of the document (e.g when you continue editing and the languages doesn't respond fast enough).
-  ## You might want to increase this if you are using a language server which is very slow and you want diagnostics to
-  ## show up even when you're actively typing (diagnostics received for old document versions are discarded).
-  declare snapshotHistory, int, 5
-
-declareSettings TextSettings, "text":
-  ##
-  use trimTrailingWhitespace, TrimTrailingWhitespaceSettings
-
-  ## Settings for using ripgrep
-  use ripgrep, RipgrepSettings
-
-  ## Configure search regexes.
-  use searchRegexes, SearchRegexSettings
-
-  ## Settings for automatically detecting the indent style of files.
-  use indentDetection, IndentDetectionSettings
-
-  ## Settings for the diff reload feature.
-  use diffReload, DiffReloadSettings
-
-  ## Settings for diagnostics.
-  use diagnostics, DiagnosticsSettings
-
-  ## Settings for treesitter.
-  use treesitter, TreesitterSettings
-
-  ## How many characters wide a tab is.
-  declare tabWidth, int, 4
-
-  ## String which starts a line comment
-  declare lineComment, Option[string], nil
-
-  ## When you insert a new line, if the current line ends with one of these strings then the new line will be indented.
-  declare indentAfter, Option[seq[string]], nil
-
-  ##
-  declare completionWordChars, RuneSetSetting, %%*[["a", "z"], ["A", "Z"], ["0", "9"], "_"]
-
-  ## Whether to used spaces or tabs for indentation. When indent detection is enabled then this only specfies the default
-  ## for new files and files where the indentation type can't be detected automatically.
-  declare indent, IndentStyleKind, IndentStyleKind.Spaces
-
-  ## If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes).
-  declare autoReload, bool, false
-
-  ## If true then newly saved files will be added to the vcs (only for perforce right now, does nothing for git)
-  declare addNewFileVcs, bool, false
-
-  ## If true then you will be prompted when saving a new file on whether to add it to the vcs, otherwise the file is always added.
-  declare addNewFileVcsPrompt, bool, true
 
 type
 
@@ -202,7 +77,6 @@ type
 
     checkpoints: Table[TransactionId, seq[string]]
 
-    settings*: TextSettings
     fileWatchHandle: VFSWatchHandle
 
     moveFallbacks: MoveFunction
@@ -518,7 +392,7 @@ proc rebuildBuffer*(self: TextDocument, replicaId: ReplicaId, bufferId: BufferId
   self.notifyRequestRerender()
 
 proc recordSnapshotForDiagnostics(self: TextDocument) =
-  let diagnosticHistoryMaxLength = self.settings.diagnostics.snapshotHistory.get()
+  let diagnosticHistoryMaxLength = self.config.getTextDiagnosticsSnapshotHistory()
   self.diagnosticSnapshots.add(self.buffer.snapshot.clone())
   while self.diagnosticSnapshots.len > diagnosticHistoryMaxLength:
     self.diagnosticSnapshots.removeShift(0)
@@ -623,8 +497,8 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     return
 
   let prevLanguageId = self.languageId
-  let pathOverride = self.settings.treesitter.path.get()
-  let treesitterLanguageName = self.settings.treesitter.language.get().get(self.languageId)
+  let pathOverride = self.config.getTextTreesitterPath()
+  let treesitterLanguageName = self.config.getTextTreesitterLanguage().get(self.languageId)
   var language = await getTreesitterLanguage(self.vfs, treesitterLanguageName, pathOverride)
   if not self.isInitialized:
     return
@@ -710,7 +584,7 @@ proc tsQuery*(self: TextDocument, name: string): Future[Option[TSQuery]] {.async
     return TSQuery.none
 
   let prevLanguageId = self.languageId
-  let treesitterLanguageName = self.settings.treesitter.language.get().get(self.languageId)
+  let treesitterLanguageName = self.config.getTextTreesitterLanguage().get(self.languageId)
   let path = &"app://languages/{treesitterLanguageName}/queries/{name}.scm"
   let query = self.tsLanguage.queryFile(self.vfs, name, path).await
   if prevLanguageId != self.languageId:
@@ -746,7 +620,7 @@ proc applyMoveFallback*(self: TextDocument, move: string, selections: openArray[
         else:
           var c = self.rope.cursorT(it.last.toPoint)
 
-          let identRunes {.cursor.} = self.settings.completionWordChars.get()
+          let identRunes = self.config.getTextCompletionWordChars()
           var column = c.position.column
           while c.position.column > 0:
             c.seekPrevRune()
@@ -887,7 +761,6 @@ proc newTextDocument*(
 
   assert initialSettings != nil
   self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}", settings = initialSettings)
-  self.settings = TextSettings.new(self.config)
   self.languageServerList = newLanguageServerList(self.config)
 
   self.languageComponent = newLanguageComponent()
@@ -991,8 +864,8 @@ proc saveAsync*(self: TextDocument) {.async.} =
     if not self.isInitialized:
       return
 
-    let trimTrailingWhitespace = self.settings.trimTrailingWhitespace.enabled.get()
-    let maxFileSizeForTrim = self.settings.trimTrailingWhitespace.maxSize.get()
+    let trimTrailingWhitespace = self.config.getTextTrimTrailingWhitespaceEnabled()
+    let maxFileSizeForTrim = self.config.getTextTrimTrailingWhitespaceMaxSize()
     if trimTrailingWhitespace:
       if self.rope.len <= maxFileSizeForTrim:
         self.trimTrailingWhitespace()
@@ -1024,8 +897,8 @@ proc saveAsync*(self: TextDocument) {.async.} =
     self.onDocumentSaved.invoke(self)
     self.eventBus.emit(&"document/{self.id}/saved", $self.id)
 
-    if newFile and self.settings.addNewFileVcs.get():
-      asyncSpawn self.addFileVcsAsync(prompt=self.settings.addNewFileVcsPrompt.get());
+    if newFile and self.config.getTextAddNewFileVcs():
+      asyncSpawn self.addFileVcsAsync(prompt=self.config.getTextAddNewFileVcsPrompt());
 
   except IOError as e:
     log lvlError, &"Failed to save file '{self.filename}': {e.msg}"
@@ -1047,11 +920,11 @@ proc textDocumentSave(self: Document, filename: string = ""): Future[void] {.asy
     discard
 
 proc autoDetectIndentStyle(self: TextDocument) =
-  if not self.settings.indentDetection.enable.get():
+  if not self.config.getTextIndentDetectionEnable():
     return
 
-  let maxSamples = self.settings.indentDetection.samples.get()
-  let maxTime = self.settings.indentDetection.timeout.get().float64
+  let maxSamples = self.config.getTextIndentDetectionSamples()
+  let maxTime = self.config.getTextIndentDetectionTimeout().float64
 
   var containsTab = false
   var linePos = Point.init(0, 0)
@@ -1081,17 +954,17 @@ proc autoDetectIndentStyle(self: TextDocument) =
     c.seekForward(linePos)
 
   if containsTab:
-    self.settings.indent.set(Tabs)
+    self.config.setTextIndent(core_settings.IndentStyleKind.Tabs)
   else:
     if minIndent != int.high:
-      self.settings.tabWidth.set(minIndent)
-      self.settings.indent.set(Spaces)
+      self.config.setTextTabWidth(minIndent)
+      self.config.setTextIndent(core_settings.IndentStyleKind.Spaces)
 
-  # log lvlInfo, &"[Text_document] Detected indent: {self.settings.indent.get()}, {self.settings.tabWidth.get()}"
+  # log lvlInfo, &"[Text_document] Detected indent: {self.config.getTextIndent()}, {self.config.getTextTabWidth()}"
 
 proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]] {.async.} =
-  if self.settings.diffReload.enable.get():
-    let diffTimeout = self.settings.diffReload.timeout.get()
+  if self.config.getTextDiffReloadEnable():
+    let diffTimeout = self.config.getTextDiffReloadTimeout()
     let t = startTimer()
 
     try:
@@ -1174,7 +1047,7 @@ proc loadAsync*(self: TextDocument, isReload: bool, filename: string, temp: bool
   if not self.isInitialized:
     return
 
-  if self.settings.autoReload.get():
+  if self.config.getTextAutoReload():
     self.enableAutoReload(true)
   else:
     self.fileWatchHandle.unwatch()
@@ -1195,11 +1068,11 @@ proc loadAsync*(self: TextDocument, isReload: bool, filename: string, temp: bool
   self.eventBus.emit(&"document/{self.id}/loaded", $self.id)
 
 proc enableAutoReload*(self: TextDocument, enabled: bool) =
-  self.settings.autoReload.set(enabled)
+  self.config.setTextAutoReload(enabled)
   if enabled and (not self.fileWatchHandle.isBound or self.fileWatchHandle.path != self.filename):
     self.fileWatchHandle.unwatch()
     self.fileWatchHandle = self.vfs.watch(self.filename, proc(events: seq[PathEvent]) =
-      if not self.isInitialized or not self.settings.autoReload.get():
+      if not self.isInitialized or not self.config.getTextAutoReload():
         return
       if self.lastSavedTimer.elapsed.ms < 1000:
         # Probably notification about our own saving, dont reload in that case.
@@ -1388,7 +1261,7 @@ proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
   #   self.setCurrentDiagnostics(ls, diagnostics.result, snapshot.some)
 
 proc handleDiagnosticsReceived(self: TextDocument, languageServer: LanguageServer, diagnostics: PublicDiagnosticsParams) =
-  if not self.settings.diagnostics.enable.get():
+  if not self.config.getTextDiagnosticsEnable():
     self.clearDiagnostics(languageServer.name)
     return
 
@@ -1476,7 +1349,7 @@ proc clearDiagnostics*(self: TextDocument, languageServerName: string = "") =
   self.updateDiagnosticEndPoints()
 
 proc tabWidth*(self: TextDocument): int =
-  return self.settings.tabWidth.get()
+  return self.config.getTextTabWidth()
 
 proc getCompletionSelectionAt*(self: TextDocument, cursor: Cursor): Selection =
   return self.applyMoveFallback("completion-selection", [cursor.toSelection], 1, [], nil)[0]
@@ -1516,19 +1389,26 @@ proc lastNonWhitespace*(str: string): int =
       break
     result -= 1
 
+proc getIndentStyle*(self: TextDocument): indent.IndentStyleKind =
+  case self.config.getTextIndent()
+  of core_settings.IndentStyleKind.Tabs:
+    indent.IndentStyleKind.Tabs
+  of core_settings.IndentStyleKind.Spaces:
+    indent.IndentStyleKind.Spaces
+
 proc getIndentString*(self: TextDocument): string =
-  getIndentString(self.settings.indent.get(), self.settings.tabWidth.get())
+  getIndentString(self.getIndentStyle(), self.config.getTextTabWidth())
 
 proc getIndentColumns*(self: TextDocument): int =
-  case self.settings.indent.get()
-  of Tabs: return 1
-  of Spaces: return self.settings.tabWidth.get()
+  case self.getIndentStyle()
+  of indent.IndentStyleKind.Tabs: return 1
+  of indent.IndentStyleKind.Spaces: return self.config.getTextTabWidth()
 
 proc getIndentLevelForLine*(self: TextDocument, line: int, tabWidth: int): int =
   if line < 0 or line >= self.numLines:
     return 0
 
-  let indentWidth = self.settings.tabWidth.get()
+  let indentWidth = self.config.getTextTabWidth()
 
   var c = self.rope.cursorT(Point.init(line, 0))
   var indent = 0
@@ -1570,7 +1450,7 @@ proc getLanguageWordBoundary*(self: TextDocument, cursor: Cursor): Selection =
 
   result = cursor.toSelection
 
-  let identRunes {.cursor.} = self.settings.completionWordChars.get()
+  let identRunes = self.config.getTextCompletionWordChars()
   while c.position.column > 0:
     c.seekPrevRune()
     if c.currentRune in identRunes:
@@ -1948,13 +1828,13 @@ proc addNextCheckpoint*(self: TextDocument, checkpoint: string) =
   self.nextCheckpoints.incl checkpoint
 
 proc isLineCommented*(self: TextDocument, line: int): bool =
-  let lineComment = self.settings.lineComment.get()
+  let lineComment = self.config.getTextLineComment()
   if lineComment.isNone:
     return false
   return self.rope.lineStartsWith(line, lineComment.get, ignoreWhitespace = true)
 
 proc getLineCommentRange*(self: TextDocument, line: int): Selection =
-  let lineComment = self.settings.lineComment.get()
+  let lineComment = self.config.getTextLineComment()
   if line > self.numLines - 1 or lineComment.isNone:
     return (line, 0).toSelection
 
@@ -1974,7 +1854,7 @@ proc getLineCommentRange*(self: TextDocument, line: int): Selection =
 proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selection] =
   result = selections
 
-  let lineComment = self.settings.lineComment.get()
+  let lineComment = self.config.getTextLineComment()
   if lineComment.isNone:
     return
 

@@ -1,6 +1,7 @@
 import std/[strformat, strutils, os]
 import misc/[custom_unicode, custom_logger]
 import document, ui/node, view, theme, config_provider
+import core_settings
 import chroma
 import service
 
@@ -331,10 +332,9 @@ proc renderView*(self: View, builder: UINodeBuilder,
   self.resetDirty()
 
   let config = services.getServiceChecked(ConfigService).runtime
-  let uiSettings = UISettings.new(config)
 
   let transparentBackground = config.get("ui.background.transparent", false)
-  let inactiveBrightnessChange = uiSettings.background.inactiveBrightnessChange.get()
+  let inactiveBrightnessChange = config.getUiBackgroundInactiveBrightnessChange()
   var backgroundColor = if self.active: builder.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
 
   if transparentBackground:

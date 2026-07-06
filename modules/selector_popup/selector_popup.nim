@@ -4,6 +4,7 @@ import vmath
 import misc/[myjsonutils]
 import finder, previewer
 import config_provider, popup, document_editor, view
+import core_settings
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 
 export popup
@@ -12,10 +13,6 @@ const currentSourcePath2 = currentSourcePath()
 include module_base
 
 {.push gcsafe.}
-
-declareSettings SelectorSettings, "selector":
-  declare baseMode, string, "popup.selector"
-  declare minScore, float, 0
 
 type
   SelectorPopup* = ref object of Popup
@@ -89,8 +86,6 @@ when implModule:
       lastContentBounds*: Rect
       lastItems*: seq[tuple[index: int, bounds: Rect]]
       accepted: bool = false
-
-      settings: SelectorSettings
 
       eventHandlers: Table[string,  EventHandler]
 
@@ -196,22 +191,27 @@ when implModule:
 
     return self.eventHandlers[context]
 
+  proc selectorConfig(self: SelectorPopupImpl): ConfigStore {.inline.} =
+    self.services.getServiceChecked(ConfigService).runtime
+
   proc selectorPopupGetEventHandlers*(self: SelectorPopupImpl): seq[EventHandler] =
     if self.textEditor.isNil:
       return @[]
 
+    let baseMode = self.selectorConfig.getSelectorBaseMode()
+
     if self.focusPreview and self.previewView.isNotNil:
-      let eventHandler = self.getEventHandler(self.settings.baseMode.get() & ".preview")
+      let eventHandler = self.getEventHandler(baseMode & ".preview")
       result = self.previewView.getEventHandlers(initTable[string, EventHandler]()) & @[eventHandler]
     elif self.focusPreview and self.previewEditor.isNotNil:
-      let eventHandler = self.getEventHandler(self.settings.baseMode.get() & ".preview")
+      let eventHandler = self.getEventHandler(baseMode & ".preview")
       result = self.previewEditor.getEventHandlers(initTable[string, EventHandler]()) & @[eventHandler]
     else:
-      let eventHandler = self.getEventHandler(self.settings.baseMode.get())
+      let eventHandler = self.getEventHandler(baseMode)
       result = self.textEditor.getEventHandlers(initTable[string, EventHandler]()) & @[eventHandler]
 
       if self.scope != "":
-        let eventHandler = self.getEventHandler(self.settings.baseMode.get() & "." & self.scope)
+        let eventHandler = self.getEventHandler(baseMode & "." & self.scope)
         result.add eventHandler
 
   proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopupImpl] {.gcsafe, raises: [].} =
@@ -514,7 +514,6 @@ when implModule:
     popup.events = services.getServiceChecked(EventHandlerService)
     popup.editors = services.getServiceChecked(DocumentEditorService)
     popup.commands = services.getServiceChecked(CommandService)
-    popup.settings = SelectorSettings.new(services.getServiceChecked(ConfigService).runtime)
     popup.scale = vec2(0.5, 0.5)
     popup.scope = scopeName.get("")
     popup.initImpl = proc(self: Popup) = selectorPopupInit(self.SelectorPopupImpl)
@@ -544,7 +543,7 @@ when implModule:
     popup.textEditor.renderHeader = false
     popup.textEditor.active = true
 
-    finder.get.minScore = popup.settings.minScore.get()
+    finder.get.minScore = popup.selectorConfig.getSelectorMinScore()
 
     discard popup.textEditor.currentDocument.getTextComponent().get.onEdit.subscribe (args: tuple[oldText: Rope, patch: Patch[Point]]) =>
       popup.handleTextChanged()

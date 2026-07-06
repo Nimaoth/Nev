@@ -60,17 +60,6 @@ when defined(windows):
       HeapFree(GetProcessHeap(), 0, result.lpAttributeList)
       raiseOSError(osLastError())
 
-declareSettings TerminalSettings, "terminal":
-  ## Input mode to activate when creating a new terminal, if no mode is specified otherwise.
-  declare defaultMode, string, ""
-
-  ## Input mode which is always active while a terminal view is active.
-  declare baseMode, string, "terminal"
-
-  ## After how many milliseconds of no data received from a terminal it is considered idle, and can be reused
-  ## for running more commands.
-  declare idleThreshold, int, 500
-
 type
   InputEventKind* {.pure.} = enum
     Text
@@ -326,7 +315,6 @@ type
     registers*: Registers
     commands*: CommandService
     idCounter*: int = 0
-    settings*: TerminalSettings
     # mPlatform*: Platform
 
     terminals*: Table[int, TerminalView]
