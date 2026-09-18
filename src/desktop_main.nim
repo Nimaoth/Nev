@@ -53,6 +53,7 @@ proc ownsConsole*(): bool =
 var backend: Option[Backend] = if enableGui: Backend.Gui.some
 elif enableTerminal: Backend.Terminal.some
 else: Backend.none
+var useSdlBackend = false
 
 var logToFile = false
 var logToConsole = true
@@ -65,6 +66,7 @@ const helpText = &"""
 Options:
   -g, --gui              Launch gui version (if available)
   -t, --terminal         Launch terminal version (if available)
+      --sdl              Launch SDL3/nuigi version (if available, uses --gui backend)
   -p, --setting          Set value of settings (multiple can be set)
   -r, --early-command    Run command after all basic initialization is done
   -R, --late-command     Run command after all initialization is done
@@ -122,6 +124,14 @@ block: ## Parse command line options
           backend = Backend.Terminal.some
         else:
           echo "[error] Terminal backend not available in this build"
+          quit(1)
+
+      of "sdl":
+        when enableGui and defined(sdlPlatform):
+          backend = Backend.Gui.some
+          useSdlBackend = true
+        else:
+          echo "[error] GUI backend not available in this build (sdl requires gui)"
           quit(1)
 
       of "setting", "p":
@@ -249,6 +259,8 @@ when enableTerminal:
 when enableGui:
   import misc/[tui]
   import "../modules/gui_platform"/gui_platform
+  when defined(sdlPlatform):
+    import "../modules/sdl_platform"/sdl_platform
 
   if backend.get == Gui:
     let trueColorSupport = myEnableTrueColors()
@@ -282,9 +294,18 @@ of Terminal:
 
 of Gui:
   when enableGui:
-    log(lvlInfo, "Creating GUI renderer")
-    plat = newGuiPlatform()
-    plat.backend = Gui
+    if useSdlBackend:
+      when defined(sdlPlatform):
+        log(lvlInfo, "Creating SDL renderer (nuigi/sdl3)")
+        plat = newSdlPlatform()
+        plat.backend = Gui
+      else:
+        echo "[error] SDL GUI backend not available in this build"
+        quit(1)
+    else:
+      log(lvlInfo, "Creating GUI renderer")
+      plat = newGuiPlatform()
+      plat.backend = Gui
   else:
     echo "[error] GUI backend not available in this build"
     quit(1)

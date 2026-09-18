@@ -6,26 +6,28 @@ when not defined(useDynlib):
   import "../modules/log.nim"
   import "../modules/lisp.nim"
   import "../modules/config_store.nim"
-  import "../modules/theme.nim"
-  import "../modules/command_service.nim"
-  import "../modules/input_handler/input_handler.nim"
-  import "../modules/terminal_platform/terminal_platform.nim"
   import "../modules/vfs_config.nim"
   import "../modules/vfs_local.nim"
+  import "../modules/command_service.nim"
   import "../modules/vfs_service.nim"
   import "../modules/event_service.nim"
   import "../modules/session.nim"
   import "../modules/finder.nim"
+  import "../modules/theme.nim"
   import "../modules/wasm_engine.nim"
   import "../modules/treesitter/treesitter.nim"
   import "../modules/move_database.nim"
   import "../modules/move_component.nim"
+  import "../modules/input_handler/input_handler.nim"
   import "../modules/text_component.nim"
   import "../modules/text_editor_component.nim"
   import "../modules/open_editor_previewer.nim"
   import "../modules/status_line.nim"
   import "../modules/workspace.nim"
   import "../modules/layout/layout.nim"
+  import "../modules/profiler.nim"
+  import "../modules/sdl_platform/sdl_platform.nim"
+  import "../modules/terminal_platform/terminal_platform.nim"
   import "../modules/command_server.nim"
   import "../modules/stats.nim"
   import "../modules/plugin_service.nim"
@@ -62,7 +64,6 @@ when not defined(useDynlib):
   import "../modules/undo_tree.nim"
   import "../modules/language_server_paths.nim"
   import "../modules/angelscript_formatter.nim"
-  import "../modules/profiler.nim"
   import "../modules/debugger/debugger.nim"
   import "../modules/language_server_ctags.nim"
   import "../modules/language_server_regex.nim"
@@ -86,26 +87,28 @@ proc initModules*() =
   when declared(init_module_log): init_module_log()
   when declared(init_module_lisp): init_module_lisp()
   when declared(init_module_config_store): init_module_config_store()
-  when declared(init_module_theme): init_module_theme()
-  when declared(init_module_command_service): init_module_command_service()
-  when declared(init_module_input_handler): init_module_input_handler()
-  when declared(init_module_terminal_platform): init_module_terminal_platform()
   when declared(init_module_vfs_config): init_module_vfs_config()
   when declared(init_module_vfs_local): init_module_vfs_local()
+  when declared(init_module_command_service): init_module_command_service()
   when declared(init_module_vfs_service): init_module_vfs_service()
   when declared(init_module_event_service): init_module_event_service()
   when declared(init_module_session): init_module_session()
   when declared(init_module_finder): init_module_finder()
+  when declared(init_module_theme): init_module_theme()
   when declared(init_module_wasm_engine): init_module_wasm_engine()
   when declared(init_module_treesitter): init_module_treesitter()
   when declared(init_module_move_database): init_module_move_database()
   when declared(init_module_move_component): init_module_move_component()
+  when declared(init_module_input_handler): init_module_input_handler()
   when declared(init_module_text_component): init_module_text_component()
   when declared(init_module_text_editor_component): init_module_text_editor_component()
   when declared(init_module_open_editor_previewer): init_module_open_editor_previewer()
   when declared(init_module_status_line): init_module_status_line()
   when declared(init_module_workspace): init_module_workspace()
   when declared(init_module_layout): init_module_layout()
+  when declared(init_module_profiler): init_module_profiler()
+  when declared(init_module_sdl_platform): init_module_sdl_platform()
+  when declared(init_module_terminal_platform): init_module_terminal_platform()
   when declared(init_module_command_server): init_module_command_server()
   when declared(init_module_stats): init_module_stats()
   when declared(init_module_plugin_service): init_module_plugin_service()
@@ -142,7 +145,6 @@ proc initModules*() =
   when declared(init_module_undo_tree): init_module_undo_tree()
   when declared(init_module_language_server_paths): init_module_language_server_paths()
   when declared(init_module_angelscript_formatter): init_module_angelscript_formatter()
-  when declared(init_module_profiler): init_module_profiler()
   when declared(init_module_debugger): init_module_debugger()
   when declared(init_module_language_server_ctags): init_module_language_server_ctags()
   when declared(init_module_language_server_regex): init_module_language_server_regex()
@@ -181,7 +183,6 @@ proc shutdownModules*() =
   when declared(shutdown_module_language_server_regex): shutdown_module_language_server_regex()
   when declared(shutdown_module_language_server_ctags): shutdown_module_language_server_ctags()
   when declared(shutdown_module_debugger): shutdown_module_debugger()
-  when declared(shutdown_module_profiler): shutdown_module_profiler()
   when declared(shutdown_module_angelscript_formatter): shutdown_module_angelscript_formatter()
   when declared(shutdown_module_language_server_paths): shutdown_module_language_server_paths()
   when declared(shutdown_module_undo_tree): shutdown_module_undo_tree()
@@ -218,26 +219,28 @@ proc shutdownModules*() =
   when declared(shutdown_module_plugin_service): shutdown_module_plugin_service()
   when declared(shutdown_module_stats): shutdown_module_stats()
   when declared(shutdown_module_command_server): shutdown_module_command_server()
+  when declared(shutdown_module_terminal_platform): shutdown_module_terminal_platform()
+  when declared(shutdown_module_sdl_platform): shutdown_module_sdl_platform()
+  when declared(shutdown_module_profiler): shutdown_module_profiler()
   when declared(shutdown_module_layout): shutdown_module_layout()
   when declared(shutdown_module_workspace): shutdown_module_workspace()
   when declared(shutdown_module_status_line): shutdown_module_status_line()
   when declared(shutdown_module_open_editor_previewer): shutdown_module_open_editor_previewer()
   when declared(shutdown_module_text_editor_component): shutdown_module_text_editor_component()
   when declared(shutdown_module_text_component): shutdown_module_text_component()
+  when declared(shutdown_module_input_handler): shutdown_module_input_handler()
   when declared(shutdown_module_move_component): shutdown_module_move_component()
   when declared(shutdown_module_move_database): shutdown_module_move_database()
   when declared(shutdown_module_treesitter): shutdown_module_treesitter()
   when declared(shutdown_module_wasm_engine): shutdown_module_wasm_engine()
+  when declared(shutdown_module_theme): shutdown_module_theme()
   when declared(shutdown_module_finder): shutdown_module_finder()
   when declared(shutdown_module_session): shutdown_module_session()
   when declared(shutdown_module_event_service): shutdown_module_event_service()
   when declared(shutdown_module_vfs_service): shutdown_module_vfs_service()
+  when declared(shutdown_module_command_service): shutdown_module_command_service()
   when declared(shutdown_module_vfs_local): shutdown_module_vfs_local()
   when declared(shutdown_module_vfs_config): shutdown_module_vfs_config()
-  when declared(shutdown_module_terminal_platform): shutdown_module_terminal_platform()
-  when declared(shutdown_module_input_handler): shutdown_module_input_handler()
-  when declared(shutdown_module_command_service): shutdown_module_command_service()
-  when declared(shutdown_module_theme): shutdown_module_theme()
   when declared(shutdown_module_config_store): shutdown_module_config_store()
   when declared(shutdown_module_lisp): shutdown_module_lisp()
   when declared(shutdown_module_log): shutdown_module_log()
@@ -246,26 +249,28 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("log")
   loadModule("lisp")
   loadModule("config_store")
-  loadModule("theme")
-  loadModule("command_service")
-  loadModule("input_handler")
-  loadModule("terminal_platform")
   loadModule("vfs_config")
   loadModule("vfs_local")
+  loadModule("command_service")
   loadModule("vfs_service")
   loadModule("event_service")
   loadModule("session")
   loadModule("finder")
+  loadModule("theme")
   loadModule("wasm_engine")
   loadModule("treesitter")
   loadModule("move_database")
   loadModule("move_component")
+  loadModule("input_handler")
   loadModule("text_component")
   loadModule("text_editor_component")
   loadModule("open_editor_previewer")
   loadModule("status_line")
   loadModule("workspace")
   loadModule("layout")
+  loadModule("profiler")
+  loadModule("sdl_platform")
+  loadModule("terminal_platform")
   loadModule("command_server")
   loadModule("stats")
   loadModule("plugin_service")
@@ -302,7 +307,6 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("undo_tree")
   loadModule("language_server_paths")
   loadModule("angelscript_formatter")
-  loadModule("profiler")
   loadModule("debugger")
   loadModule("language_server_ctags")
   loadModule("language_server_regex")
