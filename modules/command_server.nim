@@ -19,11 +19,13 @@ when not defined(appCommandServer):
 
 # Implementation
 when implModule and defined(appCommandServer):
-  import std/[json, strformat, options]
-  import misc/[custom_logger, util, myjsonutils]
+  import std/[json, strformat, options, strutils]
+  import misc/[custom_logger, util, myjsonutils, rope_utils]
   import asynctools/asyncipc
   import chronos/transports/stream
+  import nimsumtree/[rope]
   import service, command_service, layout/layout, config_provider
+  import text_editor_component
 
   logCategory "command-server"
 
@@ -76,7 +78,18 @@ when implModule and defined(appCommandServer):
               log lvlInfo, &"Set {setting}"
               config.runtime.set(path, value)
             else:
-              discard layout.openFile(message)
+              let parts = message.rsplit(":", 2)
+              let editor = layout.openFile(parts[0])
+              if editor.getSome(editor) and parts.len == 3:
+                try:
+                  let ln = parts[1].parseInt
+                  let col = parts[2].parseInt
+                  if editor.getTextEditorComponent().getSome(te):
+                    let cursor = point(ln - 1, col - 1)
+                    te.targetSelection = cursor.toRange
+                    te.centerCursor(cursor)
+                except:
+                  discard
 
           except:
             log lvlError, &"Failed to run ipc command: {getCurrentExceptionMsg()}"
@@ -120,7 +133,10 @@ when implModule and defined(appCommandServer):
         send("-R:" & command)
 
       if options.fileToOpen.getSome(file):
-        send(file)
+        if options.locationLine.getSome(ln) and options.locationColumn.getSome(col):
+          send(file & ":" & $ln & ":" & $col)
+        else:
+          send(file)
 
       quit(0)
 

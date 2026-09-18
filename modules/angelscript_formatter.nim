@@ -86,7 +86,6 @@ when implModule:
         t.setLen(available)
         if available > 0:
           discard stderr.read(t.toOpenArrayByte(0, t.high))
-          echo t
         await sleepAsync(1.milliseconds)
     except CatchableError:
       discard
