@@ -148,12 +148,13 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `ui.font-family-bold-italic` | string | "app://fonts/DejaVuSansMono-BoldOblique.ttf" | Full path to bold italic font file. |
 | `ui.font-family-italic` | string | "app://fonts/DejaVuSansMono-Oblique.ttf" | Full path to italic font file. |
 | `ui.hide-tab-bar-when-single` | bool | false | When true then tab layouts don't render a tab bar when they only have one tab. |
-| `ui.highlight-inline-changes` | bool | true | Whether changes within a line should be highlighted in the diff view |
+| `ui.highlight-inline-changes` | bool | true | Whether changes within a line should be highlighted in the diff view. |
 | `ui.indent-guide` | bool | true | Enable indent guides to show the indentation of the current line. |
 | `ui.line-numbers` | LineNumbers | "absolute" | How line numbers should be displayed. |
 | `ui.max-views` | int | 2 | Maximum number of views (files or other UIs) which can be shown. |
 | `ui.popup-which-key-height` | int | 5 | How many rows tall the window showing next possible inputs should be when showing in a popup. |
 | `ui.rainbow-parentheses` | bool | false | Enable highlighting parentheses, brackets etc in different colors. Uses 'rainbow0', 'rainbow1' etc theme keys. |
+| `ui.render-diff-navigation-buttons` | bool | true | Whether to render diff navigation buttons in the diff view. |
 | `ui.scroll-bar` | bool | true | Whether a scrollbar is shown. |
 | `ui.scroll-speed` | float | 50 | How many pixels (or rows in the terminal) to scroll per scroll wheel tick. |
 | `ui.smooth-scroll` | bool | true | Enable smooth scrolling. |

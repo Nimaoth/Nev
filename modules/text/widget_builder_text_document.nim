@@ -1688,6 +1688,45 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
         self.hoverComponent.isHovered = false
         self.hoverComponent.cancelHover()
 
+  if renderDiff and self.config.getUiRenderDiffNavigationButtons():
+    # Add diff change navigation buttons
+    if self.diffChanges.isSome and self.diffChanges.get.len > 0:
+      let cursorLine = self.selection.last.line
+      var hasPrev = false
+      var hasNext = false
+      for mapping in self.diffChanges.get:
+        if mapping.target.first < cursorLine:
+          hasPrev = true
+        if mapping.target.first > cursorLine:
+          hasNext = true
+          break
+
+      let buttonWidth = (builder.charWidth * 1.5).floor
+      let buttonHeight = (builder.textHeight * 1.5).floor
+      let buttonBgColor = backgroundColor.darken(0.1)
+
+      if hasNext:
+        # Top right button - next change
+        builder.panel(&{FillBackground, DrawText, MouseHover},
+          x = diffState.bounds.xw - buttonWidth, y = (diffState.bounds.y + diffState.bounds.yh) * 0.5 + buttonHeight,
+          w = buttonWidth, h = buttonHeight,
+          backgroundColor = buttonBgColor, text = "▼", textColor = textColor, fontScale = 1.5):
+          onClickAny btn:
+            self.selection = self.getNextChange(self.selection.last)
+            self.centerCursor(Last)
+            self.markDirty()
+
+      if hasPrev:
+        # Bottom right button - previous change
+        builder.panel(&{FillBackground, DrawText, MouseHover},
+          x = diffState.bounds.xw - buttonWidth, y = (diffState.bounds.y + diffState.bounds.yh) * 0.5,
+          w = buttonWidth, h = buttonHeight,
+          backgroundColor = buttonBgColor, text = "▲", textColor = textColor, fontScale = 1.5):
+          onClickAny btn:
+            self.selection = self.getPrevChange(self.selection.last)
+            self.centerCursor(Last)
+            self.markDirty()
+
   # Get center line
   if not state.cursorOnScreen:
     # todo: move this to a function

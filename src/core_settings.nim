@@ -207,6 +207,11 @@ proc getUiHighlightInlineChanges*(s: ConfigStore, def = bool.default): bool =
 proc setUiHighlightInlineChanges*(s: ConfigStore, value: bool) =
   s.set("ui.highlight-inline-changes", value)
 
+proc getUiRenderDiffNavigationButtons*(s: ConfigStore, def = bool.default): bool =
+  s.get("ui.render-diff-navigation-buttons", def)
+proc setUiRenderDiffNavigationButtons*(s: ConfigStore, value: bool) =
+  s.set("ui.render-diff-navigation-buttons", value)
+
 # OpenSessionSettings - editor.open-session
 proc getEditorOpenSessionUseMultiplexer*(s: ConfigStore, def = bool.default): bool =
   s.get("editor.open-session.use-multiplexer", def)

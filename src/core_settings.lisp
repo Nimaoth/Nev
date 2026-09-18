@@ -133,7 +133,10 @@ the screen height.")
       "Whether a scrollbar is shown.")
 
     (setting highlight-inline-changes "bool" true
-      "Whether changes within a line should be highlighted in the diff view"))
+      "Whether changes within a line should be highlighted in the diff view.")
+
+    (setting render-diff-navigation-buttons "bool" false
+      "Whether to render diff navigation buttons in the diff view."))
 
   (group OpenSessionSettings "editor.open-session"
     (setting use-multiplexer "bool" true
