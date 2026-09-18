@@ -1358,6 +1358,9 @@ proc edit*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[stri
     return @selections
   return self.document.edit(selections, self.selections, texts, notify, record, inclusiveEnd=inclusiveEnd)
 
+proc getContent*(self: TextDocumentEditor): string =
+  $self.document.contentString
+
 proc getCursors*(self: TextDocumentEditor): string =
   $self.selections
 

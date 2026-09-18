@@ -154,7 +154,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `ui.max-views` | int | 2 | Maximum number of views (files or other UIs) which can be shown. |
 | `ui.popup-which-key-height` | int | 5 | How many rows tall the window showing next possible inputs should be when showing in a popup. |
 | `ui.rainbow-parentheses` | bool | false | Enable highlighting parentheses, brackets etc in different colors. Uses 'rainbow0', 'rainbow1' etc theme keys. |
-| `ui.render-diff-navigation-buttons` | bool | true | Whether to render diff navigation buttons in the diff view. |
+| `ui.render-diff-navigation-buttons` | bool | false | Whether to render diff navigation buttons in the diff view. |
 | `ui.scroll-bar` | bool | true | Whether a scrollbar is shown. |
 | `ui.scroll-speed` | float | 50 | How many pixels (or rows in the terminal) to scroll per scroll wheel tick. |
 | `ui.smooth-scroll` | bool | true | Enable smooth scrolling. |

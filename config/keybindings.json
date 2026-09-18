@@ -367,6 +367,7 @@
     "terminal.insert": {
         "cf": ["terminal.set-terminal-mode", "normal"],
         "<C-ENTER>": ["terminal.send-terminal-input-and-set-mode", "<ENTER>", "normal"],
+        "<C-v>": "terminal.paste",
     },
 
     "#count": {

@@ -16,6 +16,7 @@
   (active-command setMode [(mode string) (exclusive bool true) (forceNotify bool false)] () "")
   (active-command setDefaultMode [(forceNotify bool false)] () "")
   (active-command getCursors [] string "")
+  (active-command getContent [] string "")
   (active-command selectPrev [] () "")
   (active-command selectNext [] () "")
   (active-command printTreesitterMemoryUsage [] () "")

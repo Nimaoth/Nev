@@ -128,6 +128,15 @@ proc getCursorsWrapper(args: string): string {.gcsafe.} =
     except CatchableError:
       return "Failed to execute command text.get-cursors: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
+proc getContentWrapper(args: string): string {.gcsafe.} =
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let res = getContent(getArg[text_editor.TextDocumentEditor](args.unnamed, args.named, 0, "self"))
+      return ({.gcsafe.}: $res.toJsonEx)
+    except CatchableError:
+      return "Failed to execute command text.get-content: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+
 proc selectPrevWrapper(args: string): string {.gcsafe.} =
   {.gcsafe.}:
     try:
@@ -1090,6 +1099,8 @@ proc registerCommands(commands: CommandService) =
     namespace: namespace, name: "set-default-mode", execute: setDefaultModeWrapper, active: true,))
   discard commands.registerCommand(command_service.Command(
     namespace: namespace, name: "get-cursors", execute: getCursorsWrapper, active: true,))
+  discard commands.registerCommand(command_service.Command(
+    namespace: namespace, name: "get-content", execute: getContentWrapper, active: true,))
   discard commands.registerCommand(command_service.Command(
     namespace: namespace, name: "select-prev", execute: selectPrevWrapper, active: true,))
   discard commands.registerCommand(command_service.Command(

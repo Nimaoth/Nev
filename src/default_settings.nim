@@ -43,7 +43,7 @@ proc fillDefaultSettings*(s: ConfigStore) =
   s.set("ui.status-line", %*["mode","layout","vcs.status","session"])
   s.set("ui.scroll-bar", true)
   s.set("ui.highlight-inline-changes", true)
-  s.set("ui.render-diff-navigation-buttons", true)
+  s.set("ui.render-diff-navigation-buttons", false)
   s.set("editor.open-session.use-multiplexer", true)
   s.set("editor.save-in-session", true)
   s.set("editor.close-unused-documents-timer", 10)
