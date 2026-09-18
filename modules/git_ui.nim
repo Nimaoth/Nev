@@ -1,5 +1,5 @@
 #use command_component layout text_editor_component command_service event_service input_handler toast treesitter
-import std/[options, algorithm, strutils, times, tables, json]
+import std/[options, algorithm, strutils, times, tables, json, sugar]
 import service
 import component
 import vcs
@@ -58,10 +58,14 @@ when implModule:
       scrollOffset: float
 
       cursor: UiCursor
+      hoveredChangelistIndex: int = -1
+      hoveredFileIndex: int = -1
 
       lastUpdate: int = 0
 
   var gitUiViewInstance: GitUiView
+
+  proc gitUiDiffSelected(view: GitUiView) {.raises: [], gcsafe.}
 
   proc commitMessage(view: GitUiView): string =
     $view.commitDoc.getTextComponent().get.content
@@ -424,12 +428,28 @@ when implModule:
                 builder.panel(&{SizeToContentY, FillX, DrawText}, text = changelist.changelist.description, textColor = accentColor)
                 for fileIdx, file in changelist.changelist.files:
                   let isSelected = self.cursor.panel == Changelists and self.cursor.changelistIndex == clIdx and self.cursor.fileIndex == fileIdx
-                  let highlightBg = if isSelected: selectionColor else: color(0, 0, 0, 0)
-                  let backgroundFlag = if isSelected: &{FillBackground} else: 0.UINodeFlags
+                  let isHovered = self.hoveredChangelistIndex == clIdx and self.hoveredFileIndex == fileIdx
+                  let highlightBg = if isSelected: selectionColor elif isHovered: selectionColor.lighten(0.08) else: color(0, 0, 0, 0)
+                  let backgroundFlag = if isSelected or isHovered: &{FillBackground} else: 0.UINodeFlags
                   let (_, name) = file.path.splitPath
                   let stagedStr = if file.stagedStatus != None: $file.stagedStatus else: " "
                   let unstagedStr = if file.unstagedStatus != None: $file.unstagedStatus else: " "
-                  builder.panel(&{SizeToContentY, FillX, LayoutHorizontal} + backgroundFlag, backgroundColor = highlightBg):
+                  builder.panel(&{SizeToContentY, FillX, LayoutHorizontal, MouseHover} + backgroundFlag, backgroundColor = highlightBg):
+                    capture clIdx, fileIdx:
+                      onHover:
+                        if self.hoveredChangelistIndex != clIdx or self.hoveredFileIndex != fileIdx:
+                          self.hoveredChangelistIndex = clIdx
+                          self.hoveredFileIndex = fileIdx
+                          self.markDirty()
+                      onEndHover:
+                        self.hoveredChangelistIndex = -1
+                        self.hoveredFileIndex = -1
+                        self.markDirty()
+                      onClickAny btn:
+                        if btn == MouseButton.Left:
+                          self.cursor = UiCursor(panel: Changelists, changelistIndex: clIdx, fileIndex: fileIdx)
+                          self.markDirty()
+                          self.gitUiDiffSelected()
                     builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = stagedStr & unstagedStr & " ", textColor = keyColor)
                     builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = name, textColor = textColor)
 
@@ -868,7 +888,7 @@ when implModule:
       asyncSpawn view.refreshChangelistsAsync()
     asyncSpawn revertTask()
 
-  proc gitUiDiffSelected(view: GitUiView) =
+  proc gitUiDiffSelected(view: GitUiView) {.raises: [], gcsafe.} =
     let layout = getServiceChecked(LayoutService)
     let commands = getServiceChecked(CommandService)
     case view.cursor.panel

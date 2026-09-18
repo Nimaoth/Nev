@@ -2847,7 +2847,8 @@ when implModule:
         if view.terminal.group == options.group and view.terminal.command == shellCommand.get and self.isIdle(view.terminal):
           if command.len > 0:
             self.handleInput(view, command)
-            self.handleKey(view, INPUT_ENTER, {})
+            if options.enter:
+              self.handleKey(view, INPUT_ENTER, {})
           view.handleScroll(-5000000, {})
           if options.mode.isSome:
             view.setMode(options.mode.get)

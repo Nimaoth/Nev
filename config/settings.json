@@ -16,7 +16,7 @@
 
     "+language-mappings": {
         "\\..(agda|lagda)$": "agda",
-        "\\..(c|cc|h|inc)$": "c",
+        "\\..(c|cc|h|inc|hlsl)$": "c",
         "\\..(vert|frag)$": "glsl",
         "\\..sh$": "bash",
         "\\..(bashrc|bash_history|bash_profile|bash_logout)$": "bash",

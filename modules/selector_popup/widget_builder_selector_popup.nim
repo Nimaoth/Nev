@@ -191,6 +191,21 @@ proc selectorPopupCreateUI*(self: SelectorPopupImpl, builder: UINodeBuilder): se
                   var row: seq[UINode] = @[]
 
                   builder.panel(&{FillX, SizeToContentY}):
+                    capture(completionIndex):
+                      onClickAny btn:
+                        self.selectNth(completionIndex)
+                        if self.isInLayout:
+                          self.accept()
+                    let displayIndex = if completionIndex + 1 < 10:
+                      $(completionIndex + 1)
+                    elif completionIndex + 1 < 36:
+                      " "
+                    elif completionIndex + 1 < 62:
+                      " "
+                    else:
+                      " "
+                    row.add builder.createTextWithMaxWidth(displayIndex, maxColumnWidth, "...", detailColor, &{TextItalic}, fontScale = detailsFontScale)
+
                     if config.get("ui.selector.show-score", false):
                       row.add builder.createTextWithMaxWidth($(item.score * 100), maxColumnWidth, "...", detailColor, &{TextItalic}, fontScale = detailsFontScale)
 

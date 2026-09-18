@@ -81,6 +81,7 @@ Options:
   --clean                Don't load any configs/sessions/plugins
   --ts-mem-tracking      Enable treesitter memory tracking (for debugging)
   --monitor:n            Open nev on the specified monitor (0, 1, ...). Windows only for now.
+  --location:line,col    Navigate to line,column in the file specified on the command line.
 
 Examples:
   nev                                              Open .{appName}-session if it exists
@@ -189,6 +190,19 @@ block: ## Parse command line options
       of "monitor":
         gAppOptions.monitor = val.parseInt.some.catch:
           echo "Expected integer for monitor: --monitor:1"
+          quit(1)
+
+      of "location":
+        let parts = val.split(",")
+        if parts.len == 2:
+          try:
+            gAppOptions.locationLine = parts[0].parseInt.some
+            gAppOptions.locationColumn = parts[1].parseInt.some
+          except:
+            echo "Expected format: --location:line,column (e.g. --location:10,5)"
+            quit(1)
+        else:
+          echo "Expected format: --location:line,column (e.g. --location:10,5)"
           quit(1)
 
       of "int3":

@@ -33,7 +33,7 @@ when defined(featMemChannels):
   {.pop.}
 
 # Nice wrappers
-proc newLogChannel*(name: string, flags: set[LogChannelFlag] = {LogColor, LogFile, LogInMemory}): LogChannel =
+proc newLogChannel*(name: string, flags: set[LogChannelFlag] = {LogColor, LogStderr, LogFile, LogInMemory}): LogChannel =
   logAddChannel(name, flags)
 
 template log*(level: LogLevel, channel: LogChannel, category: LogCategory, message: string) =
@@ -161,31 +161,31 @@ when implModule:
     of lvlError: "ERR"
     try:
       {.gcsafe.}:
-        if LogStdout in channel.flags:
-          if LogColor in channel.flags:
-            stdout.write(ansiForegroundColorCode(color))
-          stdout.write("[")
-          stdout.write(levelStr)
-          stdout.write("] [")
-          stdout.write(category)
-          stdout.write("] ")
-          stdout.write(message)
-          stdout.write("\n")
-          if LogColor in channel.flags:
-            stdout.write(ansiForegroundColorCode(rgb(255, 255, 255)))
+        # if LogStdout in channel.flags:
+        #   if LogColor in channel.flags:
+        #     stdout.write(ansiForegroundColorCode(color))
+        #   stdout.write("[")
+        #   stdout.write(levelStr)
+        #   stdout.write("] [")
+        #   stdout.write(category)
+        #   stdout.write("] ")
+        #   stdout.write(message)
+        #   stdout.write("\n")
+        #   if LogColor in channel.flags:
+        #     stdout.write(ansiForegroundColorCode(rgb(255, 255, 255)))
 
-        if LogStderr in channel.flags:
-          if LogColor in channel.flags:
-            stderr.write(ansiForegroundColorCode(color))
-          stderr.write("[")
-          stderr.write(levelStr)
-          stderr.write("] [")
-          stderr.write(category)
-          stderr.write("] ")
-          stderr.write(message)
-          stderr.write("\n")
-          if LogColor in channel.flags:
-            stderr.write(ansiForegroundColorCode(rgb(255, 255, 255)))
+        # if LogStderr in channel.flags:
+        #   if LogColor in channel.flags:
+        #     stderr.write(ansiForegroundColorCode(color))
+        #   stderr.write("[")
+        #   stderr.write(levelStr)
+        #   stderr.write("] [")
+        #   stderr.write(category)
+        #   stderr.write("] ")
+        #   stderr.write(message)
+        #   stderr.write("\n")
+        #   if LogColor in channel.flags:
+        #     stderr.write(ansiForegroundColorCode(rgb(255, 255, 255)))
 
         if LogFile in channel.flags:
           channel.file.write("[")

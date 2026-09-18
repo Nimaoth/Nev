@@ -292,6 +292,7 @@ type RunInTerminalOptions* = object
   slot*: string = ""
   focus*: bool = true
   createPty*: bool = true
+  enter*: bool = true
   kittyPathPrefix*: string = ""
   ssh*: Option[SshOptions]
 

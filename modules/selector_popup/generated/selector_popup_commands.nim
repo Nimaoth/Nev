@@ -82,6 +82,16 @@ proc nextWrapper(args: string): string {.gcsafe.} =
     except CatchableError:
       return "Failed to execute command selector.next: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
+proc selectNthWrapper(args: string): string {.gcsafe.} =
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      selectNth(getArg[SelectorPopupImpl](args.unnamed, args.named, 0, "popup"),
+        getArg[int](args.unnamed, args.named, 1, "n"))
+      return ""
+    except CatchableError:
+      return "Failed to execute command selector.select-nth: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+
 proc setFocusPreviewWrapper(args: string): string {.gcsafe.} =
   {.gcsafe.}:
     try:
@@ -119,6 +129,8 @@ proc registerCommands(commands: CommandService) =
     namespace: namespace, name: "prev", execute: prevWrapper, active: true,))
   discard commands.registerCommand(command_service.Command(
     namespace: namespace, name: "next", execute: nextWrapper, active: true,))
+  discard commands.registerCommand(command_service.Command(
+    namespace: namespace, name: "select-nth", execute: selectNthWrapper, active: true,))
   discard commands.registerCommand(command_service.Command(
     namespace: namespace, name: "set-focus-preview", execute: setFocusPreviewWrapper, active: true,))
   discard commands.registerCommand(command_service.Command(

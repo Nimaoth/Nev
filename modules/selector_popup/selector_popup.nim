@@ -404,6 +404,23 @@ when implModule:
 
     self.markDirty()
 
+  proc selectNth*(self: SelectorPopupImpl, n: int) =
+    if self.textEditor.isNil:
+      return
+
+    assert self.finder.isNotNil
+
+    if self.finder.filteredItems.getSome(list) and list.filteredLen > 0 and n >= 0 and n < list.filteredLen:
+      self.selected = n
+
+      if not self.handleItemSelected.isNil:
+        self.handleItemSelected list[self.selected]
+
+      self.scrollToSelected = true
+      self.updatePreview()
+
+    self.markDirty()
+
   proc setFocusPreview(self: SelectorPopupImpl, focus: bool) =
     if self.previewer.isNone:
       return

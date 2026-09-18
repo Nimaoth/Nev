@@ -631,7 +631,7 @@ proc echoArgsWrapper(args: string): string {.gcsafe.} =
     try:
       let args {.used.} = args.parseJsonexArgs()
       let self: App = ({.gcsafe.}: gApp)
-      echoArgs(self, newJexArray(args.unnamed.elems[0..^1]).toJson)
+      echoArgs(self, if args.unnamed.elems.len > 0: newJexArray(args.unnamed.elems[0..^1]).toJson else: newJArray())
       return ""
     except CatchableError:
       return "Failed to execute command .echo-args: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
@@ -641,7 +641,7 @@ proc allWrapper(args: string): string {.gcsafe.} =
     try:
       let args {.used.} = args.parseJsonexArgs()
       let self: App = ({.gcsafe.}: gApp)
-      all(self, newJexArray(args.unnamed.elems[0..^1]).toJson)
+      all(self, if args.unnamed.elems.len > 0: newJexArray(args.unnamed.elems[0..^1]).toJson else: newJArray())
       return ""
     except CatchableError:
       return "Failed to execute command .all: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()

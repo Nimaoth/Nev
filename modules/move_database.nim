@@ -502,6 +502,12 @@ when implModule:
       else:
         return @selections
 
+    of "contained-in-original":
+      let c = originalSelections.last
+      for s in selections:
+        if c.contains(s):
+          result.add s
+
     of "overlapping":
       let c = originalSelections.last.last
       for s in selections:

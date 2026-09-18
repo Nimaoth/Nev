@@ -148,6 +148,9 @@ while i < cmds.len:
       # exec """powershell -Command ./emsdk/emsdk.ps1 activate 4.0.10"""
       exec """nim c -d:release --skipParentCfg --passL:"-o markdown.m.wasm" markdown.nim"""
 
+  of "build":
+    exec "nim c -o:nev.exe --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:nimcache/debug_clang ./src/desktop_main.nim"
+
   of "debug-win":
     echo &"Build debug for windows..."
     exec """nim c --out:nev.exe -D:enableGui=true -D:enableTerminal=true -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types "--passL:-ladvapi32.lib -luser32.lib" --passC:-std=gnu11 src/desktop_main.nim"""

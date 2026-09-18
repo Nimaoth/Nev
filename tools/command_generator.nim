@@ -211,7 +211,7 @@ proc generateCommands(path: string, input: string) =
         let nimTyp = typ.toNimType()
 
         if varargs:
-          argStr.add &"newJexArray(args.unnamed.elems[{i}..^1]).toJson"
+          argStr.add &"if args.unnamed.elems.len > {i}: newJexArray(args.unnamed.elems[{i}..^1]).toJson else: newJArray()"
         elif nimTyp in typeMappers:
           let mapper = typeMappers[nimTyp]
           argStr.add &"{mapper}(getArg[JsonNodeEx](args.unnamed, args.named, {i}, \"{name}\"))"

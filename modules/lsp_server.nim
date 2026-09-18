@@ -20,6 +20,9 @@ when implModule and defined(appLspServer):
   import terminal/terminal
   import scripting_api, language_server_ue_as, language_server_ue_cpp
 
+  static:
+    echo "DO build lsp server"
+
   logCategory "lsp-server"
 
   when defined(windows):
@@ -64,12 +67,14 @@ when implModule and defined(appLspServer):
       readChannel: Arc[BaseChannel]   ## stdin thread writes here; async reads here
       writeChannel: Arc[BaseChannel]  ## send() writes here; stdout thread reads here
       logChannel: Arc[BaseChannel]    ## optional; log messages written here
+      positionEncoding: PositionEncodingKind
 
     LspServerService* = ref object of DynamicService
       stdinThread: Thread[ptr StdinThreadState]
       stdinThreadState: StdinThreadState
       stdoutThread: Thread[ptr StdoutThreadState]
       stdoutThreadState: StdoutThreadState
+      positionEncoding: PositionEncodingKind
       activeConnection: LSPServerConnectionStdin
       terminals: TerminalService
       layout: LayoutService
@@ -179,8 +184,10 @@ when implModule and defined(appLspServer):
   method send*(conn: LSPServerConnectionStdin, data: string): Future[void] {.async: (raises: [IOError]).} =
     conn.writeChannel.write(data.toOpenArray(0, data.high))
 
+  proc convertPositionFields(node: JsonNode, encoding: PositionEncodingKind, outgoing: bool)
   proc sendResponse(conn: LSPServerConnectionStdin, id: JsonNode, body: JsonNode) {.async: (raises: []).} =
     try:
+      convertPositionFields(body, conn.positionEncoding, outgoing = true)
       let body = $(%*{"jsonrpc": "2.0", "id": id, "result": body})
       let msg = "Content-Length: " & $body.len & "\r\n\r\n" & body
       await conn.send(msg)
@@ -189,6 +196,7 @@ when implModule and defined(appLspServer):
 
   proc sendNotification(conn: LSPServerConnectionStdin, meth: string, params: JsonNode) {.async: (raises: []).} =
     try:
+      convertPositionFields(params, conn.positionEncoding, outgoing = true)
       let body = $(%*{"jsonrpc": "2.0", "method": meth, "params": params})
       let msg = "Content-Length: " & $body.len & "\r\n\r\n" & body
       await conn.send(msg)
@@ -249,11 +257,70 @@ when implModule and defined(appLspServer):
     if uri == "": return ""
     uriToPath(uri, vfs)
 
+  proc pickPositionEncoding(capabilities: JsonNode): PositionEncodingKind =
+    let general = capabilities{"general"}
+    let encodings = general{"positionEncodings"}
+    if encodings.isNil:
+      return UTF16
+
+    case encodings.kind
+    of JArray:
+      for encoding in encodings.items:
+        if encoding.getStr.toLowerAscii == "utf-8":
+          return UTF8
+    of JString:
+      if encodings.getStr.toLowerAscii == "utf-8":
+        return UTF8
+    else:
+      discard
+
+    return UTF16
+
+  proc utf8ToUtf16*(value: int): int =
+    value * 2
+
+  proc utf16ToUtf8*(value: int): int =
+    value div 2
+
+  proc clientToBackendCharacter(encoding: PositionEncodingKind, value: int): int
+  proc backendToClientCharacter(encoding: PositionEncodingKind, value: int): int
+
+  proc clientToBackendCharacter(encoding: PositionEncodingKind, value: int): int =
+    if encoding == UTF16:
+      return utf16ToUtf8(value)
+    return value
+
+  proc backendToClientCharacter(encoding: PositionEncodingKind, value: int): int =
+    if encoding == UTF16:
+      return utf8ToUtf16(value)
+    return value
+
+  proc convertPositionFields(node: JsonNode, encoding: PositionEncodingKind, outgoing: bool) =
+    if node.isNil:
+      return
+    case node.kind
+    of JObject:
+      for key, value in node.fields:
+        if key == "character" and value.kind == JInt:
+          node[key] = %(
+            if outgoing:
+              backendToClientCharacter(encoding, value.getInt)
+            else:
+              clientToBackendCharacter(encoding, value.getInt)
+          )
+        else:
+          convertPositionFields(value, encoding, outgoing)
+    of JArray:
+      for value in node.items:
+        convertPositionFields(value, encoding, outgoing)
+    else:
+      discard
+
   proc getLspBackup(self: LspServerService, name: string): Option[LanguageServer] =
-    if name.endsWith(".as"):
-      return getLanguageServerUEAs().some
-    if name.endsWith(".h") or name.endsWith(".cpp"):
-      return getLanguageServerUECpp().some
+    # if name.endsWith(".as"):
+    #   return getLanguageServerUEAs().some
+    # if name.endsWith(".h") or name.endsWith(".cpp"):
+    #   return getLanguageServerUECpp().some
     return LanguageServer.none
 
   proc getLsp(self: LspServerService, name: string): Future[Option[LanguageServer]] {.async: (raises: []).} =
@@ -317,11 +384,14 @@ when implModule and defined(appLspServer):
     let meth = msg{"method"}.getStr
     let id = msg{"id"}
     try:
+      convertPositionFields(msg{"params"}, service.positionEncoding, outgoing = false)
       case meth
       of "initialize":
         let rootUri = msg{"params"}{"rootUri"}.getStr
         let rootPath = msg{"params"}{"rootPath"}.getStr
         let folders = msg{"params"}{"workspaceFolders"}
+        service.positionEncoding = pickPositionEncoding(msg{"params"}{"capabilities"})
+        conn.positionEncoding = service.positionEncoding
         let firstFolderUri = block:
           if folders != nil and folders.kind == JArray and folders.len > 0:
             folders[0]{"uri"}.getStr
@@ -344,7 +414,7 @@ when implModule and defined(appLspServer):
 
         let result = %*{
           "capabilities": %*{
-            "positionEncoding": "utf-8",
+            "positionEncoding": service.positionEncoding,
             "textDocumentSync": 2,
             "completionProvider": %*{},
             "hoverProvider": true,
@@ -686,6 +756,7 @@ when implModule and defined(appLspServer):
         writeChannel: newInMemoryChannel(),
         logChannel: self.debugLogStdout,
       )
+      conn.positionEncoding = self.positionEncoding
       self.stdinThreadState = StdinThreadState(channel: conn.readChannel, logChannel: self.debugLogStdout)
       self.stdinThread.createThread(stdinReaderThread, self.stdinThreadState.addr)
       self.stdoutThreadState = StdoutThreadState(channel: conn.writeChannel, logChannel: self.debugLogStdout)
@@ -699,9 +770,9 @@ when implModule and defined(appLspServer):
 
   proc stopConnection(self: LspServerService) =
     if self.diagnosticsHandle != Id.default:
-      let ls = getLanguageServerUEAs()
-      if ls != nil:
-        ls.onDiagnostics.unsubscribe(self.diagnosticsHandle)
+      # let ls = getLanguageServerUEAs()
+      # if ls != nil:
+      #   ls.onDiagnostics.unsubscribe(self.diagnosticsHandle)
       self.diagnosticsHandle = Id.default
     if self.activeConnection != nil:
       self.activeConnection.close()
@@ -734,6 +805,7 @@ when implModule and defined(appLspServer):
   include generated/lsp_server_commands
 
   proc initService(self: LspServerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+    self.positionEncoding = UTF16
     self.terminals = self.services.getService(TerminalService).get(nil)
     self.layout = self.services.getServiceChecked(LayoutService)
     self.editors = self.services.getService(DocumentEditorService).get(nil)

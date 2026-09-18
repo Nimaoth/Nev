@@ -1358,6 +1358,9 @@ proc edit*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[stri
     return @selections
   return self.document.edit(selections, self.selections, texts, notify, record, inclusiveEnd=inclusiveEnd)
 
+proc getCursors*(self: TextDocumentEditor): string =
+  $self.selections
+
 proc selectPrev*(self: TextDocumentEditor) =
   self.textEditorComponent.selectPrev()
 
@@ -2696,6 +2699,9 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
       let count = getArg(0, int, 0)
       let wrap = getArg(1, bool, true)
       result = selections.mapIt(self.getNextFindResult(it.last, count, includeEol, wrap))
+
+    of "search-results":
+      result = self.searchComponent.searchResults.mapIt(it.toSelection)
 
     of "prev-change":
       result = selections.mapIt(self.getPrevChange(it.last))

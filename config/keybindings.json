@@ -196,6 +196,16 @@
         "<C-k>F": ["set-min-score", -1.0],
         "<C-k>+": ["set-min-score", 0.2, true],
         "<C-k>-": ["set-min-score", -0.2, true],
+        "<C-1>": ["select-nth", 0],
+        "<C-2>": ["select-nth", 1],
+        "<C-3>": ["select-nth", 2],
+        "<C-4>": ["select-nth", 3],
+        "<C-5>": ["select-nth", 4],
+        "<C-6>": ["select-nth", 5],
+        "<C-7>": ["select-nth", 6],
+        "<C-8>": ["select-nth", 7],
+        "<C-9>": ["select-nth", 8],
+        "<C-a>": ["select-nth", 9],
         "<C-l>": ["pop-popup-into-slot", "#small-right"],
     },
 
@@ -666,6 +676,7 @@
         "gR": ["rename"],
         "K": ["hover.toggle"],
         "H": ["toggle-signature-help"],
+        "g/": ["move", "(search-results) (inclusive)"],
 
         // scroll
         "z<ENTER>": ["vim.scroll-line-to-top-and-move-line-start"],
@@ -741,6 +752,8 @@
         "gxc": ["vim.increment-selection-by-index"],
         "gxg": "cycle-selected-case",
 
+        "g/": ["move", "(search-results) (inclusive) (contained-in-original)"],
+
         // editing
         "~": ["vim.toggle-case", false],
         "\\>": ["vim.indent"],
@@ -768,6 +781,7 @@
         "d": ["vim.delete-selection", true],
         "c": ["vim.change-selection", true],
         "s": ["vim.change-selection", true],
+        "g/": ["move", "(search-results) (inclusive) (contained-in-original)"],
 
         // cursor movement
         "o": ["vim.invert-line-selections"],

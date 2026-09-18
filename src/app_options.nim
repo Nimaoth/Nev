@@ -17,6 +17,8 @@ type AppOptions* = object
   noPty*: bool
   noUI*: bool
   kittyKeyboardFlags*: string
+  locationLine*: Option[int]
+  locationColumn*: Option[int]
 
 var gAppOptions*: AppOptions = AppOptions()
 

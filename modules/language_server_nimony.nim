@@ -87,8 +87,6 @@ when implModule:
     return (stdoutResult, stderrResult)
 
   proc parseNimonyDiagnostics(self: LanguageServerNimony, output: string, workspaceFolder: string) =
-    echo output
-    echo "---------------"
     var diagnostics = initTable[string, seq[language_server.LspDiagnostic]]()
     var currentDiagnostic = language_server.LspDiagnostic()
     var hasCurrent = false
@@ -102,8 +100,6 @@ when implModule:
         hasCurrent = false
 
     for l in output.splitLines:
-      echo l
-
       var startedDiagnostic = false
       var index = -1
       if (index = l.find("Error: "); index != -1):
@@ -147,7 +143,6 @@ when implModule:
             ),
           )
       elif hasCurrent:
-        echo "context: ", l
         currentDiagnostic.message.add "\n" & l
 
       else:
@@ -216,9 +211,9 @@ when implModule:
           except:
             echo getCurrentExceptionMsg()
         else:
-          echo line
+          discard
       else:
-        echo line
+        discard
     echo "error:"
     echo res[1]
 

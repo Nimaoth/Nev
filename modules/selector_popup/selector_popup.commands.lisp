@@ -11,6 +11,7 @@
   (active-command setMinScore [(value float) (add bool false)] () "")
   (active-command prev [(count int 1)] () "")
   (active-command next [(count int 1)] () "")
+  (active-command selectNth [(n int)] () "")
   (active-command setFocusPreview [(focus bool)] () "")
   (active-command toggleFocusPreview [] () "")
 )

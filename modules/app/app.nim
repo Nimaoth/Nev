@@ -348,7 +348,11 @@ when implModule:
         try:
           let kind = self.vfs.getFileKind(path).await
           if kind.isNone or kind.get == FileKind.File:
-            discard self.layout.openFile(path)
+            let editor = self.layout.openFile(path)
+            if editor.getSome(editor) and self.appOptions.locationLine.getSome(ln) and self.appOptions.locationColumn.getSome(col):
+              if editor.getTextEditorComponent().getSome(te):
+                te.targetSelection = point(ln - 1, col - 1).toRange
+                te.centerCursor(point(ln - 1, col - 1))
           elif kind.isSome and kind.get == FileKind.Directory:
             self.exploreFiles(path)
         except CatchableError as e:
@@ -880,7 +884,11 @@ when implModule:
           try:
             let kind = self.vfs.getFileKind(path).await
             if kind.isNone or kind.get == FileKind.File:
-              discard self.layout.openFile(path)
+              let editor = self.layout.openFile(path)
+              if editor.getSome(editor) and self.appOptions.locationLine.getSome(ln) and self.appOptions.locationColumn.getSome(col):
+                if editor.getTextEditorComponent().getSome(te):
+                  te.targetSelection = point(ln - 1, col - 1).toRange
+                  te.centerCursor(point(ln - 1, col - 1))
             elif kind.isSome and kind.get == FileKind.Directory:
               self.exploreFiles(path)
           except CatchableError as e:
@@ -905,7 +913,11 @@ when implModule:
         try:
           let kind = self.vfs.getFileKind(path).await
           if kind.isNone or kind.get == FileKind.File:
-            discard self.layout.openFile(path)
+            let editor = self.layout.openFile(path)
+            if editor.getSome(editor) and self.appOptions.locationLine.getSome(ln) and self.appOptions.locationColumn.getSome(col):
+              if editor.getTextEditorComponent().getSome(te):
+                te.targetSelection = point(ln - 1, col - 1).toRange
+                te.centerCursor(point(ln - 1, col - 1))
           elif kind.isSome and kind.get == FileKind.Directory:
             self.exploreFiles(path)
         except CatchableError as e:
