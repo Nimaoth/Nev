@@ -3,6 +3,7 @@ import nimsumtree/[rope, sumtree, buffer, clock, static_array]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils, array_set, arena]
 import syntax_map, theme, chroma
 
+import nuigi/debug/profiler
 import log
 
 logCategory "overlay-map"
@@ -970,6 +971,7 @@ proc seekLine*(self: var OverlayChunkIterator, line: int) =
   self.seek(overlayPoint(line))
 
 proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
+  prof("OverlayChunkIterator.next")
   if self.atEnd:
     self.overlayChunk = OverlayChunk.none
     return

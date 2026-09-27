@@ -17,6 +17,12 @@ type TextEditorComponent* = ref object of Component
   lineNumberBounds*: Vec2
   targetColumn*: int
   displayMap*: DisplayMap
+  # Pending NUI scroll requests, consumed by createUINui when rendering the
+  # dynamic virtual list. Every scrollBox write below dual-writes here so the
+  # new renderer scrolls the same way as the legacy one.
+  nuiPendingScrollTo*: Option[tuple[index: int, center: bool, centerOffscreen: bool, snap: bool]]
+  nuiPendingScrollToY*: Option[tuple[index: int, yOffset: float]]
+  nuiPendingScrollDeltaY*: float = 0
   onSelectionsChanged2*: Event[tuple[editor: TextEditorComponent, old: seq[Range[Point]]]]
   onScroll*: Event[void]
   onOverlaysChanged*: Event[tuple[ids: seq[int]]]
@@ -83,6 +89,25 @@ proc getTargetColumn*(self: TextEditorComponent): int = textEditorComponentGetTa
 proc screenLineCount*(self: TextEditorComponent): int = textEditorScreenLineCount(self)
 proc selectPrev*(self: TextEditorComponent) = textEditorComponentSelectPrev(self)
 proc selectNext*(self: TextEditorComponent) = textEditorComponentSelectNext(self)
+
+proc requestNuiScrollTo*(self: TextEditorComponent, index: int, center: bool = false,
+    centerOffscreen: bool = false, snap: bool = false) {.gcsafe, raises: [].} =
+  ## Store a `ScrollBox.scrollTo` equivalent for the NUI virtual list to consume
+  ## at render time (takes precedence over any pending absolute `scrollToY`).
+  self.nuiPendingScrollTo = (index: index, center: center,
+    centerOffscreen: centerOffscreen, snap: snap).some
+  self.nuiPendingScrollToY = none(tuple[index: int, yOffset: float])
+
+proc requestNuiScrollToY*(self: TextEditorComponent, index: int, yOffset: float) {.gcsafe, raises: [].} =
+  ## Store a `ScrollBox.scrollToY` equivalent (absolute placement) for the NUI
+  ## virtual list to consume at render time.
+  self.nuiPendingScrollToY = (index: index, yOffset: yOffset).some
+  self.nuiPendingScrollTo = none(tuple[index: int, center: bool, centerOffscreen: bool, snap: bool])
+
+proc addNuiScrollDeltaY*(self: TextEditorComponent, deltaY: float) {.gcsafe, raises: [].} =
+  ## Accumulate a relative pixel scroll (e.g. wheel / scrollLines) for the NUI
+  ## virtual list to consume at render time.
+  self.nuiPendingScrollDeltaY += deltaY
 proc setDocument*(self: TextEditorComponent, document: Document) = textEditorComponentSetDocument(self, document)
 
 template withTransaction*(self: TextEditorComponent, body: untyped): untyped =
@@ -213,8 +238,11 @@ when implModule:
     let displayPoint = self.displayMap.toDisplayPoint(point)
     if snap and self.scrollBox.size.y != 0:
       self.scrollBox.scrollToY(displayPoint.row.int, self.scrollBox.size.y * relativePosition)
+      # NUI equivalent: centering (viewport height is resolved at render time).
+      self.requestNuiScrollTo(displayPoint.row.int, center = true, snap = snap)
     else:
       self.scrollBox.scrollTo(displayPoint.row.int, center = true, snap = snap)
+      self.requestNuiScrollTo(displayPoint.row.int, center = true, snap = snap)
 
   proc textEditorComponentScrollToCursor(self: TextEditorComponent, point: Point, scrollBehaviour: ScrollBehaviour, snap: bool = false) =
     let self = self.TextEditorComponentImpl
@@ -227,6 +255,7 @@ when implModule:
       of TopOfScreen: (false, false)
 
     self.scrollBox.scrollTo(displayPoint.row.int, center = centerY, centerOffscreen = centerOffscreenY, snap = snap)
+    self.requestNuiScrollTo(displayPoint.row.int, center = centerY, centerOffscreen = centerOffscreenY, snap = snap)
 
   proc numDisplayLines*(self: TextEditorComponent): int =
     let self = self.TextEditorComponentImpl
@@ -283,12 +312,15 @@ when implModule:
     let self = self.TextEditorComponentImpl
     let displayPoint = self.displayMap.toDisplayPoint(point)
     self.scrollBox.scrollToY(displayPoint.row.int, offset * self.scrollBox.defaultItemHeight)
+    self.requestNuiScrollToY(displayPoint.row.int, offset * self.scrollBox.defaultItemHeight)
     self.markDirty()
 
   proc textEditorComponentScrollToCursor2(self: TextEditorComponent, point: Point, center: bool = false, centerOffscreen: bool = false) =
     let self = self.TextEditorComponentImpl
     let displayPoint = self.displayMap.toDisplayPoint(point)
     self.scrollBox.scrollTo(displayPoint.row.int, center = center, centerOffscreen = centerOffscreen)
+    self.requestNuiScrollTo(displayPoint.row.int, center = center, centerOffscreen = centerOffscreen)
+    # NUI: horizontal scroll has no virtual-list equivalent yet (vertical only).
 
     if self.scrollBox.offset.x != 0 or self.displayMap.wrapMap.wrapWidth == 0:
       let charWidth = getServiceChecked(PlatformService).platform.charWidth

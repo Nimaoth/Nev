@@ -1,6 +1,8 @@
 import std/[tables, options, json, sugar, strutils, sets, sequtils]
 import misc/[custom_async, custom_logger, rect_utils, myjsonutils, util, jsonex, id]
 import document, view
+from nuigi import UiBuilder, UiStyleIndex, UiTextStyleIndex, layoutVertical, layoutHorizontal, fillX, fillY, fitY, fit, fillBackground, styleIndex, gap, padding, text, textStyleIndex, node, anchors
+import nuigi/core/vecmath as nuiVecMath
 
 logCategory "layouts"
 
@@ -312,6 +314,7 @@ proc copyBase(self: Layout, src: Layout): Layout =
   self.maximize = src.maximize
   self.temporary = src.temporary
   self.renderImpl = src.renderImpl
+  self.renderNuiImpl = src.renderNuiImpl
   self.copyImpl = src.copyImpl
   self.closeImpl = src.closeImpl
   self.activateImpl = src.activateImpl
@@ -1361,6 +1364,7 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
       descImpl: centerLayoutDesc,
       kindImpl: centerLayoutKind,
       renderImpl: renderCenterLayout,
+      renderNuiImpl: renderCenterLayoutNui,
       copyImpl: centerLayoutCopy,
       saveLayoutImpl: centerLayoutSaveLayout,
       activeLeafViewImpl: layoutActiveLeafView,
@@ -1441,6 +1445,7 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
       descImpl: horizontalLayoutDesc,
       kindImpl: horizontalLayoutKind,
       renderImpl: renderHorizontalLayout,
+      renderNuiImpl: renderHorizontalLayoutNui,
       copyImpl: horizontalLayoutCopy,
       saveLayoutImpl: autoLayoutSaveLayout,
       activeLeafViewImpl: layoutActiveLeafView,
@@ -1455,6 +1460,7 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
       descImpl: verticalLayoutDesc,
       kindImpl: verticalLayoutKind,
       renderImpl: renderVerticalLayout,
+      renderNuiImpl: renderVerticalLayoutNui,
       copyImpl: verticalLayoutCopy,
       saveLayoutImpl: autoLayoutSaveLayout,
       activeLeafViewImpl: layoutActiveLeafView,
@@ -1469,6 +1475,7 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
       descImpl: alternatingLayoutDesc,
       kindImpl: alternatingLayoutKind,
       renderImpl: renderAlternatingLayout,
+      renderNuiImpl: renderAlternatingLayoutNui,
       copyImpl: alternatingLayoutCopy,
       saveLayoutImpl: autoLayoutSaveLayout,
       activeLeafViewImpl: layoutActiveLeafView,
@@ -1483,6 +1490,7 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
       descImpl: tabLayoutDesc,
       kindImpl: tabLayoutKind,
       renderImpl: renderTabLayout,
+      renderNuiImpl: renderTabLayoutNui,
       copyImpl: tabLayoutCopy,
       saveLayoutImpl: tabLayoutSaveLayout,
       activeLeafViewImpl: layoutActiveLeafView,

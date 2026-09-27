@@ -3,6 +3,7 @@ import vmath, chroma
 import ui/node
 import misc/[event, timer, custom_async]
 import vfs, app_options, scripting_api, pixie, misc/input_api, service
+import nuigi
 
 export input_api, event
 
@@ -33,15 +34,20 @@ type
   SetClipboardTextImpl* = proc(self: Platform, str: string) {.gcsafe, raises: [].}
   GetClipboardTextImpl* = proc(self: Platform): Future[Option[string]] {.gcsafe, async: (raises: []).}
   SetTitleImpl* = proc(self: Platform, title: string) {.gcsafe, raises: [].}
+  ShouldRenderImpl* = proc(self: Platform): bool {.gcsafe, raises: [].}
+  BeginNuiFrameImpl* = proc(self: Platform) {.gcsafe, raises: [].}
+  EndNuiFrameImpl* = proc(self: Platform) {.gcsafe, raises: [].}
 
   Platform* = ref object of RootObj
     builder*: UINodeBuilder
+    nui*: UiBuilder
     redrawEverything*: bool
     requestedRender*: bool
     showDrawnNodes*: bool = false
     supportsThinCursor*: bool
     focused*: bool
     deltaTime*: float
+    frameTimer*: Timer
     eventCounter*: int
     onResize*: Event[void]
     onKeyPress*: Event[tuple[input: int64, modifiers: Modifiers]]
@@ -86,6 +92,9 @@ type
     setClipboardTextImpl*: SetClipboardTextImpl
     getClipboardTextImpl*: GetClipboardTextImpl
     setTitleImpl*: SetTitleImpl
+    shouldRenderImpl*: ShouldRenderImpl
+    beginNuiFrameImpl*: BeginNuiFrameImpl
+    endNuiFrameImpl*: EndNuiFrameImpl
 
   PlatformService* = ref object of Service
     platform*: Platform
@@ -207,6 +216,22 @@ proc getClipboardText*(self: Platform): Future[Option[string]] {.async.} =
 proc setTitle*(self: Platform, title: string) =
   if self.setTitleImpl != nil:
     self.setTitleImpl(self, title)
+
+proc shouldRender*(self: Platform): bool =
+  if self.shouldRenderImpl != nil:
+    return self.shouldRenderImpl(self)
+  false
+
+proc controlsRenderScheduling*(self: Platform): bool =
+  self.shouldRenderImpl != nil
+
+proc beginNuiFrame*(self: Platform) =
+  if self.beginNuiFrameImpl != nil:
+    self.beginNuiFrameImpl(self)
+
+proc endNuiFrame*(self: Platform) =
+  if self.endNuiFrameImpl != nil:
+    self.endNuiFrameImpl(self)
 
 include misc/dynlib_export
 

@@ -435,7 +435,7 @@ template buildCommands*(renderCommands: var RenderCommands, body: untyped) =
     template fillRect(inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: inBounds, color: inColor, flags: inFlags))
     template drawImage(inBounds: Rect, inTextureId: TextureId): untyped {.used.} =
-      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Image, bounds: inBounds, color: color(1, 1, 1), textureId: inTextureId, uv1: vec2(1, 1)))
+      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Image, bounds: inBounds, color: color(1, 1, 1), textureId: inTextureId, uv1: vmath.vec2(1, 1)))
     template drawImage(inBounds: Rect, inUV0: Vec2, inUV1: Vec2, inTextureId: TextureId): untyped {.used.} =
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Image, bounds: inBounds, color: color(1, 1, 1), textureId: inTextureId, uv0: inUV0, uv1: inUV1))
     template drawText(inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags, inFontScale: float = 1.0): untyped {.used.} =

@@ -3,6 +3,11 @@ import vmath, bumpy, chroma
 import ui/[node, widget_library]
 import service, platform
 import theme
+from nuigi import UiBuilder, UiStyleIndex, UiTextStyleIndex, layoutVertical, layoutHorizontal, fillX, fillY, fitY, fit, fillBackground, styleIndex, text, textStyleIndex, node, gap, padding, anchors, finishAnchors, debugName
+import nuigi/core/vecmath as nuiVecMath
+
+when not defined(nimony):
+  proc forceNim2ToIncludeUiBuilderInTheGeneratedCFile3*(): UiBuilder {.exportc.} = UiBuilder()
 
 proc renderHorizontalLayout(self: View, builder: UINodeBuilder): seq[OverlayFunction] =
   let self = self.HorizontalLayout
@@ -248,3 +253,180 @@ proc renderCenterLayout(self: View, builder: UINodeBuilder): seq[OverlayFunction
       let xwyh = remaining.xwyh * builder.currentParent.bounds.wh
       let bounds = rect(xy, xwyh - xy)
       builder.panel(&{FillBackground}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = color(0, 0, 0))
+
+proc renderHorizontalLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+  {.cast(gcsafe).}:
+    let self = self.HorizontalLayout
+    self.resetDirty()
+    if self.children.len == 0:
+      nui.node:
+        nui.debugName("horizontal-layout")
+        discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel)
+      return
+    if self.maximize:
+      nui.node:
+        nui.debugName("horizontal-layout")
+        discard nui.fillX().fillY()
+        self.children[self.activeIndex].render(nui)
+      return
+    var rects = newSeq[Rect]()
+    var rect = rect(0, 0, 1, 1)
+    for i, c in self.children:
+      let ratio = if i == 0 and self.children.len > 1:
+        self.getSplitRatio(i)
+      elif i == self.children.len - 1:
+        1.0
+      else:
+        self.getSplitRatio(i)
+      let (view_rect, remaining) = rect.splitV(ratio.percent)
+      rect = remaining
+      rects.add view_rect
+    nui.node:
+      nui.debugName("horizontal-layout")
+      discard nui.fillX().fillY()
+      for i, c in self.children:
+        let r = rects[i]
+        if c != nil:
+          nui.node:
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).padding(0).finishAnchors()
+            c.render(nui)
+        else:
+          nui.node:
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).finishAnchors()
+
+proc renderVerticalLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+  {.cast(gcsafe).}:
+    let self = self.VerticalLayout
+    self.resetDirty()
+    if self.children.len == 0:
+      nui.node:
+        nui.debugName("vertical-layout")
+        discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel)
+      return
+    if self.maximize:
+      nui.node:
+        nui.debugName("vertical-layout")
+        discard nui.fillX().fillY()
+        self.children[self.activeIndex].render(nui)
+      return
+    var rects = newSeq[Rect]()
+    var rect = rect(0, 0, 1, 1)
+    for i, c in self.children:
+      let ratio = if i == 0 and self.children.len > 1:
+        self.getSplitRatio(i)
+      elif i == self.children.len - 1:
+        1.0
+      else:
+        self.getSplitRatio(i)
+      let (view_rect, remaining) = rect.splitH(ratio.percent)
+      rect = remaining
+      rects.add view_rect
+    nui.node:
+      nui.debugName("vertical-layout")
+      discard nui.fillX().fillY()
+      for i, c in self.children:
+        let r = rects[i]
+        if c != nil:
+          nui.node:
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).padding(0).finishAnchors()
+            c.render(nui)
+        else:
+          nui.node:
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).finishAnchors()
+
+proc renderAlternatingLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+  {.cast(gcsafe).}:
+    let self = self.AlternatingLayout
+    self.resetDirty()
+    if self.children.len == 0:
+      nui.node:
+        discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel)
+      return
+    if self.maximize:
+      nui.node:
+        discard nui.fillX().fillY()
+        self.children[self.activeIndex].render(nui)
+      return
+    var rects = newSeq[Rect]()
+    var rect = rect(0, 0, 1, 1)
+    for i, c in self.children:
+      let ratio = if i == 0 and self.children.len > 1:
+        self.getSplitRatio(i)
+      elif i == self.children.len - 1:
+        1.0
+      else:
+        self.getSplitRatio(i)
+      let (view_rect, remaining) = if i mod 2 == 0:
+        rect.splitV(ratio.percent)
+      else:
+        rect.splitH(ratio.percent)
+      rect = remaining
+      rects.add view_rect
+    nui.node:
+      discard nui.fillX().fillY()
+      for i, c in self.children:
+        let r = rects[i]
+        if c != nil:
+          nui.node:
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).padding(0).finishAnchors()
+            c.render(nui)
+        else:
+          nui.node:
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).finishAnchors()
+
+proc renderTabLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+  {.cast(gcsafe).}:
+    let self = self.TabLayout
+    self.resetDirty()
+    let hideTabBarWhenSingle = true
+    let idx = self.activeIndex.clamp(0, self.children.high)
+    nui.layoutVertical("tab-" & $self.mId):
+      discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).gap(4)
+      if not hideTabBarWhenSingle or self.children.len > 1:
+        nui.layoutHorizontal("tab-bar"):
+          discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).gap(4).padding(4)
+          for i, c in self.children:
+            if c != nil:
+              let isActive = i == idx
+              nui.node:
+                discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(if isActive: "[" & c.display() & "]" else: c.display())
+      nui.node:
+        discard nui.fillX().fillY()
+        if idx in 0..self.children.high and self.children[idx] != nil:
+          self.children[idx].render(nui)
+        else:
+          discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel)
+
+proc renderCenterLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+  {.cast(gcsafe).}:
+    let self = self.CenterLayout
+    self.resetDirty()
+    if self.children.len != 5:
+      nui.node:
+        nui.debugName("center-layout")
+        discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel)
+      return
+    var rects: array[5, Rect]
+    var remaining = rect(0, 0, 1, 1)
+    if self.left != nil:
+      (rects[0], remaining) = remaining.splitV(self.splitRatios[0].percent)
+    if self.right != nil:
+      (remaining, rects[1]) = remaining.splitV(self.splitRatios[1].percent)
+    if self.top != nil:
+      (rects[2], remaining) = remaining.splitH(self.splitRatios[2].percent)
+    if self.bottom != nil:
+      (remaining, rects[3]) = remaining.splitH(self.splitRatios[3].percent)
+    rects[4] = remaining
+    nui.node:
+      nui.debugName("center-layout")
+      discard nui.fillX().fillY()
+      for i, c in self.children:
+        if c != nil:
+          let r = rects[i]
+          nui.node:
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).padding(0).finishAnchors()
+            c.render(nui)
+      if self.center == nil:
+        let r = rects[4]
+        nui.node:
+          discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).finishAnchors()

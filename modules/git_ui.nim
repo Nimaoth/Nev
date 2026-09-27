@@ -22,6 +22,13 @@ when implModule:
   import misc/[render_command]
   import input_handler/input_handler
   import toast
+  from nuigi import UiBuilder, UiBackendType, UiStyleIndex, UiTextStyleIndex,
+    fillX, fillY, fit, fitY, height, fillBackground, styleIndex,
+    textStyleIndex, text, padding, gap, layoutVertical, layoutHorizontal,
+    layoutHorizontalReverse, node, maskChildren, wasHovered, wasClicked,
+    pushId, popId, themeStyle, accentVariation, backgroundColor,
+    absoluteNodePosPrev, previousNodeIndex
+  from nuigi/widgets import button, scrollBox, menu, menuItem
 
   logCategory "git-ui"
 
@@ -62,10 +69,28 @@ when implModule:
       hoveredFileIndex: int = -1
 
       lastUpdate: int = 0
+      actionsMenuOpen: bool = false
 
   var gitUiViewInstance: GitUiView
 
   proc gitUiDiffSelected(view: GitUiView) {.raises: [], gcsafe.}
+  proc gitUiPush(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiPull(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiFetch(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiStash(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiStashPop(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiResetSoft(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiCommit(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiCommitAmend(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiCommitEditStart(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiCommitEditCancel(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiCommitEditConfirm(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiStageAll(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiStageSelected(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiUnstageSelected(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiRevertSelected(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiSwitchBranch(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiRefresh(view: GitUiView) {.gcsafe, raises: [].}
 
   proc commitMessage(view: GitUiView): string =
     $view.commitDoc.getTextComponent().get.content
@@ -504,6 +529,253 @@ when implModule:
           let thumbY = (self.scrollOffset / scrollableAmount) * scrollableHeight
           fillRect(rect(currentNode.bounds.w - w, floor(thumbY), w, ceil(thumbHeight)), scrollBarColor)
 
+  proc renderGitUiNui*(self: GitUiView, nui: var UiBuilder) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      self.resetDirty()
+      if self.lastUpdate == 0:
+        self.lastUpdate = 1
+        asyncSpawn self.refreshStatusAsync()
+        asyncSpawn self.refreshBranchesAsync()
+        asyncSpawn self.refreshCommitsAsync()
+        asyncSpawn self.refreshChangelistsAsync()
+
+      let panelBase = nui.themeStyle(UiStyleIndexPanel)[].fillColor
+      let panelColor = if self.active:
+        accentVariation(panelBase, 0.06'f32, 1.12'f32)
+      else:
+        panelBase
+      let sectionGap = if nui.backendType == UiBackendType.Terminal:
+        1.0'f32
+      else:
+        8.0'f32
+
+      template sectionTitle(title: string) =
+        nui.node:
+          discard nui.fillX().fitY().styleIndex(UiStyleIndexHeader)
+            .fillBackground().padding(2)
+            .textStyleIndex(int(UiStyleIndexHeaderText)).text(title)
+
+      template menuLabel(label: string) =
+        nui.node:
+          discard nui.fillX().fitY().padding(1)
+            .textStyleIndex(int(UiStyleIndexLabelText)).text(label)
+
+      template menuCommand(label: string, action: untyped) =
+        nui.menuItem:
+          nui.node:
+            discard nui.fillX().fitY().padding(1)
+              .textStyleIndex(int(UiStyleIndexMenuItemText)).text(label)
+        do:
+          discard
+        do:
+          self.actionsMenuOpen = false
+          action
+
+      nui.layoutVertical("git-ui"):
+        discard nui.fillX().fillY().styleIndex(UiStyleIndexPanel)
+          .fillBackground().backgroundColor(panelColor).padding(0).gap(2)
+        if nui.wasClicked(includeChildren = true):
+          getServiceChecked(LayoutService).tryActivateView(self)
+
+        nui.layoutHorizontal("git-ui-header"):
+          discard nui.fillX().fitY().styleIndex(UiStyleIndexHeader)
+            .fillBackground().padding(4).gap(8)
+          nui.node:
+            discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
+              .text("Git")
+          nui.layoutHorizontalReverse:
+            discard nui.fillX().fitY().gap(4)
+            let menuButtonIndex = nui.frame.nodes.len
+            if nui.button("…"):
+              self.actionsMenuOpen = not self.actionsMenuOpen
+            let menuButtonNode = nui.frame.nodes[menuButtonIndex]
+            let menuPosition = nui.absoluteNodePosPrev(
+              menuButtonNode.id, menuButtonIndex)
+            nui.menu(self.actionsMenuOpen,
+                menuPosition.x,
+                menuPosition.y + menuButtonNode.size.y):
+              menuLabel("Repository")
+              menuCommand("Refresh", self.gitUiRefresh())
+              menuCommand("Push", self.gitUiPush())
+              menuCommand("Pull", self.gitUiPull())
+              menuCommand("Fetch", self.gitUiFetch())
+              menuCommand("Stash", self.gitUiStash())
+              menuCommand("Stash Pop", self.gitUiStashPop())
+              menuCommand("Reset Soft", self.gitUiResetSoft())
+
+              menuLabel("Commit")
+              menuCommand("Commit", self.gitUiCommit())
+              menuCommand("Amend", self.gitUiCommitAmend())
+              if self.editCommit:
+                menuCommand("Cancel Message Edit", self.gitUiCommitEditCancel())
+                menuCommand("Confirm Message Edit", self.gitUiCommitEditConfirm())
+              else:
+                menuCommand("Edit Message", self.gitUiCommitEditStart())
+
+              menuLabel("Changes")
+              menuCommand("Stage All", self.gitUiStageAll())
+              menuCommand("Stage", self.gitUiStageSelected())
+              menuCommand("Unstage", self.gitUiUnstageSelected())
+              menuCommand("Revert", self.gitUiRevertSelected())
+              menuCommand("Diff", self.gitUiDiffSelected())
+
+              menuLabel("Branches")
+              menuCommand("Checkout Selected", self.gitUiSwitchBranch())
+
+        nui.scrollBox:
+          discard nui.fillX().fitY()
+          nui.layoutVertical("git-ui-content"):
+            discard nui.fillX().fitY().gap(sectionGap).padding(4)
+
+            sectionTitle("Repository")
+            var status = "No repository"
+            if self.vcsService != nil:
+              for vcs in self.vcsService.versionControlSystems:
+                status = if vcs.status.len > 0: vcs.status else: "Clean"
+                break
+            nui.node:
+              discard nui.fillX().fitY()
+                .textStyleIndex(int(UiStyleIndexDefaultText))
+                .text("Status: " & status)
+
+            sectionTitle("Commit")
+            if self.editCommit:
+              nui.node("git-ui-commit-editor"):
+                discard nui.fillX().height(
+                  if nui.backendType == UiBackendType.Terminal:
+                    6.0'f32
+                  else:
+                    150.0'f32).maskChildren()
+                if self.commitEditor != nil:
+                  self.commitEditor.renderNui(nui)
+            else:
+              let message = self.commitMessage
+              nui.node:
+                discard nui.fillX().fitY()
+                  .textStyleIndex(int(UiStyleIndexDefaultText))
+                  .text(if message.len > 0: message else: "(empty)")
+
+            if self.changelists.len > 0:
+              sectionTitle("Changes")
+              nui.layoutVertical("changes"):
+                discard nui.fillX().fitY()
+                for changelistIndex, changelist in self.changelists:
+                  discard nui.pushId(changelistIndex.uint64)
+                  nui.node:
+                    discard nui.fillX().fitY().padding(2)
+                      .textStyleIndex(int(UiStyleIndexLabelText))
+                      .text(changelist.changelist.description)
+                  for fileIndex, file in changelist.changelist.files:
+                    discard nui.pushId(fileIndex.uint64)
+                    nui.layoutHorizontal("git-ui-file"):
+                      let selected = self.cursor.panel == Changelists and
+                        self.cursor.changelistIndex == changelistIndex and
+                        self.cursor.fileIndex == fileIndex
+                      let hovered = nui.wasHovered(includeChildren = true)
+                      discard nui.fillX().fitY().padding(1).gap(1)
+                        .styleIndex(if selected or hovered:
+                          UiStyleIndexMenuItemHover
+                        else:
+                          UiStyleIndexRow)
+                        .fillBackground()
+                      let staged = if file.stagedStatus != None:
+                        $file.stagedStatus
+                      else:
+                        " "
+                      let unstaged = if file.unstagedStatus != None:
+                        $file.unstagedStatus
+                      else:
+                        " "
+                      nui.node:
+                        discard nui.fit().textStyleIndex(int(UiStyleIndexSmallText))
+                          .text(staged & unstaged)
+                      nui.node:
+                        let (_, name) = file.path.splitPath
+                        discard nui.fit().textStyleIndex(int(if selected:
+                          UiStyleIndexMenuItemHoverText
+                        else:
+                          UiStyleIndexMenuItemText)).text(name)
+                      if nui.wasClicked(includeChildren = true):
+                        self.cursor = UiCursor(panel: Changelists,
+                          changelistIndex: changelistIndex,
+                          fileIndex: fileIndex)
+                        self.markDirty()
+                        self.gitUiDiffSelected()
+                    discard nui.popId()
+                  discard nui.popId()
+
+            if not self.commitsFetched:
+              asyncSpawn self.refreshCommitsAsync()
+            if self.commits.len > 0:
+              sectionTitle("Recent Commits")
+              nui.layoutVertical("commits"):
+                discard nui.fillX().fitY()
+                for commitIndex, commit in self.commits:
+                  discard nui.pushId(commitIndex.uint64)
+                  nui.layoutHorizontal("git-ui-commit"):
+                    let selected = self.cursor.panel == Commits and
+                      self.cursor.commitIndex == commitIndex
+                    let hovered = nui.wasHovered(includeChildren = true)
+                    discard nui.fillX().fitY().padding(1).gap(1)
+                      .styleIndex(if selected or hovered:
+                        UiStyleIndexMenuItemHover
+                      else:
+                        UiStyleIndexRow)
+                      .fillBackground()
+                    nui.node:
+                      discard nui.fit().textStyleIndex(int(UiStyleIndexSmallText))
+                        .text(commit.id)
+                    nui.node:
+                      let description = if commit.description.len > 41:
+                        commit.description[0 .. 40]
+                      else:
+                        commit.description
+                      discard nui.fillX().fitY().maskChildren()
+                        .textStyleIndex(int(if selected:
+                        UiStyleIndexMenuItemHoverText
+                        else:
+                          UiStyleIndexMenuItemText)).text(description)
+                    if nui.wasClicked(includeChildren = true):
+                      self.cursor = UiCursor(panel: Commits,
+                        commitIndex: commitIndex)
+                      self.markDirty()
+                  discard nui.popId()
+
+            if self.branches.len > 0:
+              sectionTitle("Branches")
+              nui.layoutVertical("branches"):
+                discard nui.fillX().fitY()
+                for branchIndex, branch in self.branches:
+                  if branch.len > 0:
+                    discard nui.pushId(branchIndex.uint64)
+                    nui.node("git-ui-branch"):
+                      let selected = self.cursor.panel == Branches and
+                        self.cursor.branchIndex == branchIndex
+                      let hovered = nui.wasHovered(includeChildren = true)
+                      discard nui.fillX().fitY().padding(1)
+                        .styleIndex(if selected or hovered:
+                          UiStyleIndexMenuItemHover
+                        else:
+                          UiStyleIndexRow)
+                        .fillBackground()
+                        .textStyleIndex(int(if selected:
+                          UiStyleIndexMenuItemHoverText
+                        else:
+                          UiStyleIndexMenuItemText)).text(branch)
+                      if nui.wasClicked(includeChildren = true):
+                        self.cursor = UiCursor(panel: Branches,
+                          branchIndex: branchIndex)
+                        self.markDirty()
+                    discard nui.popId()
+
+            if self.lastMessage.len > 0:
+              sectionTitle(if self.lastMessageError: "Last Error" else: "Last Result")
+              nui.node:
+                discard nui.fillX().fitY().textStyleIndex(int(if self.lastMessageError:
+                  UiStyleIndexMenuItemHoverText
+                else:
+                  UiStyleIndexDefaultText)).text(self.lastMessage)
+
   proc kind(self: GitUiView): string = "gitui"
   proc desc(self: GitUiView): string = "GitUi"
   proc display(self: GitUiView): string = "GitUi"
@@ -524,6 +796,8 @@ when implModule:
     result.renderImpl = proc(view: View, builder: UINodeBuilder): seq[OverlayFunction] =
       let gitUiView = view.GitUiView
       renderGitUi(gitUiView, builder)
+    result.renderNuiImpl = proc(view: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+      renderGitUiNui(view.GitUiView, nui)
 
     result.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
       getGitUiViewEventHandlers(self.GitUiView, inject)

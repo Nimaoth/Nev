@@ -1,4 +1,4 @@
-import std/[strutils, sugar, sequtils]
+import std/[options, strutils, sugar, sequtils]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger, disposable_ref]
 import ui/node
@@ -8,6 +8,16 @@ import selector_popup, theme, document_editor, core_settings
 import finder, previewer, open_editor_previewer, data_previewer
 import config_provider, input_handler/input_handler, view, file_previewer
 import service
+from nuigi import UiBuilder, UiNodeStorageData, UiBackendType, UiStyleIndex,
+  UiTextStyleIndex,
+  nodeStorageGet, nodeStorage, nodeStorageParent, currentNode, currentNodeIndex,
+  fillX, fillY, fit, fitX, fitY, height, anchors, offsets, finishAnchors,
+  layoutVertical, layoutHorizontal, node, text, textStyleIndex, styleIndex,
+  fillBackground, padding, paddingY, gap, maskChildren, wasHovered, wasClicked,
+  withParent, themeStyle, themeTextStyle
+from nuigi/widgets import tableColumnFixed, tableColumnFill,
+  tableColumnProportional, highlightedText
+import nuigi/widgets/[dynamic_virtuallist, list_table]
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
@@ -16,6 +26,227 @@ import service
 {.push raises: [].}
 
 logCategory "selector-popup-ui"
+
+type SelectorPopupNuiStorage = ref object of UiNodeStorageData
+  popup: SelectorPopupImpl
+  listStorage: UiDynamicVirtualListStorage
+  showScore: bool
+
+proc getOrCreateSelectorPopupNuiStorage(
+    b: var UiBuilder, node: auto): SelectorPopupNuiStorage =
+  let existing = b.nodeStorageGet(node)
+  if existing != nil:
+    return cast[SelectorPopupNuiStorage](existing)
+  var storage = SelectorPopupNuiStorage()
+  b.nodeStorage(node, storage)
+  storage
+
+proc buildSelectorPopupRow(
+    b: var UiBuilder, itemIndex: int, userData: int) {.nimcall, gcsafe, raises: [].} =
+  if userData < 0 or userData >= b.frame.nodes.len:
+    return
+  let existing = b.nodeStorageGet(b.frame.nodes[userData].addr)
+  if existing == nil or not (existing of SelectorPopupNuiStorage):
+    return
+  let storage = cast[SelectorPopupNuiStorage](existing)
+  let popup = storage.popup
+  if popup == nil or popup.finder == nil:
+    return
+
+  try:
+    if popup.finder.filteredItems.isNone:
+      return
+    let filteredItems = popup.finder.filteredItems.get
+    if not filteredItems.isValidIndex(itemIndex):
+      return
+    let item {.cursor.} = filteredItems[itemIndex]
+    let selected = itemIndex == popup.selected
+    let hovered = b.wasHovered(includeChildren = true)
+    discard b.fitY()
+      .styleIndex(if selected or hovered:
+        UiStyleIndexMenuItemHover
+      else:
+        UiStyleIndexMenuItem)
+      .fillBackground()
+
+    b.node:
+      discard b.fit().padding(2)
+        .textStyleIndex(int(if selected:
+          UiStyleIndexMenuItemHoverText
+        else:
+          UiStyleIndexMenuItemText))
+        .text($(itemIndex + 1))
+
+    if storage.showScore:
+      b.node:
+        discard b.fit().padding(2)
+          .textStyleIndex(int(UiStyleIndexSmallText))
+          .text($(item.score * 100.0))
+
+    let labelStyle = if selected:
+      UiStyleIndexMenuItemHoverText
+    else:
+      UiStyleIndexMenuItemText
+    let labelColor = b.themeTextStyle(labelStyle)[].textColor
+    let highlightColor = b.themeStyle(UiStyleIndexAccent)[].fillColor
+    let matchIndices = popup.getCompletionMatches(itemIndex,
+      popup.getSearchString(), item.displayName, finderFuzzyMatchConfig)
+    b.node:
+      discard b.fit().padding(2).maskChildren()
+      b.highlightedText(item.displayName, matchIndices, labelColor,
+        highlightColor, popup.maxDisplayNameWidth)
+
+    b.node:
+      discard b.fit().padding(2).maskChildren()
+        .textStyleIndex(int(UiStyleIndexSmallText))
+        .text(item.details.join("  "))
+
+    if b.wasClicked(includeChildren = true):
+      popup.selectNth(itemIndex)
+      if popup.isInLayout:
+        popup.accept()
+  except:
+    discard
+
+proc selectorPopupCreateUINui*(self: SelectorPopupImpl, nui: var UiBuilder) =
+  ## Builds the selector popup directly in Nuigi. The result list is virtualized
+  ## and its direct row children are aligned by listTable.
+  self.resetDirty()
+  if self.textEditor == nil:
+    return
+
+  let showPreview = self.previewVisible and self.previewEditor != nil
+  let previewScale = if showPreview:
+    clamp(self.previewScale.float32, 0.1'f32, 0.9'f32)
+  else:
+    0.0'f32
+  let rowHeight = if nui.backendType == UiBackendType.Terminal:
+    1.0'f32
+  else:
+    26.0'f32
+  let editorHeight = if nui.backendType == UiBackendType.Terminal:
+    1.0'f32
+  else:
+    24
+  let itemCount = self.getNumItems()
+  let showScore = getServiceChecked(ConfigService).runtime.get(
+    "ui.selector.show-score", false)
+
+  template buildPopupContents() =
+    block:
+      nui.nodeStorageParent()
+      let rootIndex = nui.currentNodeIndex
+      let storage = nui.getOrCreateSelectorPopupNuiStorage(nui.currentNode)
+      storage.popup = self
+      storage.showScore = showScore
+
+      nui.node("selector-popup-left"):
+        if showPreview:
+          discard nui.anchors(0.0'f32, 0.0'f32,
+            1.0'f32 - previewScale, 1.0'f32).offsets(0, 0, -2, 0)
+            .finishAnchors()
+        else:
+          discard nui.fillX().fillY()
+        nui.layoutVertical("selector-popup-content"):
+          discard nui.fillX().fillY().gap(2)
+          let title = if self.title.len > 0: self.title else: self.scope
+          if title.len > 0:
+            nui.node("selector-popup-title"):
+              discard nui.fillX().fitY().padding(4)
+                .styleIndex(UiStyleIndexHeader).fillBackground()
+                .textStyleIndex(int(UiStyleIndexHeaderText)).text(title)
+
+          nui.node("selector-popup-search"):
+            discard nui.fillX().height(editorHeight).maskChildren()
+            self.textEditor.renderNui(nui)
+
+          nui.node("selector-popup-results"):
+            discard nui.fillX().fillY()
+            var columns = @[
+              tableColumnFixed(if nui.backendType == UiBackendType.Terminal:
+                4.0'f32
+              else:
+                38.0'f32),
+            ]
+            if showScore:
+              columns.add(tableColumnFixed(if nui.backendType == UiBackendType.Terminal:
+                8.0'f32
+              else:
+                76.0'f32))
+            columns.add(tableColumnProportional(2.0'f32))
+            columns.add(tableColumnProportional(1.0'f32))
+            storage.listStorage = nui.listTable(
+              itemCount,
+              rowHeight,
+              columns,
+              buildSelectorPopupRow,
+              rootIndex,
+              columnGap = if nui.backendType == UiBackendType.Terminal:
+                1.0'f32
+              else:
+                6.0'f32)
+            if self.scrollToSelected and storage.listStorage != nil and
+                storage.listStorage.ensureItemVisible(
+                  self.selected, storage.listStorage.viewportHeight, 0):
+              self.scrollToSelected = false
+
+          nui.layoutHorizontal("selector-popup-status"):
+            discard nui.fillX().fitY().paddingY(2).gap(4)
+            nui.node:
+              var countText = "0/0"
+              if self.finder != nil and self.finder.filteredItems.isSome:
+                let filteredItems = self.finder.filteredItems.get
+                countText = $filteredItems.filteredLen & "/" & $filteredItems.len
+              discard nui.fit().textStyleIndex(int(UiStyleIndexSmallText))
+                .text(countText)
+            let isLocked = self.finder != nil and
+              self.finder.filteredItems.isSome and
+              self.finder.filteredItems.get.locked
+            if isLocked:
+              nui.node:
+                discard nui.fit().textStyleIndex(int(UiStyleIndexSmallText))
+                  .text("...")
+
+      if showPreview:
+        nui.node("selector-popup-preview"):
+          discard nui.anchors(1.0'f32 - previewScale, 0.0'f32,
+            1.0'f32, 1.0'f32).offsets(2, 0, 0, 0).finishAnchors()
+            .styleIndex(UiStyleIndexPanel).fillBackground().padding(4)
+            .maskChildren()
+          if self.previewView != nil:
+            self.previewView.render(nui)
+          elif self.previewEditor != nil:
+            self.previewEditor.renderNui(nui)
+
+  if self.isInLayout:
+    nui.node("selector-popup"):
+      discard nui.fillX().fillY().styleIndex(UiStyleIndexMenu)
+        .fillBackground().padding(4).maskChildren()
+      buildPopupContents()
+  else:
+    nui.withParent(nui.overlays):
+      nui.node("selector-popup"):
+        let insetX = max(0.0'f32, (1.0'f32 - self.scale.x.float32) * 0.5'f32)
+        let insetY = max(0.0'f32, (1.0'f32 - self.scale.y.float32) * 0.5'f32)
+        if not showPreview and self.sizeToContentY:
+          let titleHeight = if self.title.len > 0 or self.scope.len > 0:
+            rowHeight
+          else:
+            0.0'f32
+          let desiredHeight = titleHeight + editorHeight +
+            min(itemCount, 30).float32 * rowHeight + rowHeight + 12.0'f32
+          let maxHeight = max(rowHeight,
+            nui.frame.nodes[0].size.y * self.scale.y.float32)
+          let popupHeight = min(desiredHeight, maxHeight)
+          discard nui.anchors(insetX, 0.5'f32, 1.0'f32 - insetX, 0.5'f32)
+            .offsets(0, -popupHeight * 0.5'f32, 0, popupHeight * 0.5'f32)
+            .finishAnchors()
+        else:
+          discard nui.anchors(insetX, insetY, 1.0'f32 - insetX,
+            1.0'f32 - insetY).finishAnchors()
+        discard nui.styleIndex(UiStyleIndexMenu).fillBackground().padding(4)
+          .maskChildren()
+        buildPopupContents()
 
 proc createUI*(self: SelectorPopupImpl, i: int, item: FinderItem, builder: UINodeBuilder): seq[OverlayFunction] =
   let textColor = builder.theme.color("editor.foreground", color(0.9, 0.8, 0.8))

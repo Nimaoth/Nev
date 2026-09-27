@@ -32,6 +32,7 @@ when implModule:
   import nimsumtree/[rope]
   import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, async_process, wrap, case_swap, jsonex, array_set, tui]
   import ui/node
+  from nuigi import UiBuilder
   import platform
   import finder, previewer
   import input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, selector_popup/builder, vfs, vfs_service
@@ -2661,6 +2662,18 @@ when implModule:
         view.setSize(width, height, cellWidth, cellHeight)
 
       view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = renderTerminal(self.TerminalView, builder)
+      view.renderNuiImpl = proc(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+        {.cast(gcsafe).}:
+          let tv = self.TerminalView
+          if tv.isInPreview:
+            return
+          var
+            width: int
+            height: int
+            cellWidth: int
+            cellHeight: int
+          renderTerminalNui(tv, nui, width, height, cellWidth, cellHeight)
+          tv.setSize(width, height, cellWidth, cellHeight)
       view.closeImpl = proc(self: View) = closeTerminalView(self.TerminalView)
       view.activateImpl = proc(self: View) = activateTerminalView(self.TerminalView)
       view.deactivateImpl = proc(self: View) = deactivateTerminalView(self.TerminalView)
@@ -2727,6 +2740,18 @@ when implModule:
         view.setSize(width, height, cellWidth, cellHeight)
 
       view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = renderTerminal(self.TerminalView, builder)
+      view.renderNuiImpl = proc(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+        {.cast(gcsafe).}:
+          let tv = self.TerminalView
+          if tv.isInPreview:
+            return
+          var
+            width: int
+            height: int
+            cellWidth: int
+            cellHeight: int
+          renderTerminalNui(tv, nui, width, height, cellWidth, cellHeight)
+          tv.setSize(width, height, cellWidth, cellHeight)
       view.closeImpl = proc(self: View) = closeTerminalView(self.TerminalView)
       view.activateImpl = proc(self: View) = activateTerminalView(self.TerminalView)
       view.deactivateImpl = proc(self: View) = deactivateTerminalView(self.TerminalView)

@@ -1,5 +1,6 @@
 #use input_handler command_service layout
 import std/[options]
+from nuigi import UiBuilder
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
@@ -18,6 +19,12 @@ when implModule and defined(profiler):
   import theme
   import vmath, chroma
   import service, view, layout/layout, input_handler/input_handler, command_service, platform
+
+  from nuigi import UiBuilder, UiStyleIndex, UiTextStyleIndex, UiColor, UiRenderCommand, UiRenderCommandKind, rgba, text, textStyleIndex, fit, fitX, fitY, fillX, fillY, fillBackground, styleIndex, backgroundColor, accentVariation, themeStyle, padding, gap, layoutVertical, layoutHorizontal, node, height, wrapText, customRenderCommands, wasHovered, wasClicked, absoluteNodePos, currentNodeIndex
+  from nuigi/widgets import scrollBox, button, dragFloat
+  import nuigi/core/vecmath as nuiVecMath
+  import nuigi/core/arena
+  import nuigi/core/array_view
 
   import prof
 
@@ -134,6 +141,7 @@ when implModule and defined(profiler):
       hoveredStackReturnAddressHash*: uint64
       hoveredPotentialLeakPtr*: uint64
       stackSortMode*: StackSortMode = ssmTotalSize
+      stackMaxBars*: float32 = 256
       snapshotAggregatedValues*: seq[int]
       stackScratch*: seq[StackAllocationSummary]
       sortedTagBitsScratch*: seq[int]
@@ -1415,6 +1423,500 @@ when implModule and defined(profiler):
               builder.panel(&{DrawText, TextMultiline, TextWrap, SizeToContentX, SizeToContentY},
                 text = &"  {formatLeakStackTrace(leak.stackTrace)}", textColor = textColor, fontScale = 0.9)
 
+  # ---------------------------------------------------------------------------
+  # NUI (nuigi) rendering – mirrors the legacy UINodeBuilder path above.
+  # Styling: chrome via fillBackground().styleIndex(Panel/Header) +
+  # accentVariation for active state (gotcha 13); text via textStyleIndex
+  # before text (gotcha 1); chart bars via customRenderCommands content
+  # colors (sanctioned exception like syntax colors, §14). No `return`
+  # inside `nui.node` (gotcha 12); no ThemeService in NUI path.
+  # ---------------------------------------------------------------------------
+
+  proc toUiColorProfilerNui(c: Color): UiColor {.inline, gcsafe, raises: [].} =
+    rgba(c.r.float32, c.g.float32, c.b.float32, c.a.float32)
+
+  proc profilerBarUpColorNui(): UiColor {.inline, gcsafe, raises: [].} =
+    rgba(0.75'f32, 0.35'f32, 0.35'f32, 1.0'f32)
+
+  proc profilerBarDownColorNui(): UiColor {.inline, gcsafe, raises: [].} =
+    rgba(0.35'f32, 0.45'f32, 0.85'f32, 1.0'f32)
+
+  proc profilerTextNui(nui: var UiBuilder, s: string) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      try:
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(s)
+      except:
+        discard
+
+  proc profilerTextWrappedNui(nui: var UiBuilder, s: string) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      try:
+        nui.node:
+          discard nui.fillX().fitY().wrapText().textStyleIndex(int(UiStyleIndexDefaultText)).text(s)
+      except:
+        discard
+
+  proc renderSnapshotChartNui(self: ProfilerView, nui: var UiBuilder, seriesKind: SnapshotSeriesKind, tagBit: int = -1, chartHeight: float32 = 100, chartKey: string = "profiler-chart") {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      try:
+        let currentSeriesValue =
+          if self.snapshotLen > 0:
+            max(0, snapshotSeriesValue(self.snapshotAt(self.snapshotLen - 1), seriesKind, tagBit))
+          else:
+            0
+        let baselineValue = self.baselineSeriesValue(seriesKind, tagBit, currentSeriesValue)
+        let deltaValue = currentSeriesValue - baselineValue
+        var headerText = seriesKind.seriesLabel(tagBit)
+        try:
+          headerText = &"{seriesLabel(seriesKind, tagBit)}: {formatMemoryMulti(currentSeriesValue)} | Delta {formatSignedMemoryMulti(deltaValue)}"
+        except:
+          discard
+        profilerTextNui(nui, headerText)
+        nui.node(chartKey):
+          discard nui.fillX().height(chartHeight).fillBackground().styleIndex(UiStyleIndexPanel)
+          var chartW = nui.currentNode.size.x
+          var chartH = nui.currentNode.size.y
+          if chartW <= 0:
+            chartW = 400'f32
+          if chartH <= 0:
+            chartH = chartHeight
+          if self.snapshotLen > 0 and chartW > 0:
+            let maxBars = max(1, int(chartW * 0.5'f32))
+            let displayedBars = min(self.snapshotLen, maxBars)
+            if displayedBars > 0:
+              let logicalSamplesPerBar = self.snapshotLen.float / displayedBars.float
+              self.snapshotAggregatedValues.setLen(displayedBars)
+              for i in 0..<displayedBars:
+                let rangeStart = i.float * logicalSamplesPerBar
+                let rangeEnd = (i + 1).float * logicalSamplesPerBar
+                self.snapshotAggregatedValues[i] = self.averagedSnapshotSeriesValue(seriesKind, tagBit, rangeStart, rangeEnd)
+              var minVisible = int.high
+              var maxAllocated = int.low
+              for i in 0..<displayedBars:
+                let value = self.snapshotAggregatedValues[i]
+                minVisible = min(minVisible, value)
+                maxAllocated = max(maxAllocated, value)
+              let nthOffset = max(0, self.baselineSnapshotN - 1)
+              let baselineLogicalIndex =
+                if nthOffset in 0..<self.snapshotLen:
+                  nthOffset
+                elif nthOffset - 1 in 0..<self.snapshotLen:
+                  nthOffset - 1
+                else:
+                  max(0, self.snapshotLen - 1)
+              let dynamicBaseline = max(0, snapshotSeriesValue(self.snapshotAt(baselineLogicalIndex), seriesKind, tagBit))
+              let minAllocatedBytes = max(0, self.baselineSeriesValue(seriesKind, tagBit, dynamicBaseline))
+              let maxAboveThreshold = max(0, maxAllocated - minAllocatedBytes)
+              let maxBelowThreshold = max(0, minAllocatedBytes - minVisible)
+              let barWidth = max(1.0'f32, chartW / displayedBars.float32)
+              let centerY = chartH * 0.5'f32
+              let upColor = profilerBarUpColorNui()
+              let downColor = profilerBarDownColorNui()
+              var cmds = nui.frame.arena[].allocEmptyArray(displayedBars + 4, UiRenderCommand)
+              for i in 0..<displayedBars:
+                let bytes = self.snapshotAggregatedValues[i]
+                let delta = bytes - minAllocatedBytes
+                let x = i.float32 * barWidth
+                if delta >= 0:
+                  let ratio =
+                    if maxAboveThreshold > 0: min(1.0'f32, max(0.0'f32, abs(delta).float32 / maxAboveThreshold.float32))
+                    else: 0.0'f32
+                  let barH = max(1.0'f32, centerY * ratio)
+                  cmds.add UiRenderCommand(kind: CmdRectFill, pos: nuiVecMath.vec2(x, centerY - barH), size: nuiVecMath.vec2(barWidth, barH), color: upColor)
+                else:
+                  let ratio =
+                    if maxBelowThreshold > 0: min(1.0'f32, max(0.0'f32, abs(delta).float32 / maxBelowThreshold.float32))
+                    else: 0.0'f32
+                  let barH = max(1.0'f32, centerY * ratio)
+                  cmds.add UiRenderCommand(kind: CmdRectFill, pos: nuiVecMath.vec2(x, centerY), size: nuiVecMath.vec2(barWidth, barH), color: downColor)
+              discard nui.customRenderCommands(cmds)
+              let chartIdx = nui.currentNodeIndex
+              if nui.wasHovered(chartIdx, includeChildren = true):
+                try:
+                  let m = nui.frameCtx.input.mouse
+                  let origin = nui.absoluteNodePos(chartIdx)
+                  let localX = m.x - origin.x
+                  let hoveredDisplayedIndex = clamp(int(localX / barWidth), 0, displayedBars - 1)
+                  let hoveredRangeStart = hoveredDisplayedIndex.float * logicalSamplesPerBar
+                  let hoveredRangeEnd = (hoveredDisplayedIndex + 1).float * logicalSamplesPerBar
+                  let hoveredLogicalIndex = clamp(int((hoveredRangeStart + hoveredRangeEnd) * 0.5), 0, self.snapshotLen - 1)
+                  if hoveredLogicalIndex != self.hoveredSnapshotLogicalIndex or self.hoveredSeriesKind != seriesKind or self.hoveredSeriesTagBit != tagBit:
+                    self.hoveredSnapshotLogicalIndex = hoveredLogicalIndex
+                    self.hoveredSeriesKind = seriesKind
+                    self.hoveredSeriesTagBit = tagBit
+                    self.markDirty()
+                except:
+                  discard
+      except:
+        discard
+
+  proc renderStackAllocationChartNui(self: ProfilerView, nui: var UiBuilder, chartHeight: float32 = 140) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      try:
+        let sortMode = self.stackSortMode
+        self.stackScratch.setLen(0)
+        var hiddenTotalSize = 0
+        var hiddenTotalCount = 0
+        for _, summary in self.stackAllocationsByHash:
+          if passesStackMetricThreshold(summary, sortMode):
+            self.stackScratch.add(summary)
+          else:
+            hiddenTotalSize += max(0, summary.totalAllocatedSize)
+            hiddenTotalCount += max(0, summary.allocationCount)
+        let visibleStackCount = min(self.stackScratch.len, max(1, int(self.stackMaxBars)))
+        var countText = "Total Unique Stacks"
+        try:
+          countText = &"Total Unique Stacks: {self.stackScratch.len} (showing {visibleStackCount}) ({stackSortModeLabel(sortMode)} {stackMetricThresholdLabel(sortMode)})"
+        except:
+          discard
+        profilerTextNui(nui, countText)
+        var sortedText = "Stacks"
+        try:
+          sortedText = &"Stacks ({self.stackScratch.len}) | Sorted by {stackSortModeLabel(sortMode)}"
+        except:
+          discard
+        profilerTextNui(nui, sortedText)
+        var sortLabel = " Stack Sort "
+        try:
+          sortLabel = " Stack Sort: " & stackSortModeLabel(self.stackSortMode) & " "
+        except:
+          discard
+        if nui.button(sortLabel):
+          try:
+            self.stackSortMode = nextStackSortMode(self.stackSortMode)
+            self.markDirty()
+          except:
+            discard
+        nui.layoutHorizontal("profiler-stack-maxbars"):
+          discard nui.fillX().fitY().gap(4)
+          profilerTextNui(nui, " Max bars: ")
+          if nui.dragFloat(self.stackMaxBars, 256'f32, 16'f32, 512'f32):
+            try:
+              self.markDirty()
+            except:
+              discard
+        sortStacksByMetric(self.stackScratch, sortMode)
+        nui.node("profiler-stack-chart"):
+          discard nui.fillX().height(chartHeight).fillBackground().styleIndex(UiStyleIndexPanel)
+          var chartW = nui.currentNode.size.x
+          var chartH = nui.currentNode.size.y
+          if chartW <= 0:
+            chartW = 400'f32
+          if chartH <= 0:
+            chartH = chartHeight
+          if visibleStackCount > 0 and chartW > 0 and chartH > 0:
+            var maxMetric = 1.0
+            for i in 0..<visibleStackCount:
+              let stackSummary = self.stackScratch[i]
+              maxMetric = max(maxMetric, max(stackBaselineMetricValue(stackSummary, sortMode), stackMetricValue(stackSummary, sortMode)))
+            let barWidth = chartW / visibleStackCount.float32
+            let upColor = profilerBarUpColorNui()
+            let downColor = profilerBarDownColorNui()
+            let flatColor = rgba(0.6'f32, 0.6'f32, 0.6'f32, 1.0'f32)
+            var cmds = nui.frame.arena[].allocEmptyArray(visibleStackCount * 2 + 4, UiRenderCommand)
+            for i in 0..<visibleStackCount:
+              let stackSummary = self.stackScratch[i]
+              let x = i.float32 * barWidth
+              let baselineMetric = stackBaselineMetricValue(stackSummary, sortMode)
+              let currentMetric = stackMetricValue(stackSummary, sortMode)
+              let baselineRatio = min(1.0'f32, max(0.0'f32, (baselineMetric / maxMetric).float32))
+              let currentRatio = min(1.0'f32, max(0.0'f32, (currentMetric / maxMetric).float32))
+              let baselineBarH = max(1.0'f32, chartH * baselineRatio)
+              let currentBarH = max(1.0'f32, chartH * currentRatio)
+              let trendColor =
+                if currentMetric > baselineMetric: upColor
+                elif currentMetric < baselineMetric: downColor
+                else: flatColor
+              let currentBarColor =
+                if self.hoveredStackReturnAddressHash != 0 and stackSummary.returnAddressHash == self.hoveredStackReturnAddressHash:
+                  rgba(min(1.0'f32, trendColor.r + 0.2'f32), min(1.0'f32, trendColor.g + 0.2'f32), min(1.0'f32, trendColor.b + 0.2'f32), trendColor.a)
+                else:
+                  trendColor
+              let baselineBarColor = UiColor(r: trendColor.r * 0.8'f32, g: trendColor.g * 0.8'f32, b: trendColor.b * 0.8'f32, a: 0.5'f32)
+              let bw = max(1.0'f32, barWidth)
+              cmds.add UiRenderCommand(kind: CmdRectFill, pos: nuiVecMath.vec2(x, chartH - currentBarH), size: nuiVecMath.vec2(bw, currentBarH), color: currentBarColor)
+              cmds.add UiRenderCommand(kind: CmdRectFill, pos: nuiVecMath.vec2(x, chartH - baselineBarH), size: nuiVecMath.vec2(bw, baselineBarH), color: baselineBarColor)
+            discard nui.customRenderCommands(cmds)
+            let stackIdx = nui.currentNodeIndex
+            if nui.wasHovered(stackIdx, includeChildren = true):
+              try:
+                let m = nui.frameCtx.input.mouse
+                let origin = nui.absoluteNodePos(stackIdx)
+                let localX = m.x - origin.x
+                let hoveredDisplayedIndex = clamp(int(localX / barWidth), 0, visibleStackCount - 1)
+                let hoveredHash = self.stackScratch[hoveredDisplayedIndex].returnAddressHash
+                if hoveredHash != self.hoveredStackReturnAddressHash:
+                  self.hoveredStackReturnAddressHash = hoveredHash
+                  self.markDirty()
+              except:
+                discard
+            if nui.wasClicked(stackIdx, includeChildren = true):
+              try:
+                let m = nui.frameCtx.input.mouse
+                let origin = nui.absoluteNodePos(stackIdx)
+                let localX = m.x - origin.x
+                let clickedDisplayedIndex = clamp(int(localX / barWidth), 0, visibleStackCount - 1)
+                let clickedHash = self.stackScratch[clickedDisplayedIndex].returnAddressHash
+                try:
+                  daSetBreakOnReturnAddressHash(clickedHash)
+                except:
+                  discard
+                if clickedHash != self.hoveredStackReturnAddressHash:
+                  self.hoveredStackReturnAddressHash = clickedHash
+                self.markDirty()
+              except:
+                discard
+        var hoveredVisibleIndex = -1
+        if self.hoveredStackReturnAddressHash != 0:
+          for i, stackSummary in self.stackScratch:
+            if stackSummary.returnAddressHash == self.hoveredStackReturnAddressHash:
+              hoveredVisibleIndex = i
+              break
+        if hoveredVisibleIndex >= 0:
+          let hoveredStack = self.stackScratch[hoveredVisibleIndex]
+          let hoveredStackHash = hoveredStack.returnAddressHash
+          let baselineMetric = stackBaselineMetricValue(hoveredStack, sortMode)
+          let currentMetric = stackMetricValue(hoveredStack, sortMode)
+          var biggerTotalSize = 0
+          var biggerTotalCount = 0
+          var smallerTotalSize = 0
+          var smallerTotalCount = 0
+          for stackSummary in self.stackScratch:
+            if stackMetricValue(stackSummary, sortMode) > stackMetricValue(hoveredStack, sortMode):
+              biggerTotalSize += max(0, stackSummary.totalAllocatedSize)
+              biggerTotalCount += max(0, stackSummary.allocationCount)
+            elif stackMetricValue(stackSummary, sortMode) < stackMetricValue(hoveredStack, sortMode):
+              smallerTotalSize += max(0, stackSummary.totalAllocatedSize)
+              smallerTotalCount += max(0, stackSummary.allocationCount)
+          var lines: array[8, string]
+          try:
+            lines[0] = &"Hash:     0x{hoveredStack.returnAddressHash.toHex}"
+            lines[1] = &"count:    {max(0, hoveredStack.allocationCount)}"
+            lines[2] = &"size:     {formatMemoryMulti(max(0, hoveredStack.totalAllocatedSize))}"
+            lines[3] = &"current:  {formatStackMetricValue(currentMetric, sortMode)}"
+            lines[4] = &"baseline: {formatStackMetricValue(baselineMetric, sortMode)}"
+            lines[5] = &"delta:    {formatStackMetricValue(currentMetric - baselineMetric, sortMode)}"
+            lines[6] = &"> Hover:  {formatMemoryMulti(biggerTotalSize)} | allocs: {biggerTotalCount}"
+            lines[7] = &"< Hover:  {formatMemoryMulti(smallerTotalSize)} | allocs: {smallerTotalCount}"
+          except:
+            lines[0] = "Hash"
+            lines[1] = "count"
+            lines[2] = "size"
+            lines[3] = "current"
+            lines[4] = "baseline"
+            lines[5] = "delta"
+            lines[6] = "> Hover"
+            lines[7] = "< Hover"
+          for line in lines:
+            profilerTextNui(nui, line)
+          if nui.button(" Dump Stack Graph "):
+            try:
+              var dumped = 0
+              for allocation in self.allocationsForStackHash(hoveredStackHash):
+                let dumpPath = "logs/allocation-graph-" & hoveredStackHash.toHex & "-" & allocation.ptrValue.toHex & ".dot"
+                if self.dumpAllocationGraphToFile(cast[pointer](allocation.ptrValue), 10, dumpPath = dumpPath):
+                  inc dumped
+                if dumped > 10:
+                  break
+            except:
+              discard
+          var hiddenText = "Hidden"
+          try:
+            hiddenText = &"Hidden:   {formatMemoryMulti(hiddenTotalSize)} | allocs: {hiddenTotalCount}"
+          except:
+            discard
+          profilerTextNui(nui, hiddenText)
+          var traceText = ""
+          try:
+            traceText = "  " & formatLeakStackTrace(hoveredStack.stackTrace)
+          except:
+            traceText = "  <no stack trace>"
+          profilerTextWrappedNui(nui, traceText)
+        else:
+          if nui.button(" Dump Stack Graph "):
+            discard
+      except:
+        discard
+
+  proc renderMemoryTabNui(self: ProfilerView, nui: var UiBuilder) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      try:
+        nui.layoutHorizontal("profiler-mem-buttons"):
+          discard nui.fillX().fitY().padding(4).gap(4)
+          if nui.button(" Set Baseline "):
+            try:
+              self.forceSetBaselineReference()
+              self.markDirty()
+            except:
+              discard
+          if nui.button(" Export Snapshot Dump "):
+            try:
+              self.writeSnapshotDumpToFile()
+            except:
+              discard
+        let allocatedBytes = self.latestSnapshotBytes()
+        let allocatedMb = allocatedBytes.float / (1024.0 * 1024.0)
+        let allocatedGb = allocatedBytes.float / (1024.0 * 1024.0 * 1024.0)
+        let allocatedKb = allocatedBytes.float / 1024.0
+        var gbText = ""
+        var mbText = ""
+        var kbText = ""
+        try:
+          gbText = &"{allocatedGb:.2f}"
+          mbText = &"{allocatedMb:.2f}"
+          kbText = &"{allocatedKb:.2f}"
+        except:
+          gbText = $allocatedGb
+          mbText = $allocatedMb
+          kbText = $allocatedKb
+        let byteText = $allocatedBytes
+        var stackTraceCacheBytes = 0
+        var debugAllocatorStaticBytes = 0
+        try:
+          stackTraceCacheBytes = max(0, daGetStackTraceCacheBytes())
+          debugAllocatorStaticBytes = max(0, daGetDebugAllocatorStaticBytes())
+        except:
+          discard
+        let profilerStaticBytes = max(0, getProfilerStaticBytes())
+        let profilerTaggedBytes =
+          if ord(daProfiler) in 0..<64:
+            max(0, self.tagAllocatedSizes[ord(daProfiler)])
+          else:
+            0
+        profilerTextNui(nui, $self.allocationsByPtr.len & " allocations")
+        profilerTextNui(nui, gbText & " GB")
+        profilerTextNui(nui, mbText & " MB")
+        profilerTextNui(nui, kbText & " KB")
+        profilerTextNui(nui, byteText & " B")
+        var cacheText = "allocator dynamic stack trace cache"
+        var staticText = "allocator static"
+        var taggedText = "profiler dynamic tagged"
+        var profStaticText = "profiler static"
+        try:
+          cacheText = formatMemoryMulti(stackTraceCacheBytes) & " allocator dynamic stack trace cache"
+          staticText = formatMemoryMulti(debugAllocatorStaticBytes) & " allocator static"
+          taggedText = formatMemoryMulti(profilerTaggedBytes) & " profiler dynamic tagged"
+          profStaticText = formatMemoryMulti(profilerStaticBytes) & " profiler static"
+        except:
+          discard
+        profilerTextNui(nui, cacheText)
+        profilerTextNui(nui, staticText)
+        profilerTextNui(nui, taggedText)
+        profilerTextNui(nui, profStaticText)
+        if self.hoveredSnapshotLogicalIndex in 0..<self.snapshotLen:
+          let hoveredSnapshot = self.snapshotAt(self.hoveredSnapshotLogicalIndex)
+          let hoveredValue = max(0, snapshotSeriesValue(hoveredSnapshot, self.hoveredSeriesKind, self.hoveredSeriesTagBit))
+          let hoveredBaseline = max(0, self.baselineSeriesValue(self.hoveredSeriesKind, self.hoveredSeriesTagBit, hoveredValue))
+          let hoveredDelta = hoveredValue - hoveredBaseline
+          var hoveredText = "Hover"
+          try:
+            let hoveredKb = hoveredValue.float / 1024.0
+            let hoveredMb = hoveredValue.float / (1024.0 * 1024.0)
+            let hoveredGb = hoveredValue.float / (1024.0 * 1024.0 * 1024.0)
+            hoveredText = &"Hover {seriesLabel(self.hoveredSeriesKind, self.hoveredSeriesTagBit)}: {hoveredValue} B | {hoveredKb:.2f} KB | {hoveredMb:.2f} MB | {hoveredGb:.2f} GB | Delta {formatSignedMemoryMulti(hoveredDelta)}"
+          except:
+            discard
+          profilerTextNui(nui, hoveredText)
+        else:
+          profilerTextNui(nui, " ")
+        self.renderSnapshotChartNui(nui, sskAllocatorEvents, -1, 50, "profiler-chart-events")
+        self.renderSnapshotChartNui(nui, sskTotal, -1, 100, "profiler-chart-total")
+        self.renderSnapshotChartNui(nui, sskUntagged, -1, 50, "profiler-chart-untagged")
+        try:
+          for bit in self.sortedTagBitsByAllocationSize():
+            self.renderSnapshotChartNui(nui, sskTag, bit, 50, "profiler-chart-tag-" & $bit)
+        except:
+          discard
+        self.renderStackAllocationChartNui(nui)
+      except:
+        discard
+
+  proc renderLeaksTabNui(self: ProfilerView, nui: var UiBuilder) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      try:
+        let potentialLeaks = self.cachedPotentialLeaks
+        var headerText = "Potential Leaks"
+        try:
+          headerText = &"Potential Leaks ({potentialLeaks.len}/{self.potentialLeakCandidates.len}) | Tags: {self.formatVisibleLeakTags()}"
+        except:
+          discard
+        profilerTextNui(nui, headerText)
+        if potentialLeaks.len == 0:
+          var emptyText = "No candidates"
+          try:
+            emptyText = &"No candidates older than {leakMinAgeSeconds:.0f}s"
+          except:
+            discard
+          profilerTextNui(nui, emptyText)
+        else:
+          for i in 0..<potentialLeaks.len:
+            let leak {.cursor.} = potentialLeaks[i]
+            var leakHeader = "leak"
+            try:
+              leakHeader = &"#{i + 1} ptr=0x{leak.ptrValue.toHex} size={leak.usableSize} age={leak.ageSeconds:.1f}s tag=0x{leak.tagMask.toHex} tid={leak.threadId} hash=0x{leak.returnAddressHash.toHex}"
+            except:
+              discard
+            let ptrValue = leak.ptrValue
+            nui.node("profiler-leak-" & $i):
+              discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexPanel)
+              nui.node:
+                discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(leakHeader)
+              let leakIdx = nui.currentNodeIndex
+              if nui.wasHovered(leakIdx, includeChildren = true):
+                if self.hoveredPotentialLeakPtr != ptrValue:
+                  self.hoveredPotentialLeakPtr = ptrValue
+                  self.markDirty()
+          if self.hoveredPotentialLeakPtr != 0:
+            for i in 0..<potentialLeaks.len:
+              let leak {.cursor.} = potentialLeaks[i]
+              if leak.ptrValue == self.hoveredPotentialLeakPtr:
+                var traceText = ""
+                try:
+                  traceText = "  " & formatLeakStackTrace(leak.stackTrace)
+                except:
+                  traceText = "  <no stack trace>"
+                profilerTextWrappedNui(nui, traceText)
+      except:
+        discard
+
+  proc renderProfilerNui*(self: ProfilerView, nui: var UiBuilder) {.gcsafe, raises: [].} =
+    daTag(daProfiler)
+    {.cast(gcsafe).}:
+      try:
+        self.renderCommandPoolCursor = 0
+        self.resetDirty()
+        let baseBg = nui.themeStyle(UiStyleIndexPanel)[].fillColor
+        let bgColor = if self.active: accentVariation(baseBg, 0.06'f32, 1.12'f32) else: baseBg
+        let headerBase = nui.themeStyle(UiStyleIndexHeader)[].fillColor
+        let headerColor = if self.active: accentVariation(headerBase, 0.04'f32, 1.10'f32) else: headerBase
+        nui.layoutVertical("profiler-root"):
+          discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).padding(4).gap(4)
+          nui.layoutHorizontal("profiler-tabs"):
+            discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backgroundColor(headerColor).padding(4).gap(4)
+            let memLabel =
+              if self.activeTabIndex == 0: "[Memory]"
+              else: " Memory "
+            let leaksLabel =
+              if self.activeTabIndex == 1: "[Leaks]"
+              else: " Leaks "
+            if nui.button(memLabel):
+              self.activeTabIndex = 0
+              self.markDirty()
+            if nui.button(leaksLabel):
+              self.activeTabIndex = 1
+              self.markDirty()
+          nui.scrollBox:
+            discard nui.fillX().fitY()
+            nui.layoutVertical("profiler-content"):
+              discard nui.fillX().fitY().gap(4)
+              if self.activeTabIndex == 0:
+                self.renderMemoryTabNui(nui)
+              else:
+                self.renderLeaksTabNui(nui)
+      except:
+        discard
+
   proc renderProfiler*(self: ProfilerView, builder: UINodeBuilder) =
     daTag(daProfiler)
     self.renderCommandPoolCursor = 0
@@ -1521,6 +2023,13 @@ when implModule and defined(profiler):
 
     view.renderImpl = proc(view: View, builder: UINodeBuilder): seq[OverlayFunction] {.closure, raises: [].} =
       renderProfiler(view.ProfilerView, builder)
+
+    view.renderNuiImpl = proc(view: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+      {.cast(gcsafe).}:
+        try:
+          renderProfilerNui(view.ProfilerView, nui)
+        except:
+          discard
 
     view.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
       getEventHandlers(self.ProfilerView, inject)

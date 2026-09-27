@@ -6,6 +6,7 @@ import finder, previewer
 import config_provider, popup, document_editor, view
 import core_settings
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
+from nuigi import UiBuilder
 
 export popup
 
@@ -541,6 +542,8 @@ when implModule:
     popup.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] =
       {.gcsafe.}:
         selectorPopupCreateUI(self.SelectorPopupImpl, builder)
+    popup.renderNuiImpl = proc(self: View, nui: var UiBuilder) =
+      selectorPopupCreateUINui(self.SelectorPopupImpl, nui)
     popup.handleAddedToLayoutImpl = proc(self: Popup) = selectorPopupHandleAddedToLayout(self.SelectorPopupImpl)
 
     let document = popup.editors.createDocument("text", "ed://.selector-popup-search-bar", load = false, %%*{"createLanguageServer": false})

@@ -1,11 +1,11 @@
-import std/[strformat, tables, strutils, math, options, json, algorithm]
+import std/[strformat, tables, strutils, math, options, json, algorithm, os]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer, generational_seq, render_command, arena, array_view, diff]
 import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform
 import ui/[widget_library]
-import document_editor, theme, config_provider, layout/layout
+import document_editor, theme, config_provider, layout/layout, service
 import core_settings
 import language_server
 import text/[syntax_map, overlay_map, wrap_map, diff_map, display_map]
@@ -13,6 +13,13 @@ import view, treesitter/treesitter
 import scroll_box, treesitter_component, decoration_component, hover_component, contextline_component
 
 import ui/node
+from nuigi import UiBuilder, UiBackendType, UiStyleIndex, UiTextStyleIndex, UiNodeStorageData, UiNodeText, UiRenderCommand, UiRenderCommandKind, text, textStyleIndex, maskChildren, fit, fitX, fitY, node, fillX, fillY, fill, width, fillBackground, styleIndex, backgroundColor, accentVariation, themeStyle, themeTextStyle, padding, gap, layoutVertical, layoutHorizontal, layoutHorizontalReverse, currentNode, currentNodeIndex, nodeStorage, nodeStorageGet, nodeStorageParent, rgba, textColor, fontSize, uiString, getTextArrangement, deferBuild, enqueueNextFrame, position, size, noHover, value, height, wasPressed, borderColor, borderWidth, wrapText, maskChildren, measuredTextSize, absoluteNodePos, absoluteNodePosPrev, withParent, pushId, popId, customRenderCommands
+import nuigi/debug/profiler
+from nuigi/widgets import checkbox, highlightedText, tableColumnFit
+import nuigi/widgets/dynamic_virtuallist
+import nuigi/widgets/list_table
+import nuigi/text/graphemes
+from nuigi/core/arena import allocRaw
 
 import nimsumtree/[buffer, rope]
 
@@ -1375,7 +1382,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
     let sm = self.document.treesitterComponent.syntaxMap
     if highlight:
       if sm.snapshot.layers.len > 0:
-        highlighter = Highlighter(snapshot: sm.snapshot.addr, rainbowParens: rainbowParens).some
+        highlighter = Highlighter.init(sm, rainbowParens).some
     var res = self.displayMap.iter(builder.arena.addr, highlighter, builder.theme)
     res.styledChunks.diagnosticEndPoints = self.document.diagnosticEndPoints # todo: don't copy everything here
     if indentGuide:
@@ -1388,7 +1395,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, currentNo
     let sm = self.diffDocument.treesitterComponent.syntaxMap
     if highlight:
       if sm.snapshot.layers.len > 0:
-        highlighter = Highlighter(snapshot: sm.snapshot.addr, rainbowParens: rainbowParens).some
+        highlighter = Highlighter.init(sm, rainbowParens).some
     var res = self.diffDisplayMap.iter(builder.arena.addr, highlighter, builder.theme)
     return res
 
@@ -1889,3 +1896,1077 @@ proc createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayFun
     self.scrollBox.scrollMomentum = vec2(0)
 
   return res
+
+const textLineHeightHint* = 18.0'f32
+
+type TextChunkIndexEntry* = object
+  ## Rendered-chunk index entry, mirrors legacy ChunkBounds
+  ## (widget_builder_text_document.nim:33): UI node index of the chunk text node
+  ## (current frame), chunk start points, and top-left px relative to the virtual
+  ## list body (viewport-relative, like legacy scroll item bounds). Plain float
+  ## coords (not Vec2) to avoid the vmath/vecmath Vec2 clash; x is a monospace
+  ## estimate accumulated from the line indent, y replicates the virtual list's
+  ## itemTop minus its scroll offset.
+  nodeIndex*: int
+  displayPoint*: DisplayPoint
+  displayEndPoint*: DisplayPoint
+  point*: Point
+  endPoint*: Point
+  posX*: float32
+  posY*: float32
+
+type TextDocumentEditorNuiStorage* = ref object of UiNodeStorageData
+  editor*: TextDocumentEditor
+  theme*: Theme
+  arena*: Arena
+  useHighlight*: bool
+  rainbowParens*: bool
+  lineNumbers*: LineNumbers
+  cursorLine*: int
+  charWidth*: float32
+  lineHeight*: float32
+  gutterWidthPx*: float32
+  chunkIndex*: seq[TextChunkIndexEntry]
+  highlightCommands*: seq[UiRenderCommand]
+  listStorage*: UiDynamicVirtualListStorage
+  itemHeightHint*: float32
+  textIter*: DisplayChunkIterator
+  iterNextRow*: int
+
+proc getOrCreateTextEditorNuiStorage(b: var UiBuilder, node: auto): TextDocumentEditorNuiStorage =
+  let existing = b.nodeStorageGet(node)
+  if existing != nil:
+    return cast[TextDocumentEditorNuiStorage](existing)
+  var storage = TextDocumentEditorNuiStorage()
+  b.nodeStorage(node, storage)
+  return storage
+
+proc createNuiIter(self: TextDocumentEditor, storage: TextDocumentEditorNuiStorage) =
+  ## Fresh forward iterator for this frame, stored on the node storage and reused
+  ## across lines (one construction per frame instead of per line).
+  ## Display iterators are single-pass by design: no level clears atEnd/done on
+  ## seek and lower levels assert forward-only seeks. That is safe here because
+  ## the iterator is fresh every frame (theme/highlighter always current) and
+  ## rows arrive in ascending order, so the frontier only ever moves forward
+  ## (legacy createIter convention at widget_builder_text_document.nim:1375).
+  var editor = self
+  var highlighter = Highlighter.none
+  if storage.useHighlight and storage.theme != nil:
+    let sm = editor.document.treesitterComponent.syntaxMap
+    if sm.snapshot.layers.len > 0:
+      highlighter = Highlighter.init(sm, storage.rainbowParens).some
+  storage.textIter = editor.displayMap.iter(storage.arena.addr, highlighter, storage.theme)
+  storage.iterNextRow = -1
+  # TODO(nui-text): copy diagnosticEndPoints like legacy createIter does, once
+  # diagnostics (§14) are implemented (needs diagnosticsPerLS snapshot).
+
+proc nuiMeasuredPrefixWidth(b: var UiBuilder, text: string, byteCount: int,
+    textStyle: UiNodeText): float32 {.nimcall, gcsafe, raises: [].} =
+  ## Measured width of text[0 ..< byteCount] in the given style (mirrors
+  ## textfield.measuredPrefixWidth, which is private to that widget).
+  {.cast(gcsafe).}:
+    try:
+      if byteCount <= 0:
+        return 0.0'f32
+      var prefixStyle = textStyle
+      prefixStyle.text = text[0 ..< byteCount].uiString
+      return b.measuredTextSize(prefixStyle.addr).x
+    except:
+      return 0.0'f32
+
+proc nuiByteOffsetAtX(b: var UiBuilder, text: string, pointerX: float32,
+    textStyle: UiNodeText): int {.nimcall, gcsafe, raises: [].} =
+  ## Byte offset of the grapheme boundary nearest pointerX (mirrors textfield
+  ## cursorPositionAtX, which is private to that widget).
+  {.cast(gcsafe).}:
+    try:
+      if pointerX <= 0.0'f32 or text.len == 0:
+        return 0
+      var previousPosition = 0
+      var position = text.nextGraphemeBoundary(0)
+      while position <= text.len:
+        let previousX = b.nuiMeasuredPrefixWidth(text, previousPosition, textStyle)
+        let currentX = b.nuiMeasuredPrefixWidth(text, position, textStyle)
+        if pointerX < (previousX + currentX) * 0.5'f32:
+          return previousPosition
+        if position == text.len:
+          return text.len
+        previousPosition = position
+        position = text.nextGraphemeBoundary(position)
+      return text.len
+    except:
+      return 0
+
+proc nuiArenaIntText(b: var UiBuilder, num: int): tuple[buf: ptr UncheckedArray[char], len: int] {.nimcall, gcsafe, raises: [].} =
+  ## Decimal rendering of num into frame-arena chars for zero-alloc node text
+  ## (text(openArray) borrows the view; the backing lives until end of frame).
+  ## Returns a raw buf/len pair because openArray is not returnable from procs.
+  {.cast(gcsafe).}:
+    var buf: array[20, char]
+    var len = 0
+    var n = num
+    var neg = false
+    if n < 0:
+      neg = true
+      n = -n
+    if n == 0:
+      buf[0] = '0'
+      len = 1
+    else:
+      while n > 0:
+        buf[len] = chr(ord('0') + n mod 10)
+        inc len
+        n = n div 10
+      if neg:
+        buf[len] = '-'
+        inc len
+      for i in 0 ..< len div 2:
+        let t = buf[i]
+        buf[i] = buf[len - 1 - i]
+        buf[len - 1 - i] = t
+    let mem = b.frame.arena[].allocRaw(len, 1)
+    copyMem(mem, buf[0].addr, len)
+    return (cast[ptr UncheckedArray[char]](mem), len)
+
+proc buildTextLineNui(b: var UiBuilder, itemIndex: int, userData: int) {.nimcall, gcsafe, raises: [].} =
+  discard b.fillX().fitY()
+  {.cast(gcsafe).}:
+    prof("buildTextLineNui")
+    try:
+      if userData < 0 or userData >= b.frame.nodes.len:
+        return
+      var storage = b.getOrCreateTextEditorNuiStorage(b.frame.nodes[userData].addr)
+      var self = storage.editor
+      if self.isNil or self.displayMap.isNil or self.document.isNil:
+        b.layoutHorizontal:
+          discard b.fillX().fitY()
+          b.node:
+            discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text("")
+        return
+      # Per-frame settings snapshotted onto text-root storage in createUINui.
+      let lineNumbers = storage.lineNumbers
+      let cursorLine = storage.cursorLine
+      # Stored iterator reused across lines (created once per frame in createUINui):
+      # only seek when the frontier does not match; rows arrive ascending so the
+      # frontier only moves forward, which keeps every level's forward-only seeks
+      # and atEnd flags sound.
+      if storage.iterNextRow != itemIndex:
+        storage.textIter.seekLine(itemIndex)
+        discard storage.textIter.next()
+      let arenaCheckpoint = storage.arena.checkpoint()
+      # Real line for this display line; legacy drawLineNumber shows the number only
+      # on the first display row of a real line, and always for the cursor line.
+      var realLine = -1
+      var firstDisplayRow = -1
+      if storage.textIter.displayChunk.isSome:
+        realLine = storage.textIter.displayChunk.get.point.row.int
+        firstDisplayRow = self.displayMap.toDisplayPoint(point(realLine, 0)).row.int
+      # Line number digits rendered into the frame arena (no string alloc);
+      # the gutter node below gives them an explicit width instead.
+      var showNumber = false
+      var numberBuf: ptr UncheckedArray[char]
+      var numberLen = 0
+      if lineNumbers != LineNumbers.None and realLine >= 0 and firstDisplayRow == itemIndex:
+        var num = -1
+        if cursorLine == realLine:
+          num = realLine + 1
+        elif lineNumbers == LineNumbers.Absolute:
+          num = realLine + 1
+        elif lineNumbers == LineNumbers.Relative:
+          num = abs((realLine + 1) - cursorLine)
+        if num >= 0:
+          showNumber = true
+          let t = b.nuiArenaIntText(num)
+          numberBuf = t.buf
+          numberLen = t.len
+      # Right-align like the legacy gutter (drawLineNumber/lineNumberBounds):
+      # pad to the width of the largest possible number.
+      let baseFontSize = b.themeTextStyle(int(UiStyleIndexDefaultText))[].fontSize
+      let gutterPx = storage.gutterWidthPx
+      # Left indent of the first chunk: gutter on first rows, gutter + wrap
+      # indent on wrapped continuation rows (drawLine:842, wrap_map.nim:99).
+      let isContinuation = realLine >= 0 and firstDisplayRow != itemIndex
+      var indentPx = 0.0'f32
+      if showNumber:
+        indentPx = gutterPx
+      elif isContinuation:
+        indentPx = gutterPx
+        var wrapIndentCols = 4
+        if self.displayMap.wrapMap != nil:
+          wrapIndentCols = self.displayMap.wrapMap.snapshot.wrappedIndent
+        indentPx += wrapIndentCols.float32 * storage.charWidth
+      # Chunk index y replicates the virtual list's own itemTop math
+      # (dynamic_virtuallist.estimatedItemTop) minus its scroll offset, so entries
+      # land exactly where the list positions the row; x accumulates monospace
+      # estimates from the indent. Rebuilt every frame (cleared in createUINui).
+      var yLine = 0.0'f32
+      if storage.listStorage != nil:
+        var top = itemIndex.float32 * storage.itemHeightHint
+        for sample in storage.listStorage.heights:
+          if sample.itemIndex >= itemIndex:
+            break
+          top += sample.height - storage.itemHeightHint
+        yLine = top - storage.listStorage.scrollOffsetY
+      var xCursor = indentPx
+      b.layoutHorizontal:
+        discard b.fillX().fitY()
+        if showNumber:
+          # Fixed-width gutter column with the number right-aligned
+          # (reverse row packs the single child at the right edge).
+          b.layoutHorizontalReverse:
+            discard b.width(gutterPx).fitY()
+            b.node:
+              # TODO(nui-text): dim line-number color (editorLineNumber.foreground),
+              # gutter background (fillLineNumberBackground) and cursor-line highlight.
+              discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(toOpenArray(numberBuf, 0, numberLen - 1))
+        elif isContinuation:
+          # Continuation (wrapped) display row without a line number: reserve the
+          # indent explicitly to keep chunk text aligned with first rows.
+          b.node:
+            discard b.width(indentPx).fitY()
+        # TODO(nui-text): sign column (§14) renders here, before the text chunks.
+        var guard = 0
+        var hasChunks = false
+        var lineH = storage.lineHeight
+        while storage.textIter.displayChunk.isSome:
+          prof("chunk")
+          if guard > 500:
+            break
+          inc guard
+          let chunk = storage.textIter.displayChunk.get
+          if chunk.displayPoint.row.int != itemIndex:
+            break
+          let styled = chunk.styledChunk
+          let chunkColor = styled.color
+          let chunkScale = styled.fontScale
+          let chunkDisplayPoint = chunk.displayPoint
+          let chunkDisplayEndPoint = chunk.endDisplayPoint
+          let chunkPoint = chunk.point
+          let chunkEndPoint = chunk.endPoint
+          # TODO(nui-text): styled.fontStyle (Bold/Italic) + underline/undercurl +
+          # drawWhitespace have no nuigi UiNodeText equivalent; only color + scale
+          # are applied. Whole-line backgroundColumn (diff/selection/cursor-line)
+          # and inline diagnostics (§14) are not rendered yet either.
+          discard storage.textIter.next()
+          if chunk.len == 0:
+            continue
+          hasChunks = true
+          let uiColor = rgba(chunkColor.r.float32, chunkColor.g.float32, chunkColor.b.float32, chunkColor.a.float32)
+          let entryX = xCursor
+          var chunkNodeIdx = -1
+          b.node:
+            chunkNodeIdx = b.currentNodeIndex
+            discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(uiColor).fontSize(baseFontSize * chunkScale.float32).text(chunk.toOpenArray)
+            # text() synchronously re-measures fit nodes (updateNodeFit), so the
+            # real width is available right away for the chunk index.
+            xCursor += b.currentNode.size.x
+          lineH = max(lineH, b.frame.nodes[chunkNodeIdx].size.y)
+          storage.chunkIndex.add TextChunkIndexEntry(
+            nodeIndex: chunkNodeIdx,
+            displayPoint: chunkDisplayPoint,
+            displayEndPoint: chunkDisplayEndPoint,
+            point: chunkPoint,
+            endPoint: chunkEndPoint,
+            posX: entryX,
+            posY: yLine)
+          # Click handling (textfield pattern: polled wasPressed, no callbacks):
+          # move the cursor to the pressed position.
+          block:
+            let cn = b.frame.nodes[chunkNodeIdx].addr
+            if b.wasPressed(cn.id, false, chunkNodeIdx):
+              let prevPos = b.absoluteNodePosPrev(cn.id, chunkNodeIdx)
+              let slot = int(cn.textIndex)
+              if slot > 0 and slot <= b.frame.texts.len:
+                var clickStyle = b.frame.texts[slot - 1]
+                # Materialize the chunk text only on actual press (not per frame).
+                var clickText = newStringOfCap(chunk.len)
+                for c in chunk.toOpenArray:
+                  clickText.add c
+                let off = nuiByteOffsetAtX(b, clickText, b.frameCtx.input.mouse.x - prevPos.x, clickStyle)
+                let newCursor = chunkPoint.toCursor + (0, off)
+                b.enqueueNextFrame(proc() {.closure, gcsafe, raises: [].} =
+                  self.layout.tryActivateEditor(self)
+                  # TODO(nui-text): double/triple/control-click commands
+                  # (runDoubleClickCommand etc.) + drag selection (§14). Clicks only
+                  # land on visible rows, so no scroll-follow is needed here.
+                  self.selection = newCursor.toSelection
+                  self.dragStartSelection = self.selection
+                  self.updateTargetColumn(Last)
+                  self.markDirty())
+        # Frontier advance: the iterator now yields itemIndex + 1, so the next
+        # sequential line continues without seeking.
+        storage.iterNextRow = itemIndex + 1
+        if not hasChunks:
+          # Index the fallback node too so cursors on empty lines have a position.
+          var fallbackNodeIdx = -1
+          b.node:
+            fallbackNodeIdx = b.currentNodeIndex
+            discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(" ")
+          try:
+            let emptyPoint = self.displayMap.toPoint(displayPoint(itemIndex, 0))
+            storage.chunkIndex.add TextChunkIndexEntry(
+              nodeIndex: fallbackNodeIdx,
+              displayPoint: displayPoint(itemIndex, 0),
+              displayEndPoint: displayPoint(itemIndex, 0),
+              point: emptyPoint,
+              endPoint: emptyPoint,
+              posX: xCursor,
+              posY: yLine)
+          except:
+            discard
+        # Rest-of-line click target: filler takes the remaining row width so clicks
+        # past the last chunk place the cursor at end of line.
+        var fillerNodeIdx = -1
+        b.node:
+          fillerNodeIdx = b.currentNodeIndex
+          discard b.fillX().height(lineH)
+        block:
+          let fn = b.frame.nodes[fillerNodeIdx].addr
+          if b.wasPressed(fn.id, false, fillerNodeIdx):
+            let lineEnd = self.displayMap.toPoint(displayPoint(itemIndex, self.displayMap.lineLen(itemIndex))).toCursor
+            b.enqueueNextFrame(proc() {.closure, gcsafe, raises: [].} =
+              self.layout.tryActivateEditor(self)
+              # TODO(nui-text): double/triple/control-click commands + drag (§14).
+              self.selection = lineEnd.toSelection
+              self.dragStartSelection = self.selection
+              self.updateTargetColumn(Last)
+              self.markDirty())
+        # TODO(nui-text): below-line content (§14) – inline diagnostics (Below mode),
+        # context lines, custom overlay renderers (Below/Above), diff backgrounds,
+        # selections, cursors, scrollbar – none rendered yet; see checklist in ui_rewrite.md §14.
+      storage.arena.restoreCheckpoint(arenaCheckpoint)
+    except:
+      discard
+
+proc appendTextHighlightNui(b: var UiBuilder, storage: TextDocumentEditorNuiStorage,
+    selection: Selection, highlightColor: Color, drawEmpty: bool) =
+  let normalized = selection.normalized
+  let selectionStart = normalized.first.toPoint
+  let selectionEnd = normalized.last.toPoint
+  let empty = normalized.isEmpty
+  if empty and not drawEmpty:
+    return
+
+  let uiColor = rgba(highlightColor.r.float32, highlightColor.g.float32,
+    highlightColor.b.float32, highlightColor.a.float32)
+  var rects: seq[tuple[x, y, w, h: float32]] = @[]
+  for entry in storage.chunkIndex:
+    if empty:
+      if selectionStart < entry.point or selectionStart > entry.endPoint:
+        continue
+    elif entry.endPoint < selectionStart or entry.point >= selectionEnd:
+      continue
+    if entry.nodeIndex < 0 or entry.nodeIndex >= b.frame.nodes.len:
+      continue
+    let chunkNode = b.frame.nodes[entry.nodeIndex].addr
+    let textSlot = int(chunkNode.textIndex)
+    if textSlot <= 0 or textSlot > b.frame.texts.len:
+      continue
+    let nodeText = b.frame.texts[textSlot - 1]
+    let chunkText = nodeText.text.value
+    var firstByte = 0
+    var lastByte = chunkText.len
+    if selectionStart > entry.point and selectionStart.row == entry.point.row:
+      firstByte = (selectionStart.column.int - entry.point.column.int).clamp(0, chunkText.len)
+    if selectionEnd < entry.endPoint and selectionEnd.row == entry.point.row:
+      lastByte = (selectionEnd.column.int - entry.point.column.int).clamp(0, chunkText.len)
+    if lastByte < firstByte or (lastByte == firstByte and not empty):
+      continue
+
+    let firstX = b.nuiMeasuredPrefixWidth(chunkText, firstByte, nodeText)
+    let lastX = b.nuiMeasuredPrefixWidth(chunkText, lastByte, nodeText)
+    let x = entry.posX + firstX
+    let y = entry.posY
+    let w = max(lastX - firstX, ceil(storage.charWidth * 0.25'f32))
+    let h = max(storage.lineHeight, chunkNode.size.y)
+    if rects.len > 0 and rects[^1].y == y and rects[^1].h == h and
+        abs((rects[^1].x + rects[^1].w) - x) < 0.1'f32:
+      rects[^1].w += w
+    else:
+      rects.add (x, y, w, h)
+    if empty:
+      break
+
+  for bounds in rects:
+    var command = UiRenderCommand(kind: CmdRectFill, color: uiColor)
+    command.pos.x = bounds.x
+    command.pos.y = bounds.y
+    command.size.x = bounds.w
+    command.size.y = bounds.h
+    storage.highlightCommands.add command
+
+proc buildTextHighlightsNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nimcall, raises: [].} =
+  ## Highlight backgrounds share one deferred command layer. The cursor layer is
+  ## declared after this one, so cursors always paint on top.
+  {.cast(gcsafe).}:
+    prof("buildTextHighlightsNui")
+    try:
+      if userData < 0 or userData >= b.frame.nodes.len:
+        return
+      let storage = b.getOrCreateTextEditorNuiStorage(b.frame.nodes[userData].addr)
+      let self = storage.editor
+      if self.isNil or self.document.isNil or storage.theme.isNil or
+          not self.document.isInitialized or storage.chunkIndex.len == 0:
+        return
+
+      storage.highlightCommands.setLen(0)
+      for highlights in self.decorations.customHighlights.values:
+        for highlight in highlights:
+          let highlightColor = storage.theme.color(highlight.color,
+            color(200/255, 200/255, 200/255)) * highlight.tint
+          b.appendTextHighlightNui(storage, highlight.selection, highlightColor, true)
+
+      let selectionColor = storage.theme.color("selection.background", color(200/255, 200/255, 200/255))
+      let inclusive = self.config.get("text.inclusive-selection", false)
+      let thick = self.isThickCursor()
+      for selection in self.selections:
+        var selection = selection.normalized
+        if thick and inclusive:
+          selection.last.column += 1
+        b.appendTextHighlightNui(storage, selection, selectionColor, false)
+
+      if storage.highlightCommands.len > 0:
+        discard b.customRenderCommands(storage.highlightCommands)
+    except:
+      discard
+
+proc buildTextCursorNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nimcall, raises: [].} =
+  ## Cursor overlay, deferred after the virtual list (registered after it, so chunk
+  ## index positions and node sizes are final). One rect per selection cursor plus
+  ## rune inversion for block cursors (mirrors legacy drawCursors).
+  {.cast(gcsafe).}:
+    prof("buildTextCursorNui")
+    try:
+      if userData < 0 or userData >= b.frame.nodes.len:
+        return
+      var storage = b.getOrCreateTextEditorNuiStorage(b.frame.nodes[userData].addr)
+      var self = storage.editor
+      if self.isNil or self.displayMap.isNil or self.document.isNil or storage.theme.isNil:
+        return
+      if not self.document.isInitialized or storage.chunkIndex.len == 0 or not self.cursorVisible:
+        return
+      # TODO(nui-text): cursor trail animation (cursorHistories + markDirty loop),
+      # lastCursorLocationBounds / hover + signature-help anchors (§14).
+      let cursorFg = storage.theme.color("editorCursor.foreground", color(200/255, 200/255, 200/255))
+      let cursorBg = storage.theme.color("editorCursor.background", color(50/255, 50/255, 50/255))
+      let fgUi = rgba(cursorFg.r.float32, cursorFg.g.float32, cursorFg.b.float32, cursorFg.a.float32)
+      let bgUi = rgba(cursorBg.r.float32, cursorBg.g.float32, cursorBg.b.float32, cursorBg.a.float32)
+      let charW = storage.charWidth
+      let thick = self.isThickCursor()
+      for s in self.selections:
+        let p = s.last.toPoint
+        # Last entry starting at/before the cursor on its row (entries are built in
+        # display order, like legacy Bias.Left search; off-screen cursor → skip).
+        var best = -1
+        for i, e in storage.chunkIndex:
+          if e.point.row.int != p.row.int:
+            continue
+          if e.point.column.int <= p.column.int:
+            best = i
+          else:
+            break
+        if best < 0:
+          continue
+        let e = storage.chunkIndex[best]
+        if e.nodeIndex < 0 or e.nodeIndex >= b.frame.nodes.len:
+          continue
+        let entryNode = b.frame.nodes[e.nodeIndex].addr
+        let textSlot = int(entryNode.textIndex)
+        if textSlot <= 0 or textSlot > b.frame.texts.len:
+          continue
+        let nt = b.frame.texts[textSlot - 1].addr
+        let nodeText = nt.text.value
+        # Exact x via substring measurement with the chunk's own font (same shaper
+        # that draws the node, so positions match what is rendered).
+        var byteOff = p.column.int - e.point.column.int
+        if byteOff < 0:
+          byteOff = 0
+        if byteOff > nodeText.len:
+          byteOff = nodeText.len
+        var prefixW = 0.0'f32
+        if byteOff > 0:
+          var tmp = UiNodeText(text: nodeText[0 ..< byteOff].uiString, fontId: nt.fontId, fontSize: nt.fontSize)
+          let arr = b.getTextArrangement(tmp.addr, -1)
+          if arr != nil:
+            prefixW = arr.size.x
+        let cx = e.posX + prefixW
+        let ch = max(storage.lineHeight, entryNode.size.y)
+        let cw = if thick: charW else: charW * 0.2'f32
+        b.node:
+          discard b.position(cx, e.posY).size(cw, ch).fillBackground().backgroundColor(fgUi)
+        if thick:
+          let r = self.document.runeAt(s.last)
+          if r != 0.Rune and r.int >= ' '.int:
+            b.node:
+              discard b.position(cx, e.posY).fit().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(bgUi).fontSize(nt.fontSize).text($r)
+    except:
+      discard
+
+proc nuiPopupAnchor(b: var UiBuilder, storage: TextDocumentEditorNuiStorage,
+    p: Point): tuple[cx: float32, cy: float32, found: bool] {.nimcall, gcsafe, raises: [].} =
+  ## Viewport-relative anchor for a buffer point, mirroring the cursor lookup in
+  ## buildTextCursorNui (last chunk entry starting at/before the point on its
+  ## row, exact x via substring measurement with the chunk's own font).
+  {.cast(gcsafe).}:
+    try:
+      var best = -1
+      for i, e in storage.chunkIndex:
+        if e.point.row.int != p.row.int:
+          continue
+        if e.point.column.int <= p.column.int:
+          best = i
+        else:
+          break
+      if best < 0:
+        return (0.0'f32, 0.0'f32, false)
+      let e = storage.chunkIndex[best]
+      if e.nodeIndex < 0 or e.nodeIndex >= b.frame.nodes.len:
+        return (0.0'f32, 0.0'f32, false)
+      let entryNode = b.frame.nodes[e.nodeIndex].addr
+      let textSlot = int(entryNode.textIndex)
+      if textSlot <= 0 or textSlot > b.frame.texts.len:
+        return (e.posX, e.posY, true)
+      let nt = b.frame.texts[textSlot - 1].addr
+      let nodeText = nt.text.value
+      var byteOff = p.column.int - e.point.column.int
+      if byteOff < 0:
+        byteOff = 0
+      if byteOff > nodeText.len:
+        byteOff = nodeText.len
+      var prefixW = 0.0'f32
+      if byteOff > 0:
+        var tmp = UiNodeText(text: nodeText[0 ..< byteOff].uiString, fontId: nt.fontId, fontSize: nt.fontSize)
+        let arr = b.getTextArrangement(tmp.addr, -1)
+        if arr != nil:
+          prefixW = arr.size.x
+      return (e.posX + prefixW, e.posY, true)
+    except:
+      return (0.0'f32, 0.0'f32, false)
+
+proc buildCompletionRowNui(b: var UiBuilder, itemIndex: int, userData: int) {.nimcall, gcsafe, raises: [].} =
+  ## Single completion row for the listTable popup (userData is the text-root
+  ## node index, like buildTextLineNui). The deferred list build already wraps
+  ## each item in a positioned node, so the current node IS the row: style it
+  ## directly (full-row background) and emit one child node per cell
+  ## (label + source/detail) – no horizontal wrapper, listTableColumnLayout
+  ## aligns cells into columns across the rendered batch. Completion match
+  ## colors are derived from the selected/unselected text style slots.
+  # todo: reverse order
+  discard b.fillX().fitY()
+  {.cast(gcsafe).}:
+    prof("buildCompletionRowNui")
+    try:
+      if userData < 0 or userData >= b.frame.nodes.len:
+        return
+      var storage = b.getOrCreateTextEditorNuiStorage(b.frame.nodes[userData].addr)
+      var self = storage.editor
+      if self.isNil or self.document.isNil:
+        return
+      if itemIndex < 0 or itemIndex >= self.completionMatches.len:
+        return
+      const maxLabelLen = 30
+      const maxTypeLen = 30
+      let completion {.cursor.} = self.completions[self.completionMatches[itemIndex].index]
+      let isSel = itemIndex == self.selectedCompletion
+      discard b.fillBackground().styleIndex(if isSel: UiStyleIndexMenuItemHover else: UiStyleIndexMenuItem)
+      let labelStyle = if isSel: UiStyleIndexMenuItemHoverText else: UiStyleIndexMenuItemText
+      let label = if completion.item.label.len < maxLabelLen:
+          completion.item.label
+        else:
+          completion.item.label[0..<(maxLabelLen - 3)] & "..."
+      let matchIndices = self.getCompletionMatches(itemIndex)
+      let labelColor = b.themeTextStyle(labelStyle)[].textColor
+      let highlightColor = b.themeStyle(UiStyleIndexAccent)[].fillColor
+      b.highlightedText(label, matchIndices, labelColor, highlightColor)
+      let detail = if completion.item.detail.getSome(d):
+          if d.len < maxTypeLen: d else: d[0..<(maxTypeLen - 3)] & "..."
+        else:
+          ""
+      b.node:
+        discard b.fit().textStyleIndex(int(UiStyleIndexMutedText)).text(completion.source & " " & detail)
+      if b.wasPressed(includeChildren = true):
+        self.selectedCompletion = itemIndex
+        self.markDirty()
+    except:
+      discard
+
+proc buildTextCompletionsNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nimcall, gcsafe, raises: [].} =
+  ## Completion popup, deferred after the virtual list so chunk-index anchors are
+  ## final (mirrors legacy createCompletions at widget_builder_text_document:288).
+  ## Rows render virtualized via listTable (nested deferred build, picked up by
+  ## the flush loop in the same frame; columns Fit/Fit so source/detail aligns
+  ## across the rendered batch); docs for the selected item render in
+  ## a panel to the right of the list, same height (mirrors legacy x = listNode.xw).
+  ## If the popup would overflow the layer below the cursor it flips above the
+  ## cursor line (mirrors legacy createCompletions reverse/pivot and the
+  ## dropdownPopupReposition clamp in nuigi/widgets.nim).
+  ## The popup attaches to the overlay node (like dropdown-popup) so it paints
+  ## above the editor layout and is not clipped by it: the layer-relative
+  ## anchor is converted to absolute coords via absoluteNodePos and clamped
+  ## against the overlay size.
+  ## v1 parity note: fuzzy-match highlight not yet ported.
+  {.cast(gcsafe).}:
+    prof("buildTextCompletionsNui")
+    try:
+      if userData < 0 or userData >= b.frame.nodes.len:
+        return
+      var storage = b.getOrCreateTextEditorNuiStorage(b.frame.nodes[userData].addr)
+      var self = storage.editor
+      if self.isNil or self.document.isNil:
+        return
+      if not self.showCompletions or not self.active or self.completionMatches.len == 0:
+        return
+      if not self.document.isInitialized or storage.chunkIndex.len == 0:
+        return
+      let lineH = if storage.lineHeight > 0.0'f32: storage.lineHeight else: textLineHeightHint
+      let anchor = b.nuiPopupAnchor(storage, self.selection.last.toPoint)
+      if not anchor.found:
+        return
+      const maxLabelLen = 30
+      const numLinesToShow = 15
+      const docsWidthChars = 75.0'f32
+      let totalRows = self.completionMatches.len
+      let listW = 340.0'f32
+      let listH = min(totalRows, numLinesToShow).float32 * lineH + 4.0'f32
+      let popupH = listH
+      var docText = ""
+      if self.selectedCompletion >= 0 and self.selectedCompletion < self.completionMatches.len:
+        let sel = self.completions[self.completionMatches[self.selectedCompletion].index]
+        if sel.item.label.len >= maxLabelLen:
+          docText.add sel.item.label
+          docText.add "\n"
+        if sel.item.detail.getSome(detail):
+          docText.add detail
+        if sel.item.documentation.getSome(doc):
+          if docText.len > 0:
+            docText.add "\n\n"
+          if doc.asString().getSome(docStr):
+            docText.add docStr
+          elif doc.asMarkupContent().getSome(markup):
+            docText.add markup.value
+      let charW = max(storage.charWidth, 1.0'f32)
+      let docsW = if docText.len > 0: docsWidthChars * charW else: 0.0'f32
+      let popupW = listW + docsW
+      var px = anchor.cx
+      var py = anchor.cy + lineH
+      if px < 0.0'f32:
+        px = 0.0'f32
+      # Layer-relative -> absolute: the popup lives under the overlay node.
+      var absX = px
+      var absY = py
+      try:
+        let layerAbs = b.absoluteNodePos(nodeIdx)
+        absX += layerAbs.x
+        absY += layerAbs.y
+      except:
+        discard
+      try:
+        let overlayIdx = b.currentNodeIndex(b.overlays)
+        if overlayIdx >= 0 and overlayIdx < b.frame.nodes.len:
+          let overlaySize = b.frame.nodes[overlayIdx].size
+          if overlaySize.x > popupW and absX + popupW > overlaySize.x:
+            absX = max(overlaySize.x - popupW, 0.0'f32)
+          if absY + popupH > overlaySize.y:
+            let aboveY = absY - lineH - popupH
+            absY = if aboveY >= 0.0'f32: aboveY else: max(0.0'f32, overlaySize.y - popupH)
+          if absY < 0.0'f32:
+            absY = 0.0'f32
+      except:
+        discard
+      if absX < 0.0'f32:
+        absX = 0.0'f32
+      b.withParent(b.overlays):
+        b.pushId(userData.uint64)
+        b.node("text-completions-popup-overlay"):
+          discard b.position(absX, absY).fitX().height(popupH).fillBackground().styleIndex(UiStyleIndexMenu)
+          b.layoutHorizontal("text-completions-popup"):
+            discard b.fitX().fillY().gap(2)
+            b.node("text-completions-list"):
+              discard b.width(listW).fillY()
+              let listStorage = b.listTable(totalRows, lineH, [tableColumnFit(), tableColumnFit()], buildCompletionRowNui, userData)
+              # Follow keyboard selection like legacy updateBaseIndexAndScrollOffset:
+              # scrollToCompletion is set on selection change and consumed here.
+              if self.scrollToCompletion.isSome:
+                let target = self.scrollToCompletion.get
+                if target >= 0 and target < totalRows:
+                  discard listStorage.ensureItemVisible(target, b.currentNode.size.y, 0.0'f32)
+                self.scrollToCompletion = none(int)
+            if docText.len > 0:
+              b.node("text-completions-docs"):
+                discard b.width(docsW).fillY().fillBackground().styleIndex(UiStyleIndexTooltip).padding(4).wrapText().maskChildren().textStyleIndex(int(UiStyleIndexDefaultText)).text(docText)
+        b.popId()
+    except:
+      discard
+
+proc buildTextHoverNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nimcall, gcsafe, raises: [].} =
+  ## Hover popup, deferred after the virtual list (mirrors legacy createHover at
+  ## widget_builder_text_document:196). Anchored at the hover location from the
+  ## chunk index; custom hover views render via View.renderNui, otherwise plain
+  ## hover text lines. v1 places the popup below the cursor (legacy pivots it
+  ## above); clamping to the viewport is best-effort.
+  {.cast(gcsafe).}:
+    prof("buildTextHoverNui")
+    try:
+      if userData < 0 or userData >= b.frame.nodes.len:
+        return
+      var storage = b.getOrCreateTextEditorNuiStorage(b.frame.nodes[userData].addr)
+      var self = storage.editor
+      if self.isNil or self.document.isNil or storage.theme.isNil:
+        return
+      if self.hoverComponent.isNil or not self.hoverComponent.showHover:
+        return
+      if not self.document.isInitialized or storage.chunkIndex.len == 0:
+        return
+      let lineH = if storage.lineHeight > 0.0'f32: storage.lineHeight else: textLineHeightHint
+      let anchor = b.nuiPopupAnchor(storage, self.hoverComponent.hoverLocation)
+      if not anchor.found:
+        return
+      let bg = storage.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+      let border = storage.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
+      let fg = storage.theme.color("editor.foreground", color(1, 1, 1))
+      let bgUi = rgba(bg.r.float32, bg.g.float32, bg.b.float32, bg.a.float32)
+      let borderUi = rgba(border.r.float32, border.g.float32, border.b.float32, border.a.float32)
+      let fgUi = rgba(fg.r.float32, fg.g.float32, fg.b.float32, fg.a.float32)
+      const popupW = 400.0'f32
+      var px = anchor.cx
+      let py = anchor.cy + lineH
+      if px < 0.0'f32:
+        px = 0.0'f32
+      try:
+        if nodeIdx >= 0 and nodeIdx < b.frame.nodes.len:
+          let layerW = b.frame.nodes[nodeIdx].size.x
+          if layerW > popupW and px + popupW > layerW:
+            px = max(layerW - popupW, 0.0'f32)
+      except:
+        discard
+      b.node:
+        discard b.position(px, py).width(popupW).fitY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgUi).borderColor(borderUi).borderWidth(1.0'f32).padding(6)
+        if self.hoverComponent.hoverView != nil:
+          try:
+            self.hoverComponent.hoverView.render(b)
+          except:
+            b.node:
+              discard b.fillX().fitY().wrapText().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(fgUi).text("[hover view]")
+        else:
+          for line in self.hoverComponent.hoverText.splitLines:
+            b.node:
+              discard b.fillX().fitY().wrapText().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(fgUi).text(line)
+        for overlay in self.hoverComponent.overlayViews:
+          if overlay.isNil:
+            continue
+          try:
+            overlay.render(b)
+          except:
+            discard
+    except:
+      discard
+
+proc buildTextSignatureHelpNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nimcall, gcsafe, raises: [].} =
+  ## Signature-help popup, deferred after the virtual list (mirrors legacy
+  ## createSignatureHelp at widget_builder_text_document:230). Inactive
+  ## signatures render dimmed (capped like legacy), the active signature and its
+  ## active parameter render highlighted. v1 places the popup below the cursor
+  ## (legacy pivots it above); per-param text colors are content colors.
+  {.cast(gcsafe).}:
+    prof("buildTextSignatureHelpNui")
+    try:
+      if userData < 0 or userData >= b.frame.nodes.len:
+        return
+      var storage = b.getOrCreateTextEditorNuiStorage(b.frame.nodes[userData].addr)
+      var self = storage.editor
+      if self.isNil or self.document.isNil or storage.theme.isNil:
+        return
+      if not self.showSignatureHelp:
+        return
+      if not self.document.isInitialized or storage.chunkIndex.len == 0:
+        return
+      let lineH = if storage.lineHeight > 0.0'f32: storage.lineHeight else: textLineHeightHint
+      let anchor = b.nuiPopupAnchor(storage, self.signatureHelpLocation.toPoint)
+      if not anchor.found:
+        return
+      let bg = storage.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+      let border = storage.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
+      let fg = storage.theme.color("editor.foreground", color(1, 1, 1))
+      let faded1 = storage.theme.color("editor.foreground.fade1", fg.darken(0.15))
+      let faded2 = storage.theme.color("editor.foreground.fade2", faded1.darken(0.15))
+      let highlighted = storage.theme.color("editor.foreground.highlight", fg.lighten(0.15))
+      let activeParamC = storage.theme.color("signatureHelp.activeParam", highlighted)
+      let activeSigC = storage.theme.color("signatureHelp.activeSignature", fg)
+      let inactiveParamC = storage.theme.color("signatureHelp.inactiveParam", faded1)
+      let inactiveSigC = storage.theme.color("signatureHelp.inactiveSignature", faded2)
+      let bgUi = rgba(bg.r.float32, bg.g.float32, bg.b.float32, bg.a.float32)
+      let borderUi = rgba(border.r.float32, border.g.float32, border.b.float32, border.a.float32)
+      let activeParamUi = rgba(activeParamC.r.float32, activeParamC.g.float32, activeParamC.b.float32, activeParamC.a.float32)
+      let activeSigUi = rgba(activeSigC.r.float32, activeSigC.g.float32, activeSigC.b.float32, activeSigC.a.float32)
+      let inactiveParamUi = rgba(inactiveParamC.r.float32, inactiveParamC.g.float32, inactiveParamC.b.float32, inactiveParamC.a.float32)
+      let inactiveSigUi = rgba(inactiveSigC.r.float32, inactiveSigC.g.float32, inactiveSigC.b.float32, inactiveSigC.a.float32)
+      const popupW = 420.0'f32
+      var px = anchor.cx
+      let py = anchor.cy + lineH
+      if px < 0.0'f32:
+        px = 0.0'f32
+      try:
+        if nodeIdx >= 0 and nodeIdx < b.frame.nodes.len:
+          let layerW = b.frame.nodes[nodeIdx].size.x
+          if layerW > popupW and px + popupW > layerW:
+            px = max(layerW - popupW, 0.0'f32)
+      except:
+        discard
+      b.node:
+        discard b.position(px, py).width(popupW).fitY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgUi).borderColor(borderUi).borderWidth(1.0'f32).padding(6)
+        b.layoutVertical("text-signature-rows"):
+          discard b.fillX().fitY().gap(2)
+          var shown = 0
+          for k, sig in self.signatures:
+            if k == self.currentSignature:
+              continue
+            let activeParam = sig.activeParameter.get(self.currentSignatureParam)
+            b.layoutHorizontal("signature-row"):
+              discard b.fillX().fitY()
+              b.node:
+                discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(inactiveSigUi).text("(")
+              for i, p in sig.parameters:
+                if i > 0:
+                  b.node:
+                    discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(inactiveSigUi).text(", ")
+                var paramStr = ""
+                if p.label.kind == JString:
+                  paramStr = p.label.getStr
+                else:
+                  paramStr = $p.label
+                let paramUi = if i == activeParam: inactiveParamUi else: inactiveSigUi
+                b.node:
+                  discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(paramUi).text(paramStr)
+              b.node:
+                discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(inactiveSigUi).text(")")
+            inc shown
+            if shown > 5:
+              break
+          if self.currentSignature in 0..self.signatures.high:
+            let sig = self.signatures[self.currentSignature]
+            let activeParam = sig.activeParameter.get(self.currentSignatureParam)
+            b.layoutHorizontal("signature-active-row"):
+              discard b.fillX().fitY()
+              b.node:
+                discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(activeSigUi).text("(")
+              for i, p in sig.parameters:
+                if i > 0:
+                  b.node:
+                    discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(activeSigUi).text(", ")
+                var paramStr = ""
+                if p.label.kind == JString:
+                  paramStr = p.label.getStr
+                else:
+                  paramStr = $p.label
+                let paramUi = if i == activeParam: activeParamUi else: activeSigUi
+                b.node:
+                  discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(paramUi).text(paramStr)
+              b.node:
+                discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(activeSigUi).text(")")
+          if self.signatures.len == 0:
+            b.node:
+              discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).textColor(activeSigUi).text("No signatures")
+    except:
+      discard
+
+proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].} =
+  # The virtual list always reserves its scrollbar track beside the viewport
+  # (dynamic_virtuallist scrollbarWidth: 10px GUI, 1px terminal), so the wrap
+  # width must exclude it or lines wrap under the scrollbar.
+  let sbW = if nui.backendType == UiBackendType.Terminal: 1.0'f32 else: 10.0'f32
+  self.preRender(rect(0, 0, max(nui.currentNode.size.x - sbW, 0), nui.currentNode.size.y))
+
+  let dirty = self.dirty
+
+  {.cast(gcsafe).}:
+    self.resetDirty()
+    # Background color based on active state – use accentVariation instead of switching styleIndex (nuigi.nim:1122)
+    let baseBg = nui.themeStyle(UiStyleIndexPanel)[].fillColor
+    let bgColor = if self.active: accentVariation(baseBg, 0.06'f32, 1.12'f32) else: baseBg
+    let headerBase = nui.themeStyle(UiStyleIndexHeader)[].fillColor
+    let headerColor = if self.active: accentVariation(headerBase, 0.04'f32, 1.10'f32) else: headerBase
+    nui.layoutVertical("text-root"):
+      discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).padding(0).gap(4)
+      nui.nodeStorageParent()
+      nui.getOrCreateTextEditorNuiStorage(nui.currentNode).editor = self
+      let rootIndex = nui.currentNodeIndex
+      # Snapshot per-frame settings for the deferred line builder (buildTextLineNui
+      # runs later and only sees the storage, not self).
+      block:
+        let storage = nui.getOrCreateTextEditorNuiStorage(nui.frame.nodes[rootIndex].addr)
+        if not storage.arena.isValid:
+          echo "in it arena"
+          storage.arena = initArena()
+        try:
+          storage.theme = self.services.getServiceChecked(ThemeService).theme
+        except:
+          discard
+        try:
+          storage.useHighlight = self.config.getUiSyntaxHighlighting()
+          storage.rainbowParens = self.config.getUiRainbowParentheses()
+          storage.lineNumbers = self.config.getUiLineNumbers()
+          storage.cursorLine = self.selection.last.line
+        except:
+          discard
+        # Fresh chunk index every frame; the deferred line builder appends while
+        # rendering (mirrors legacy per-frame chunkBounds).
+        storage.chunkIndex.setLen(0)
+        storage.itemHeightHint = textLineHeightHint
+        # Character metrics measured from the mono font like terminal/render.nim:479,
+        # so the line-number gutter gets an explicit pixel width instead of spaces.
+        var charW = 8.0'f32
+        var charH = 16.0'f32
+        if self.platform != nil:
+          try:
+            charW = self.platform.charWidth.float32
+            charH = self.platform.lineHeight.float32
+          except: discard
+        try:
+          let monoStyle = nui.themeTextStyle(UiStyleIndexDefaultMono)[]
+          var tmpText = UiNodeText(text: "M".uiString, fontId: monoStyle.fontId, fontSize: monoStyle.fontSize.float32)
+          let arr = nui.getTextArrangement(tmpText.addr, -1)
+          if arr != nil:
+            if arr.size.x > 0: charW = arr.size.x
+            if arr.size.y > 0: charH = arr.size.y
+        except:
+          discard
+        if charW <= 0: charW = 8.0'f32
+        if charH <= 0: charH = 16.0'f32
+        storage.charWidth = charW
+        storage.lineHeight = charH
+        # Total line-number column width ahead of time (mirrors lineNumberBounds in
+        # text_editor.nim:672: digits of the largest number + 1 padding, in pixels).
+        var gutterPx = 0.0'f32
+        try:
+          case storage.lineNumbers
+          of LineNumbers.Absolute:
+            if self.document != nil:
+              gutterPx = (($self.document.numLines).len + 1).float32 * charW
+          of LineNumbers.Relative:
+            gutterPx = (($99).len + 1).float32 * charW
+          else: discard
+        except:
+          discard
+        storage.gutterWidthPx = gutterPx
+        # Fresh forward iterator for this frame, reused across lines (one
+        # construction per frame instead of per line).
+        if self.document != nil and self.displayMap != nil:
+          createNuiIter(self, storage)
+      # Header – replicates `createHeader` logic from widget_library (mode, dirty, file, dir + right side)
+      if self.renderHeader:
+        nui.layoutHorizontal("text-header"):
+          discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backgroundColor(headerColor).padding(4).gap(8)
+          let modeText = if self.mode.len == 0: "-" else: self.mode
+          let isDirty = if self.document != nil: self.document.lastSavedRevision != self.document.revision else: false
+          let dirtyMarker = if isDirty: "*" else: ""
+          let (directory, filename) = if self.document != nil: self.document.localizedPath.splitPath else: ("", "untitled")
+          let leftText = " " & modeText & " - " & dirtyMarker & filename & " - " & directory & " "
+          nui.node:
+            discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(leftText)
+          # Spacer pushes right side to the end
+          nui.layoutHorizontalReverse:
+            discard nui.fillX().fitY()
+            discard nui.checkbox("Syntax cache", gEnableSyntaxCache)
+            # Right side – mirrors `createHeader` onRight: customHeader, readOnly, staged, diff, rune, cursor positions
+            let readOnlyText = if self.document != nil and self.document.readOnly: "-readonly- " else: ""
+            let stagedText = if self.document != nil and self.document.staged: "-staged- " else: ""
+            let renderDiff = self.diffDocument != nil and self.diffDocument.isInitialized and self.diffChanges.isSome
+            let diffText = if renderDiff: "-diff- " else: ""
+            let currentRune = if self.document != nil: self.document.runeAt(self.selection.last) else: 0.Rune
+            let currentRuneText = if currentRune == 0.Rune: "\\0"
+                                  elif currentRune == '\t'.Rune: "\\t"
+                                  elif currentRune == '\n'.Rune: "\\n"
+                                  else: $currentRune
+            var currentRuneHexText = currentRune.int.toHex.strip(trailing=false, chars={'0'})
+            if currentRuneHexText.len == 0: currentRuneHexText = "0"
+            proc cursorString(cursor: Cursor): string =
+              if self.document != nil and self.document.isInitialized:
+                $cursor.line & ":" & $cursor.column
+              else: ""
+            let rightText = self.customHeader & " | " & readOnlyText & stagedText & diffText & "'" & currentRuneText & "' (U+" & currentRuneHexText & ") " & cursorString(self.selection.first) & "-" & cursorString(self.selection.last)
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(rightText)
+      # Body – lines via dynamic virtual list; each line is a horizontal node with one child node per chunk
+      nui.node("text-body"):
+        discard nui.fillX().fillY()
+        var lineCount = 0
+        try:
+          if self.document != nil and self.displayMap != nil:
+            lineCount = self.numDisplayLines
+        except:
+          lineCount = 0
+        if lineCount <= 0:
+          let path = if self.document != nil: self.document.filename
+                     elif self.currentDocument != nil: self.currentDocument.filename
+                     else: ""
+          let displayPath = if path.len > 0: path else: "untitled"
+          nui.node:
+            discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(displayPath)
+        else:
+          # Keep the list storage so the deferred line builder can replicate
+          # itemTop math for chunk index positions.
+          nui.getOrCreateTextEditorNuiStorage(nui.frame.nodes[rootIndex].addr).listStorage =
+            nui.dynamicVirtualList(lineCount, textLineHeightHint, buildTextLineNui, rootIndex)
+          # Apply pending scroll requests stored by scrollTo*/scrollLines
+          # (dual-written alongside the legacy scrollBox). Consumed here so the
+          # deferred list build lays out from the new offset this frame.
+          # Requests are kept pending when the viewport height is still unknown.
+          block:
+            let editorStorage = nui.getOrCreateTextEditorNuiStorage(nui.frame.nodes[rootIndex].addr)
+            let listStorage = editorStorage.listStorage
+            let tec = self.textEditorComponent
+            if listStorage != nil and tec != nil:
+              var vpH = listStorage.viewportHeight
+              if vpH <= 0.0'f32:
+                try:
+                  vpH = nui.currentNode.size.y
+                except:
+                  discard
+              # Cursor margin mirrors the legacy path: relative fraction of the
+              # viewport or margin-in-lines, clamped like ScrollBox.margin.
+              var marginPx = 0.0'f32
+              try:
+                if not self.disableScrolling:
+                  let lineH = if editorStorage.lineHeight > 0.0'f32: editorStorage.lineHeight else: textLineHeightHint
+                  if self.config.getTextCursorMarginRelative():
+                    marginPx = clamp(self.config.getTextCursorMargin(), 0.0, 1.0).float32 * 0.5'f32 * vpH
+                  else:
+                    marginPx = clamp(self.config.getTextCursorMargin().float32 * lineH, 0.0'f32, vpH * 0.5'f32 - lineH * 0.5'f32)
+              except:
+                discard
+              if marginPx < 0.0'f32:
+                marginPx = 0.0'f32
+              if tec.nuiPendingScrollDeltaY != 0:
+                listStorage.scrollByY(tec.nuiPendingScrollDeltaY.float32)
+                tec.nuiPendingScrollDeltaY = 0
+              if tec.nuiPendingScrollToY.isSome:
+                let t = tec.nuiPendingScrollToY.get
+                if listStorage.scrollToItemAtOffset(t.index, t.yOffset.float32, vpH):
+                  tec.nuiPendingScrollToY = none(tuple[index: int, yOffset: float])
+              elif tec.nuiPendingScrollTo.isSome:
+                let t = tec.nuiPendingScrollTo.get
+                if listStorage.scrollToItem(t.index, vpH, marginPx, t.center, t.centerOffscreen):
+                  tec.nuiPendingScrollTo = none(tuple[index: int, center: bool, centerOffscreen: bool, snap: bool])
+          nui.node("text-highlight-layer"):
+            discard nui.fillX().fillY().noHover()
+            discard nui.deferBuild(buildTextHighlightsNui, rootIndex)
+          # Cursor overlay after the selection layer (paints on top); positions
+          # resolve from the chunk index once the list is laid out.
+          nui.node("text-cursor-layer"):
+            discard nui.fillX().fillY().noHover()
+            discard nui.deferBuild(buildTextCursorNui, rootIndex)
+          # Popup overlays after cursors (paint on top); anchors resolve from
+          # the chunk index once the list is laid out (mirrors the legacy
+          # OverlayFunctions at widget_builder_text_document:1877).
+          if self.showCompletions and self.active:
+            nui.node("text-completions-layer"):
+              discard nui.fillX().fillY().noHover()
+              discard nui.deferBuild(buildTextCompletionsNui, rootIndex)
+          if self.hoverComponent != nil and self.hoverComponent.showHover:
+            nui.node("text-hover-layer"):
+              discard nui.fillX().fillY().noHover()
+              discard nui.deferBuild(buildTextHoverNui, rootIndex)
+          if self.showSignatureHelp:
+            nui.node("text-signature-layer"):
+              discard nui.fillX().fillY().noHover()
+              discard nui.deferBuild(buildTextSignatureHelpNui, rootIndex)

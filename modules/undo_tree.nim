@@ -20,6 +20,16 @@ when implModule:
   import theme
   import misc/[render_command, event]
   import scroll_box
+  from nuigi import UiBuilder, UiNodeStorageData, UiBackendType, UiStyleIndex,
+    UiTextStyleIndex, currentNode, currentNodeIndex, nodeStorageParent,
+    nodeStorageGet, nodeStorage, fillX, fillY, fit, fitY, width,
+    height, position,
+    fillBackground, styleIndex, textStyleIndex, copyTextStyleIndex, text,
+    textColor, padding, gap, layoutVertical, layoutHorizontal,
+    layoutHorizontalReverse, node, wasHovered, wasClicked, pushId, popId,
+    themeStyle, accentVariation, backgroundColor, rgba
+  from nuigi/widgets import button
+  import nuigi/widgets/dynamic_virtuallist
 
   logCategory "undo-tree"
 
@@ -42,7 +52,33 @@ when implModule:
       scrollBox*: ScrollBox
       autoApply*: bool = false
 
+    UndoTreeNuiStorage = ref object of UiNodeStorageData
+      view: UndoTreeView
+      lineDetails: seq[string]
+      currentNode: int32
+      charWidth: float32
+      lineHeight: float32
+      listStorage: UiDynamicVirtualListStorage
+      lastSelected: int = -1
+
   var gUndoTreeView: UndoTreeView
+
+  proc undoTreeToggleAutoApply(view: UndoTreeView) {.gcsafe, raises: [].}
+  proc undoTreePrevChange(view: UndoTreeView) {.gcsafe, raises: [].}
+  proc undoTreeNextChange(view: UndoTreeView) {.gcsafe, raises: [].}
+  proc undoTreeFirstChange(view: UndoTreeView) {.gcsafe, raises: [].}
+  proc undoTreeLastChange(view: UndoTreeView) {.gcsafe, raises: [].}
+  proc undoTreeSelectCurrent(view: UndoTreeView) {.gcsafe, raises: [].}
+  proc undoTreeApplySelected(view: UndoTreeView) {.gcsafe, raises: [].}
+
+  proc getOrCreateUndoTreeNuiStorage(
+      b: var UiBuilder, node: auto): UndoTreeNuiStorage =
+    let existing = b.nodeStorageGet(node)
+    if existing != nil:
+      return cast[UndoTreeNuiStorage](existing)
+    var storage = UndoTreeNuiStorage()
+    b.nodeStorage(node, storage)
+    storage
 
   proc add(line: var seq[AsciiGraphCell], item: tuple[col: int, char: char]) =
     line.add (item.col, item.char, -1, color(0, 0, 0), 0.UINodeFlags)
@@ -505,6 +541,186 @@ when implModule:
             let thumbY = scrollOffsetNorm * scrollableHeight
             fillRect(rect(currentNode.bounds.w - w, floor(thumbY), w, ceil(thumbHeight)), scrollBarColor)
 
+  proc buildUndoTreeRowNui(
+      b: var UiBuilder, itemIndex: int, userData: int) {.nimcall, gcsafe, raises: [].} =
+    if userData < 0 or userData >= b.frame.nodes.len:
+      return
+    let existing = b.nodeStorageGet(b.frame.nodes[userData].addr)
+    if existing == nil or not (existing of UndoTreeNuiStorage):
+      return
+    let storage = cast[UndoTreeNuiStorage](existing)
+    let view = storage.view
+    if view == nil or itemIndex < 0 or itemIndex >= view.cachedLines.len:
+      return
+
+    try:
+      let line {.cursor.} = view.cachedLines[itemIndex]
+      let selected = itemIndex == view.selected
+      let hovered = b.wasHovered(includeChildren = true)
+      discard b.fillX().fitY().padding(2).gap(0)
+        .styleIndex(if selected or hovered:
+          UiStyleIndexMenuItemHover
+        else:
+          UiStyleIndexRow)
+        .fillBackground()
+
+      b.node:
+        discard b.fillX().height(storage.lineHeight)
+        for cell in line.cells:
+          let isCurrent = line.nodeIdx == storage.currentNode and
+            cell.char in {'+', '*'}
+          let glyph = if isCurrent:
+            "(" & $cell.char & ")"
+          else:
+            $cell.char
+          let column = cell.col - (if isCurrent: 1 else: 0)
+          b.node:
+            discard b.position(column.float32 * storage.charWidth, 0)
+              .fit().copyTextStyleIndex(UiStyleIndexDefaultMono)
+              .textColor(rgba(cell.color.r.float32, cell.color.g.float32,
+                cell.color.b.float32, cell.color.a.float32)).text(glyph)
+
+        let detail = if itemIndex < storage.lineDetails.len:
+          storage.lineDetails[itemIndex]
+        else:
+          ""
+        b.node:
+          discard b.position(
+            view.cachedMaxCol.float32 * storage.charWidth, 0)
+            .fit().textStyleIndex(int(if selected:
+              UiStyleIndexMenuItemHoverText
+            else:
+              UiStyleIndexDefaultMono)).text(detail)
+
+      if b.wasClicked(includeChildren = true):
+        view.selected = itemIndex
+        view.markDirty()
+        if view.autoApply:
+          view.applySelected()
+    except:
+      discard
+
+  proc renderUndoTreeNui*(self: UndoTreeView, nui: var UiBuilder) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      self.resetDirty()
+      let layout = getServiceChecked(LayoutService)
+      var editor = layout.getActiveEditor()
+      if editor.isNone:
+        editor = self.lastEditor
+
+      var title = "Undo History"
+      var hasTree = false
+      var currentNode = -1'i32
+      var lineDetails: seq[string] = @[]
+      if editor.isSome and editor.get.currentDocument != nil:
+        self.lastEditor = editor
+        let document = editor.get.currentDocument
+        let (path, name) = document.filename.splitPath
+        title = "Undo History for " & name
+        if path.len > 0:
+          title.add(" - " & path)
+        if document.getTextComponent().getSome(text):
+          let buffer {.cursor.} = text.buffer
+          let tree {.cursor.} = buffer.history.undoTree
+          if tree.nodes.len > 0:
+            hasTree = true
+            if buffer.remoteId != self.cachedBufferId or
+                tree.nodes.len != self.cachedLen:
+              self.generateLines(buffer,
+                getServiceChecked(ThemeService).theme)
+            currentNode = tree.current
+            let now = getTime().toUnix().int64
+            lineDetails = newSeq[string](self.cachedLines.len)
+            for lineIndex, line in self.cachedLines:
+              if line.nodeIdx >= 0 and line.nodeIdx < tree.nodes.len:
+                let historyNode = tree.nodes[line.nodeIdx]
+                let currentMark = if line.nodeIdx == tree.current: "> " else: "  "
+                var detail: string
+                if tree.nodes.len == 1:
+                  detail = currentMark & "1 " &
+                    $historyNode.transaction.id.asNumber & " (base)"
+                else:
+                  detail = currentMark & $line.nodeIdx & " (" &
+                    formatTimeAgo(now, historyNode.transaction.timestampUnix) & ")"
+                  if historyNode.transaction.id == text.savedVersion:
+                    detail.add(" (saved)")
+                lineDetails[lineIndex] = detail
+
+      var charWidth = 8.0'f32
+      var lineHeight = 18.0'f32
+      let platform = getServiceChecked(PlatformService).platform
+      if platform != nil:
+        charWidth = max(1.0'f32, platform.charWidth.float32)
+        lineHeight = max(1.0'f32, platform.lineHeight.float32)
+      if nui.backendType == UiBackendType.Terminal:
+        charWidth = 1.0'f32
+        lineHeight = 1.0'f32
+
+      let panelBase = nui.themeStyle(UiStyleIndexPanel)[].fillColor
+      let panelColor = if self.active:
+        accentVariation(panelBase, 0.06'f32, 1.12'f32)
+      else:
+        panelBase
+      nui.layoutVertical("undo-tree"):
+        discard nui.fillX().fillY().styleIndex(UiStyleIndexPanel)
+          .fillBackground().backgroundColor(panelColor).padding(4).gap(4)
+        nui.nodeStorageParent()
+        let rootIndex = nui.currentNodeIndex
+        let storage = nui.getOrCreateUndoTreeNuiStorage(nui.currentNode)
+        storage.view = self
+        storage.lineDetails = lineDetails
+        storage.currentNode = currentNode
+        storage.charWidth = charWidth
+        storage.lineHeight = lineHeight
+
+        if nui.wasClicked(includeChildren = true):
+          layout.tryActivateView(self)
+
+        nui.layoutHorizontal("undo-tree-header"):
+          discard nui.fillX().fitY().styleIndex(UiStyleIndexHeader)
+            .fillBackground().padding(4).gap(4)
+          nui.node:
+            discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
+              .text(title)
+          nui.layoutHorizontalReverse:
+            discard nui.fillX().fitY().gap(4)
+            if nui.button(if self.autoApply: "Auto: On" else: "Auto: Off"):
+              self.undoTreeToggleAutoApply()
+
+        nui.layoutHorizontal("undo-tree-actions"):
+          discard nui.fillX().fitY().gap(4)
+          if nui.button("Apply"):
+            self.undoTreeApplySelected()
+          if nui.button("Current"):
+            self.undoTreeSelectCurrent()
+          if nui.button("Newer"):
+            self.undoTreeNextChange()
+          if nui.button("Older"):
+            self.undoTreePrevChange()
+          if nui.button("Newest"):
+            self.undoTreeLastChange()
+          if nui.button("Oldest"):
+            self.undoTreeFirstChange()
+
+        nui.node("undo-tree-body"):
+          discard nui.fillX().fillY()
+          if hasTree and self.cachedLines.len > 0:
+            storage.listStorage = nui.dynamicVirtualList(
+              self.cachedLines.len,
+              lineHeight + 4.0'f32,
+              buildUndoTreeRowNui,
+              rootIndex)
+            if storage.listStorage != nil and
+                storage.lastSelected != self.selected and
+                storage.listStorage.ensureItemVisible(
+                  self.selected, storage.listStorage.viewportHeight,
+                  lineHeight * 2.0'f32):
+              storage.lastSelected = self.selected
+          else:
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText))
+                .text("No undo history")
+
   proc kind(self: UndoTreeView): string = "undotree"
   proc desc(self: UndoTreeView): string = "UndoTree"
   proc display(self: UndoTreeView): string = "UndoTree"
@@ -522,6 +738,8 @@ when implModule:
     result.renderImpl = proc(view: View, builder: UINodeBuilder): seq[OverlayFunction] =
       let undoView = view.UndoTreeView
       renderUndoTree(undoView, builder)
+    result.renderNuiImpl = proc(view: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+      renderUndoTreeNui(view.UndoTreeView, nui)
 
     result.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
       getUndoTreeViewEventHandlers(self.UndoTreeView, inject)

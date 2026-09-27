@@ -12,6 +12,9 @@ include misc/dynlib_export
 import platform
 import document, service, config_provider
 
+from nuigi import UiBuilder, fillX, fillY, focusScope, isFocusWithin, node,
+  popId, pushId, requestFocus, restoreFocus
+
 from scripting_api import EditorId
 
 {.push gcsafe.}
@@ -39,6 +42,7 @@ type
     config*: ConfigStore
 
     renderImpl*: proc(self: DocumentEditor, builder: UINodeBuilder): seq[proc() {.closure, gcsafe, raises: [].}] {.gcsafe, raises: [].}
+    renderNuiImpl*: proc(self: DocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].}
     getStateImpl*: proc(self: DocumentEditor): JsonNode {.gcsafe, raises: [].}
     restoreStateImpl*: proc(self: DocumentEditor, state: JsonNode) {.gcsafe, raises: [].}
     deinitImpl*: proc(self: DocumentEditor) {.gcsafe, raises: [].}
@@ -106,6 +110,23 @@ proc render*(self: DocumentEditor, builder: UINodeBuilder): seq[proc() {.closure
   if self.renderImpl != nil:
     return self.renderImpl(self, builder)
   return @[]
+
+proc renderNui*(self: DocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].} =
+  if self.renderNuiImpl == nil:
+    return
+  {.cast(gcsafe).}:
+    nui.pushId(cast[uint64](self.id))
+    nui.node("document-editor-focus-root"):
+      discard nui.fillX().fillY().focusScope()
+      self.renderNuiImpl(self, nui)
+      if self.active and not nui.isFocusWithin():
+        nui.restoreFocus()
+        if not nui.isFocusWithin():
+          nui.requestFocus()
+    discard nui.popId()
+
+proc render*(self: DocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].} =
+  self.renderNui(nui)
 
 proc getEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.inline.} =
   if self.getEventHandlersImpl != nil:

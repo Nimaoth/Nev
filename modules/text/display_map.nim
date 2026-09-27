@@ -5,6 +5,7 @@ import syntax_map, overlay_map, tab_map, wrap_map, diff_map
 from scripting_api import Selection
 import nimsumtree/sumtree except mapIt
 import chroma, theme
+import nuigi/debug/profiler
 
 var debugDisplayMap* = false
 
@@ -304,6 +305,7 @@ proc seekLine*(self: var DisplayChunkIterator, line: int) =
   self.didSeek = true
 
 proc next*(self: var DisplayChunkIterator): Option[DisplayChunk] =
+  prof("DisplayChunkIterator.next")
   if self.atEnd:
     self.displayChunk = DisplayChunk.none
     return
