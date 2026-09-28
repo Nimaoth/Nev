@@ -20,7 +20,6 @@ when implModule:
   import platform
   import previewer, finder
   import workspace, vfs, vfs_service
-  import ui/node
   from nuigi import UiBuilder
   import nuigi/widgets/tree_table
   import nimsumtree/[rope, buffer]
@@ -123,11 +122,6 @@ when implModule:
       if getServices().isNil: return Debugger.none
       return getServices().getService(Debugger)
 
-  proc renderView(self: StacktraceView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
-  proc renderView(self: ThreadsView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
-  proc renderView(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
-  proc renderView(self: OutputView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
-  proc renderView(self: ToolbarView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
   proc renderViewNui(self: StacktraceView, nui: var UiBuilder, debugger: Debugger)
   proc renderViewNui(self: ThreadsView, nui: var UiBuilder, debugger: Debugger)
   proc renderViewNui(self: VariablesView, nui: var UiBuilder, debugger: Debugger)
@@ -149,13 +143,9 @@ when implModule:
     view.saveStateImpl = proc(self: View): JsonNode = saveState(self.T)
     view.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] = getEventHandlers(self.T, inject)
 
-    proc renderDebuggerView(view: T, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].} =
-      return view.renderView(builder, debugger)
-
     proc renderDebuggerViewNui(view: T, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
       view.renderViewNui(nui, debugger)
 
-    view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = renderDebuggerView(self.T, builder)
     view.renderNuiImpl = proc(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} = renderDebuggerViewNui(self.T, nui, debugger)
     return view
 
@@ -457,13 +447,6 @@ when implModule:
     if self.variablesFilter.len > 0:
       self.variablesFilter.setLen(0)
       self.refilterVariables(getDebugger().get)
-
-  proc isSelected*(self: VariablesView, r: VariablesReference, index: int): bool =
-    return self.variablesCursor.path.len > 0 and
-      self.variablesCursor.path[self.variablesCursor.path.high] == (index, r)
-
-  proc isScopeSelected*(self: VariablesView, index: int): bool =
-    return self.variablesCursor.path.len == 0 and self.variablesCursor.scope == index
 
   proc selectedVariable*(self: VariablesView): Option[tuple[index: int, varRef: VariablesReference]] =
     if self.variablesCursor.path.len > 0:
@@ -857,99 +840,6 @@ when implModule:
           path: @[(int.high, scopes[].scopes[scopes[].scopes.high].variablesReference)],
         ))
 
-  proc movePrev*(self: VariablesView, debugger: Debugger, cursor: VariableCursor): Option[VariableCursor] =
-    let scopes = debugger.currentScopes().getOr:
-      return VariableCursor.none
-
-    if scopes[].scopes.len == 0 or debugger.variables.len == 0:
-      return VariableCursor.none
-
-    let ids = debugger.currentVariablesContext().getOr:
-      return VariableCursor.none
-
-    var cursor = debugger.clampCursor(cursor)
-    if cursor.path.len == 0:
-      if cursor.scope > 0:
-        cursor = self.lastChild(debugger, VariableCursor(scope: cursor.scope - 1))
-        return cursor.some
-
-      return VariableCursor.none
-    else:
-      let (index, currentRef) = cursor.path[cursor.path.high]
-      if not debugger.variables.contains(ids & currentRef):
-        return VariableCursor.none
-
-      if index > 0:
-        dec cursor.path[cursor.path.high].index
-        cursor = self.lastChild(debugger, cursor)
-        return cursor.some
-
-      discard cursor.path.pop
-      return cursor.some
-
-  proc moveNext*(self: VariablesView, debugger: Debugger, cursor: VariableCursor): Option[VariableCursor] =
-    let scopes = debugger.currentScopes().getOr:
-      return
-
-    let ids = debugger.currentVariablesContext().getOr:
-      return
-
-    if scopes[].scopes.len == 0 or debugger.variables.len == 0:
-      return
-
-    var cursor = debugger.clampCursor(cursor)
-    if cursor.path.len == 0:
-      if cursor.scope in 0..scopes[].scopes.high:
-        let scope = scopes[].scopes[cursor.scope]
-        let collapsed = self.isCollapsed(ids & scope.variablesReference)
-        if debugger.variables.contains(ids & scope.variablesReference) and
-            debugger.variables[ids & scope.variablesReference].variables.len > 0 and
-            not collapsed:
-          cursor.path.add (0, scope.variablesReference)
-          return cursor.some
-
-        if cursor.scope + 1 < scopes[].scopes.len:
-          cursor = VariableCursor(scope: cursor.scope + 1)
-          return cursor.some
-
-      elif self.variablesCursor.scope == -1 and self.evaluation.variablesReference != 0.VariablesReference:
-        cursor.path.add (0, self.evaluation.variablesReference)
-        return cursor.some
-
-      return VariableCursor.none
-
-    else:
-      var descending = true
-      while cursor.path.len > 0:
-        let (index, currentRef) = cursor.path[cursor.path.high]
-        if not debugger.variables.contains(ids & currentRef):
-          return VariableCursor.none
-
-        let variables {.cursor.} = debugger.variables[ids & currentRef]
-
-        if index < variables.variables.len:
-          let childrenRef = variables.variables[index].variablesReference
-          let collapsed = self.isCollapsed(ids & childrenRef)
-          if descending and childrenRef != 0.VariablesReference and
-              debugger.variables.contains(ids & childrenRef) and
-              debugger.variables[ids & childrenRef].variables.len > 0 and
-              not collapsed:
-            cursor.path.add (0, childrenRef)
-            return cursor.some
-
-          if index < variables.variables.high:
-            inc cursor.path[cursor.path.high].index
-            return cursor.some
-
-        descending = false
-        discard cursor.path.pop
-
-      if cursor.scope != -1 and cursor.scope + 1 < scopes[].scopes.len:
-        cursor = VariableCursor(scope: cursor.scope + 1)
-        return cursor.some
-
-      return VariableCursor.none
-
   proc varTreeCursor(view: VariablesView, debugger: Debugger,
       cursor: VariableCursor): DebuggerVariablesCursor =
     result = DebuggerVariablesCursor(debugger: debugger, view: view)
@@ -1194,7 +1084,6 @@ when implModule:
           return
 
         let view = self.createVariablesView()
-        view.renderHeader = false
         view.evaluation = evaluation.result
         view.evaluationName = expression
         view.variablesCursor.scope = -1
@@ -1239,7 +1128,6 @@ when implModule:
         self.initWatchScope()
       for view in self.variableViews:
         view.variablesCursor = self.clampCursor(view.variablesCursor)
-        view.baseIndex = self.clampCursor(view.baseIndex)
       self.platform.requestRender()
 
   proc addWatchFromSelection*(self: Debugger) =
@@ -1463,10 +1351,6 @@ when implModule:
                   for p in view.variablesCursor.path.mitems:
                     if p.varRef == oldChildId.varRef:
                       p.varRef = newChildId.varRef
-
-                  for p in view.baseIndex.path.mitems:
-                    if p.varRef == oldChildId.varRef:
-                      p.varRef = newChildId.varRef
               # else:
               #   debugf"  [skip mapping] child[{i}] '{oldChild.name}': {oldChildId.varRef} -> 0 (new value has no children)"
 
@@ -1498,8 +1382,6 @@ when implModule:
         # Validate and fix cursor paths after reference mapping
         for view in self.variableViews:
           view.variablesCursor = self.clampCursor(view.variablesCursor)
-
-          view.baseIndex = self.clampCursor(view.baseIndex)
 
       self.variables[containerId] = variables.result
       # debugf"[updateVariables] Stored {variables.result.variables.len} variables for containerVarRef={containerVarRef}"
@@ -1601,7 +1483,6 @@ when implModule:
 
     for view in self.variableViews:
       view.variablesCursor = self.clampCursor(view.variablesCursor)
-      view.baseIndex = self.clampCursor(view.baseIndex)
 
     if timestamp != self.timestamp: return
     self.variables[(threadId, frameId, watchScopeVarRef)] = variables
@@ -1648,10 +1529,6 @@ when implModule:
                       for p in view.variablesCursor.path.mitems:
                         if p.varRef == oldId.varRef:
                           p.varRef = newId.varRef
-
-                      for p in view.baseIndex.path.mitems:
-                        if p.varRef == oldId.varRef:
-                          p.varRef = newId.varRef
                   # else:
                   #   debugf"  [skip mapping] scope[{i}] '{oldScope.name}': {oldId.varRef} -> 0 (new scope has no children)"
 
@@ -1680,8 +1557,6 @@ when implModule:
             # Validate and fix cursor paths after scope reference mapping
             for view in self.variableViews:
               view.variablesCursor = self.clampCursor(view.variablesCursor)
-
-              view.baseIndex = self.clampCursor(view.baseIndex)
 
           scopes.result.timestamp = self.timestamp
 
@@ -2637,17 +2512,6 @@ when implModule:
     discard
 
   import render
-
-  proc renderView(self: StacktraceView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
-    return self.createUI(builder, debugger)
-  proc renderView(self: ThreadsView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
-    return self.createUI(builder, debugger)
-  proc renderView(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
-    return self.createUI(builder, debugger)
-  proc renderView(self: OutputView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
-    return self.createUI(builder, debugger)
-  proc renderView(self: ToolbarView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
-    return self.createUI(builder, debugger)
 
   proc renderViewNui(self: StacktraceView, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
     self.createStackTraceUINui(nui, debugger)

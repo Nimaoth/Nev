@@ -1,12 +1,10 @@
 import std/[options, tables, sets]
-import vmath, bumpy
 import misc/[id, custom_logger, util, event, response]
 import dap_client, config_provider, command_service, input_handler/input_handler, view, document, document_editor, layout/layout
 import platform
 import previewer
 import workspace, vfs, vfs_service
 import language_server
-import ui/node
 import nimsumtree/[rope, buffer]
 import nuigi/widgets/tree_table
 import types
@@ -88,21 +86,9 @@ type
     languageServer*: LanguageServerDebugger
 
   ThreadsView* = ref object of View
-    targetSelectionIndex*: Option[int]
-    baseIndex*: int
-    scrollOffset*: float
   StacktraceView* = ref object of View
-    targetSelectionIndex*: Option[int]
-    baseIndex*: int
-    scrollOffset*: float
   VariablesView* = ref object of View
-    sizeOffset*: Vec2
-    renderHeader*: bool = true
-    targetSelectionIndex*: Option[int]
-    baseIndex*: VariableCursor
-    scrollOffset*: float
     variablesCursor*: VariableCursor
-    lastRenderedCursors*: seq[tuple[bounds: Rect, cursor: VariableCursor]]
     collapsedVariables*: HashSet[(ThreadId, FrameId, VariablesReference)]
     variablesFilter*: string = ""
     filteredVariables*: HashSet[(int, VariablesReference)]
