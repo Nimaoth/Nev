@@ -118,6 +118,13 @@ when implModule and defined(sdlPlatform):
       processingVal: float
       settings: SdlSettings
       customMaterial: MaterialId
+      # Pending printable key press, mirroring gui_platform.lastEvent.
+      # SDL emits KEY_DOWN followed by TEXT_INPUT for printable characters
+      # (e.g. '{' via AltGr+7 on German layouts arrives as KEY_DOWN '7'
+      # with Ctrl+Alt plus TEXT_INPUT "{"). We defer dispatching printable
+      # KEY_DOWN until we know no TEXT_INPUT follows, otherwise the same
+      # keystroke would be handled twice (once as Ctrl+Alt+7, once as "{").
+      pendingKeyPress: Option[(int64, Modifiers)]
 
   # Active platform for callbacks that cannot capture (measureText etc.) – stored as pointer to stay gcsafe
   var gActiveNuiPlatform: SdlPlatform = nil
@@ -327,10 +334,10 @@ when implModule and defined(sdlPlatform):
     return self.fontInfoCache[key].addr
 
   # ---------- helpers for fonts / plot ----------
-  proc uiSdlArrangeText(text: openArray[char], fontId: FontId, fontSize: float32, maxWidth: float32): UiTextArrangement {.gcsafe, raises: [].} =
+  proc uiSdlArrangeText(text: openArray[char], fontId: FontId, fontSize: float32, maxWidth: float32, textFlags: UiTextFlags): UiTextArrangement {.gcsafe, raises: [].} =
     {.cast(gcsafe).}:
       if activePlatform() != nil:
-        return activePlatform().fontRender.arrangeText(text, fontSize, fontId, maxWidth)
+        return activePlatform().fontRender.arrangeText(text, fontSize, fontId, maxWidth, textFlags)
     var fr: FontRender
     return fr.arrangeText(text, fontSize, fontId, maxWidth)
 
@@ -635,8 +642,14 @@ when implModule and defined(sdlPlatform):
       )
       discard self.window.setTextInputArea(rect.addr,
         max(0.0'f32, round(self.nui.textInputRequest.cursorOffset)).cint)
-    elif self.window.textInputActive():
-      discard self.window.stopTextInput()
+    else:
+      # Keep SDL text input enabled even when no nuigi widget requests it,
+      # so text editors (which render text themselves and never set
+      # textInputRequest) still receive EVENT_TEXT_INPUT for layout-dependent
+      # characters like '{', '}', '@' (e.g. AltGr combos). This mirrors
+      # gui_platform where runeInputEnabled is always true.
+      if not self.window.textInputActive():
+        discard self.window.startTextInput()
 
   proc syncFontAtlas(self: SdlPlatform) {.raises: [Exception].} =
     if self.fontAtlasTexture == nil:
@@ -1275,6 +1288,16 @@ when implModule and defined(sdlPlatform):
         log lvlError, &"SDL_CreateWindow failed: {sdl3.getError()}"
         quit(1)
 
+      # Enable SDL text input from the start so editors receive
+      # EVENT_TEXT_INPUT for layout-dependent characters (braces, '@', ...).
+      # syncSdlTextInput keeps it enabled; the IME rect is updated there when
+      # a nuigi widget requests it.
+      try:
+        if not self.window.textInputActive():
+          discard self.window.startTextInput()
+      except:
+        discard
+
       discard setCurrentThreadPriority(THREAD_PRIORITY_TIME_CRITICAL)
 
       self.renderer = sdl3.createRenderer(self.window, nil)
@@ -1460,6 +1483,19 @@ when implModule and defined(sdlPlatform):
     except:
       discard
 
+  proc dispatchPendingKeyPress(self: SdlPlatform) {.gcsafe, raises: [].} =
+    # Flush a deferred printable KEY_DOWN as a real key press.
+    # Used when no TEXT_INPUT followed (shortcuts like Ctrl+C, or keys on
+    # layouts where SDL produces no text). Mirrors gui_platform flushing
+    # lastEvent on the next button press / release / processEvents.
+    try:
+      if self.pendingKeyPress.getSome(pending):
+        self.pendingKeyPress = (int64, Modifiers).none
+        if not self.builder.handleKeyPressed(pending[0], pending[1]):
+          self.onKeyPress.invoke((pending[0], pending[1]))
+    except:
+      discard
+
   proc processEventsSdlPlatform(self: SdlPlatform): int {.gcsafe, raises: [].} =
     self.eventCounter = 0
     try:
@@ -1500,6 +1536,7 @@ when implModule and defined(sdlPlatform):
           self.focused = false
           self.currentMouseButtons = {}
           self.setMods({})
+          self.pendingKeyPress = (int64, Modifiers).none
           self.onFocusChanged.invoke(false)
         of sdl3.EVENT_MOUSE_MOTION:
           let pos = nevMath.vec2(ev.motion.x.float, ev.motion.y.float)
@@ -1542,18 +1579,35 @@ when implModule and defined(sdlPlatform):
           self.setMods(mods)
           let input = sdlKeyToInput(ev.key.key)
           if input != 0:
-            if not self.builder.handleKeyPressed(input, mods):
-              self.onKeyPress.invoke((input, mods))
+            if input < 0:
+              # Special keys (ENTER, ESCAPE, arrows, F-keys, ...) never
+              # produce TEXT_INPUT, so dispatch immediately. Flush any
+              # older deferred printable first so ordering stays intact.
+              self.dispatchPendingKeyPress()
+              if not self.builder.handleKeyPressed(input, mods):
+                self.onKeyPress.invoke((input, mods))
+            else:
+              # Printable candidate: defer until we know whether TEXT_INPUT
+              # follows. If the previous deferred key never got text, it was
+              # a shortcut (e.g. Ctrl+C) -> flush it as a key press now.
+              self.dispatchPendingKeyPress()
+              self.pendingKeyPress = (input, mods).some
         of sdl3.EVENT_KEY_UP:
           let mods = toPlatformModifiers(ev.key.`mod`)
           self.setMods(mods)
           let input = sdlKeyToInput(ev.key.key)
           if input != 0:
+            # No TEXT_INPUT followed the deferred KEY_DOWN, so this was a
+            # shortcut or otherwise non-textual key -> emit the press now
+            # (mirrors gui_platform emitting lastEvent on button release),
+            # then emit the release itself.
+            self.dispatchPendingKeyPress()
             if not self.builder.handleKeyReleased(input, mods):
               self.onKeyRelease.invoke((input, mods))
         of sdl3.EVENT_TEXT_INPUT:
           if ev.text.text != nil:
             let text = $ev.text.text
+            var consumedPending = false
             for r in text.runes:
               if r.int32 in char.low.ord .. char.high.ord:
                 case r.char
@@ -1563,6 +1617,12 @@ when implModule and defined(sdlPlatform):
                 of 13.char: continue
                 of 127.char: continue
                 else: discard
+              if not consumedPending:
+                # The KEY_DOWN that produced this text must not also be
+                # handled as e.g. Ctrl+Alt+7 for '{' -> drop it.
+                # Mirrors gui_platform clearing lastEvent in onRune.
+                self.pendingKeyPress = (int64, Modifiers).none
+                consumedPending = true
               self.onRune.invoke((r.int64, self.currentModifiers))
         of sdl3.EVENT_DROP_FILE:
           if ev.drop.data != nil:
@@ -1570,6 +1630,10 @@ when implModule and defined(sdlPlatform):
             self.onDropFile.invoke((path, ""))
         else:
           discard
+      # Flush a deferred printable that never produced text and never got a
+      # KEY_UP in this batch (e.g. key still held). Mirrors gui_platform
+      # flushing lastEvent at the end of processEvents.
+      self.dispatchPendingKeyPress()
       if self.eventCounter > 0:
         inc self.eventCounter
       return self.eventCounter

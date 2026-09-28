@@ -77,6 +77,9 @@ proc renderNextPossibleInputsNui(
       columns.add tableColumnFit()
       columns.add tableColumnFill()
 
+    # NUI-GAP: old which-key panel is FillX/SizeToContentY at mainBounds.h with
+    # headerColor bg + charWidth padding and updateSizeToContent/rawY placement;
+    # new anchors above the status bar with fixed Header style + padding 6 (see §24).
     nui.tableLayout(columns, 8, 0):
       discard nui.anchors(0, 1, 1, 1)
         .offsets(8, -(statusBarHeight) - 8, -8, -(statusBarHeight) - 8)
@@ -125,6 +128,12 @@ proc renderToastsNui(self: App, nui: var UiBuilder) {.raises: [Exception].} =
       discard nui.anchors(0, 0, 1, 1).offsets(0, 0, 0, 0)
         .finishAnchors().noHover()
 
+      # NUI-GAP (toasts, see §24): old Box uses 30%-width bordered panel
+      # (panel.border/headerColor, charWidth padding, i>0 separators), width-
+      # proportional slide animation with requestRender; new uses Tooltip +
+      # accent border, fixed padding 8/gap 4 and 96px spacer slide. Old Minimal
+      # uses BlendAlpha age-faded bg + charWidth-measured truncation + half-line
+      # gaps; new fades accent text only and truncates at fixed 200 chars.
       case toastStyle
       of core_settings.ToastStyle.Box:
         nui.layoutVerticalReverse("nui-toast-box-stack"):
@@ -226,6 +235,10 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
       discard nui.fillX().fillY()
       # Status bar – built with nuigi, mimics old builder's status line
       # layoutHorizontalReverse already creates its own node, so we use it directly as the status bar container
+      # NUI-GAP: old status bar switches tab.active/inactiveBackground on
+      # commandLineMode, separates sections with " | " via section() helper and
+      # supports fg/bg theme overloads; new uses fixed Header style + gap(8) and
+      # DefaultText only (see §24).
       nui.layoutHorizontalReverse("nui-status-line"):
         discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).padding(4).gap(8)
         # Left side: status sections from config
@@ -280,12 +293,13 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
             if commands.commandLineMode:
               nui.node:
                 discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(":")
-              # Embedded editor: its NUI root (text-root) uses fillX/fillY, so
-              # constrain it in an explicit-height masked container like
-              # selector-popup-search / git-ui-commit-editor.
+              # Embedded editor: sizes to its content via the text editor fitY
+              # mode (single line); no fixed height pin.
+              # NUI-GAP: old command line uses pushMaxBounds(0.75/0.5) + a separate
+              # commandLineOverlays layer flushed last (and warns on nil); new is
+              # embedded in nui-status-right and silently skips nil (see §24).
               nui.node("nui-commandline"):
-                let cmdH = if nui.backendType == UiBackendType.Terminal: 1.0'f32 else: 24.0'f32
-                discard nui.fillX().height(cmdH).maskChildren()
+                discard nui.fillX().fitY().maskChildren()
                 commands.commandLineEditor.renderNui(nui)
       statusBarHeight = nui.lastNode.size.y
       let h = nui.currentNode.size.y - statusBarHeight
@@ -295,6 +309,9 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
         discard nui.fillX().height(h).fillBackground().styleIndex(UiStyleIndexPanel).padding(4).gap(4)
         layout.renderNui(nui)
 
+    # NUI-GAP: old popups render via OverlayFunction seq with FlushBorders panels
+    # flushed per popup; new renders popup.render(nui) directly with no
+    # FlushBorders/overlay layering (see §24).
     for popup in layout.popups:
       if popup != nil:
         popup.render(nui)

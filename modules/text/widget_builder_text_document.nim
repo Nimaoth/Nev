@@ -13,7 +13,7 @@ import view, treesitter/treesitter
 import scroll_box, treesitter_component, decoration_component, hover_component, contextline_component
 
 import ui/node
-from nuigi import UiBuilder, UiBackendType, UiStyleIndex, UiTextStyleIndex, UiNodeStorageData, UiNodeText, UiRenderCommand, UiRenderCommandKind, text, textStyleIndex, maskChildren, fit, fitX, fitY, node, fillX, fillY, fill, width, fillBackground, styleIndex, backgroundColor, accentVariation, themeStyle, themeTextStyle, padding, gap, layoutVertical, layoutHorizontal, layoutHorizontalReverse, currentNode, currentNodeIndex, nodeStorage, nodeStorageGet, nodeStorageParent, rgba, textColor, fontSize, uiString, getTextArrangement, deferBuild, enqueueNextFrame, position, size, noHover, value, height, wasPressed, borderColor, borderWidth, wrapText, maskChildren, measuredTextSize, absoluteNodePos, absoluteNodePosPrev, withParent, pushId, popId, customRenderCommands
+from nuigi import UiBuilder, UiBackendType, UiStyleIndex, UiTextStyleIndex, UiNodeStorageData, UiNodeText, UiRenderCommand, UiRenderCommandKind, FitY, text, textStyleIndex, maskChildren, fit, fitX, fitY, node, fillX, fillY, fill, width, fillBackground, styleIndex, backgroundColor, accentVariation, themeStyle, themeTextStyle, padding, gap, layoutVertical, layoutHorizontal, layoutHorizontalReverse, currentNode, currentNodeIndex, nodeStorage, nodeStorageGet, nodeStorageParent, rgba, textColor, fontSize, uiString, getTextArrangement, deferBuild, enqueueNextFrame, position, size, noHover, value, height, wasPressed, borderColor, borderWidth, wrapText, maskChildren, measuredTextSize, absoluteNodePos, absoluteNodePosPrev, withParent, pushId, popId, customRenderCommands
 import nuigi/debug/profiler
 from nuigi/widgets import checkbox, highlightedText, tableColumnFit
 import nuigi/widgets/dynamic_virtuallist
@@ -2770,10 +2770,17 @@ proc buildTextSignatureHelpNui(b: var UiBuilder, nodeIdx: int, userData: int) {.
       discard
 
 proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].} =
+  # If the parent sizes to content (fitY, e.g. inside a note with fitY), the
+  # whole editor fits its height: text-root/text-body use fitY so the dynamic
+  # virtual list builds rows immediately and resolves its height up front.
+  let fitContentY = FitY in nui.currentNode.flags
   # The virtual list always reserves its scrollbar track beside the viewport
   # (dynamic_virtuallist scrollbarWidth: 10px GUI, 1px terminal), so the wrap
-  # width must exclude it or lines wrap under the scrollbar.
-  let sbW = if nui.backendType == UiBackendType.Terminal: 1.0'f32 else: 10.0'f32
+  # width must exclude it or lines wrap under the scrollbar. In fit mode the
+  # list takes the full width when everything fits (track collapses), so no
+  # reservation is needed.
+  let sbW = if fitContentY: 0.0'f32
+            elif nui.backendType == UiBackendType.Terminal: 1.0'f32 else: 10.0'f32
   self.preRender(rect(0, 0, max(nui.currentNode.size.x - sbW, 0), nui.currentNode.size.y))
 
   let dirty = self.dirty
@@ -2786,7 +2793,11 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
     let headerBase = nui.themeStyle(UiStyleIndexHeader)[].fillColor
     let headerColor = if self.active: accentVariation(headerBase, 0.04'f32, 1.10'f32) else: headerBase
     nui.layoutVertical("text-root"):
-      discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).padding(0).gap(4)
+      discard nui.fillX().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).padding(0).gap(4)
+      if fitContentY:
+        discard nui.fitY()
+      else:
+        discard nui.fillY()
       nui.nodeStorageParent()
       nui.getOrCreateTextEditorNuiStorage(nui.currentNode).editor = self
       let rootIndex = nui.currentNodeIndex
@@ -2886,9 +2897,15 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
             let rightText = self.customHeader & " | " & readOnlyText & stagedText & diffText & "'" & currentRuneText & "' (U+" & currentRuneHexText & ") " & cursorString(self.selection.first) & "-" & cursorString(self.selection.last)
             nui.node:
               discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(rightText)
-      # Body – lines via dynamic virtual list; each line is a horizontal node with one child node per chunk
+      # Body – lines via dynamic virtual list; each line is a horizontal node with one child node per chunk.
+      # In fit mode the body uses fitY so the list sizes to its rows (immediate
+      # build, no scrollbar when everything fits).
       nui.node("text-body"):
-        discard nui.fillX().fillY()
+        discard nui.fillX()
+        if fitContentY:
+          discard nui.fitY()
+        else:
+          discard nui.fillY()
         var lineCount = 0
         try:
           if self.document != nil and self.displayMap != nil:
@@ -2911,42 +2928,44 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
           # (dual-written alongside the legacy scrollBox). Consumed here so the
           # deferred list build lays out from the new offset this frame.
           # Requests are kept pending when the viewport height is still unknown.
-          block:
-            let editorStorage = nui.getOrCreateTextEditorNuiStorage(nui.frame.nodes[rootIndex].addr)
-            let listStorage = editorStorage.listStorage
-            let tec = self.textEditorComponent
-            if listStorage != nil and tec != nil:
-              var vpH = listStorage.viewportHeight
-              if vpH <= 0.0'f32:
+          # Skipped in fit mode: all rows are visible, scroll range is zero.
+          if not fitContentY:
+            block:
+              let editorStorage = nui.getOrCreateTextEditorNuiStorage(nui.frame.nodes[rootIndex].addr)
+              let listStorage = editorStorage.listStorage
+              let tec = self.textEditorComponent
+              if listStorage != nil and tec != nil:
+                var vpH = listStorage.viewportHeight
+                if vpH <= 0.0'f32:
+                  try:
+                    vpH = nui.currentNode.size.y
+                  except:
+                    discard
+                # Cursor margin mirrors the legacy path: relative fraction of the
+                # viewport or margin-in-lines, clamped like ScrollBox.margin.
+                var marginPx = 0.0'f32
                 try:
-                  vpH = nui.currentNode.size.y
+                  if not self.disableScrolling:
+                    let lineH = if editorStorage.lineHeight > 0.0'f32: editorStorage.lineHeight else: textLineHeightHint
+                    if self.config.getTextCursorMarginRelative():
+                      marginPx = clamp(self.config.getTextCursorMargin(), 0.0, 1.0).float32 * 0.5'f32 * vpH
+                    else:
+                      marginPx = clamp(self.config.getTextCursorMargin().float32 * lineH, 0.0'f32, vpH * 0.5'f32 - lineH * 0.5'f32)
                 except:
                   discard
-              # Cursor margin mirrors the legacy path: relative fraction of the
-              # viewport or margin-in-lines, clamped like ScrollBox.margin.
-              var marginPx = 0.0'f32
-              try:
-                if not self.disableScrolling:
-                  let lineH = if editorStorage.lineHeight > 0.0'f32: editorStorage.lineHeight else: textLineHeightHint
-                  if self.config.getTextCursorMarginRelative():
-                    marginPx = clamp(self.config.getTextCursorMargin(), 0.0, 1.0).float32 * 0.5'f32 * vpH
-                  else:
-                    marginPx = clamp(self.config.getTextCursorMargin().float32 * lineH, 0.0'f32, vpH * 0.5'f32 - lineH * 0.5'f32)
-              except:
-                discard
-              if marginPx < 0.0'f32:
-                marginPx = 0.0'f32
-              if tec.nuiPendingScrollDeltaY != 0:
-                listStorage.scrollByY(tec.nuiPendingScrollDeltaY.float32)
-                tec.nuiPendingScrollDeltaY = 0
-              if tec.nuiPendingScrollToY.isSome:
-                let t = tec.nuiPendingScrollToY.get
-                if listStorage.scrollToItemAtOffset(t.index, t.yOffset.float32, vpH):
-                  tec.nuiPendingScrollToY = none(tuple[index: int, yOffset: float])
-              elif tec.nuiPendingScrollTo.isSome:
-                let t = tec.nuiPendingScrollTo.get
-                if listStorage.scrollToItem(t.index, vpH, marginPx, t.center, t.centerOffscreen):
-                  tec.nuiPendingScrollTo = none(tuple[index: int, center: bool, centerOffscreen: bool, snap: bool])
+                if marginPx < 0.0'f32:
+                  marginPx = 0.0'f32
+                if tec.nuiPendingScrollDeltaY != 0:
+                  listStorage.scrollByY(tec.nuiPendingScrollDeltaY.float32)
+                  tec.nuiPendingScrollDeltaY = 0
+                if tec.nuiPendingScrollToY.isSome:
+                  let t = tec.nuiPendingScrollToY.get
+                  if listStorage.scrollToItemAtOffset(t.index, t.yOffset.float32, vpH):
+                    tec.nuiPendingScrollToY = none(tuple[index: int, yOffset: float])
+                elif tec.nuiPendingScrollTo.isSome:
+                  let t = tec.nuiPendingScrollTo.get
+                  if listStorage.scrollToItem(t.index, vpH, marginPx, t.center, t.centerOffscreen):
+                    tec.nuiPendingScrollTo = none(tuple[index: int, center: bool, centerOffscreen: bool, snap: bool])
           nui.node("text-highlight-layer"):
             discard nui.fillX().fillY().noHover()
             discard nui.deferBuild(buildTextHighlightsNui, rootIndex)

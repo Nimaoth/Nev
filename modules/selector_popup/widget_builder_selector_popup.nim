@@ -11,7 +11,7 @@ import service
 from nuigi import UiBuilder, UiNodeStorageData, UiBackendType, UiStyleIndex,
   UiTextStyleIndex,
   nodeStorageGet, nodeStorage, nodeStorageParent, currentNode, currentNodeIndex,
-  fillX, fillY, fit, fitX, fitY, height, anchors, offsets, finishAnchors,
+  fillX, fillY, fit, fitX, fitY, anchors, offsets, finishAnchors,
   layoutVertical, layoutHorizontal, node, text, textStyleIndex, styleIndex,
   fillBackground, padding, paddingY, gap, maskChildren, wasHovered, wasClicked,
   withParent, themeStyle, themeTextStyle
@@ -69,6 +69,10 @@ proc buildSelectorPopupRow(
         UiStyleIndexMenuItem)
       .fillBackground()
 
+    # NUI-GAP: old index column shows $(i+1) only for i+1<10 else " " (blank for
+    # 10..61+), via createTextWithMaxWidth(maxColumnWidth, detailColor, italic,
+    # detailsFontScale); new always shows the number (10, 11, ...) in
+    # MenuItem[Hover]Text (see §24).
     b.node:
       discard b.fit().padding(2)
         .textStyleIndex(int(if selected:
@@ -96,11 +100,21 @@ proc buildSelectorPopupRow(
       b.highlightedText(item.displayName, matchIndices, labelColor,
         highlightColor, popup.maxDisplayNameWidth)
 
+    # NUI-GAP: old details render one column per detail via
+    # createTextWithMaxWidth(detail, maxColumnWidth, detailColor, italic,
+    # detailsFontScale=config ui.selector.details-font-scale 0.85); new joins
+    # all details into one SmallText column, no max-width/italic/scale (see §24).
+    # NUI-GAP: old grid post-pass aligns columns (maxWidths/maxHeights, gap of
+    # 1*charWidth, vertical centering); new relies on listTable fixed/
+    # proportional widths + columnGap 6/1 (see §24).
     b.node:
       discard b.fit().padding(2).maskChildren()
         .textStyleIndex(int(UiStyleIndexSmallText))
         .text(item.details.join("  "))
 
+    # NUI-GAP: old row click is capture(completionIndex)+onClickAny (any button,
+    # absolute cachedScrollOffset+i index); new wasClicked has different gesture
+    # semantics and relies on virtual-list itemIndex (see §24).
     if b.wasClicked(includeChildren = true):
       popup.selectNth(itemIndex)
       if popup.isInLayout:
@@ -156,8 +170,10 @@ proc selectorPopupCreateUINui*(self: SelectorPopupImpl, nui: var UiBuilder) =
                 .styleIndex(UiStyleIndexHeader).fillBackground()
                 .textStyleIndex(int(UiStyleIndexHeaderText)).text(title)
 
+          # Search editor sizes to its content via the text editor fitY mode
+          # (single line, header hidden); no fixed height pin.
           nui.node("selector-popup-search"):
-            discard nui.fillX().height(editorHeight).maskChildren()
+            discard nui.fillX().fitY().maskChildren()
             self.textEditor.renderNui(nui)
 
           nui.node("selector-popup-results"):
@@ -185,6 +201,11 @@ proc selectorPopupCreateUINui*(self: SelectorPopupImpl, nui: var UiBuilder) =
                 1.0'f32
               else:
                 6.0'f32)
+            # NUI-GAP: old scrolling keeps scrollOffset/lastRenderedIndex math
+            # (maxLineCount 30 or floor((rowsH-whichKeyPx)/lineH), clamp, asserts),
+            # reuses cachedFinderItems when items.locked, handles onScroll and draws
+            # a custom scrollbar; new only ensureItemVisible + listTable default
+            # (see §24).
             if self.scrollToSelected and storage.listStorage != nil and
                 storage.listStorage.ensureItemVisible(
                   self.selected, storage.listStorage.viewportHeight, 0):
@@ -213,11 +234,22 @@ proc selectorPopupCreateUINui*(self: SelectorPopupImpl, nui: var UiBuilder) =
             1.0'f32, 1.0'f32).offsets(2, 0, 0, 0).finishAnchors()
             .styleIndex(UiStyleIndexPanel).fillBackground().padding(4)
             .maskChildren()
+          # NUI-GAP: old preview delegates to previewView or generic
+          # previewer.get.render (open_editor/file/data previewers); new only
+          # handles previewView/previewEditor, dropping the Previewer path;
+          # focusPreview/previewEditor.active wiring is also missing (see §24).
           if self.previewView != nil:
             self.previewView.render(nui)
           elif self.previewEditor != nil:
             self.previewEditor.renderNui(nui)
 
+  # NUI-GAP: old popup chrome dims inactive/focusPreview (inactiveBrightnessChange,
+  # popupBrightnessChange), honors getUiBackgroundTransparent, draws DrawBorder(1)
+  # with panel.border color + userId=newPrimaryId; new always UiStyleIndexMenu
+  # with no border/transparency/active dimming (see §24).
+  # NUI-GAP: old selector-local which-key footer (renderCommandKeys with
+  # prev/next/accept/close filter) has no NUI equivalent; new shows only the
+  # count/"..." status row (see §24).
   if self.isInLayout:
     nui.node("selector-popup"):
       discard nui.fillX().fillY().styleIndex(UiStyleIndexMenu)

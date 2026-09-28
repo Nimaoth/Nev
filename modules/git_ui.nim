@@ -571,6 +571,10 @@ when implModule:
           self.actionsMenuOpen = false
           action
 
+      # NUI-GAP: old view separates sections with separator() DrawBorder rules and
+      # keeps inline Commands rows with keybinding hints (commandToKeys, dotted
+      # leaders, keyword/comment colors); new replaces rules with sectionTitle
+      # bars + gaps and hides commands behind the "…" menu (see §24).
       nui.layoutVertical("git-ui"):
         discard nui.fillX().fillY().styleIndex(UiStyleIndexPanel)
           .fillBackground().backgroundColor(panelColor).padding(0).gap(2)
@@ -622,11 +626,16 @@ when implModule:
               menuLabel("Branches")
               menuCommand("Checkout Selected", self.gitUiSwitchBranch())
 
+        # NUI-GAP: old view scrolls manually (onScroll delta.y*textHeight*2,
+        # clamp + rawY, custom fillRect thumb with scrollBar colors); new uses
+        # scrollBox so scrollOffset is dead and custom theming is gone (see §24).
         nui.scrollBox:
           discard nui.fillX().fitY()
           nui.layoutVertical("git-ui-content"):
             discard nui.fillX().fitY().gap(sectionGap).padding(4)
 
+            # NUI-GAP: old status splits "Status: " + vcs.status into textColor +
+            # accentColor panels; new merges into one DefaultText node (see §24).
             sectionTitle("Repository")
             var status = "No repository"
             if self.vcsService != nil:
@@ -638,6 +647,9 @@ when implModule:
                 .textStyleIndex(int(UiStyleIndexDefaultText))
                 .text("Status: " & status)
 
+            # NUI-GAP: old commit editor is wrapped in separator() + inline
+            # Cancel/Confirm rows with TextWrap/Multiline; new uses a fixed-height
+            # masked box with Cancel/Confirm menu-only (see §24).
             sectionTitle("Commit")
             if self.editCommit:
               nui.node("git-ui-commit-editor"):
@@ -667,6 +679,11 @@ when implModule:
                       .text(changelist.changelist.description)
                   for fileIndex, file in changelist.changelist.files:
                     discard nui.pushId(fileIndex.uint64)
+                    # NUI-GAP: old file rows keep persistent hoveredChangelistIndex/
+                    # hoveredFileIndex (onHover/onEndHover) with lighten(0.08) hover
+                    # and Left-only click -> cursor + diff; new uses transient
+                    # wasHovered and any-button wasClicked, so those fields are dead
+                    # in the NUI path (see §24).
                     nui.layoutHorizontal("git-ui-file"):
                       let selected = self.cursor.panel == Changelists and
                         self.cursor.changelistIndex == changelistIndex and
@@ -768,6 +785,9 @@ when implModule:
                         self.markDirty()
                     discard nui.popId()
 
+            # NUI-GAP: old last-message uses tokenColor("error") vs accentColor with
+            # TextWrap/Multiline; new reuses MenuItemHoverText/DefaultText, so the
+            # error token is lost (see §24).
             if self.lastMessage.len > 0:
               sectionTitle(if self.lastMessageError: "Last Error" else: "Last Result")
               nui.node:

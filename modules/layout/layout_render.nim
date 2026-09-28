@@ -286,6 +286,10 @@ proc renderHorizontalLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises:
       discard nui.fillX().fillY()
       for i, c in self.children:
         let r = rects[i]
+        # NUI-GAP: old H layout drew 1px separators (DrawBorder border(1,0,0,0),
+        # panel.border/editor.background colors) with markDirty hit-slots, xy.x+=1
+        # offset and floor(parent.bounds) pixel snap; dropped here (see §24).
+        # NUI-GAP: old culled slots with bounds.w>0 and bounds.h>0; unconditional here.
         if c != nil:
           nui.node:
             discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).padding(0).finishAnchors()
@@ -326,6 +330,9 @@ proc renderVerticalLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [
       discard nui.fillX().fillY()
       for i, c in self.children:
         let r = rects[i]
+        # NUI-GAP: old V layout drew 1px separators (DrawBorder border(0,0,1,0))
+        # with markDirty hit-slots, xy.y+=1 offset and pixel snap; dropped (see §24).
+        # NUI-GAP: old culled slots with bounds.w>0 and bounds.h>0; unconditional here.
         if c != nil:
           nui.node:
             discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).padding(0).finishAnchors()
@@ -366,6 +373,8 @@ proc renderAlternatingLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises
       discard nui.fillX().fillY()
       for i, c in self.children:
         let r = rects[i]
+        # NUI-GAP: old alt slots used explicit x,y,w,h alt-slot panels with a
+        # bounds.w>0 and bounds.h>0 guard; guard dropped here (see §24).
         if c != nil:
           nui.node:
             discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).padding(0).finishAnchors()
@@ -385,6 +394,14 @@ proc renderTabLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
       if not hideTabBarWhenSingle or self.children.len > 1:
         nui.layoutHorizontal("tab-bar"):
           discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).gap(4).padding(4)
+          # NUI-GAP (tab bar, see §24): old had onClickAny (activeIndex=i +
+          # requestRender) so tabs were switchable; highlightedText with
+          # splitPath.head highlightIndices (darken 0.2, width 10);
+          # tab.activeBackground/inactiveBackground FillBackground switch;
+          # "| "/" | "/" |" separators + 1px DrawBorder below bar; centered
+          # activeLeafView().display() label ("-" fallback); FillX/FillY
+          # MaskContent tab-slot clipping; theme colors. New is text-only and
+          # not clickable; c.display() also skips the activeLeafView() lookup.
           for i, c in self.children:
             if c != nil:
               let isActive = i == idx
@@ -420,6 +437,10 @@ proc renderCenterLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].
     nui.node:
       nui.debugName("center-layout")
       discard nui.fillX().fillY()
+      # NUI-GAP: old center regions drew DrawBorder separators (left/right
+      # border(1,0,0,0), top/bottom border(0,0,1,0)) with markDirty hit-slots and
+      # xy/xwyh ±1 adjustments, plus a bounds.w>0 and bounds.h>0 guard; all
+      # dropped here (see §24).
       for i, c in self.children:
         if c != nil:
           let r = rects[i]

@@ -438,6 +438,11 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder, outWidth, outHei
       discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).padding(4).gap(4)
       nui.layoutHorizontal("terminal-header"):
         discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backgroundColor(headerColor).padding(4).gap(4)
+        # NUI-GAP: old header resolved per-section theme colors
+        # (terminal.header.{group,mode,exitCode,command}.{foreground,background}
+        # [.ok/.fail]) plus inactiveBrightnessChange/tab.inactiveBackground and
+        # transparent-background handling; new renders all sections unstyled
+        # DefaultText with accentVariation panel bg only (see §24).
         template addSection(txt: string) =
           nui.node:
             discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(txt)
@@ -464,6 +469,14 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder, outWidth, outHei
         if cmdText != "":
           addSection(cmdText)
 
+      # NUI-GAP: old body node handled onScroll + mouse press/release/drag/hover
+      # (charWidth/textHeight coords -> onClick/onDrag/onMove) and clipped via
+      # MaskContent/OverlappingChildren; new terminal-body has no input handlers
+      # and no CmdClipPush equivalent (see §24).
+      # NUI-GAP: old sixel/image path (drawImages x3 ranges) is dropped; new emits
+      # only CmdRectFill/CmdText, never CmdImage (see §24).
+      # NUI-GAP: debug.simple-terminal-render per-cell path is dropped; new only
+      # mirrors the advanced run-length path (see §24).
       nui.node("terminal-body"):
         discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor)
         if self.terminal != nil and self.terminal.terminalBuffer.width > 0 and self.terminal.terminalBuffer.height > 0:
@@ -554,6 +567,10 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder, outWidth, outHei
                 let cellY = row.float32 * charH.float32
                 var curPos = nuiMath.vec2(cellX, cellY)
                 var curSize = nuiMath.vec2(charW.float32, charH.float32)
+                # NUI-GAP: old Block cursor swapped the cell text to
+                # cursorBackgroundColor (fgColor=cursorBackgroundColor); new
+                # discards here and always overlays cursorBg text, so Block (and
+                # Underline/BarLeft reuse of the run fg) differs (see §24).
                 case self.terminal.cursor.shape
                 of CursorShape.Block: discard
                 of CursorShape.Underline:
@@ -631,12 +648,20 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder, outWidth, outHei
                   else: bgCol = fgCol
                   bg = bgRGB
                   fgCol = cursorBg
+                # NUI-GAP: textFlags (underscore/italic/blink, incl. the
+                # styleBlink->TextBold quirk) is computed but never applied:
+                # UiNodeText has no font-style/underline slots, so underline /
+                # italic / blink-bold from the old drawText(textFlags) path are
+                # visually lost (see §24). styleDim->darken(0.2) is kept.
                 if styleUnderscore in cell.style: textFlags = textFlags or 1
                 if styleItalic in cell.style: textFlags = textFlags or 2
                 if styleBlink in cell.style: textFlags = textFlags or 4
                 if styleDim in cell.style: fgCol = fgCol.darken(0.2)
             flushNui()
           if self.terminal.scrollHeight > 0:
+            # NUI-GAP: old scrollbar color fell back to backgroundColor.lighten(0.1)
+            # and geometry came from node bounds with floor/ceil; new falls back to
+            # grey and derives geometry from buffer size in raw floats (see §24).
             let scrollBarCol = self.terminals.themes.theme.color(@["scrollBar", "scrollbarSlider.background"], color(0.2,0.2,0.2))
             let boundsW = width.float32 * charW.float32
             let boundsH = height.float32 * charH.float32

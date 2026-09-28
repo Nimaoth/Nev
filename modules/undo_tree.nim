@@ -564,6 +564,8 @@ when implModule:
           UiStyleIndexRow)
         .fillBackground()
 
+      # NUI-GAP: old graph cells honor per-cell UINodeFlags (TextBold for first
+      # branch); new forces uniform UiStyleIndexDefaultMono (see §24).
       b.node:
         discard b.fillX().height(storage.lineHeight)
         for cell in line.cells:
@@ -584,6 +586,12 @@ when implModule:
           storage.lineDetails[itemIndex]
         else:
           ""
+        # NUI-GAP: old detail splits saveMark/nodeText/timeStr into 3 drawText
+        # calls (lighten/darken + italic timestamp); new collapses to one text
+        # node (see §24).
+        # NUI-GAP: old selection is list.activeSelectionBackground fillRect with
+        # no hover state; new conflates transient wasHovered with selected and
+        # loses the exact theme color (see §24).
         b.node:
           discard b.position(
             view.cachedMaxCol.float32 * storage.charWidth, 0)
@@ -592,6 +600,9 @@ when implModule:
             else:
               UiStyleIndexDefaultMono)).text(detail)
 
+      # NUI-GAP: old Left click selects, DoubleClick selects + applySelected
+      # unconditionally; Nuigi has no double-click event so new only supports
+      # single click (+ autoApply) with an explicit Apply button (see §24).
       if b.wasClicked(includeChildren = true):
         view.selected = itemIndex
         view.markDirty()
@@ -702,6 +713,10 @@ when implModule:
           if nui.button("Oldest"):
             self.undoTreeFirstChange()
 
+        # NUI-GAP: old list is a ScrollBox (defaultItemHeight/scrollSpeed/margin +
+        # custom scrollbar); new is a dynamicVirtualList, so scrollBox.scrollTo
+        # calls in applySelected/undoTreeSelectCurrent have no effect on
+        # listStorage (see §24).
         nui.node("undo-tree-body"):
           discard nui.fillX().fillY()
           if hasTree and self.cachedLines.len > 0:

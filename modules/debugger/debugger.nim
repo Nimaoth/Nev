@@ -21,6 +21,8 @@ when implModule:
   import previewer, finder
   import workspace, vfs, vfs_service
   import ui/node
+  from nuigi import UiBuilder
+  import nuigi/widgets/tree_table
   import nimsumtree/[rope, buffer]
   import text_component, text_editor_component, language_server_component, decoration_component, inlay_hint_component, treesitter_component
   import hover_component, move_component, config_component
@@ -126,6 +128,11 @@ when implModule:
   proc renderView(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
   proc renderView(self: OutputView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
   proc renderView(self: ToolbarView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
+  proc renderViewNui(self: StacktraceView, nui: var UiBuilder, debugger: Debugger)
+  proc renderViewNui(self: ThreadsView, nui: var UiBuilder, debugger: Debugger)
+  proc renderViewNui(self: VariablesView, nui: var UiBuilder, debugger: Debugger)
+  proc renderViewNui(self: OutputView, nui: var UiBuilder, debugger: Debugger)
+  proc renderViewNui(self: ToolbarView, nui: var UiBuilder, debugger: Debugger)
   proc getEventHandlers(view: ThreadsView, inject: Table[string, EventHandler]): seq[EventHandler]
   proc getEventHandlers(view: StacktraceView, inject: Table[string, EventHandler]): seq[EventHandler]
   proc getEventHandlers(view: VariablesView, inject: Table[string, EventHandler]): seq[EventHandler]
@@ -145,7 +152,11 @@ when implModule:
     proc renderDebuggerView(view: T, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].} =
       return view.renderView(builder, debugger)
 
+    proc renderDebuggerViewNui(view: T, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
+      view.renderViewNui(nui, debugger)
+
     view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = renderDebuggerView(self.T, builder)
+    view.renderNuiImpl = proc(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} = renderDebuggerViewNui(self.T, nui, debugger)
     return view
 
   var gCurrentVariablesView: VariablesView = nil
@@ -269,6 +280,26 @@ when implModule:
     if self.variablesFilter.len > 0:
       asyncSpawn self.findVariable(self.variablesFilter)
     debugger.platform.requestRender()
+
+  proc requestVariableChildren*(self: VariablesView, debugger: Debugger,
+      ids: (ThreadId, FrameId), varRef: VariablesReference) =
+    ## Guarded lazy fetch for visible uncached tree rows (file_explorer
+    ## cache-miss pattern: report 0 children this frame, mark dirty on arrival).
+    let key = ids & varRef
+    if key in self.pendingVariableFetches:
+      return
+    self.pendingVariableFetches.incl(key)
+    proc fetchVariableChildren() {.async: (raises: []).} =
+      try:
+        await debugger.updateVariables(varRef, 0)
+      except:
+        discard
+      try:
+        self.pendingVariableFetches.excl(key)
+        self.markDirty()
+      except:
+        discard
+    asyncSpawn fetchVariableChildren()
 
   proc createVariablesView*(debugger: Debugger): VariablesView =
     let self = createDebuggerView[VariablesView](debugger)
@@ -410,10 +441,9 @@ when implModule:
   proc getThreads*(self: Debugger): lent seq[ThreadInfo] =
     return self.threads
 
-  proc getStackTrace*(self: Debugger, threadId: ThreadId): Option[StackTraceResponse] =
-    if self.stackTraces.contains(threadId):
-      return self.stackTraces[threadId].some
-    return StackTraceResponse.none
+  proc getStackTrace*(self: Debugger, threadId: ThreadId): Option[ptr StackTraceResponse] =
+    self.stackTraces.withValue(threadId, val):
+      return val.some
 
   proc isCollapsed*(self: VariablesView, ids: (ThreadId, FrameId, VariablesReference)): bool =
     ids in self.collapsedVariables
@@ -656,6 +686,39 @@ when implModule:
       asyncSpawn self.updateScopes(t.id, self.currentFrameIndex, force=false)
     self.platform.requestRender()
 
+  proc selectThread*(self: Debugger, index: int) =
+    ## Click-to-select equivalent of prevThread/nextThread for the NUI rows.
+    if index < 0 or index >= self.threads.len:
+      return
+
+    self.currentThreadIndex = index
+    self.currentFrameIndex = 0
+
+    if self.currentThread().getSome(t) and not self.stackTraces.contains(t.id):
+      asyncSpawn self.updateStackTrace(t.id.some)
+    self.platform.requestRender()
+
+  proc selectStackFrame*(self: Debugger, index: int) =
+    ## Click-to-select equivalent of prevStackFrame/nextStackFrame for the NUI rows.
+    let thread = self.currentThread().getOr:
+      return
+
+    if not self.stackTraces.contains(thread.id):
+      return
+
+    let stack {.cursor.} = self.stackTraces[thread.id]
+    if index < 0 or index > stack.stackFrames.high:
+      return
+
+    self.currentFrameIndex = index
+
+    for view in self.variableViews:
+      view.variablesCursor = VariableCursor()
+
+    if self.currentThread().getSome(t):
+      asyncSpawn self.updateScopes(t.id, self.currentFrameIndex, force=false)
+    self.platform.requestRender()
+
   proc openFileForCurrentFrame*(self: Debugger, slot: string = "") =
     if self.currentStackFrame().getSome(frame) and
         frame[].source.isSome and
@@ -887,6 +950,47 @@ when implModule:
 
       return VariableCursor.none
 
+  proc varTreeCursor(view: VariablesView, debugger: Debugger,
+      cursor: VariableCursor): DebuggerVariablesCursor =
+    result = DebuggerVariablesCursor(debugger: debugger, view: view)
+    result.path = cursor.variableCursorIndexPath()
+    result.index = if result.path.len > 0: result.path[^1] else: 0
+
+  proc applyVarTreeExpand(view: VariablesView, debugger: Debugger,
+      cursor: VariableCursor) =
+    ## Mirrors a collapsedVariables expansion into the live NUI tree (if any);
+    ## falls back to bulk sync on next render when the tree isn't available.
+    if cursor.scope < 0:
+      return
+    let ids = debugger.currentVariablesContext().getOr:
+      return
+    var tree = view.varTree
+    if tree == nil or not view.varTreeValid or view.varTreeIds != ids:
+      view.varTreeValid = false
+      return
+    try:
+      tree.expandNode(view.varTreeCursor(debugger, cursor))
+    except:
+      discard
+
+  proc applyVarTreeCollapse(view: VariablesView, debugger: Debugger,
+      cursor: VariableCursor) =
+    ## Mirrors a collapsedVariables collapse into the live NUI tree (if any).
+    if cursor.scope < 0:
+      return
+    let ids = debugger.currentVariablesContext().getOr:
+      return
+    var tree = view.varTree
+    if tree == nil or not view.varTreeValid or view.varTreeIds != ids:
+      view.varTreeValid = false
+      return
+    try:
+      let cur = view.varTreeCursor(debugger, cursor)
+      if isVarTreeExpanded(tree, debuggerVarCursorKey(cur.path)):
+        tree.toggleNode(cur)
+    except:
+      discard
+
   proc expandVariable*(self: VariablesView) {.async.} =
     let debugger = getDebugger().getOr:
       return
@@ -909,6 +1013,7 @@ when implModule:
 
         if va.variablesReference != 0.VariablesReference:
           self.collapsedVariables.excl ids & va.variablesReference
+          self.applyVarTreeExpand(debugger, self.variablesCursor)
           self.markDirty()
           await debugger.updateVariables(va.variablesReference, 0)
       else:
@@ -916,6 +1021,7 @@ when implModule:
 
     elif self.variablesCursor.scope in 0..scopes[].scopes.high:
       self.collapsedVariables.excl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
+      self.applyVarTreeExpand(debugger, self.variablesCursor)
 
     self.refilterVariables(debugger)
     self.markDirty()
@@ -943,12 +1049,16 @@ when implModule:
 
         if va.variablesReference != 0.VariablesReference:
           self.collapsedVariables.excl ids & va.variablesReference
+          self.applyVarTreeExpand(debugger, self.variablesCursor)
           self.markDirty()
 
           if debugger.variables.contains(ids & va.variablesReference):
             let childrenUpdateFutures = collect:
-              for childVariable in debugger.variables[ids & va.variablesReference].variables:
+              for i, childVariable in debugger.variables[ids & va.variablesReference].variables:
                 self.collapsedVariables.excl ids & childVariable.variablesReference
+                var childCursor = self.variablesCursor
+                childCursor.path.add((i, va.variablesReference))
+                self.applyVarTreeExpand(debugger, childCursor)
                 if childVariable.variablesReference != 0.VariablesReference:
                   debugger.updateVariables(childVariable.variablesReference, 0)
             await allFutures(childrenUpdateFutures)
@@ -990,9 +1100,11 @@ when implModule:
 
         elif va.variablesReference != 0.VariablesReference:
           self.collapsedVariables.incl ids & va.variablesReference
+          self.applyVarTreeCollapse(debugger, self.variablesCursor)
 
     elif self.variablesCursor.scope in 0..scopes[].scopes.high:
       self.collapsedVariables.incl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
+      self.applyVarTreeCollapse(debugger, self.variablesCursor)
 
     self.markDirty()
     debugger.platform.requestRender()
@@ -1034,8 +1146,11 @@ when implModule:
         let va {.cursor.} = debugger.variables[ids & v.varRef].variables[v.index]
 
         if debugger.variables.contains(ids & va.variablesReference):
-          for childVariable in debugger.variables[ids & va.variablesReference].variables:
+          for i, childVariable in debugger.variables[ids & va.variablesReference].variables:
             self.collapsedVariables.incl ids & childVariable.variablesReference
+            var childCursor = self.variablesCursor
+            childCursor.path.add((i, va.variablesReference))
+            self.applyVarTreeCollapse(debugger, childCursor)
 
     elif self.variablesCursor.scope in 0..scopes[].scopes.high:
       self.collapsedVariables.incl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
@@ -2533,3 +2648,14 @@ when implModule:
     return self.createUI(builder, debugger)
   proc renderView(self: ToolbarView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
     return self.createUI(builder, debugger)
+
+  proc renderViewNui(self: StacktraceView, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
+    self.createStackTraceUINui(nui, debugger)
+  proc renderViewNui(self: ThreadsView, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
+    self.createThreadsUINui(nui, debugger)
+  proc renderViewNui(self: VariablesView, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
+    self.createVariablesUINui(nui, debugger)
+  proc renderViewNui(self: OutputView, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
+    self.createOutputUINui(nui, debugger)
+  proc renderViewNui(self: ToolbarView, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
+    self.createToolbarUINui(nui, debugger)

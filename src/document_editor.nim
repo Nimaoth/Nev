@@ -12,7 +12,7 @@ include misc/dynlib_export
 import platform
 import document, service, config_provider
 
-from nuigi import UiBuilder, fillX, fillY, focusScope, isFocusWithin, node,
+from nuigi import UiBuilder, FitY, currentNode, fillX, fillY, fitY, focusScope, isFocusWithin, node,
   popId, pushId, requestFocus, restoreFocus
 
 from scripting_api import EditorId
@@ -116,8 +116,15 @@ proc renderNui*(self: DocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].}
     return
   {.cast(gcsafe).}:
     nui.pushId(cast[uint64](self.id))
+    # If the parent sizes to content (fitY, e.g. inside a note with fitY),
+    # fit the editor height to its content so it grows instead of filling.
+    let parentFitY = FitY in nui.currentNode.flags
     nui.node("document-editor-focus-root"):
-      discard nui.fillX().fillY().focusScope()
+      discard nui.fillX().focusScope()
+      if parentFitY:
+        discard nui.fitY()
+      else:
+        discard nui.fillY()
       self.renderNuiImpl(self, nui)
       if self.active and not nui.isFocusWithin():
         nui.restoreFocus()
