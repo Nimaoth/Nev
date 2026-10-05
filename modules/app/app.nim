@@ -1,6 +1,5 @@
 import misc/[timer]
 import app_options, service, platform
-import ui/node
 from scripting_api import Backend
 
 const currentSourcePath2 = currentSourcePath()
@@ -17,12 +16,12 @@ type AppBase* = ref object of RootObj
 proc newApp*(backend: Backend, platform: Platform, services: Services, options = AppOptions()): AppBase
 proc appLoadPlugins(self: AppBase)
 proc appShutdown(self: AppBase)
-proc appRenderImpl(self: AppBase, builder: UINodeBuilder, frameIndex: int)
+proc appRenderImpl(self: AppBase, frameIndex: int)
 {.pop.}
 
 proc loadPlugins*(self: AppBase) = appLoadPlugins(self)
 proc shutdown*(self: AppBase) = appShutdown(self)
-proc render*(self: AppBase, builder: UINodeBuilder, frameIndex: int) = appRenderImpl(self, builder, frameIndex)
+proc render*(self: AppBase, frameIndex: int) = appRenderImpl(self, frameIndex)
 
 when implModule:
   import std/[sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
@@ -75,7 +74,7 @@ when implModule:
 
   type EditorState = object
     fontSize: float32 = 14
-    lineDistance: float32 = 1
+    lineDistance: float32 = 4
     fontRegular: string
     fontBold: string
     fontItalic: string
@@ -756,7 +755,7 @@ when implModule:
     self.vfs = self.vfsService.vfs
 
     self.platform.fontSize = 14
-    self.platform.lineDistance = 1
+    self.platform.lineDistance = 4
 
     self.fallbackFonts.add "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
     self.fallbackFonts.add "app://fonts/NotoEmoji/NotoEmoji.otf"
@@ -2839,8 +2838,7 @@ when implModule:
     discard self.layout.createAndAddView(document)
 
   proc changeAnimationSpeed*(self: App, factor: float) =
-    self.platform.builder.animationSpeedModifier *= factor
-    log lvlInfo, fmt"{self.platform.builder.animationSpeedModifier}"
+    discard
 
   proc addCommandScript*(self: App, context: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) =
     let command = if arg.len == 0: action else: action & " " & arg
@@ -2897,11 +2895,6 @@ when implModule:
       return view.getActiveEditor()
 
     return DocumentEditor.none
-
-  # todo move to layout
-  proc logRootNode*(self: App) =
-    let str = self.platform.builder.root.dump(true)
-    debugf"logRootNode: {str}"
 
   proc replayKeys*(self: App, register: string) =
     if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
@@ -2985,7 +2978,6 @@ when implModule:
 
 
         result.add &"Platform:\n{self.platform.getStatisticsString().indent(4)}\n"
-        result.add &"UI:\n{self.platform.builder.getStatisticsString().indent(4)}\n"
 
         log lvlInfo, result
       except:
@@ -3034,8 +3026,8 @@ when implModule:
 
   include generated/app_commands
 
-  proc appRenderImpl(self: AppBase, builder: UINodeBuilder, frameIndex: int) =
-    self.App.updateWidgetTree(builder, frameIndex)
+  proc appRenderImpl(self: AppBase, frameIndex: int) =
+    self.App.updateWidgetTree(frameIndex)
 
   proc init_module_app*() {.cdecl, exportc, dynlib.} =
     registerCommands(getServiceChecked(CommandService))

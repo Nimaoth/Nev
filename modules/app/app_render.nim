@@ -1,9 +1,7 @@
 import std/[strutils]
 import vmath, bumpy, chroma
-import misc/[custom_logger, rect_utils, jsonex]
-import ui/node
+import misc/[custom_logger, rect_utils, jsonex, util]
 import platform
-import ui/[widget_library]
 import document_editor, theme, layout/layout, config_provider, command_line, toast
 import core_settings
 import popup, view
@@ -15,26 +13,6 @@ import vcs, service
 {.push raises: [].}
 
 logCategory "widget_builder"
-
-type BorderFlags = object
-  left: bool
-  right: bool
-  top: bool
-  bottom: bool
-
-proc none(_: typedesc[BorderFlags]): BorderFlags = BorderFlags()
-
-var borderFlagStack = newSeq[BorderFlags]()
-
-proc resetBorderFlags() {.gcsafe.} =
-  {.gcsafe.}:
-    borderFlagStack = @[BorderFlags.none()]
-
-proc flushOverlays(builder: UINodeBuilder, overlays: var seq[OverlayFunction]) =
-  for overlay in overlays:
-    overlay()
-    builder.panel(&{FlushBorders})
-  overlays.setLen(0)
 
 import app
 from nuigi import UiBuilder, UiColor, UiBackendType, rgba, fillX, fillY, fitY, fit, height,
@@ -85,7 +63,7 @@ proc renderNextPossibleInputsNui(
         .offsets(8, -(statusBarHeight) - 8, -8, -(statusBarHeight) - 8)
         .pivotY(1).finishAnchors()
         .fitY().styleIndex(UiStyleIndexHeader).fillBackground()
-        .padding(6).maskChildren().noHover()
+        .backendPadding(6).maskChildren().noHover()
 
       for row in 0 ..< inputLines:
         for column in 0 ..< columnCount:
@@ -138,7 +116,7 @@ proc renderToastsNui(self: App, nui: var UiBuilder) {.raises: [Exception].} =
       of core_settings.ToastStyle.Box:
         nui.layoutVerticalReverse("nui-toast-box-stack"):
           discard nui.anchors(0.7, 0, 1, 0).offsets(8, 8, -8, 8)
-            .finishAnchors().gap(6).fitY()
+            .finishAnchors().backendGap(6).fitY()
 
           for index in 0 ..< toastCount:
             let toast = toastService.toasts[toastService.toasts.high - index]
@@ -160,8 +138,8 @@ proc renderToastsNui(self: App, nui: var UiBuilder) {.raises: [Exception].} =
                   discard nui.size(slideOffset, 1)
               nui.layoutVertical("nui-toast-box"):
                 discard nui.fillX().fitY().styleIndex(UiStyleIndexTooltip)
-                  .fillBackground().borderWidth(1)
-                  .borderColor(accentColor).padding(8).gap(4)
+                  .fillBackground().backendBorderWidth(1)
+                  .borderColor(accentColor).backendPadding(8, 1).backendGap(4)
                 nui.node:
                   discard nui.fillX().fitY()
                     .textStyleIndex(int(UiStyleIndexHeaderText))
@@ -188,7 +166,7 @@ proc renderToastsNui(self: App, nui: var UiBuilder) {.raises: [Exception].} =
       of core_settings.ToastStyle.Minimal:
         nui.layoutVerticalReverse("nui-toast-minimal-stack"):
           discard nui.anchors(0, 1, 1, 1).offsets(40, -20, -40, -20)
-            .pivotY(1).finishAnchors().gap(6).fitY()
+            .pivotY(1).finishAnchors().backendGap(6).fitY()
 
           for index in 0 ..< toastCount:
             let toast = toastService.toasts[toastService.toasts.high - index]
@@ -204,7 +182,7 @@ proc renderToastsNui(self: App, nui: var UiBuilder) {.raises: [Exception].} =
             nui.pushId(index.uint64)
             nui.layoutHorizontal("nui-toast-minimal"):
               discard nui.fit().styleIndex(UiStyleIndexTooltip)
-                .fillBackground().padding(4).gap(4)
+                .fillBackground().backendPadding(4, 1).backendGap(4)
               nui.node:
                 discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
                   .textColor(accentColor).text(toast.title)
@@ -240,10 +218,10 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
       # supports fg/bg theme overloads; new uses fixed Header style + gap(8) and
       # DefaultText only (see §24).
       nui.layoutHorizontalReverse("nui-status-line"):
-        discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).padding(4).gap(8)
+        discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backendPadding(4).backendGap(8)
         # Left side: status sections from config
         nui.layoutHorizontal("nui-status-left"):
-          discard nui.fit().gap(8)
+          discard nui.fit().backendGap(8)
           for s in runtimeConfig.getUiStatusLine():
             case s.kind
             of JString:
@@ -281,7 +259,7 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
 
         # Center / right: input history and command line editor
         nui.layoutHorizontal("nui-status-right"):
-          discard nui.fitY().fillX().gap(8)
+          discard nui.fitY().fillX().backendGap(8)
           if self.inputHistory.len > 0:
             nui.node:
               discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(self.inputHistory)
@@ -305,8 +283,8 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
       let h = nui.currentNode.size.y - statusBarHeight
       # Main area – renders layout via NUI
       # layoutVertical already creates a node, so we use it directly for the container (no extra nui.node wrapper)
-      nui.layoutVertical("nui-main-stub"):
-        discard nui.fillX().height(h).fillBackground().styleIndex(UiStyleIndexPanel).padding(4).gap(4)
+      nui.layoutVertical("nui-main"):
+        discard nui.fillX().height(h).fillBackground().styleIndex(UiStyleIndexPanel).backendPadding(0).backendGap(0)
         layout.renderNui(nui)
 
     # NUI-GAP: old popups render via OverlayFunction seq with FlushBorders panels
@@ -322,218 +300,7 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
 {.push gcsafe.}
 {.push raises: [].}
 
-proc updateWidgetTree*(self: App, builder: UINodeBuilder, frameIndex: int) =
-  # New builder path – build status line with nuigi and stub rest.
-  # This is called while the nuigi frame is already begun (desktop_main surrounds render).
-  let themes = getServiceChecked(ThemeService)
-  let platform = getServiceChecked(PlatformService).platform
-  let commands = getServiceChecked(CommandLineService)
-  let layout = getServiceChecked(LayoutService)
-  let toasts = getServiceChecked(ToastService)
-  let runtimeConfig = self.config.runtime
-
-  builder.theme = themes.theme
-
-  var headerColor = if commands.commandLineMode: builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
-  headerColor.a = 1
-  let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-
-  let statusLine = getServiceChecked(StatusLineService)
-
-  # resetBorderFlags()
-
-  # var rootFlags = &{FillX, FillY, OverlappingChildren, MaskContent}
-  # builder.panel(rootFlags): # fullscreen overlay
-
-  #   let rootBounds = currentNode.bounds
-  #   self.preRender(currentNode.bounds)
-
-  #   var overlays: seq[OverlayFunction]
-  #   var commandLineOverlays: seq[OverlayFunction]
-  #   var mainBounds: Rect
-
-  #   builder.panel(&{FillX, FillY, LayoutVerticalReverse, DrawChildrenReverse}): # main panel
-
-  #     # todo: handle self.statusBarOnTop
-  #     builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
-  #       var i = 0
-
-  #       proc section(text: string, foreground: Color, background: Color, extraFlags: UINodeFlags) =
-  #         var flags = &{SizeToContentX, SizeToContentY, DrawText} + extraFlags
-  #         if i > 0:
-  #           builder.panel(flags, textColor = foreground, backgroundColor = background, text = " | ")
-  #         builder.panel(flags, textColor = foreground, backgroundColor = background, text = text)
-  #         inc i
-
-  #       proc section(text: string, foreground: Option[string] = string.none, background: Option[string] = string.none) =
-  #         var extraFlags = 0.UINodeFlags
-  #         if background.isSome:
-  #           extraFlags.incl FillBackground
-  #         let foreground = foreground.mapIt(builder.theme.color(it, textColor))
-  #         let background = background.mapIt(builder.theme.color(it, headerColor))
-  #         section(text, foreground.get(textColor), background.get(headerColor), extraFlags)
-
-  #       builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}, pivot = vec2(1, 0)):
-
-  #         for s in runtimeConfig.getUiStatusLine():
-  #           case s.kind
-  #           of JString:
-  #             case s.getStr
-  #             of "mode":
-  #               let modes = if layout.getActiveEditor().getSome(editor):
-  #                 let modes = editor.config.get("text.modes", seq[string])
-  #                 "[" & modes.join(", ") & "]"
-  #               else:
-  #                 ""
-  #               section(modes)
-
-  #             of "vcs.status":
-  #               let vcss: VCSService = getServiceChecked(VCSService)
-  #               for vcs in vcss.versionControlSystems:
-  #                 section(&"[{vcs.name}: {vcs.status}]")
-  #                 break
-
-  #             of "global-mode":
-  #               let modeText = if self.currentMode.len == 0: "[No Mode]" else: self.currentMode
-  #               section(modeText)
-
-  #             of "session":
-  #               let sessionText = if self.sessionFile.len == 0: "[No Session]" else: fmt"[{self.sessionFile}]"
-  #               section(sessionText)
-
-  #             else:
-  #               if statusLine.getRenderer(s.getStr).getSome(renderer):
-  #                 if i > 0:
-  #                   builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = " | ")
-  #                 overlays.add renderer(builder)
-  #                 inc i
-
-  #           else:
-  #             discard
-
-  #       builder.panel(&{}, w = builder.charWidth)
-  #       builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = self.inputHistory, textColor = textColor, pivot = vec2(1, 0))
-
-  #       builder.panel(&{FillX, SizeToContentY}, pivot = vec2(1, 0)):
-  #         if commands.commandLineEditor != nil:
-  #           let wasActive = commands.commandLineEditor.active
-  #           commands.commandLineEditor.active = commands.commandLineMode
-  #           if commands.commandLineEditor.active != wasActive:
-  #             commands.commandLineEditor.markDirty(notify=false)
-
-  #           builder.pushMaxBounds(rootBounds.wh * vec2(0.75, 0.5))
-  #           defer:
-  #             builder.popMaxBounds()
-  #           commandLineOverlays.add commands.commandLineEditor.render(builder)
-  #         else:
-  #           log lvlWarn, &"No command line editor"
-
-  #     builder.panel(&{FlushBorders})
-
-  #     builder.panel(&{FillX, FillY, FlushBorders, MaskContent}, pivot = vec2(0, 1), tag = "main"): # main panel
-  #       mainBounds = currentNode.bounds
-  #       overlays.add layout.render(builder)
-
-  #   builder.panel(&{FlushBorders})
-  #   builder.flushOverlays(overlays)
-
-  #   # popups
-  #   for i, popup in layout.popups:
-  #     overlays.add popup.render(builder)
-  #     builder.panel(&{FlushBorders})
-  #     builder.flushOverlays(overlays)
-
-  #   let borderColor = builder.theme.color("panel.border", color(0, 0, 0))
-  #   let textColor = builder.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
-  #   var padding = (builder.charWidth * 0.75).floor
-  #   if platform.backend == scripting_api.Terminal:
-  #     padding = 0
-
-  #   if self.showNextPossibleInputs:
-  #     let inputLines = runtimeConfig.getUiWhichKeyHeight()
-  #     let continuesTextColor = builder.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
-  #     let keysTextColor = builder.theme.tokenColor("number", color(225/255, 200/255, 200/255))
-  #     builder.panel(&{FillX, SizeToContentY}, y = mainBounds.h):
-  #       let numLines = min(self.nextPossibleInputs.len, inputLines)
-  #       builder.renderCommandKeys(self.nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, numLines, mainBounds, padding = 1)
-  #     builder.updateSizeToContent(builder.currentChild)
-  #     builder.currentChild.rawY = mainBounds.h - builder.currentChild.bounds.h
-
-  #   let toastStyle = runtimeConfig.getUiToastStyle()
-  #   let toastMaxTime = runtimeConfig.getUiToastDuration().float64 * 0.001
-  #   let animateToasts = runtimeConfig.getUiToastAnimation()
-  #   let maxToasts = runtimeConfig.getUiToastMax()
-  #   case toastStyle
-  #   of core_settings.ToastStyle.Box:
-  #     let toastWidth = floor(currentNode.w * 0.3)
-  #     builder.panel(&{LayoutVerticalReverse}, x = floor(currentNode.w * 0.7), y = mainBounds.y, w = toastWidth, h = mainBounds.h, border = border(builder.defaultBorderWidth), tag = "toasts"):
-  #       let maxLen = 200
-  #       for i in 0..<min(toasts.toasts.len, maxToasts):
-  #         let toast {.cursor.} = toasts.toasts[toasts.toasts.high - i]
-  #         let color = builder.theme.tokenColor(toast.color, textColor)
-
-  #         var xOffset = 0.0
-  #         if animateToasts:
-  #           let fadeOutTime = 0.175 / max(toastMaxTime, 1)
-  #           let t = clamp((toast.progress - (1 - fadeOutTime)) / fadeOutTime, 0, 1)
-  #           xOffset = toastWidth * t * t
-  #           if xOffset > 0:
-  #             platform.requestRender(true)
-
-  #         if i > 0:
-  #           builder.panel(&{FillX}, h = builder.defaultBorderWidth, pivot = vec2(0, 1))
-  #           builder.updateSizeToContent(builder.currentChild)
-
-  #         builder.panel(&{FillX, SizeToContentY, LayoutVertical, FillBackground, DrawBorder, DrawBorderTerminal}, border = border(1), pivot = vec2(0, 1), backgroundColor = headerColor, borderColor = borderColor, tag = "toast"):
-  #           currentNode.rawX = currentNode.boundsRaw.x + xOffset
-  #           builder.panel(&{FillX, SizeToContentY, LayoutVertical}, border = border(padding)):
-  #             if padding > 0: builder.panel(&{FillX}, h = padding)
-  #             let contentWidth = currentNode.w - currentNode.border.left - currentNode.border.right
-  #             builder.panel(&{SizeToContentY, DrawText, TextWrap}, w = contentWidth, text = toast.title, textColor = color)
-  #             if padding > 0: builder.panel(&{FillX}, h = padding)
-  #             let max = min(toast.message.len, maxLen)
-  #             if max < toast.message.len:
-  #               builder.panel(&{SizeToContentY, DrawText, TextWrap}, w = contentWidth, text = toast.message[0..<max], textColor = textColor)
-  #             else:
-  #               builder.panel(&{SizeToContentY, DrawText, TextWrap}, w = contentWidth, text = toast.message, textColor = textColor)
-  #             if padding > 0: builder.panel(&{FillX}, h = padding)
-  #             builder.panel(&{DrawBorder, DrawBorderTerminal}, border = border(0, 0, builder.defaultBorderWidth, 0), w = (contentWidth - 2) * (1 - toast.progress), h = builder.defaultBorderWidth, borderColor = color, backgroundColor = headerColor, tag = "progress bar")
-
-  #             if padding > 0: builder.panel(&{FillX}, h = padding)
-
-  #   of core_settings.ToastStyle.Minimal:
-  #     let toastWidth = max(floor(currentNode.w - builder.charWidth * 10), 1)
-  #     builder.panel(&{LayoutVerticalReverse}, x = builder.charWidth * 5, y = mainBounds.y - builder.textHeight * 2, w = toastWidth, h = mainBounds.h, tag = "toasts"):
-  #       for i in 0..<min(toasts.toasts.len, maxToasts):
-  #         let toast {.cursor.} = toasts.toasts[toasts.toasts.high - i]
-  #         let color = builder.theme.tokenColor(toast.color, textColor)
-
-  #         let a = (maxToasts.float - i.float) / maxToasts.float
-
-  #         if i > 0:
-  #           builder.panel(&{FillX}, h = floor(builder.textHeight * 0.5), pivot = vec2(0, 1))
-
-  #         builder.panel(&{SizeToContentX, SizeToContentY, MaskContent, BlendAlpha}, backgroundColor = color(1, 1, 1, a), pivot = vec2(0, 1), tag = "toast"):
-  #           builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal, FillBackground}, backgroundColor = headerColor):
-  #             builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = toast.title, textColor = color)
-  #             builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = " - ", textColor = textColor)
-  #             let maxLen = ((toastWidth - builder.currentChild.bounds.xw) / builder.charWidth).int
-  #             var nlIndex = toast.message.find("\n")
-  #             if nlIndex == -1:
-  #               nlIndex = toast.message.len
-  #             let max = min(nlIndex, maxLen)
-  #             if max < toast.message.len:
-  #               builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = toast.message[0..<max], textColor = color)
-  #             else:
-  #               builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = toast.message, textColor = color)
-  #     if toasts.toasts.len > 0:
-  #       platform.requestRender(true)
-
-  #   builder.panel(&{FlushBorders})
-
-  #   builder.flushOverlays(overlays)
-  #   builder.flushOverlays(commandLineOverlays)
-
+proc updateWidgetTree*(self: App, frameIndex: int) =
   {.cast(gcsafe).}:
     try:
       var plat = getServiceChecked(PlatformService).platform

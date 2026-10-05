@@ -177,7 +177,7 @@ when implModule:
 All modules are compiled into the main binary. The `build.nim` script generates `src/module_imports.nim` which imports all modules and provides `initModules()` / `shutdownModules()` procs.
 
 **Dynamic (development):**
-Run `nim c build.nim && nim c -r build.nim` to build dirty modules as DLLs into `native_plugins/`. Use `-f` to force rebuild, `-s` for single-threaded, `-r` for release mode.
+Run `nim c build.nim && nim c -r build.nim` to build dirty modules as DLLs into `native_plugins/`. Use `--rebuild-dependents` to also rebuild modules that depend on changed modules, `-f` to force rebuild, `-s` for single-threaded, and `-r` for release mode.
 
 ### Module Loading
 

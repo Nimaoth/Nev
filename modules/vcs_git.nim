@@ -197,7 +197,7 @@ when implModule:
 
   proc gitUpdateStatus(self: VersionControlSystemGit): Future[void] {.gcsafe, async: (raises: []).} =
     try:
-      var args = @["status", "-b", "--porcelain=2"]
+      var args = @["--no-optional-locks", "status", "-b", "--porcelain=2"]
 
       const branchHead = "# branch.head "
       const branchUpstream = "# branch.upstream "
@@ -253,7 +253,7 @@ when implModule:
     log lvlInfo, "getChangedFiles"
 
     try:
-      let lines = runProcessAsync("git", @["status", "-s"], workingDir=self.root).await
+      let lines = runProcessAsync("git", @["--no-optional-locks", "status", "-s"], workingDir=self.root).await
 
       var stagedFiles = newSeq[VCSFileInfo]()
       var workingFiles = newSeq[VCSFileInfo]()

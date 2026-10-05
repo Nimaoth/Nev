@@ -18,6 +18,8 @@ type
   DisplayChunk* = object
     diffChunk*: DiffChunk
     displayPoint*: DisplayPoint
+    replacementText*: ptr UncheckedArray[char]
+    replacementTextLen*: int
 
 func displayPoint*(row: Natural = 0, column: Natural = 0): DisplayPoint = Point(row: row.uint32, column: column.uint32).DisplayPoint
 func `$`*(a: DisplayPoint): string {.borrow.}
@@ -42,7 +44,17 @@ func displayEndPoint*(self: DisplayChunk): DisplayPoint {.inline.} = displayPoin
 func endDisplayPoint*(self: DisplayChunk): DisplayPoint {.inline.} = displayPoint(self.displayPoint.row, self.displayPoint.column + self.diffChunk.len.uint32)
 func len*(self: DisplayChunk): int {.inline.} = self.diffChunk.len
 func `$`*(self: DisplayChunk): string {.inline.} = $self.diffChunk
-template toOpenArray*(self: DisplayChunk): openArray[char] = self.diffChunk.toOpenArray
+template toOpenArray*(self: DisplayChunk): openArray[char] =
+  if self.replacementText != nil:
+    self.replacementText.toOpenArray(0, self.replacementTextLen - 1)
+  else:
+    self.diffChunk.toOpenArray
+
+proc originalByteOffset*(self: DisplayChunk, renderedByteOffset: Natural): int =
+  ## Replacement glyphs preserve rune positions, but not UTF-8 byte offsets.
+  if self.replacementText == nil:
+    return renderedByteOffset
+  return mapRuneByteOffset(self.toOpenArray, self.diffChunk.toOpenArray, renderedByteOffset)
 
 proc split*(self: DisplayChunk, index: int): tuple[prefix: DisplayChunk, suffix: DisplayChunk] =
   let (prefix, suffix) = self.diffChunk.split(index)
@@ -64,20 +76,27 @@ type
     tabMap*: TabMap
     wrapMap*: WrapMap
     diffMap*: DiffMap
+    whitespaceText: string
+    whitespaceCharacter: string
+    whitespaceGlyphLen: int
+    whitespaceColor: Color
     old: DisplayMapSnapshot
     onUpdated*: Event[tuple[map: DisplayMap, old: DisplayMapSnapshot]]
 
   DisplayChunkIterator* = object
+    displayMap: DisplayMap
     diffChunks*: DiffChunkIterator
-    bufferedChunk: Option[DisplayChunk]
+    bufferedChunks: seq[DisplayChunk]
     displayChunk*: Option[DisplayChunk]
     displayPoint*: DisplayPoint
     atEnd*: bool
     indentGuideColumn*: Option[int]
     insideIndent: bool = true
-    bar: string = "|"
+    bar: string = "│"
     didSeek*: bool = false
     indentGuideColor: Color
+    whitespaceGlyphLen: int
+    whitespaceColor: Color
 
 func clone*(self: DisplayMapSnapshot): DisplayMapSnapshot =
   DisplayMapSnapshot(
@@ -107,11 +126,32 @@ proc new*(_: typedesc[DisplayMap]): DisplayMap =
 
 proc iter*(displayMap: var DisplayMap, arena: ptr Arena, highlighter: Option[Highlighter] = Highlighter.none, theme: Theme = nil): DisplayChunkIterator =
   result = DisplayChunkIterator(
+    displayMap: displayMap,
     diffChunks: displayMap.diffMap.snapshot.iter(arena, highlighter, theme),
     indentGuideColor: color(1, 1, 1),
+    whitespaceGlyphLen: displayMap.whitespaceGlyphLen,
+    whitespaceColor: displayMap.whitespaceColor,
   )
   if theme != nil:
     result.indentGuideColor = theme.tokenColor(["indentGuide", "comment"], color(1, 1, 1))
+
+proc setWhitespaceRendering*(self: DisplayMap, character: string,
+    color: Color) =
+  self.whitespaceColor = color
+  if self.whitespaceCharacter == character:
+    return
+  self.whitespaceCharacter = character
+  self.whitespaceGlyphLen = 0
+  if character.len == 0:
+    return
+  let glyph = $character.runeAt(0)
+  self.whitespaceGlyphLen = glyph.len
+  if self.whitespaceText.len == 128 * glyph.len and
+      self.whitespaceText.toOpenArray(0, glyph.len - 1) == glyph.toOpenArray(0, glyph.len - 1):
+    return
+  self.whitespaceText.setLen(0)
+  for _ in 0..<128:
+    self.whitespaceText.add glyph
 
 func remoteId*(self: DisplayMap): BufferId = self.wrapMap.snapshot.buffer.remoteId
 func buffer*(self: DisplayMap): lent BufferSnapshot = self.wrapMap.snapshot.buffer
@@ -121,6 +161,30 @@ func styledChunks*(self: var DisplayChunkIterator): var StyledChunkIterator {.in
 func styledChunks*(self: DisplayChunkIterator): StyledChunkIterator {.inline.} = self.diffChunks.styledChunks
 
 func isNil*(self: DisplayMapSnapshot): bool = self.wrapMap.isNil
+
+type DisplayMapVersion* = object
+  ## Changes whenever display rows may have been renumbered (buffer edits,
+  ## overlays, tab width, wrapping, diff gaps).
+  remoteId*: uint64
+  bufferVersion*: Global
+  overlay*: int
+  tab*: int
+  wrap*: int
+  diff*: int
+
+func `==`*(a, b: DisplayMapVersion): bool =
+  a.remoteId == b.remoteId and a.overlay == b.overlay and a.tab == b.tab and
+    a.wrap == b.wrap and a.diff == b.diff and a.bufferVersion == b.bufferVersion
+
+func version*(self: DisplayMap): DisplayMapVersion =
+  DisplayMapVersion(
+    remoteId: self.overlay.snapshot.buffer.remoteId.uint64,
+    bufferVersion: self.overlay.snapshot.buffer.version,
+    overlay: self.overlay.snapshot.version,
+    tab: self.tabMap.snapshot.version,
+    wrap: self.wrapMap.snapshot.version,
+    diff: self.diffMap.snapshot.version,
+  )
 
 proc `$`*(self: DisplayMapSnapshot): string =
   result.add "display map\n"
@@ -286,13 +350,14 @@ proc seek*(self: var DisplayChunkIterator, displayPoint: DisplayPoint) =
   self.diffChunks.seek(displayPoint.DiffPoint)
   self.displayChunk = DisplayChunk.none
   self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
+  self.bufferedChunks.setLen(0)
   self.didSeek = true
 
 proc seek*(self: var DisplayChunkIterator, point: Point) =
   self.diffChunks.seek(point)
   self.displayChunk = DisplayChunk.none
   self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
-  self.bufferedChunk = DisplayChunk.none
+  self.bufferedChunks.setLen(0)
   self.insideIndent = true
   self.didSeek = true
 
@@ -300,21 +365,63 @@ proc seekLine*(self: var DisplayChunkIterator, line: int) =
   self.diffChunks.seekLine(line)
   self.displayChunk = DisplayChunk.none
   self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
-  self.bufferedChunk = DisplayChunk.none
+  self.bufferedChunks.setLen(0)
   self.insideIndent = true
   self.didSeek = true
 
+proc applyWhitespaceRendering(self: var DisplayChunkIterator): Option[DisplayChunk] =
+  if self.displayChunk.isNone or self.whitespaceGlyphLen == 0:
+    return self.displayChunk
+
+  let chunk = self.displayChunk.get
+  if not chunk.styledChunk.drawWhitespace or chunk.replacementText != nil:
+    return self.displayChunk
+
+  let chunkData = chunk.styledChunk.chunk.data
+  let chunkLen = chunk.styledChunk.chunk.len
+  var firstSpace = -1
+  for i in 0..<chunkLen:
+    if chunkData[i] == ' ':
+      firstSpace = i
+      break
+  if firstSpace < 0:
+    return self.displayChunk
+
+  if firstSpace > 0:
+    let (prefix, suffix) = chunk.split(firstSpace)
+    if suffix.len > 0:
+      self.bufferedChunks.add suffix
+    self.displayChunk = prefix.some
+    return self.displayChunk
+
+  var whitespaceLen = 0
+  while whitespaceLen < min(chunkLen, 128) and chunkData[whitespaceLen] == ' ':
+    inc whitespaceLen
+
+  var (whitespaceChunk, suffix) = chunk.split(whitespaceLen)
+  if suffix.len > 0:
+    self.bufferedChunks.add suffix
+  whitespaceChunk.replacementText =
+    cast[ptr UncheckedArray[char]](self.displayMap.whitespaceText[0].addr)
+  whitespaceChunk.replacementTextLen = whitespaceLen * self.whitespaceGlyphLen
+  whitespaceChunk.diffChunk.inputChunk.inputChunk.inputChunk.styledChunk.color =
+    self.whitespaceColor
+  self.displayChunk = whitespaceChunk.some
+  return self.displayChunk
+
 proc next*(self: var DisplayChunkIterator): Option[DisplayChunk] =
   prof("DisplayChunkIterator.next")
-  if self.atEnd:
+  if self.atEnd and self.bufferedChunks.len == 0:
     self.displayChunk = DisplayChunk.none
     return
 
   let oldDisplayChunk = self.displayChunk
-  self.displayChunk = if self.bufferedChunk.isSome:
-    self.bufferedChunk.take().some
+  if self.bufferedChunks.len > 0:
+    self.displayChunk = self.bufferedChunks[^1].some
+    self.bufferedChunks.setLen(self.bufferedChunks.len - 1)
   else:
-    self.diffChunks.next().mapIt(DisplayChunk(diffChunk: it, displayPoint: it.diffPoint.DisplayPoint))
+    self.displayChunk = self.diffChunks.next().mapIt(
+      DisplayChunk(diffChunk: it, displayPoint: it.diffPoint.DisplayPoint))
 
   self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
 
@@ -334,33 +441,33 @@ proc next*(self: var DisplayChunkIterator): Option[DisplayChunk] =
       if maxEnd < chunk.len:
         self.insideIndent = false
       self.atEnd = self.diffChunks.atEnd
-      return self.displayChunk
+      return self.applyWhitespaceRendering()
     elif chunk.point.column.int > indentGuideColumn:
       self.atEnd = self.diffChunks.atEnd
       self.insideIndent = false
-      return self.displayChunk
+      return self.applyWhitespaceRendering()
     elif indentGuideColumn >= chunk.point.column.int + maxEnd:
       # after first non whitespace
       self.atEnd = self.diffChunks.atEnd
       self.insideIndent = false
-      return self.displayChunk
+      return self.applyWhitespaceRendering()
     elif chunk.point.column.int == indentGuideColumn:
       let suffix = chunk.split(1).suffix
       if suffix.len > 0:
-        self.bufferedChunk = suffix.some
-      self.displayChunk.get.styledChunk.chunk.len = 1
+        self.bufferedChunks.add suffix
+      self.displayChunk.get.styledChunk.chunk.len = self.bar.len
       self.displayChunk.get.styledChunk.chunk.data = cast[ptr UncheckedArray[char]](self.bar[0].addr)
       self.displayChunk.get.styledChunk.color = self.indentGuideColor
-      return self.displayChunk
+      return self.applyWhitespaceRendering()
     else:
       let (prefix, suffix) = chunk.split(indentGuideColumn - chunk.point.column.int)
       if suffix.len > 0:
-        self.bufferedChunk = suffix.some
+        self.bufferedChunks.add suffix
       self.displayChunk = prefix.some
-      return self.displayChunk
+      return self.applyWhitespaceRendering()
 
   self.atEnd = self.diffChunks.atEnd
-  return self.displayChunk
+  return self.applyWhitespaceRendering()
 
 template outputPoint*(self: DisplayChunk): DisplayPoint = self.displayPoint
 template endOutputPoint*(self: DisplayChunk): DisplayPoint = self.endDisplayPoint

@@ -1,8 +1,9 @@
 import std/[options, json]
 import vmath, bumpy
 import misc/[event, id]
+from misc/input_api import MouseButton, Modifiers
 import input_handler/input_handler
-import ui/node, view
+import view
 
 import document_editor
 

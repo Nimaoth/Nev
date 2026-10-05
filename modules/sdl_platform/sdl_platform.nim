@@ -7,14 +7,13 @@ include module_base
 
 proc newSdlPlatform*(): Platform {.rtl, raises: [].}
 
-when implModule and defined(sdlPlatform):
+when implModule:
   import std/[options, strformat, strutils, unicode, tables, hashes, os, math]
   import vmath as nevMath except Vec2, vec2, IVec2, ivec2, Vec3, Vec4, Mat4
   import chroma
   import nuigi/core/vecmath as nuiMath
   import misc/[custom_logger, util, event, timer, custom_async, custom_unicode]
-  import ui/node as unode
-  from ui/node import FontInfo, UIBorder, UINodeFlag, UINodeFlags
+  from misc/render_command import FontInfo, UINodeFlag, UINodeFlags, contains, `==`
   import app_options, vfs, vfs_service, service
   import nimsumtree/arc
 
@@ -36,7 +35,7 @@ when implModule and defined(sdlPlatform):
   logCategory "sdl-platform"
 
   const PlotHistoryLen = 256
-  const defaultAntialiasMeshWidth = 0.0'f32
+  const defaultAntialiasMeshWidth = 1.0'f32
 
   type
     SdlInputAccum = object
@@ -195,12 +194,6 @@ when implModule and defined(sdlPlatform):
       self.charWidthVal = cw
       self.charGapVal = gap
       self.lineHeightVal = lh
-      # update FontInfo baseline scale etc for default size/flags
-      self.builder.charWidth = cw.float32
-      self.builder.lineHeight = lh.float32
-      self.builder.lineGap = self.lineDistanceVal.float32
-      # refresh cached FontInfo for current size (invalidate)
-      # keep fontInfoCache but ensure default entry recomputed lazily
     except:
       discard
 
@@ -364,11 +357,7 @@ when implModule and defined(sdlPlatform):
     gcsafeb:
       if activePlatform() == nil:
         return 0'i16
-      let faces = activePlatform().fontRender.listFontFaces()
-      for i in 0 ..< faces.len:
-        if faces[i][0] == name:
-          return UiFontId(faces[i][1])
-      return 0'i16
+      return max(0'i16, activePlatform().fontRender.findFont(name))
 
   proc plotHistoryFn(x: float32, userData: int): float32 {.gcsafe, raises: [].} =
     {.cast(gcsafe).}:
@@ -921,136 +910,8 @@ when implModule and defined(sdlPlatform):
               of 1: self.fontRender.flags = {FontRenderFlag.PixelSnapping}
               else: self.fontRender.flags = {}
 
-  proc handleLegacyRenderCommand(
-    cmd: unode.RenderCommand,
-    renderCommands: ptr unode.RenderCommands,
-    b: var UiBuilder,
-    renderCmds: var ArrayView[UiRenderCommand],
-    offsets: var seq[nuiMath.Vec2],
-    curOffset: var nuiMath.Vec2
-  ) {.gcsafe, raises: [].} =
-    case cmd.kind
-    of unode.RenderCommandKind.Rect:
-      renderCmds.add UiRenderCommand(kind: CmdRectStroke, pos: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset, size: nuiMath.vec2(cmd.bounds.w.float32, cmd.bounds.h.float32), color: toUiColor(cmd.color), thickness: 1)
-    of unode.RenderCommandKind.FilledRect:
-      renderCmds.add UiRenderCommand(kind: CmdRectFill, pos: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset, size: nuiMath.vec2(cmd.bounds.w.float32, cmd.bounds.h.float32), color: toUiColor(cmd.color))
-    of unode.RenderCommandKind.TextRaw:
-      if cmd.len > 0 and cmd.data != nil:
-        var txt = newString(cmd.len)
-        copyMem(txt[0].addr, cmd.data, cmd.len)
-        let textIdx = block:
-          let idx = b.frame.texts.len
-          b.frame.texts.add UiNodeText(text: txt.uiString, fontSize: 16, textColor: toUiColor(cmd.color))
-          (idx + 1).uint16
-        renderCmds.add UiRenderCommand(kind: CmdText, pos: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset, color: toUiColor(cmd.color), textIndex: textIdx)
-    of unode.RenderCommandKind.Text:
-      if cmd.arrangementIndex == uint32.high:
-        if cmd.textLen > 0 and renderCommands != nil:
-          let txt = renderCommands.strings[cmd.textOffset.int ..< cmd.textOffset.int + cmd.textLen.int]
-          let textIdx = block:
-            let idx = b.frame.texts.len
-            b.frame.texts.add UiNodeText(text: txt.uiString, fontSize: 16 * max(0.1'f32, cmd.fontScale.float32), textColor: toUiColor(cmd.color))
-            (idx + 1).uint16
-          renderCmds.add UiRenderCommand(kind: CmdText, pos: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset, color: toUiColor(cmd.color), textIndex: textIdx)
-      else:
-        if renderCommands != nil and cmd.arrangementIndex.int < renderCommands.arrangements.len:
-          let indices = renderCommands.arrangements[cmd.arrangementIndex]
-          let arrangement = renderCommands.arrangement
-          let basePos = nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset
-          let baseColor = toUiColor(cmd.color)
-          let underlineCol = toUiColor(cmd.underlineColor)
-          let fontScale = max(0.1'f32, cmd.fontScale.float32)
-          var txt = newStringOfCap(max(0, indices.runes.b - indices.runes.a + 1) * 4 + 4)
-          for i in indices.runes:
-            if i < 0 or i >= arrangement.runes.len: continue
-            var rune = arrangement.runes[i]
-            if rune == ' '.Rune and unode.TextDrawSpaces in cmd.flags:
-              rune = renderCommands.space
-            if rune.int32 < 32 and rune != ' '.Rune and rune != renderCommands.space:
-              continue
-            txt.add($rune)
-          if txt.len > 0:
-            let textIdx = block:
-              let idx = b.frame.texts.len
-              b.frame.texts.add UiNodeText(text: txt.uiString, fontSize: 16 * fontScale, textColor: baseColor)
-              (idx + 1).uint16
-            # echo basePos, " ", txt
-            renderCmds.add UiRenderCommand(kind: CmdText, pos: basePos, color: baseColor, textIndex: textIdx)
-          if unode.TextUndercurl in cmd.flags:
-            renderCmds.add UiRenderCommand(kind: CmdRectFill, pos: basePos + nuiMath.vec2(0, cmd.bounds.h.float32 - 2), size: nuiMath.vec2(cmd.bounds.w.float32, 2), color: underlineCol)
-    of unode.RenderCommandKind.Image:
-      let imgId = UiImageId(cast[uint64](cmd.textureId))
-      renderCmds.add UiRenderCommand(kind: CmdImage, pos: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset, size: nuiMath.vec2(cmd.bounds.w.float32, cmd.bounds.h.float32), color: toUiColor(cmd.color), imageId: imgId, uv0: nuiMath.vec2(cmd.uv0.x, cmd.uv0.y), uv1: nuiMath.vec2(cmd.uv1.x, cmd.uv1.y))
-    of unode.RenderCommandKind.ScissorStart:
-      renderCmds.add UiRenderCommand(kind: CmdClipPush, pos: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset, size: nuiMath.vec2(cmd.bounds.w.float32, cmd.bounds.h.float32))
-    of unode.RenderCommandKind.ScissorEnd:
-      renderCmds.add UiRenderCommand(kind: CmdClipPop)
-    of unode.RenderCommandKind.TransformStart:
-      offsets.add curOffset
-      curOffset = curOffset + nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32)
-      renderCmds.add UiRenderCommand(kind: CmdTransformPush, offset: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32))
-    of unode.RenderCommandKind.TransformEnd:
-      if offsets.len > 0:
-        curOffset = offsets.pop()
-      renderCmds.add UiRenderCommand(kind: CmdTransformPop)
-    else:
-      discard
-
-  proc convertLegacyNodes(self: SdlPlatform, b: var UiBuilder, n: unode.UINode, offset: nuiMath.Vec2) {.raises: [Exception].} =
-    let nodePos = nuiMath.vec2(n.boundsActual.x.float32, n.boundsActual.y.float32)
-    let nodeSize = nuiMath.vec2(n.boundsActual.w.float32, n.boundsActual.h.float32)
-    let idStr = $n.id
-    b.node(idStr):
-      discard b.position(nodePos)
-      discard b.size(nodeSize)
-      if unode.FillBackground in n.flags:
-        discard b.backgroundColor(toUiColor(n.backgroundColor))
-      if unode.DrawBorder in n.flags and n.border != UIBorder():
-        discard b.borderWidths(n.border.left.float32, n.border.top.float32, n.border.right.float32, n.border.bottom.float32)
-        discard b.borderColor(toUiColor(n.borderColor))
-      if unode.DrawText in n.flags and n.text.len > 0:
-        discard b.text(n.text)
-        discard b.textColor(toUiColor(n.textColor))
-      if unode.MaskContent in n.flags:
-        b.maskChildren()
-      var totalCmds = n.renderCommands.commands.len
-      for _ in n.renderCommands.decodeRenderCommands: inc totalCmds
-      for list in n.renderCommandList:
-        if list != nil:
-          totalCmds += list.commands.len
-          for _ in list[].decodeRenderCommands: inc totalCmds
-      var renderCmds = b.frame.arena[].allocEmptyArray(max(1, totalCmds * 10 + 64), UiRenderCommand)
-      var offsets: seq[nuiMath.Vec2]
-      var curOffset = nodePos * 0 + offset * 0
-      for cmd in n.renderCommands.commands:
-        handleLegacyRenderCommand(cmd, n.renderCommands.addr, b, renderCmds, offsets, curOffset)
-      for cmd in n.renderCommands.decodeRenderCommands:
-        handleLegacyRenderCommand(cmd, n.renderCommands.addr, b, renderCmds, offsets, curOffset)
-      for list in n.renderCommandList:
-        if list != nil:
-          for cmd in list.commands:
-            handleLegacyRenderCommand(cmd, list[].addr, b, renderCmds, offsets, curOffset)
-          for cmd in list[].decodeRenderCommands:
-            handleLegacyRenderCommand(cmd, list[].addr, b, renderCmds, offsets, curOffset)
-      if renderCmds.len > 0:
-        discard b.customRenderCommands(renderCmds)
-      for _, child in n.children:
-        self.convertLegacyNodes(b, child, nodePos + offset)
-
   proc buildNuiUi(self: SdlPlatform) {.raises: [Exception].} =
     var b = self.nui.addr
-    # Legacy Nev nodes – absolute positioned under a screen-covering custom root
-    if false:
-      let vpW = if self.nui.frame.nodes.len > 0: self.nui.frame.nodes[0].size.x else: self.winW.float32
-      let vpH = if self.nui.frame.nodes.len > 0: self.nui.frame.nodes[0].size.y else: self.winH.float32
-      let rootW = if vpW > 0: vpW else: self.winW.float32
-      let rootH = if vpH > 0: vpH else: self.winH.float32
-      self.nui.node("nev-legacy-root"):
-        discard self.nui.position(nuiMath.vec2(0, 0))
-        discard self.nui.size(rootW, rootH)
-        if self.builder != nil:
-          for _, child in self.builder.root.children:
-            self.convertLegacyNodes(self.nui, child, nuiMath.vec2(0, 0))
 
     if self.settings.showSettingsWindow:
       self.buildSettingsWindow(self.nui)
@@ -1312,10 +1173,6 @@ when implModule and defined(sdlPlatform):
         discard self.renderer.renderClear()
         discard self.renderer.renderPresent()
 
-      self.builder = unode.newNodeBuilder()
-      self.builder.useInvalidation = true
-      self.builder.defaultBorderWidth = 1
-
       # Default font config – mirrors gui_platform defaults
       self.fontRegular = "app://fonts/DejaVuSansMono.ttf"
       self.fontBold = "app://fonts/DejaVuSansMono-Bold.ttf"
@@ -1344,32 +1201,6 @@ when implModule and defined(sdlPlatform):
         scale: 1.0,
         advance: runeAdvanceFallback,
       )
-
-      # Builder text measurement delegates to FontRender (mirrors gui_platform.getTextBounds)
-      self.builder.textWidthImpl = proc(node: unode.UINode): float32 {.gcsafe, raises: [].} =
-        {.cast(gcsafe).}:
-          try:
-            if gActiveNuiPlatform != nil:
-              return gActiveNuiPlatform.getTextBoundsSdl(node.text, gActiveNuiPlatform.fontSizeVal * node.fontScale, node.flags).x
-            return node.text.len.float32 * 8
-          except:
-            return node.text.len.float32 * 8
-      self.builder.textWidthStringImpl = proc(text: string): float32 {.gcsafe, raises: [].} =
-        {.cast(gcsafe).}:
-          try:
-            if gActiveNuiPlatform != nil:
-              return gActiveNuiPlatform.getTextBoundsSdl(text).x
-            return text.len.float32 * 8
-          except:
-            return text.len.float32 * 8
-      self.builder.textBoundsImpl = proc(node: unode.UINode): nevMath.Vec2 {.gcsafe, raises: [].} =
-        {.cast(gcsafe).}:
-          try:
-            if gActiveNuiPlatform != nil:
-              return gActiveNuiPlatform.getTextBoundsSdl(node.text, gActiveNuiPlatform.fontSizeVal * node.fontScale, node.flags)
-            return nevMath.vec2(node.text.len.float32 * 8, 18)
-          except:
-            return nevMath.vec2(node.text.len.float32 * 8, 18)
 
       self.supportsThinCursor = true
       self.focused = true
@@ -1491,8 +1322,7 @@ when implModule and defined(sdlPlatform):
     try:
       if self.pendingKeyPress.getSome(pending):
         self.pendingKeyPress = (int64, Modifiers).none
-        if not self.builder.handleKeyPressed(pending[0], pending[1]):
-          self.onKeyPress.invoke((pending[0], pending[1]))
+        self.onKeyPress.invoke((pending[0], pending[1]))
     except:
       discard
 
@@ -1541,8 +1371,7 @@ when implModule and defined(sdlPlatform):
         of sdl3.EVENT_MOUSE_MOTION:
           let pos = nevMath.vec2(ev.motion.x.float, ev.motion.y.float)
           let delta = nevMath.vec2(ev.motion.xrel.float, ev.motion.yrel.float)
-          if not self.builder.handleMouseMoved(pos, self.currentMouseButtons, self.currentModifiers):
-            self.onMouseMove.invoke((pos, delta, self.currentModifiers, self.currentMouseButtons))
+          self.onMouseMove.invoke((pos, delta, self.currentModifiers, self.currentMouseButtons))
         of sdl3.EVENT_MOUSE_BUTTON_DOWN:
           var button = toPlatformMouseButton(ev.button.button)
           if ev.button.clicks == 2:
@@ -1555,8 +1384,7 @@ when implModule and defined(sdlPlatform):
             # also track as Left for compatibility, but keep distinct button for event
             discard
           let pos = nevMath.vec2(ev.button.x.float, ev.button.y.float)
-          if not self.builder.handleMousePressed(button, self.currentModifiers, pos):
-            self.onMousePress.invoke((button, self.currentModifiers, pos))
+          self.onMousePress.invoke((button, self.currentModifiers, pos))
         of sdl3.EVENT_MOUSE_BUTTON_UP:
           var button = toPlatformMouseButton(ev.button.button)
           if ev.button.clicks == 2:
@@ -1566,14 +1394,12 @@ when implModule and defined(sdlPlatform):
           if button in {MouseButton.Left, MouseButton.Middle, MouseButton.Right}:
             self.currentMouseButtons.excl button
           let pos = nevMath.vec2(ev.button.x.float, ev.button.y.float)
-          # if not self.builder.handleMouseReleased(button, self.currentModifiers, pos):
-          #   self.onMouseRelease.invoke((button, self.currentModifiers, pos))
+          # self.onMouseRelease.invoke((button, self.currentModifiers, pos))
         of sdl3.EVENT_MOUSE_WHEEL:
           let pos = nevMath.vec2(ev.wheel.mouse_x.float, ev.wheel.mouse_y.float)
           let scroll = nevMath.vec2(ev.wheel.x.float, ev.wheel.y.float)
           if scroll.x != 0 or scroll.y != 0:
-            if not self.builder.handleMouseScroll(pos, scroll, self.currentModifiers):
-              self.onScroll.invoke((pos, scroll, self.currentModifiers))
+            self.onScroll.invoke((pos, scroll, self.currentModifiers))
         of sdl3.EVENT_KEY_DOWN:
           let mods = toPlatformModifiers(ev.key.`mod`)
           self.setMods(mods)
@@ -1584,8 +1410,7 @@ when implModule and defined(sdlPlatform):
               # produce TEXT_INPUT, so dispatch immediately. Flush any
               # older deferred printable first so ordering stays intact.
               self.dispatchPendingKeyPress()
-              if not self.builder.handleKeyPressed(input, mods):
-                self.onKeyPress.invoke((input, mods))
+              self.onKeyPress.invoke((input, mods))
             else:
               # Printable candidate: defer until we know whether TEXT_INPUT
               # follows. If the previous deferred key never got text, it was
@@ -1602,8 +1427,7 @@ when implModule and defined(sdlPlatform):
             # (mirrors gui_platform emitting lastEvent on button release),
             # then emit the release itself.
             self.dispatchPendingKeyPress()
-            if not self.builder.handleKeyReleased(input, mods):
-              self.onKeyRelease.invoke((input, mods))
+            self.onKeyRelease.invoke((input, mods))
         of sdl3.EVENT_TEXT_INPUT:
           if ev.text.text != nil:
             let text = $ev.text.text
@@ -1669,7 +1493,6 @@ when implModule and defined(sdlPlatform):
     self.updateCharWidth()
     self.fontInfoVal.lineHeight = self.lineHeightVal
     self.fontInfoVal.lineGap = self.lineDistanceVal
-    # keep builder already updated via updateCharWidth
     # keep DefaultMono style in sync (used by terminal NUI rendering)
     try:
       if self.nuiInitialized:
@@ -1727,6 +1550,8 @@ when implModule and defined(sdlPlatform):
       if self.nuiInitialized:
         let monoId = self.fontRegularId
         if monoId != 0:
+          self.nui.themeTextStyle(UiStyleIndexDefaultText)[].fontId = monoId
+          self.nui.themeTextStyle(UiStyleIndexDefaultText)[].fontSize = self.fontSizeVal.float32
           self.nui.themeTextStyle(UiStyleIndexDefaultMono)[].fontId = monoId
           self.nui.themeTextStyle(UiStyleIndexDefaultMono)[].fontSize = self.fontSizeVal.float32
     except:

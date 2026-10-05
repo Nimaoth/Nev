@@ -2,13 +2,13 @@ import std/[options, tables, strutils, math]
 import vmath, bumpy, chroma
 import pixie
 import misc/[util, custom_logger, custom_unicode, tui]
+import misc/input_api as input_api
 import theme, view, config_provider, service, platform
 import types_impl, core_settings
 
 from std/colors as colors import nil
 
-import ui/node
-from nuigi import UiBuilder, UiStyleIndex, UiTextStyleIndex, UiColor, UiNodeText, UiRenderCommand, UiRenderCommandKind, rgba, uiString, text, textStyleIndex, fit, fitY, node, fillX, fillY, fillBackground, styleIndex, backgroundColor, accentVariation, themeStyle, themeTextStyle, padding, gap, layoutVertical, layoutHorizontal, customRenderCommands, getTextArrangement
+import nuigi
 import nuigi/core/vecmath as nuiMath
 import nuigi/core/arena
 import nuigi/core/array_view
@@ -22,410 +22,66 @@ template vec2(a, b: untyped): untyped = vmath.vec2(a, b)
 
 logCategory "terminal-render"
 
-proc toRgbaFast*(c: Color): ColorRGBA {.inline.} =
-  ## Convert Color to ColorRGBA
-  result.r = (c.r * 255 + 0.5).uint8
-  result.g = (c.g * 255 + 0.5).uint8
-  result.b = (c.b * 255 + 0.5).uint8
-  result.a = (c.a * 255 + 0.5).uint8
-
-proc drawImages(self: TerminalView, builder: UINodeBuilder, renderCommands: var RenderCommands, zRange: Slice[int]) =
-  buildCommands(renderCommands):
-    for s in self.terminal.images:
-      if s.z > zRange.b:
-        break
-      if s.z < zRange.a:
-        continue
-      var bounds = rect(0, 0, 0, 0)
-      # todo: parent
-      bounds.x = s.cx.float * builder.charWidth + s.offsetX.float
-      bounds.y = s.cy.float * builder.textHeight + s.offsetY.float
-      if s.ch > 0:
-        bounds.h = s.ch.float * builder.textHeight
-        if s.cw > 0:
-          bounds.w = s.cw.float * builder.charWidth
-        else:
-          bounds.w = bounds.h * s.sw.float / s.sh.float
-      else:
-        if s.cw > 0:
-          bounds.w = s.cw.float * builder.charWidth
-        else:
-          bounds.w = s.sw.float
-        bounds.h = bounds.w * s.sh.float / s.sw.float
-
-      # echo &"render image {s.textureId.int} {bounds}, cell size: {builder.charWidth}x{builder.lineHeight}"
-      drawImage(bounds, s.textureId)
-
-proc renderTerminal*(self: TerminalView, builder: UINodeBuilder, outWidth, outHeight, outCellWidth, outCellHeight: var int): seq[OverlayFunction] =
-  self.resetDirty()
-
-  let config = self.terminals.config.runtime
-  let inactiveBrightnessChange = config.getUiBackgroundInactiveBrightnessChange()
-  var backgroundColor = if self.active:
-    builder.theme.color("editor.background", color(25/255, 25/255, 40/255))
-  else:
-    builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
-
-  let transparentBackground = config.get("ui.background.transparent", false)
-  let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-  var activeBackgroundColor = builder.theme.color("editor.background", color(25/255, 25/255, 40/255))
-  activeBackgroundColor.a = 1
-
-  var cursorForegroundColor = builder.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
-  let cursorBackgroundColor = builder.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
-
-  if transparentBackground:
-    backgroundColor.a = 0
-    activeBackgroundColor.a = 0
-  else:
-    backgroundColor.a = 1
-    activeBackgroundColor.a = 1
-
-  let headerColor = if self.active:
-    builder.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176)).withAlpha(1)
-  else:
-    builder.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176)).withAlpha(1).lighten(inactiveBrightnessChange)
-
-  let imageScale = self.terminals.config.runtime.get("debug.image-scale", 1.0)
-
-  var sizeFlags = builder.currentSizeFlags
-  if self.mode == "normal":
-    cursorForegroundColor = cursorForegroundColor.darken(0.3)
-  let drawCursor = self.terminal.cursor.visible
-
-  var res: seq[OverlayFunction] = @[]
-
-  builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.id.newPrimaryId):
-    builder.panel(&{LayoutVertical} + sizeFlags):
-      # Header
-      builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
-          backgroundColor = headerColor):
-
-        proc section(text: string, foreground: Color, background: Color, extraFlags: UINodeFlags) =
-          var flags = &{SizeToContentX, SizeToContentY, DrawText} + extraFlags
-          builder.panel(flags, textColor = foreground, backgroundColor = background, text = text)
-
-        proc section(text: string, foreground: Option[string] = string.none, background: Option[string] = string.none) =
-          var extraFlags = 0.UINodeFlags
-          if background.isSome:
-            extraFlags.incl FillBackground
-          let foreground = foreground.mapIt(builder.theme.color(it, textColor))
-          let background = background.mapIt(builder.theme.color(it, headerColor))
-          section(text, foreground.get(textColor), background.get(headerColor), extraFlags)
-
-        section("Terminal")
-
-        if self.terminal != nil:
-          if self.terminal.group != "":
-            section(" - ")
-            section(self.terminal.group,
-              ["terminal.header.group.foreground", self.terminal.group].join(".").some,
-              ["terminal.header.group.background", self.terminal.group].join(".").some)
-
-        if self.mode != "":
-          section(" - ")
-          section(self.mode,
-            ["terminal.header.mode.foreground", self.mode].join(".").some,
-            ["terminal.header.mode.background", self.mode].join(".").some)
-
-        if self.terminal != nil:
-          if self.terminal.exitCode.getSome(exitCode):
-            section(" - ")
-            let foreground = if exitCode == 0: "terminal.header.exitCode.foreground.ok" else: "terminal.header.exitCode.foreground.fail"
-            let background = if exitCode == 0: "terminal.header.exitCode.background.ok" else: "terminal.header.exitCode.background.fail"
-            section($exitCode, foreground.some, background.some)
-
-        section(" - ")
-
-        if self.terminal != nil:
-          if self.terminal.ssh.getSome(opts):
-            let port = if opts.port.getSome(port): &":{port}" else: ""
-            let address = opts.address.get("127.0.0.1")
-            let desc = &"ssh {opts.username}@{address}{port}"
-            section(desc, "terminal.header.command.foreground".some, "terminal.header.command.background".some)
-          else:
-            section(self.terminal.command, "terminal.header.command.foreground".some, "terminal.header.command.background".some)
-
-      # Body
-      builder.panel(sizeFlags + &{FillBackground, MouseHover}, backgroundColor = backgroundColor):
-        onScroll:
-          self.onScroll(self, delta.y.int, modifiers)
-        currentNode.handlePressed = proc(node: UINode, btn: input_api.MouseButton, modifiers: set[Modifier], pos: Vec2): bool =
-          # self.terminals.layout.tryActivateView(self) # todo
-          let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
-          self.onClick(self, btn, true, modifiers, cellPos.x.int, cellPos.y.int)
-          return true
-
-        currentNode.handleReleased = proc(node: UINode, btn: input_api.MouseButton, modifiers: set[Modifier], pos: Vec2): bool =
-          let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
-          self.onClick(self, btn, false, modifiers, cellPos.x.int, cellPos.y.int)
-          return true
-        currentNode.handleDrag = proc(node: UINode, btn: input_api.MouseButton, modifiers: set[Modifier], pos: Vec2, d: Vec2): bool =
-          let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
-          self.onDrag(self, btn, cellPos.x.int, cellPos.y.int, modifiers)
-          return true
-        currentNode.handleHover = proc(node: UINode, pos: Vec2, modifiers: set[Modifier]): bool =
-          let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
-          self.onMove(self, cellPos.x.int, cellPos.y.int)
-          return true
-
-        let bounds = currentNode.bounds
-        let cellWidth = (bounds.w / builder.charWidth).floor.int
-        let cellHeight = (bounds.h / builder.textHeight).floor.int
-        outWidth = cellWidth
-        outHeight = cellHeight
-        outCellWidth = builder.charWidth.floor.int
-        outCellHeight = builder.textHeight.floor.int
-
-        if self.backgroundRenderCommands == nil:
-          self.backgroundRenderCommands = new(RenderCommands)
-        if self.foregroundRenderCommands == nil:
-          self.foregroundRenderCommands = new(RenderCommands)
-
-        self.backgroundRenderCommands[].clear()
-        self.foregroundRenderCommands[].clear()
-
-        currentNode.renderCommands.clear()
-        currentNode.renderCommandList = @[self.backgroundRenderCommands, self.foregroundRenderCommands]
-        if self.terminal.isNotNil:
-          let width = self.terminal.terminalBuffer.width
-          let height = self.terminal.terminalBuffer.height
-
-          buildCommands(self.backgroundRenderCommands[]):
-            for s in self.terminal.sixels:
-              self.terminals.sixelTextures.withValue(s.contentHash, textureId):
-                let offset = vec2(s.col.float * builder.charWidth, s.row.float * builder.textHeight)
-                let bounds = rect(offset.x, offset.y,
-                  s.px.float * s.width.float * imageScale, s.py.float * s.height.float * imageScale)
-                drawImage(bounds, textureId[])
-
-          self.drawImages(builder, self.backgroundRenderCommands[], int.low ..< -1073741824)
-
-          if config.get("debug.simple-terminal-render", false):
-            for row in 0..<height:
-              for col in 0..<width:
-                let cell {.cursor.} = self.terminal.terminalBuffer[col, row]
-                var bg = cell.bg
-                var bgColor = color(0, 0, 0)
-
-                case bg
-                of bgNone: discard
-                of bgBlack: bgColor = color(0, 0, 0)
-                of bgRed: bgColor = color(1, 0, 0)
-                of bgGreen: bgColor = color(0, 1, 0)
-                of bgYellow: bgColor = color(1, 1, 0)
-                of bgBlue: bgColor = color(0, 0, 1)
-                of bgMagenta: bgColor = color(1, 0, 1)
-                of bgCyan: bgColor = color(0, 1, 1)
-                of bgWhite: bgColor = color(1, 1, 1)
-                of bgRGB:
-                  let (r, g, b) = colors.extractRGB(cell.bgColor)
-                  bgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
-
-                var fgColor = textColor
-
-                case cell.fg
-                of fgNone: fgColor = textColor
-                of fgBlack: fgColor = color(0, 0, 0)
-                of fgRed: fgColor = color(1, 0, 0)
-                of fgGreen: fgColor = color(0, 1, 0)
-                of fgYellow: fgColor = color(1, 1, 0)
-                of fgBlue: fgColor = color(0, 0, 1)
-                of fgMagenta: fgColor = color(1, 0, 1)
-                of fgCyan: fgColor = color(0, 1, 1)
-                of fgWhite: fgColor = color(1, 1, 1)
-                of fgRGB:
-                  let (r, g, b) = colors.extractRGB(cell.fgColor)
-                  fgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
-
-                if styleReverse in cell.style:
-                  case cell.fg
-                  of fgNone:
-                    bgColor = textColor
-                  else:
-                    bgColor = fgColor
-
-                  bg = bgRGB
-                  fgColor = cursorBackgroundColor
-
-                let bounds = rect(col.float * builder.charWidth, row.float * builder.textHeight, builder.charWidth, builder.textHeight)
-                buildCommands(self.foregroundRenderCommands[]):
-                  if bg != bgNone:
-                    buildCommands(self.backgroundRenderCommands[]):
-                      fillRect(bounds, bgColor)
-
-                  if cell.chsLen > 0:
-                    drawText(cell.chs.toOpenArray(0, cell.chsLen - 1), bounds, fgColor, 0.UINodeFlags)
-
-          else:
-            for row in 0..<height:
-              var lastCell: TerminalChar = self.terminal.terminalBuffer[0, row]
-              self.renderBuffer.setLen(0)
-              var boundsAcc = rect(0, row.float * builder.textHeight, 0, builder.textHeight)
-
-              var bg = lastCell.bg
-              var bgColor = color(0, 0, 0)
-              var fgColor = color(0, 0, 0)
-              var runLen = 0
-
-              var textFlags = 0.UINodeFlags
-
-              template flush(draw: bool = true): untyped =
-                # debugf"flush {boundsAcc}, '{self.renderBuffer}'"
-                if self.renderBuffer.len > 0 and draw:
-                  if bg != bgNone:
-                    buildCommands(self.backgroundRenderCommands[]):
-                      fillRect(boundsAcc, bgColor)
-
-                  buildCommands(self.foregroundRenderCommands[]):
-                    if styleStrikethrough in lastCell.style:
-                      # todo: make this work in terminal platform
-                      fillRect(rect(boundsAcc.x, boundsAcc.y + boundsAcc.h * 0.4, boundsAcc.w, boundsAcc.h * 0.1), fgColor)
-
-                    if styleHidden notin lastCell.style and not lastCell.isEmpty:
-                      # debugf"  draw {boundsAcc}, '{self.renderBuffer}'"
-                      drawText(self.renderBuffer, boundsAcc, fgColor, textFlags)
-
-                textFlags = 0.UINodeFlags
-                boundsAcc.x = boundsAcc.xw
-                boundsAcc.x = (boundsAcc.x / builder.charWidth).ceil * builder.charWidth
-                boundsAcc.w = builder.charWidth
-                self.renderBuffer.setLen(0)
-                runLen = 0
-
-              template `!=`(a, b: colors.Color): bool =
-                not colors.`==`(a, b)
-
-              for col in 0..<width:
-                let cell {.cursor.} = self.terminal.terminalBuffer[col, row]
-                defer:
-                  lastCell = cell
-
-                if drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col:
-                  flush()
-                  boundsAcc.x = col.float * builder.charWidth
-                  let cellBounds = rect(col.float * builder.charWidth, row.float * builder.textHeight,
-                    builder.charWidth, builder.textHeight)
-                  var cursorBounds = cellBounds
-                  case self.terminal.cursor.shape
-                  of CursorShape.Block:
-                    fgColor = cursorBackgroundColor
-                  of CursorShape.Underline:
-                    cursorBounds.y += cursorBounds.h * 0.9
-                    cursorBounds.h *= 0.1
-                  of CursorShape.BarLeft:
-                    cursorBounds.w *= 0.1
-
-                  buildCommands(self.foregroundRenderCommands[]):
-                    fillRect(cursorBounds, cursorForegroundColor)
-                    if not cell.isEmpty and styleHidden notin cell.style:
-                      drawText(cell.chs, cellBounds, fgColor, textFlags)
-
-                  continue
-
-                elif drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col + 1:
-                  flush(false)
-                  boundsAcc.x = col.float * builder.charWidth
-                elif cell.previousWideGlyph:
-                  flush()
-                  boundsAcc.x = col.float * builder.charWidth
-                  continue
-                elif lastCell.previousWideGlyph:
-                  flush(false)
-                  boundsAcc.x = col.float * builder.charWidth
-                elif cell.isEmpty != lastCell.isEmpty:
-                  flush()
-                  boundsAcc.x = col.float * builder.charWidth
-                elif cell.fg != lastCell.fg or cell.fgColor != lastCell.fgColor or cell.bg != lastCell.bg or cell.bgColor != lastCell.bgColor or cell.style != lastCell.style:
-                  flush()
-                  boundsAcc.x = col.float * builder.charWidth
-
-                if not cell.isEmpty:
-                  cell.writeCharsTo(self.renderBuffer)
-                else:
-                  self.renderBuffer.add "\0"
-                boundsAcc.w = (col + 1).float * builder.charWidth - boundsAcc.x
-                inc runLen
-
-                # Only calculate colors and style for the first cell in a run
-                if runLen == 1:
-                  bg = cell.bg
-                  bgColor = color(0, 0, 0)
-
-                  case bg
-                  of bgNone: discard
-                  of bgBlack: bgColor = color(0, 0, 0)
-                  of bgRed: bgColor = color(1, 0, 0)
-                  of bgGreen: bgColor = color(0, 1, 0)
-                  of bgYellow: bgColor = color(1, 1, 0)
-                  of bgBlue: bgColor = color(0, 0, 1)
-                  of bgMagenta: bgColor = color(1, 0, 1)
-                  of bgCyan: bgColor = color(0, 1, 1)
-                  of bgWhite: bgColor = color(1, 1, 1)
-                  of bgRGB:
-                    let (r, g, b) = colors.extractRGB(cell.bgColor)
-                    bgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
-
-                  fgColor = textColor
-
-                  case cell.fg
-                  of fgNone: fgColor = textColor
-                  of fgBlack: fgColor = color(0, 0, 0)
-                  of fgRed: fgColor = color(1, 0, 0)
-                  of fgGreen: fgColor = color(0, 1, 0)
-                  of fgYellow: fgColor = color(1, 1, 0)
-                  of fgBlue: fgColor = color(0, 0, 1)
-                  of fgMagenta: fgColor = color(1, 0, 1)
-                  of fgCyan: fgColor = color(0, 1, 1)
-                  of fgWhite: fgColor = color(1, 1, 1)
-                  of fgRGB:
-                    let (r, g, b) = colors.extractRGB(cell.fgColor)
-                    fgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
-
-                  if styleReverse in cell.style:
-                    case cell.fg
-                    of fgNone:
-                      bgColor = textColor
-                    else:
-                      bgColor = fgColor
-
-                    bg = bgRGB
-                    fgColor = cursorBackgroundColor
-
-                  if styleUnderscore in cell.style:
-                    textFlags.incl TextUndercurl
-
-                  if styleItalic in cell.style:
-                    textFlags.incl TextItalic
-
-                  if styleBlink in cell.style:
-                    textFlags.incl TextBold
-
-                  if styleDim in cell.style:
-                    fgColor = fgColor.darken(0.2)
-
-              # Flush last part of the line
-              flush()
-
-          self.drawImages(builder, self.backgroundRenderCommands[], -1073741824..<0)
-          self.drawImages(builder, self.foregroundRenderCommands[], 0..int.high)
-
-        # Scroll bar
-        buildCommands(self.foregroundRenderCommands[]):
-          if self.terminal.scrollHeight > 0:
-            let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
-            let thumbHeightRatio = cellHeight.float / self.terminal.scrollHeight
-            let thumbHeight = clamp(thumbHeightRatio * bounds.h.float, builder.textHeight, max(bounds.h - builder.textHeight, bounds.h * 0.9))
-            let scrollableHeight = bounds.h.float - thumbHeight
-            let thumbY = (1 - self.terminal.relativeScroll) * scrollableHeight
-            let w = ceil(builder.charWidth * 0.5)
-            fillRect(rect(bounds.w - w, floor(thumbY), w, ceil(thumbHeight)), scrollBarColor)
-
-        currentNode.markDirty(builder)
-
-  res
-
 proc toUiColor(c: Color): UiColor {.inline.} = rgba(c.r, c.g, c.b, c.a)
+
+type TerminalInputNuiStorage = ref object of UiNodeStorageData
+  view: TerminalView
+  cellWidth, cellHeight: float32
+  pressedButtons: UiMouseButtons
+
+proc terminalInputModifiers(mods: UiModifiers): input_api.Modifiers {.gcsafe, raises: [].} =
+  if ModShift in mods: result.incl input_api.Shift
+  if ModControl in mods: result.incl input_api.Control
+  if ModAlt in mods: result.incl input_api.Alt
+  if ModSuper in mods: result.incl input_api.Super
+
+proc terminalMouseButton(button: UiMouseButton): input_api.MouseButton {.gcsafe, raises: [].} =
+  case button
+  of MouseLeft: input_api.MouseButton.Left
+  of MouseMiddle: input_api.MouseButton.Middle
+  of MouseRight: input_api.MouseButton.Right
+
+proc handleTerminalInputNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nimcall, gcsafe, raises: [].} =
+  discard userData
+  if nodeIdx < 0 or nodeIdx >= b.frame.nodes.len:
+    return
+  let node = b.frame.nodes[nodeIdx].addr
+  let existing = b.nodeStorageGet(node)
+  if existing == nil or not (existing of TerminalInputNuiStorage):
+    return
+  let storage = cast[TerminalInputNuiStorage](existing)
+  let view = storage.view
+  if view == nil or view.terminal == nil:
+    storage.pressedButtons = {}
+    return
+  let input = b.frameCtx.input
+  let modifiers = terminalInputModifiers(input.modsDown)
+  if b.previousOutput.scrolledId == node.id and input.wheel.y != 0 and view.onScroll != nil:
+    view.onScroll(view, input.wheel.y.int, modifiers)
+
+  if storage.cellWidth <= 0 or storage.cellHeight <= 0:
+    return
+  let hovered = b.wasHovered(nodeIdx)
+  let pos = input.mouse - b.absoluteNodePosPrev(node.id, nodeIdx)
+  let col = (pos.x / storage.cellWidth).floor.int
+  let row = (pos.y / storage.cellHeight).floor.int
+  let moved = input.mouseDelta.x != 0 or input.mouseDelta.y != 0
+  for button in UiMouseButton:
+    if hovered and button in input.mousePressed and view.onClick != nil:
+      storage.pressedButtons.incl button
+      view.onClick(view, terminalMouseButton(button), true, modifiers, col, row)
+    if button notin storage.pressedButtons:
+      continue
+    if moved and button notin input.mousePressed and
+        (button in input.mouseDown or button in input.mouseReleased) and view.onDrag != nil:
+      view.onDrag(view, terminalMouseButton(button), col, row, modifiers)
+    if button in input.mouseReleased:
+      if view.onClick != nil:
+        view.onClick(view, terminalMouseButton(button), false, modifiers, col, row)
+      storage.pressedButtons.excl button
+  storage.pressedButtons = storage.pressedButtons * input.mouseDown
+  if hovered and moved and input.mouseDown == {} and input.mouseReleased == {} and view.onMove != nil:
+    view.onMove(view, col, row)
 
 proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder, outWidth, outHeight, outCellWidth, outCellHeight: var int) {.gcsafe, raises: [].} =
   {.cast(gcsafe).}:
@@ -435,9 +91,9 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder, outWidth, outHei
     let headerBase = nui.themeStyle(UiStyleIndexHeader)[].fillColor
     let headerColor = if self.active: accentVariation(headerBase, 0.04'f32, 1.10'f32) else: headerBase
     nui.layoutVertical("terminal-root"):
-      discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).padding(4).gap(4)
+      discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).backendPadding(0).backendGap(4)
       nui.layoutHorizontal("terminal-header"):
-        discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backgroundColor(headerColor).padding(4).gap(4)
+        discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backgroundColor(headerColor).backendPadding(4).backendGap(4).cornerRadius(0)
         # NUI-GAP: old header resolved per-section theme colors
         # (terminal.header.{group,mode,exitCode,command}.{foreground,background}
         # [.ok/.fail]) plus inactiveBrightnessChange/tab.inactiveBackground and
@@ -469,16 +125,25 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder, outWidth, outHei
         if cmdText != "":
           addSection(cmdText)
 
-      # NUI-GAP: old body node handled onScroll + mouse press/release/drag/hover
-      # (charWidth/textHeight coords -> onClick/onDrag/onMove) and clipped via
-      # MaskContent/OverlappingChildren; new terminal-body has no input handlers
-      # and no CmdClipPush equivalent (see §24).
+      # NUI-GAP: old body clipped via MaskContent/OverlappingChildren;
+      # new terminal-body has no CmdClipPush equivalent (see §24).
       # NUI-GAP: old sixel/image path (drawImages x3 ranges) is dropped; new emits
       # only CmdRectFill/CmdText, never CmdImage (see §24).
       # NUI-GAP: debug.simple-terminal-render per-cell path is dropped; new only
       # mirrors the advanced run-length path (see §24).
       nui.node("terminal-body"):
-        discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor)
+        var inputStorage: TerminalInputNuiStorage
+        let existing = nui.nodeStorageGet(nui.currentNode)
+        if existing != nil and existing of TerminalInputNuiStorage:
+          inputStorage = cast[TerminalInputNuiStorage](existing)
+        else:
+          inputStorage = TerminalInputNuiStorage()
+        if inputStorage.view != self:
+          inputStorage.pressedButtons = {}
+        inputStorage.view = self
+        nui.nodeStorage(nui.currentNode, inputStorage)
+        discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).padding(0).scrollable()
+        discard nui.deferBuild(handleTerminalInputNui)
         if self.terminal != nil and self.terminal.terminalBuffer.width > 0 and self.terminal.terminalBuffer.height > 0:
           var platformInst: Platform = nil
           try:
@@ -492,6 +157,8 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder, outWidth, outHei
           let arr = nui.getTextArrangement(tmpText.addr, -1)
           let charW = if arr != nil and arr.size.x > 0: arr.size.x else: (if platformInst != nil: platformInst.charWidth else: 8.0)
           let charH = if arr != nil and arr.size.y > 0: arr.size.y else: (if platformInst != nil: platformInst.lineHeight else: 16.0)
+          inputStorage.cellWidth = charW.float32
+          inputStorage.cellHeight = charH.float32
           outCellWidth = charW.int
           outCellHeight = charH.int
           outWidth = (nui.currentNode.size.x / charW).int
@@ -671,4 +338,3 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder, outWidth, outHei
             let w = ceil(charW.float32 * 0.5'f32)
             cmds.add UiRenderCommand(kind: CmdRectFill, pos: nuiMath.vec2(boundsW - w, thumbY), size: nuiMath.vec2(w, thumbH), color: toUiColor(scrollBarCol))
           discard nui.customRenderCommands(cmds)
-

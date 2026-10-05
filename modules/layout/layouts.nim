@@ -313,7 +313,6 @@ proc copyBase(self: Layout, src: Layout): Layout =
   self.maxChildren = src.maxChildren
   self.maximize = src.maximize
   self.temporary = src.temporary
-  self.renderImpl = src.renderImpl
   self.renderNuiImpl = src.renderNuiImpl
   self.copyImpl = src.copyImpl
   self.closeImpl = src.closeImpl
@@ -1363,7 +1362,6 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
       dumpImpl: centerLayoutDump,
       descImpl: centerLayoutDesc,
       kindImpl: centerLayoutKind,
-      renderImpl: renderCenterLayout,
       renderNuiImpl: renderCenterLayoutNui,
       copyImpl: centerLayoutCopy,
       saveLayoutImpl: centerLayoutSaveLayout,
@@ -1444,7 +1442,6 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
       dumpImpl: horizontalLayoutDump,
       descImpl: horizontalLayoutDesc,
       kindImpl: horizontalLayoutKind,
-      renderImpl: renderHorizontalLayout,
       renderNuiImpl: renderHorizontalLayoutNui,
       copyImpl: horizontalLayoutCopy,
       saveLayoutImpl: autoLayoutSaveLayout,
@@ -1459,7 +1456,6 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
       dumpImpl: verticalLayoutDump,
       descImpl: verticalLayoutDesc,
       kindImpl: verticalLayoutKind,
-      renderImpl: renderVerticalLayout,
       renderNuiImpl: renderVerticalLayoutNui,
       copyImpl: verticalLayoutCopy,
       saveLayoutImpl: autoLayoutSaveLayout,
@@ -1474,7 +1470,6 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
       dumpImpl: alternatingLayoutDump,
       descImpl: alternatingLayoutDesc,
       kindImpl: alternatingLayoutKind,
-      renderImpl: renderAlternatingLayout,
       renderNuiImpl: renderAlternatingLayoutNui,
       copyImpl: alternatingLayoutCopy,
       saveLayoutImpl: autoLayoutSaveLayout,
@@ -1489,7 +1484,6 @@ proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raise
       dumpImpl: tabLayoutDump,
       descImpl: tabLayoutDesc,
       kindImpl: tabLayoutKind,
-      renderImpl: renderTabLayout,
       renderNuiImpl: renderTabLayoutNui,
       copyImpl: tabLayoutCopy,
       saveLayoutImpl: tabLayoutSaveLayout,

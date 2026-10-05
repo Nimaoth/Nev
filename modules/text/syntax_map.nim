@@ -10,6 +10,8 @@ import chroma
 import malebolgia
 import prof
 
+import nuigi/debug/profiler
+
 {.push warning[Deprecated]:off.}
 import std/[threadpool]
 {.pop.}
@@ -24,6 +26,8 @@ type
     dataOriginal*: ptr UncheckedArray[char]
     lenOriginal*: int
     point*: Point
+    leafByteRange*: Range[int]
+    leafPointRange*: Range[Point]
     external*: bool
 
   ChunkIterator* = object
@@ -45,6 +49,20 @@ type
     done: bool
 
 type
+  CachedHighlightCapture = object
+    range: Range[Point]
+    name: cstring
+    priority: int
+
+  CachedHighlightLeaf = object
+    byteRange: Range[int]
+    pointRange: Range[Point]
+    captures: seq[CachedHighlightCapture]
+
+  HighlightCache = object
+    leaves: Table[int, CachedHighlightLeaf]
+    regexes: Table[string, Regex]
+
   SyntaxLayer* = object
     language*: string
     tree*: TsTree
@@ -192,6 +210,7 @@ type
     changesAsync*: seq[tuple[edit: TSInputEdit, rope: Rope]]
     onParsed*: Event[void]
     currentSnapshot: SyntaxMapSnapshot
+    highlightCache: HighlightCache
     maxInjectionDepth*: int = 3
     loadInjectionLanguage*: proc(languageName: string) {.gcsafe, raises: [].}
 
@@ -208,6 +227,7 @@ type
 
   Highlighter* = object
     snapshot*: ptr SyntaxMapSnapshot
+    cache: ptr HighlightCache
     rainbowParens*: bool
 
   Highlight = tuple[range: Range[Point], color: Color, fontStyle: set[FontStyle], fontScale: float, priority: int]
@@ -259,6 +279,18 @@ func high*(_: typedesc[Point]): Point = Point(row: uint32.high, column: uint32.h
 
 proc newSyntaxMap*(): SyntaxMap =
   SyntaxMap()
+
+proc init*(_: typedesc[Highlighter], syntaxMap: SyntaxMap, rainbowParens = false): Highlighter =
+  Highlighter(
+    snapshot: syntaxMap.currentSnapshot.addr,
+    cache: syntaxMap.highlightCache.addr,
+    rainbowParens: rainbowParens,
+  )
+
+proc clearHighlightCache(self: SyntaxMap, clearRegexes = false) =
+  self.highlightCache.leaves.clear()
+  if clearRegexes:
+    self.highlightCache.regexes.clear()
 
 proc buildLayerIndex*(layers: openArray[SyntaxLayer], text: Rope): SumTree[SyntaxLayerRef] =
   result = SumTree[SyntaxLayerRef].new()
@@ -356,6 +388,7 @@ proc treesOverlapping*(self: SyntaxMapSnapshot, range: Range[int]): seq[TsTree] 
     result.add self.layers[layer].tree
 
 proc clear*(self: SyntaxMap) =
+  self.clearHighlightCache(clearRegexes = true)
   self.language = nil
   self.highlightQuery = nil
   self.injectionQuery = nil
@@ -366,6 +399,7 @@ proc clear*(self: SyntaxMap) =
 
 proc resetTree*(self: SyntaxMap, rope: sink Rope) =
   ## Reset the parse state but keep the language and query (for when buffer content changes).
+  self.clearHighlightCache()
   self.currentContentFailedToParse = false
   self.changes.setLen(0)
   self.changesAsync.setLen(0)
@@ -401,6 +435,7 @@ proc applyEdits*(self: SyntaxMap) =
   self.changes.setLen(0)
 
 proc addEdit*(self: SyntaxMap, edit: TSInputEdit, rope: Rope) =
+  self.clearHighlightCache()
   if self.isParsingAsync:
     self.changesAsync.add (edit, rope)
   else:
@@ -423,6 +458,7 @@ proc tsTree*(self: SyntaxMap): TsTree =
 
 proc setLanguage*(self: SyntaxMap, language: TSLanguage, highlightQuery: TSQuery,
                   injectionQuery: TSQuery, rope: sink Rope) =
+  self.clearHighlightCache(clearRegexes = true)
   self.language = language
   self.highlightQuery = highlightQuery
   self.injectionQuery = injectionQuery
@@ -805,6 +841,7 @@ proc reparseAsync(self: SyntaxMap) {.async.} =
     # echo &"reparseAsync: root parse ok, iq={not self.injectionQuery.isNil}"
 
     self.currentSnapshot = newSnapshot
+    self.clearHighlightCache()
     # echo "============ NEW SNAPSHOT FROM PARSE\n", self.currentSnapshot
     self.currentContentFailedToParse = false
 
@@ -858,6 +895,8 @@ func `[]`*(self: RopeChunk, range: Range[int]): RopeChunk =
     len: range.len,
     dataOriginal: cast[ptr UncheckedArray[char]](self.dataOriginal[range.a].addr),
     lenOriginal: range.len,
+    leafByteRange: self.leafByteRange,
+    leafPointRange: self.leafPointRange,
     external: self.external,
     point: Point(row: self.point.row, column: self.point.column + range.a.uint32),
   )
@@ -873,6 +912,8 @@ proc split*(self: RopeChunk, index: int): tuple[prefix: RopeChunk, suffix: RopeC
         len: index,
         dataOriginal: self.dataOriginal,
         lenOriginal: index,
+        leafByteRange: self.leafByteRange,
+        leafPointRange: self.leafPointRange,
         external: self.external,
         point: self.point,
       ),
@@ -881,6 +922,8 @@ proc split*(self: RopeChunk, index: int): tuple[prefix: RopeChunk, suffix: RopeC
         len: self.len - index,
         dataOriginal: cast[ptr UncheckedArray[char]](self.dataOriginal[index].addr),
         lenOriginal: self.lenOriginal - index,
+        leafByteRange: self.leafByteRange,
+        leafPointRange: self.leafPointRange,
         external: self.external,
         point: point(self.point.row, self.point.column + index.uint32),
       ),
@@ -894,6 +937,8 @@ proc split*(self: RopeChunk, index: int): tuple[prefix: RopeChunk, suffix: RopeC
         len: index,
         dataOriginal: self.dataOriginal,
         lenOriginal: indexOriginal,
+        leafByteRange: self.leafByteRange,
+        leafPointRange: self.leafPointRange,
         external: self.external,
         point: self.point,
       ),
@@ -902,6 +947,8 @@ proc split*(self: RopeChunk, index: int): tuple[prefix: RopeChunk, suffix: RopeC
         len: self.len - index,
         dataOriginal: cast[ptr UncheckedArray[char]](self.dataOriginal[indexOriginal].addr),
         lenOriginal: self.lenOriginal - indexOriginal,
+        leafByteRange: self.leafByteRange,
+        leafPointRange: self.leafPointRange,
         external: self.external,
         point: point(self.point.row, self.point.column + index.uint32),
       ),
@@ -1035,6 +1082,8 @@ iterator ropeChunks*(rope: Rope, state: var RopeChunksState): RopeChunk =
       dataOriginal: cast[ptr UncheckedArray[char]](inputChunk.chars[0].addr),
       lenOriginal: inputChunk.chars.len,
       point: cursor.startPos[0],
+      leafByteRange: cursor.startPos[1]...cursor.endPos[1],
+      leafPointRange: cursor.startPos[0]...cursor.endPos[0],
     )
     chunk = chunkOriginal
 
@@ -1141,8 +1190,6 @@ proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, arena: ptr Ar
   result.hintColor = result.defaultColor
   if result.highlighter.isSome:
     result.layerIterator = result.highlighter.get.snapshot[].layerIterator
-    if result.highlighter.get.snapshot[].layers.len > 0:
-      result.treeCursor = initTreeCursor(result.highlighter.get.snapshot[].layers[0].tree.root).some
 
   if theme != nil:
     result.defaultColor = theme.color("editor.foreground", color(1, 1, 1))
@@ -1169,6 +1216,8 @@ proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, arena: ptr Ar
         if c == color(0, 0, 0, 0):
           break
         result.parenColors.add c
+      if result.parenColors.len > 0 and result.highlighter.get.snapshot[].layers.len > 0:
+        result.treeCursor = initTreeCursor(result.highlighter.get.snapshot[].layers[0].tree.root).some
 
 func point*(self: StyledChunkIterator): Point = self.chunks.state.nextPoint
 func point*(self: StyledChunk): Point = self.chunk.point
@@ -1215,6 +1264,31 @@ func contentString(self: var StyledChunkIterator, selection: Range[Point], byteR
         result.add c
         if result.len == maxLen:
           return
+
+proc getPredicateRegex(self: var StyledChunkIterator, key: cstring, regex: var Regex): bool =
+  let keyString = $key
+  if self.highlighter.get.cache != nil:
+    let cache = self.highlighter.get.cache
+    if cache[].regexes.hasKey(keyString):
+      regex = cache[].regexes[keyString]
+      return true
+    try:
+      regex = re(keyString)
+      cache[].regexes[keyString] = regex
+      return true
+    except RegexError:
+      return false
+
+  let cachedRegex = self.regexCache.tryGet(key)
+  if cachedRegex.isSome:
+    regex = cachedRegex.get
+    return true
+  try:
+    regex = re(keyString)
+    self.regexCache[key] = regex
+    return true
+  except RegexError:
+    return false
 
 proc `+`(a, b: Color): Color = color(a.r + b.r, a.g + b.g, a.b + b.b, a.a + b.a)
 
@@ -1293,7 +1367,10 @@ proc addHighlight(highlights: var seq[Highlight], nextHighlight: sink Highlight,
 
   swap(highlights, scratch)
 
+var gEnableSyntaxCache* = true
+
 proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
+  prof("StyledChunkIterator.next")
   if self.atEnd:
     return
 
@@ -1342,132 +1419,122 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
           inc self.depthOffset
 
       else:
-        let point = currentChunk.point
-        let endPoint = currentChunk.endPoint
-        let range = tsRange(tsPoint(point.row.int, point.column.int), tsPoint(endPoint.row.int, endPoint.column.int))
         assert self.arena != nil
         let cp = self.arena[].checkpoint
         defer:
           self.arena[].restoreCheckpoint(cp)
 
-        # Compute byte offset for overlap query
-        let chunkStartByte = snap.rope.pointToOffset(point)
-        let chunkEndByte = chunkStartByte + currentChunk.len
+        let leafByteRange = currentChunk.leafByteRange
+        let leafPointRange = currentChunk.leafPointRange
+        var uncachedCaptures: seq[CachedHighlightCapture]
+        var cachedCaptures = uncachedCaptures.addr
+        var cacheHit = false
+        if gEnableSyntaxCache and h.cache != nil:
+          h.cache[].leaves.withValue(leafByteRange.a, cachedLeaf):
+            if cachedLeaf[].byteRange == leafByteRange and cachedLeaf[].pointRange == leafPointRange:
+              cachedCaptures = cachedLeaf[].captures.addr
+              cacheHit = true
 
-        self.overlappingLayersCached.setLen(0)
-        self.layerIterator.layersOverlapping(chunkStartByte...chunkEndByte, self.overlappingLayersCached)
-        # echo &"highlight chunk {currentChunk}"
+        if not cacheHit:
+          let range = tsRange(
+            tsPoint(leafPointRange.a.row.int, leafPointRange.a.column.int),
+            tsPoint(leafPointRange.b.row.int, leafPointRange.b.column.int),
+          )
+          self.overlappingLayersCached.setLen(0)
+          self.layerIterator.layersOverlapping(leafByteRange, self.overlappingLayersCached)
 
-        var requiresSort = false
-        for layerIdx in self.overlappingLayersCached:
-          let layer {.cursor.} = snap.layers[layerIdx]
-          if layer.tree.isNil or layer.highlightQuery.isNil: continue
-          let highlightQuery = layer.highlightQuery
+          for layerIdx in self.overlappingLayersCached:
+            let layer {.cursor.} = snap.layers[layerIdx]
+            if layer.tree.isNil or layer.highlightQuery.isNil: continue
+            let highlightQuery = layer.highlightQuery
 
-          for match in highlightQuery.matches(layer.tree.root, range, self.arena[]):
-            let predicates = highlightQuery.predicatesForPattern(match.pattern, self.arena[])
-            for capture in match.captures:
-              let node = capture.node
-              let byteRange = node.startByte...node.endByte
-              let nodeRange = node.startPoint.toCursor.toPoint...node.endPoint.toCursor.toPoint
-              if nodeRange.b <= currentChunk.point or nodeRange.a >= currentChunk.endPoint:
-                continue
+            for match in highlightQuery.matches(layer.tree.root, range, self.arena[]):
+              let predicates = highlightQuery.predicatesForPattern(match.pattern, self.arena[])
+              for capture in match.captures:
+                let node = capture.node
+                let byteRange = node.startByte...node.endByte
+                let nodeRange = node.startPoint.toCursor.toPoint...node.endPoint.toCursor.toPoint
+                if nodeRange.b <= leafPointRange.a or nodeRange.a >= leafPointRange.b:
+                  continue
 
-              var matches = true
-              if nodeRange.a.row == nodeRange.b.row:
-                for predicate in predicates:
-                  if not matches:
-                    break
-
-                  for operand in predicate.operands:
-                    if operand.name != capture.name:
-                      matches = false
+                var matches = true
+                if nodeRange.a.row == nodeRange.b.row:
+                  for predicate in predicates:
+                    if not matches:
                       break
 
-                    case predicate.operator
-                    of "match?":
-                      let cachedRegex = self.regexCache.tryGet(operand.`type`)
-                      var regex: Regex
-                      if cachedRegex.isSome:
-                        regex = cachedRegex.get
-                      else:
-                        try:
-                          regex = re($operand.`type`)
-                          self.regexCache[operand.`type`] = regex
-                        except RegexError:
+                    for operand in predicate.operands:
+                      if operand.name != capture.name:
+                        matches = false
+                        break
+
+                      case predicate.operator
+                      of "match?":
+                        var regex: Regex
+                        if not self.getPredicateRegex(operand.`type`, regex):
+                          matches = false
+                          break
+                        let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+                        if nodeText.matchLen(regex, 0) != nodeText.len:
                           matches = false
                           break
 
-                      let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                      if nodeText.matchLen(regex, 0) != nodeText.len:
-                        matches = false
-                        break
-
-                    of "not-match?":
-                      let cachedRegex = self.regexCache.tryGet(operand.`type`)
-                      var regex: Regex
-                      if cachedRegex.isSome:
-                        regex = cachedRegex.get
-                      else:
-                        try:
-                          regex = re($operand.`type`)
-                          self.regexCache[operand.`type`] = regex
-                        except RegexError:
+                      of "not-match?":
+                        var regex: Regex
+                        if not self.getPredicateRegex(operand.`type`, regex):
+                          matches = false
+                          break
+                        let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+                        if nodeText.matchLen(regex, 0) == nodeText.len:
                           matches = false
                           break
 
-                      let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                      if nodeText.matchLen(regex, 0) == nodeText.len:
-                        matches = false
-                        break
+                      of "eq?":
+                        let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+                        if nodeText.toOpenArray(0, nodeText.high) != operand.`type`.toOpenArray(0, operand.`type`.high):
+                          matches = false
+                          break
 
-                    of "eq?":
-                      # @todo: second arg can be capture aswell
-                      let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                      if nodeText.toOpenArray(0, nodeText.high) != operand.`type`.toOpenArray(0, operand.`type`.high):
-                        matches = false
-                        break
+                      of "not-eq?":
+                        let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+                        if nodeText.toOpenArray(0, nodeText.high) == operand.`type`.toOpenArray(0, operand.`type`.high):
+                          matches = false
+                          break
 
-                    of "not-eq?":
-                      # @todo: second arg can be capture aswell
-                      let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
-                      if nodeText.toOpenArray(0, nodeText.high) == operand.`type`.toOpenArray(0, operand.`type`.high):
-                        matches = false
-                        break
+                      else:
+                        discard
 
-                    # of "any-of?":
-                    #   # todo
-                    #   discard
+                if matches:
+                  uncachedCaptures.add CachedHighlightCapture(
+                    range: max(nodeRange.a, leafPointRange.a)...min(nodeRange.b, leafPointRange.b),
+                    name: capture.name,
+                    priority: match.pattern + layer.depth * 10_000,
+                  )
 
-                    else:
-                      discard
+          if gEnableSyntaxCache and h.cache != nil:
+            h.cache[].leaves[leafByteRange.a] = CachedHighlightLeaf(
+              byteRange: leafByteRange,
+              pointRange: leafPointRange,
+              captures: uncachedCaptures,
+            )
+            # Insertion can move uncachedCaptures; render from the cache-owned sequence.
+            cachedCaptures = h.cache[].leaves[leafByteRange.a].captures.addr
 
-              if not matches:
-                continue
+        for capture in cachedCaptures[].items:
+          if capture.range.b <= currentChunk.point or capture.range.a >= currentChunk.endPoint:
+            continue
+          var nodeRangeClamped = capture.range
+          if nodeRangeClamped.a.row < currentChunk.point.row:
+            nodeRangeClamped.a = currentChunk.point
+          if nodeRangeClamped.b.row > currentChunk.point.row:
+            nodeRangeClamped.b.row = currentChunk.point.row
+            nodeRangeClamped.b.column = uint32.high
 
-              var nodeRangeClamped = nodeRange
-              if nodeRangeClamped.a.row < currentChunk.point.row:
-                nodeRangeClamped.a.row = currentChunk.point.row
-                nodeRangeClamped.a.column = 0
-              if nodeRangeClamped.b.row > currentChunk.point.row:
-                nodeRangeClamped.b.row = currentChunk.point.row
-                nodeRangeClamped.b.column = uint32.high
-              # if nodeRangeClamped.b >= currentChunk.endPoint:
-              #   nodeRangeClamped.b.column = uint32.high
-
-              let color = self.theme.tokenColor(capture.name, self.defaultColor)
-              let fontStyle = self.theme.tokenFontStyle(capture.name)
-              let fontScale = self.theme.tokenFontScale(capture.name)
-              let priority = match.pattern + layer.depth * 10_000
-              var nextHighlight: Highlight = (nodeRangeClamped, color, fontStyle, fontScale, priority)
-              self.highlights.addHighlight(nextHighlight.ensureMove, self.defaultColor, self.scratchHighlights)
-
-        if requiresSort:
-          var highlights = self.highlights
-          highlights.sort(proc(a, b: Highlight): int = cmp(a.range.a, b.range.a))
-          self.highlights.setLen(0)
-          for nextHighlight in highlights.mitems:
-            self.highlights.addHighlight(nextHighlight, self.defaultColor, self.scratchHighlights)
+          let color = self.theme.tokenColor(capture.name, self.defaultColor)
+          let fontStyle = self.theme.tokenFontStyle(capture.name)
+          let fontScale = self.theme.tokenFontScale(capture.name)
+          var nextHighlight: Highlight = (nodeRangeClamped, color, fontStyle, fontScale, capture.priority)
+          self.highlights.addHighlight(nextHighlight.ensureMove, self.defaultColor, self.scratchHighlights)
 
   assert self.chunk.isSome
   var currentChunk = self.chunk.get

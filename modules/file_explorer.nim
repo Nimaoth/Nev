@@ -11,7 +11,7 @@ include module_base
 
 when implModule:
   import misc/[custom_async, custom_logger, id, myjsonutils]
-  import layout/layout, command_service, workspace, vfs, vfs_service
+  import layout/layout, command_service, workspace, vfs, vfs_service, platform
   from nuigi import UiBuilder, UiStyleIndex, UiTextStyleIndex,
     fillX, fillY, fit, fitY, fillBackground, styleIndex, textStyleIndex,
     text, padding, gap, layoutVertical, layoutHorizontal,
@@ -361,7 +361,7 @@ when implModule:
       let clicked = b.wasClicked(includeChildren = true)
 
       b.layoutHorizontal:
-        discard b.fillX().fitY().gap(4)
+        discard b.fillX().fitY().backendGap(4)
         b.node:
           if b.backendType == UiBackendType.Terminal:
             discard b.size(1, 1).alignCenter()
@@ -398,7 +398,7 @@ when implModule:
       template rootMenuItem(label: string, root: FileExplorerRoot) =
         nui.menuItem:
           nui.node:
-            discard nui.fillX().fitY().padding(1)
+            discard nui.fillX().fitY().backendPadding(1)
               .textStyleIndex(int(UiStyleIndexMenuItemText)).text(label)
         do:
           discard
@@ -407,18 +407,18 @@ when implModule:
 
       nui.layoutVertical("file-explorer"):
         discard nui.fillX().fillY().styleIndex(UiStyleIndexPanel)
-          .fillBackground().padding(4).gap(4)
+          .fillBackground().backendPadding(4).backendGap(4)
         if nui.wasClicked(includeChildren = true):
           getServiceChecked(LayoutService).tryActivateView(self)
 
         nui.layoutHorizontal("file-explorer-header"):
           discard nui.fillX().fitY().styleIndex(UiStyleIndexHeader)
-            .fillBackground().padding(4).gap(4)
+            .fillBackground().backendPadding(4).backendGap(4)
           nui.node:
             discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
               .text("File Explorer")
           nui.layoutHorizontalReverse:
-            discard nui.fillX().fitY().gap(4)
+            discard nui.fillX().fitY().backendGap(4)
             if nui.button("Refresh"):
               self.fileExplorerRefresh()
             let rootMenuButtonIndex = nui.frame.nodes.len

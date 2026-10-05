@@ -1,399 +1,492 @@
 #use input_handler theme lisp
-import platform
+import platform, compilation_config
 
 const currentSourcePath2 = currentSourcePath()
 include module_base
 
 proc newTerminalPlatform*(): Platform {.rtl, raises: [].}
 
-when implModule:
-  import std/[strformat, terminal, typetraits, enumutils, sets, typedthreads, parseutils]
-  import std/colors as stdcolors
+when implModule and enableTerminal:
+  import std/[parseutils, strutils, syncio, typedthreads, unicode]
   import vmath
-  import chroma as chroma
-  import misc/[custom_logger, rect_utils, event, timer, custom_unicode, custom_async, tui]
-  import ui/node
-  import app_options, terminal_input, misc/input_api, input_handler/input_handler
-  import terminal/vterm
-
-  when defined(windows):
-    import winlean
-  else:
-    from posix import read
-    import std/envvars
+  import misc/[custom_logger, timer]
+  from misc/render_command import FontInfo, UINodeFlags
+  import app_options, misc/input_api
+  import nuigi
+  import nuigi/backend/terminal/terminal
+  import nuigi/debug/debug_panel
+  import nuigi/demo/demo_window
+  import nuigi/widgets
+  import nuigi/widgets/windows
 
   logCategory "terminal-platform"
 
-  # Mouse
-  # https://de.wikipedia.org/wiki/ANSI-Escapesequenz
-  # https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Extended-coordinates
-  const
-    CSI = 0x1B.chr & 0x5B.chr
-    SET_BTN_EVENT_MOUSE = "1002"
-    SET_ANY_EVENT_MOUSE = "1003"
-    SET_SGR_EXT_MODE_MOUSE = "1006"
-    # SET_URXVT_EXT_MODE_MOUSE = "1015"
-    ENABLE = "h"
-    DISABLE = "l"
-    MouseTrackAny = fmt"{CSI}?{SET_BTN_EVENT_MOUSE}{ENABLE}{CSI}?{SET_ANY_EVENT_MOUSE}{ENABLE}{CSI}?{SET_SGR_EXT_MODE_MOUSE}{ENABLE}"
-    DisableMouseTrackAny = fmt"{CSI}?{SET_BTN_EVENT_MOUSE}{DISABLE}{CSI}?{SET_ANY_EVENT_MOUSE}{DISABLE}{CSI}?{SET_SGR_EXT_MODE_MOUSE}{DISABLE}"
+  const TerminalEventHistoryLimit = 256
 
-  when defined(linux):
-    const
-      XtermColor    = "xterm-color"
-      Xterm256Color = "xterm-256color"
+  {.push gcsafe.}
+  {.push raises: [].}
 
   type
+    TerminalInputThreadState = object
+
+    TerminalSettings = object
+      renderOnDemand: bool
+      escapeTimeoutMs: float32
+      recordMouseEvents: bool
+      showDemoWindow: bool
+      showDebugPanel: bool
+
     TerminalPlatform* = ref object of Platform
-      buffer: TerminalBuffer
-      borderBuffer: BoxBuffer
-      trueColorSupport*: bool
-      mouseButtons: set[input_api.MouseButton]
-      masks: seq[Rect]
-      cursor: tuple[row: int, col: int, visible: bool, shape: UINodeFlags]
-      noPty: bool
+      terminal: TerminalBackend
+      input: UiInputSnapshot
+      fontInfo: FontInfo
       noUI: bool
       readInputOnThread: bool
+      settings: TerminalSettings
+      fps: float
+      frameTimeMs: float
+      processingTimeMs: float
+      eventHistory: seq[string]
+      eventHistoryExpanded: bool
+      eventHistoryScroll: float
+      debugPanel: DebugPanel
 
-      doubleClickTimer: Timer
-      doubleClickCounter: int
-      doubleClickTime: float
+  var inputThread: Thread[ptr TerminalInputThreadState]
+  var inputThreadState: TerminalInputThreadState
+  var inputChannel: Channel[char]
+  var inputThreadStarted = false
 
-      inputParser: TerminalInputParser
-      useKittyKeyboard: bool = false
-      kittyKeyboardFlags: set[KittyKeyboardState] = {DisambiguateEscapeCodes, ReportAllKeysAsEscapeCodes, ReportAssociatedText}
-
-      gridSize: IVec2
-      pixelSize: IVec2
-      cellPixelSize: IVec2
-
-      fontInfo: FontInfo
-
-  proc enterFullScreen() =
-    ## Enters full-screen mode (clears the terminal).
-    when defined(windows):
-      stdout.write "\e[?47h\e[?1049h" # use alternate screen
-    elif defined(posix):
-      case getEnv("TERM"):
-      of XtermColor:
-        stdout.write "\e7\e[?47h"
-      of Xterm256Color:
-        stdout.write "\e[?1049h"
-      else:
-        eraseScreen()
-    else:
-      eraseScreen()
-
-  proc exitFullScreen() =
-    ## Exits full-screen mode (restores the previous contents of the terminal).
-    when defined(windows):
-      stdout.write "\e[?47l\e[?1049l"
-    elif defined(posix):
-      case getEnv("TERM"):
-      of XtermColor:
-        stdout.write "\e[2J\e[?47l\e8"
-      of Xterm256Color:
-        stdout.write "\e[?1049l"
-      else:
-        eraseScreen()
-    else:
-      eraseScreen()
-      setCursorPos(0, 0)
-
-  proc exitProc() {.noconv.} =
-    stdout.write("\e[<u") # todo: only if enabled
-    stdout.write(DisableMouseTrackAny)
-    exitFullScreen()
-    consoleDeinit()
-    stdout.write(tui.ansiResetCode)
-    showCursor()
-    stdout.flushFile()
-    quit(0)
-
-  proc toStdColor(color: tui.ForegroundColor): stdcolors.Color =
-    return case color
-    of fgRed: stdcolors.rgb(255, 0, 0)
-    of fgGreen: stdcolors.rgb(0, 255, 0)
-    of fgYellow: stdcolors.rgb(255, 255, 0)
-    of fgBlue: stdcolors.rgb(0, 0, 255)
-    of fgMagenta: stdcolors.rgb(255, 0, 255)
-    of fgCyan: stdcolors.rgb(0, 255, 255)
-    of fgWhite: stdcolors.rgb(255, 255, 255)
-    else: stdcolors.rgb(0, 0, 0)
-
-  proc toStdColor(color: tui.BackgroundColor): stdcolors.Color =
-    return case color
-    of bgRed: stdcolors.rgb(255, 0, 0)
-    of bgGreen: stdcolors.rgb(0, 255, 0)
-    of bgYellow: stdcolors.rgb(255, 255, 0)
-    of bgBlue: stdcolors.rgb(0, 0, 255)
-    of bgMagenta: stdcolors.rgb(255, 0, 255)
-    of bgCyan: stdcolors.rgb(0, 255, 255)
-    of bgWhite: stdcolors.rgb(255, 255, 255)
-    else: stdcolors.rgb(0, 0, 0)
-
-  proc getClosestColor[T: HoleyEnum](r, g, b: int, default: T): T =
-    var minDistance = 10000000.0
-    result = default
-    {.push warning[HoleEnumConv]:off.}
-    for fg in enumutils.items(T):
-      let fgStd = fg.toStdColor
-      let uiae = fgStd.extractRGB
-      let distance = sqrt((r - uiae.r).float.pow(2) + (g - uiae.g).float.pow(2) + (b - uiae.b).float.pow(2))
-      if distance < minDistance:
-        minDistance = distance
-        result = fg
-    {.pop.}
-
-  proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int, RuneCount) {.gcsafe.}
-
-  proc runeProps(r: Rune): tuple[selectionWidth: int, displayWidth: int, isCombining: bool] {.gcsafe.} =
-    if r.int <= 127:
-      return (1, 1, false)
-
-    let width = vterm.unicodeWidth(r.uint32)
-    let combining = vterm.unicodeIsCombining(r.uint32)
-
-    if combining:
-      return (-1, -1, true)
-
-    let w = max(1, width.int)
-    return (w, w, false)
-
-  proc getTerminalSize(self: TerminalPlatform): IVec2 =
-    if self.noPty:
-      return self.gridSize
-    else:
-      return ivec2(terminalWidth().int32, terminalHeight().int32)
-
-  type ThreadState = object
-    a: int
-
-  var thread: Thread[ptr ThreadState]
-  var state = ThreadState(
-  )
-  var chan: Channel[char]
-  chan.open()
-  var stdinEvent = ThreadSignalPtr.new().value
-
-  proc threadFunc(state: ptr ThreadState) {.thread.} =
+  proc terminalInputThread(state: ptr TerminalInputThreadState) {.thread, raises: [].} =
+    discard state
     while true:
-      var str = stdin.readChar()
-      chan.send(str)
-      discard stdinEvent.fireSync()
+      try:
+        inputChannel.send(stdin.readChar())
+      except:
+        break
 
-  iterator iterateRuneBounds*(text: string): Rect =
-    var bounds = rect(0, 0, 1, 1)
-    var lastCombining = false
-    var last = bounds
-    for c in text.runes:
-      if c == '\n'.Rune:
-        bounds.y += 1
-        bounds.x = 0
-        bounds.w = 1
-        last = bounds
+  proc startTerminalInputThread(): bool =
+    if inputThreadStarted:
+      return true
+    inputChannel.open()
+    try:
+      inputThread.createThread(terminalInputThread, inputThreadState.addr)
+      inputThreadStarted = true
+      return true
+    except CatchableError as error:
+      inputChannel.close()
+      log lvlError, "Failed to start terminal input thread: ", error.msg
+      return false
+
+  proc toPlatformModifiers(modifiers: UiModifiers): Modifiers =
+    result = {}
+    if ModControl in modifiers: result.incl Control
+    if ModShift in modifiers: result.incl Shift
+    if ModAlt in modifiers: result.incl Alt
+    if ModSuper in modifiers: result.incl Super
+
+  proc toPlatformMouseButton(button: UiMouseButton): MouseButton =
+    case button
+    of MouseLeft: MouseButton.Left
+    of MouseMiddle: MouseButton.Middle
+    of MouseRight: MouseButton.Right
+
+  proc toPlatformInput(key: UiKey): int64 =
+    case key
+    of KeyA..KeyZ: int64(ord('a') + ord(key) - ord(KeyA))
+    of Key0..Key9: int64(ord('0') + ord(key) - ord(Key0))
+    of KeySpace: INPUT_SPACE
+    of KeyEnter, KeyKpEnter: INPUT_ENTER
+    of KeyEscape: INPUT_ESCAPE
+    of KeyBackspace: INPUT_BACKSPACE
+    of KeyTab: INPUT_TAB
+    of KeyLeft: INPUT_LEFT
+    of KeyRight: INPUT_RIGHT
+    of KeyUp: INPUT_UP
+    of KeyDown: INPUT_DOWN
+    of KeyF1..KeyF12: int64(INPUT_F1 - (ord(key) - ord(KeyF1)))
+    of KeyDelete: INPUT_DELETE
+    of KeyHome: INPUT_HOME
+    of KeyEnd: INPUT_END
+    of KeyPageUp: INPUT_PAGE_UP
+    of KeyPageDown: INPUT_PAGE_DOWN
+    of KeyKp0..KeyKp9: int64(ord('0') + ord(key) - ord(KeyKp0))
+    of KeyKpDivide: ord('/').int64
+    of KeyKpMultiply: ord('*').int64
+    of KeyKpSubtract, KeyMinus: ord('-').int64
+    of KeyKpAdd: ord('+').int64
+    of KeyKpDecimal, KeyPeriod: ord('.').int64
+    of KeySemicolon: ord(';').int64
+    of KeyApostrophe: ord('\'').int64
+    of KeyComma: ord(',').int64
+    of KeySlash: ord('/').int64
+    of KeyBackslash: ord('\\').int64
+    of KeyLeftBracket: ord('[').int64
+    of KeyRightBracket: ord(']').int64
+    of KeyGrave: ord('`').int64
+    else: 0
+
+  proc describeTerminalEvent(event: TerminalInputEvent): string =
+    case event.kind
+    of TerminalText:
+      "text " & escape(event.text) & " " & $event.textMods
+    of TerminalKey:
+      "key " & $event.key & " " & $event.action & " " & $event.keyMods
+    of TerminalMouseButton:
+      "mouse " & $event.button & " " & $event.mouseAction & " " &
+        $event.buttonX & "," & $event.buttonY & " " & $event.buttonMods
+    of TerminalMouseMove:
+      "move " & $event.moveX & "," & $event.moveY & " drag=" &
+        $event.dragButton & " " & $event.moveMods
+    of TerminalMouseWheel:
+      "wheel " & $event.wheelDelta & " @ " & $event.wheelX & "," &
+        $event.wheelY & " " & $event.wheelMods
+    of TerminalGridSize:
+      "grid " & $event.width & "x" & $event.height
+    of TerminalPixelSize:
+      "pixels " & $event.width & "x" & $event.height
+    of TerminalCellPixelSize:
+      "cell pixels " & $event.width & "x" & $event.height
+    of TerminalKittyFlags:
+      "kitty flags " & $event.kittyFlags
+
+  proc recordTerminalEvents(self: TerminalPlatform) =
+    for event in self.terminal.lastEvents:
+      if not self.settings.recordMouseEvents and event.kind in {
+          TerminalMouseButton, TerminalMouseMove, TerminalMouseWheel}:
         continue
+      self.eventHistory.add event.describeTerminalEvent()
+    let overflow = self.eventHistory.len - TerminalEventHistoryLimit
+    if overflow > 0:
+      for index in 0 ..< TerminalEventHistoryLimit:
+        self.eventHistory[index] = self.eventHistory[index + overflow]
+      self.eventHistory.setLen(TerminalEventHistoryLimit)
 
-      let props = c.runeProps
-      if props.isCombining:
-        bounds = last
-        yield bounds
-        bounds.x = bounds.xw
-        bounds.w = 1
-      else:
-        bounds.w = max(bounds.w, props.displayWidth.float)
-        if lastCombining:
-          yield bounds
-          last = bounds
-        else:
-          yield bounds
-          last = bounds
-          bounds.x = bounds.xw
-          bounds.w = 1
+  proc buildTerminalEventHistoryItem(b: var UiBuilder, itemIndex: int,
+      userData: int) {.nimcall, gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      let self = cast[TerminalPlatform](userData)
+      if self == nil or itemIndex < 0 or itemIndex >= self.eventHistory.len:
+        return
+      let historyIndex = self.eventHistory.len - 1 - itemIndex
+      discard b.fillX().height(1).textStyleIndex(int(UiStyleIndexLabelText))
+        .text(self.eventHistory[historyIndex])
+
+  proc configureTerminalTheme(builder: var UiBuilder) =
+    builder.defaultText.fontSize = 1.0'f32
+    for styleIndex in low(UiStyleIndex) .. high(UiStyleIndex):
+      let style = builder.themeStyle(styleIndex)
+      style.borderWidth = min(style.borderWidth, 1.0'f32)
+      let borderPadding = if style.borderWidth > 0.0'f32: 1.0'f32 else: 0.0'f32
+      style.paddingX = borderPadding
+      style.paddingY = borderPadding
+      style.cornerRadius = 0.0'f32
+    for styleIndex in low(UiTextStyleIndex) .. high(UiTextStyleIndex):
+      builder.themeTextStyle(styleIndex).fontSize = 1.0'f32
 
   proc initTerminalPlatform(self: TerminalPlatform, options: AppOptions) =
     try:
-      self.noPty = options.noPty
       self.noUI = options.noUI
+      when defined(windows):
+        self.readInputOnThread = true
+      if options.noPty:
+        self.readInputOnThread = true
 
-      self.inputParser.enableEscapeTimeout = true
-      self.inputParser.escapeTimeout = 32
+      var kittyKeyboardFlags = DefaultKittyKeyboardFlags
+      if options.kittyKeyboardFlags.len > 0:
+        var parsedFlags = 0
+        if options.kittyKeyboardFlags.parseBin(parsedFlags) ==
+            options.kittyKeyboardFlags.len:
+          kittyKeyboardFlags = parsedFlags
+        else:
+          log lvlError, "Invalid Kitty keyboard flags: ",
+            options.kittyKeyboardFlags
 
+      self.nui = newTerminalBuilder()
+      self.nui.configureTerminalTheme()
+      self.terminal.init(kittyKeyboardFlags)
+      self.settings = TerminalSettings(
+        renderOnDemand: true,
+        escapeTimeoutMs: DefaultEscapeTimeoutMs.float32,
+      )
+      self.fps = 60.0
+      self.eventHistoryExpanded = true
+      self.debugPanel = DebugPanel()
+      if self.readInputOnThread:
+        self.readInputOnThread = startTerminalInputThread()
+      self.input = self.terminal.input
       self.fontInfo = FontInfo(
         ascent: 0,
         lineHeight: 1,
         lineGap: 0,
         scale: 1,
-        advance: proc(rune: Rune): float = rune.runeProps.displayWidth.float
+        advance: proc(rune: Rune): float = max(1, rune.runeCellWidth).float,
       )
-
-      when defined(windows):
-        self.readInputOnThread = true
-        self.kittyKeyboardFlags = {}
-
-      if self.noPty:
-        self.readInputOnThread = true
-
-      self.gridSize = ivec2(80, 50)
-      self.cellPixelSize = ivec2(10, 20)
-      self.pixelSize = self.gridSize * self.cellPixelSize
-
-      var useKitty = true
-
-      if options.kittyKeyboardFlags != "":
-        try:
-          var flags: int = 0
-          discard options.kittyKeyboardFlags.parseBin(flags)
-          self.kittyKeyboardFlags = cast[set[KittyKeyboardState]](flags)
-          useKitty = flags != 0
-        except CatchableError as e:
-          log lvlError, &"Failed to parse kitty keyboard flags: {e.msg}"
-
-      if not options.noPty:
-        if myEnableTrueColors():
-          log(lvlInfo, "Enable true color support")
-          self.trueColorSupport = true
-        else:
-          when defined(posix):
-            log(lvlInfo, "Enable true color support")
-            self.trueColorSupport = true
-      else:
-        self.trueColorSupport = true
-
-      when defined(windows):
-        enableVirtualTerminalInput()
-
-      gIllwillInitialised = true
-      gFullScreen = true
-
-      enterFullScreen()
-
-      if useKitty:
-        log lvlInfo, &"Query kitty keyboard protol with flags {self.kittyKeyboardFlags}"
-        stdout.write(&"\e[>{cast[int](self.kittyKeyboardFlags)}u") # enable kitty keyboard protocol
-        stdout.write("\e[?u") # query kitty keyboard protocol support
-
-      stdout.write(tui.ansiResetCode)
-      stdout.write(MouseTrackAny)
-
-      if options.noPty:
-        stdout.write "\e[2J" # clear
-        stdout.write "\e[18t" # request grid size
-
-      else:
-        consoleInit()
-        setControlCHook(exitProc)
-
-      stdout.write "\e[?25l"  # hide cursor
-      # stdout.write "\e[?7l" # Disable line wrapping
-
-      self.builder = newNodeBuilder()
-      self.builder.useInvalidation = true
-      self.builder.charWidth = 1
-      self.builder.lineHeight = 1
-      self.builder.lineGap = 0
-      self.builder.defaultBorderWidth = 1
-      self.builder.supportsFontScale = false
-
       self.supportsThinCursor = false
-      self.doubleClickTime = 0.35
-
       self.focused = true
-
-      if self.readInputOnThread:
-        try:
-          thread.createThread(threadFunc, state.addr)
-        except CatchableError:
-          discard
-
-      let terminalSize = self.getTerminalSize()
-      self.buffer.initTerminalBuffer(terminalSize.x, terminalSize.y)
-      self.buffer.clear()
-      self.borderBuffer = newBoxBuffer(terminalSize.x, terminalSize.y)
       self.redrawEverything = true
-
-      self.builder.textWidthImpl = proc(node: UINode): float32 {.gcsafe, raises: [].} =
-        result = 0
-        for b in node.text.iterateRuneBounds():
-          result = max(result, b.xw)
-
-      self.builder.textWidthStringImpl = proc(text: string): float32 {.gcsafe, raises: [].} =
-        result = 0
-        for b in text.iterateRuneBounds():
-          result = max(result, b.xw)
-
-      self.builder.textBoundsImpl = proc(node: UINode): Vec2 {.gcsafe, raises: [].} =
-        try:
-          let lineLen = round(node.bounds.w).RuneCount
-          let wrap = TextWrap in node.flags
-          var yOffset = 0.0
-          for line in node.text.splitLines:
-            let runeLen = line.runeLen
-            if wrap and runeLen > lineLen:
-              var startByte = 0
-              var startRune = 0.RuneIndex
-
-              while startByte < line.len:
-                var endByte = startByte
-                var endRune = startRune
-                var currentRuneLen = 0.RuneCount
-
-                while true:
-                  let (bytes, runes) = line.nextWrapBoundary(endByte, lineLen - currentRuneLen)
-                  if currentRuneLen + runes >= lineLen.RuneIndex or bytes == 0:
-                    break
-
-                  endByte += bytes
-                  endRune += runes
-                  currentRuneLen += runes
-
-                if startByte >= line.len or endByte > line.len:
-                  break
-
-                yOffset += 1
-
-                if startByte == endByte:
-                  break
-
-                startByte = endByte
-                startRune = endRune
-
-            else:
-              yOffset += 1
-          return vec2(node.bounds.w, yOffset)
-        except:
-          return vec2(1, 1)
-
-    except:
-      discard
-
-    stdout.flushFile()
+    except CatchableError as error:
+      log lvlError, "Failed to initialize terminal backend: ", error.msg
 
   proc deinitTerminalPlatform(self: TerminalPlatform) =
-    try:
-      log lvlInfo, "TerminalPlatform.deinit"
-      stdout.write "\e[?47l\e[?1049l"
-      # stdout.write("\e[?7h") # Enable line wrapping
-      if self.useKittyKeyboard:
-        stdout.write("\e[<u")
-      stdout.write(DisableMouseTrackAny)
-      exitFullScreen()
-      consoleDeinit()
-      stdout.write(tui.ansiResetCode)
-      showCursor()
-      stdout.flushFile()
-    except:
-      discard
+    self.terminal.deinit()
 
   proc requestRenderTerminalPlatform(self: TerminalPlatform, redrawEverything: bool) =
     self.requestedRender = true
     self.redrawEverything = self.redrawEverything or redrawEverything
 
-  proc sizeTerminalPlatform(self: TerminalPlatform): Vec2 = vec2(self.buffer.width.float, self.buffer.height.float)
+  proc sizeTerminalPlatform(self: TerminalPlatform): Vec2 =
+    vec2(self.terminal.width.float, self.terminal.height.float)
 
-  proc sizeChangedTerminalPlatform(self: TerminalPlatform): bool =
-    let terminalSize = self.getTerminalSize()
-    return self.buffer.width != terminalSize.x.int or self.buffer.height != terminalSize.y.int
+  proc sizeChangedTerminalPlatform(self: TerminalPlatform): bool = false
+
+  proc dispatchTerminalKeyEvents(self: TerminalPlatform) =
+    var pendingInput = 0'i64
+    var pendingModifiers: Modifiers = {}
+
+    template dispatchPendingKeyPress() =
+      if pendingInput != 0:
+        self.onKeyPress.invoke((pendingInput, pendingModifiers))
+        pendingInput = 0
+
+    for event in self.terminal.lastEvents:
+      case event.kind
+      of TerminalText:
+        let modifiers = event.textMods.toPlatformModifiers
+        self.setMods(modifiers)
+        var consumedPending = false
+        for rune in event.text.runes:
+          if rune.int32 in char.low.ord .. char.high.ord and
+              rune.char in {' ', 8.char, 9.char, 13.char, 127.char}:
+            continue
+          if not consumedPending:
+            pendingInput = 0
+            consumedPending = true
+          self.onRune.invoke((rune.int64, modifiers))
+      of TerminalKey:
+        let modifiers = event.keyMods.toPlatformModifiers
+        self.setMods(modifiers)
+        let input = event.key.toPlatformInput
+        if input == 0:
+          continue
+        case event.action
+        of InputRelease:
+          dispatchPendingKeyPress()
+          self.onKeyRelease.invoke((input, modifiers))
+        of InputPress, InputRepeat:
+          dispatchPendingKeyPress()
+          if input < 0:
+            self.onKeyPress.invoke((input, modifiers))
+          else:
+            pendingInput = input
+            pendingModifiers = modifiers
+      else:
+        discard
+    dispatchPendingKeyPress()
+
+  proc processEventsTerminalPlatform(self: TerminalPlatform): int {.gcsafe, raises: [].} =
+    try:
+      let oldWidth = self.terminal.width
+      let oldHeight = self.terminal.height
+      if self.readInputOnThread:
+        var inputBytes = ""
+        while true:
+          let (available, value) = inputChannel.tryRecv()
+          if not available:
+            break
+          inputBytes.add value
+        self.input = self.terminal.pollInput(inputBytes)
+      else:
+        self.input = self.terminal.pollInput()
+      self.recordTerminalEvents()
+      let modifiers = self.input.modsDown.toPlatformModifiers
+
+      if not self.noUI:
+        self.dispatchTerminalKeyEvents()
+        self.setMods(modifiers)
+
+        for button in self.input.mousePressed:
+          var platformButton = button.toPlatformMouseButton
+          if button == MouseLeft and self.input.mouseClickCount == 2:
+            platformButton = MouseButton.DoubleClick
+          elif button == MouseLeft and self.input.mouseClickCount >= 3:
+            platformButton = MouseButton.TripleClick
+          self.onMousePress.invoke((platformButton, modifiers,
+            vec2(self.input.mouse.x.float, self.input.mouse.y.float)))
+        for button in self.input.mouseReleased:
+          self.onMouseRelease.invoke((button.toPlatformMouseButton, modifiers,
+            vec2(self.input.mouse.x.float, self.input.mouse.y.float)))
+        if self.input.mouseDelta.x != 0 or self.input.mouseDelta.y != 0:
+          var buttons: set[MouseButton] = {}
+          for button in self.input.mouseDown:
+            buttons.incl button.toPlatformMouseButton
+          self.onMouseMove.invoke((
+            vec2(self.input.mouse.x.float, self.input.mouse.y.float),
+            vec2(self.input.mouseDelta.x.float, self.input.mouseDelta.y.float),
+            modifiers, buttons))
+        if self.input.wheel.x != 0 or self.input.wheel.y != 0:
+          self.onScroll.invoke((
+            vec2(self.input.mouse.x.float, self.input.mouse.y.float),
+            vec2(self.input.wheel.x.float, self.input.wheel.y.float), modifiers))
+      else:
+        self.setMods(modifiers)
+
+      if oldWidth != self.terminal.width or oldHeight != self.terminal.height:
+        self.onResize.invoke()
+        self.requestRenderTerminalPlatform(true)
+
+      self.eventCounter = if self.terminal.hadEvents: 1 else: 0
+      return self.eventCounter
+    except:
+      return 0
+
+  proc shouldRenderTerminalPlatform(self: TerminalPlatform): bool =
+    not self.settings.renderOnDemand or
+      self.nui.shouldRender(self.terminal.hadEvents)
+
+  proc beginNuiFrameTerminalPlatform(self: TerminalPlatform) =
+    discard self.nui.beginUiFrame(self.terminal.width.float32,
+      self.terminal.height.float32, self.input)
+
+    var base = 0
+    self.nui.node("base"):
+      discard self.nui.fillX().fillY().noHover()
+      base = self.nui.currentNodeIndex
+    self.nui.windowSpace()
+    self.nui.node("overlays"):
+      discard self.nui.fillX().fillY().noHover()
+      self.nui.overlays = self.nui.currentNode.id
+    discard self.nui.beginAttach(base)
+
+  proc buildSettingsWindow(self: TerminalPlatform) =
+    if self.terminal.width < 20 or self.terminal.height < 5:
+      return
+    let windowWidth = max(20, min(52, self.terminal.width)).float32
+    let windowHeight = max(5, min(30, self.terminal.height)).float32
+    self.nui.window("Settings", 0, 0, windowWidth, windowHeight):
+      self.nui.scrollBox:
+        discard self.nui.fillX().fitY()
+        self.nui.layoutVertical:
+          discard self.nui.fillX().fitY().padding(1).gap(1)
+
+          self.nui.node:
+            self.nui.debugName("settings-performance-heading")
+            discard self.nui.fillX().fitY().fillBackground()
+              .styleIndex(UiStyleIndexHeader)
+              .textStyleIndex(int(UiStyleIndexHeadingText)).text("Performance")
+
+          self.nui.node:
+            self.nui.debugName("settings-fps-row")
+            discard self.nui.fillX().fitY()
+              .textStyleIndex(int(UiStyleIndexLabelText))
+              .text("FPS: " & formatFloat(self.fps, ffDecimal, 0))
+          self.nui.node:
+            self.nui.debugName("settings-frame-time-row")
+            discard self.nui.fillX().fitY()
+              .textStyleIndex(int(UiStyleIndexLabelText))
+              .text("Total frame: " &
+                formatFloat(self.frameTimeMs, ffDecimal, 1) & " ms")
+          self.nui.node:
+            self.nui.debugName("settings-processing-time-row")
+            discard self.nui.fillX().fitY()
+              .textStyleIndex(int(UiStyleIndexLabelText))
+              .text("Processing: " &
+                formatFloat(self.processingTimeMs, ffDecimal, 1) & " ms")
+
+          self.nui.node:
+            self.nui.debugName("settings-rendering-heading")
+            discard self.nui.fillX().fitY().fillBackground()
+              .styleIndex(UiStyleIndexHeader)
+              .textStyleIndex(int(UiStyleIndexHeadingText)).text("Rendering")
+
+          discard self.nui.checkbox("Render on demand",
+            self.settings.renderOnDemand)
+          discard self.nui.checkbox("Demo",
+            self.settings.showDemoWindow)
+          discard self.nui.checkbox("Debug panel",
+            self.settings.showDebugPanel)
+
+          self.nui.node:
+            self.nui.debugName("settings-input-heading")
+            discard self.nui.fillX().fitY().fillBackground()
+              .styleIndex(UiStyleIndexHeader)
+              .textStyleIndex(int(UiStyleIndexHeadingText)).text("Input")
+
+          discard self.nui.checkbox("Record mouse events",
+            self.settings.recordMouseEvents)
+
+          self.nui.tableLayout([tableColumnFit(), tableColumnFill()], 1, 1):
+            discard self.nui.fillX().fitY()
+            self.nui.node:
+              self.nui.debugName("settings-escape-timeout-label")
+              discard self.nui.fit().textStyleIndex(int(UiStyleIndexLabelText))
+                .text("Escape timeout (ms)")
+            if self.nui.dragFloat(self.settings.escapeTimeoutMs,
+                DefaultEscapeTimeoutMs.float32, 0.0'f32, 1000.0'f32,
+                trackWidth = 16.0'f32):
+              self.settings.escapeTimeoutMs =
+                round(self.settings.escapeTimeoutMs).float32
+              self.terminal.setEscapeTimeout(
+                self.settings.escapeTimeoutMs.int)
+
+          self.nui.collapsingHeader("Terminal events (" & $self.eventHistory.len & ")",
+              self.eventHistoryExpanded):
+            self.nui.node:
+              discard self.nui.fillX().height(10)
+              self.nui.virtualList(self.eventHistoryScroll,
+                self.eventHistory.len, 1.0'f32,
+                buildTerminalEventHistoryItem, cast[int](self))
+
+  proc buildToolWindows(self: TerminalPlatform) =
+    let viewportWidth = self.terminal.width.float32
+    let viewportHeight = self.terminal.height.float32
+    if viewportWidth < 20 or viewportHeight < 5:
+      return
+
+    if self.settings.showDemoWindow:
+      let demoWidth = min(80.0'f32, viewportWidth)
+      let demoHeight = min(30.0'f32, viewportHeight)
+      let demoX = max(0.0'f32, viewportWidth - demoWidth)
+      self.nui.window("Demo", demoX, 0.0'f32, demoWidth, demoHeight):
+        {.cast(gcsafe).}:
+          try:
+            self.nui.buildDemoUi()
+          except:
+            discard
+
+    if self.settings.showDebugPanel:
+      let debugWidth = min(60.0'f32, max(20.0'f32, viewportWidth * 0.5'f32))
+      let debugX = max(0.0'f32, viewportWidth - debugWidth)
+      self.nui.window("Debug Panel", debugX, 0.0'f32,
+          debugWidth, viewportHeight):
+        {.cast(gcsafe).}:
+          try:
+            discard self.nui.debugPanel(self.debugPanel)
+            self.nui.flushDeferredNodes()
+          except:
+            discard
+
+  proc endNuiFrameTerminalPlatform(self: TerminalPlatform) =
+    self.nui.endAttach()
+    self.buildSettingsWindow()
+    self.buildToolWindows()
+    self.nui.endUiFrame()
+
+  proc finishFrameMetrics(self: TerminalPlatform, frameTimeMs,
+      processingTimeMs: float) =
+    if frameTimeMs > 0:
+      self.fps = self.fps * 0.5 + 500.0 / frameTimeMs
+    self.frameTimeMs = frameTimeMs
+    self.processingTimeMs = processingTimeMs
+
+  proc renderTerminalPlatform(self: TerminalPlatform, rerender: bool) =
+    try:
+      if rerender and not self.noUI:
+        let processingTimeMs = self.frameTimer.elapsed.ms
+        self.terminal.render(self.nui)
+        self.finishFrameMetrics(self.frameTimer.elapsed.ms, processingTimeMs)
+    except CatchableError as error:
+      log lvlError, "Failed to render terminal UI: ", error.msg
+    self.redrawEverything = false
 
   proc fontSizeTerminalPlatform(self: TerminalPlatform): float = 1
   proc lineDistanceTerminalPlatform(self: TerminalPlatform): float = 0
@@ -401,481 +494,12 @@ when implModule:
   proc charWidthTerminalPlatform(self: TerminalPlatform): float = 1
   proc charGapTerminalPlatform(self: TerminalPlatform): float = 0
 
-  proc pushMask(self: TerminalPlatform, mask: Rect) =
-    let maskedMask = if self.masks.len > 0:
-      self.masks[self.masks.high] and mask
-    else:
-      mask
-    self.masks.add maskedMask
+  proc setVsyncTerminalPlatform(self: TerminalPlatform, enabled: bool) {.gcsafe, raises: [].} =
+    discard
 
-  proc popMask(self: TerminalPlatform) =
-    assert self.masks.len > 0
-    discard self.masks.pop()
-
-  proc setVsyncTerminalPlatform(self: TerminalPlatform, enabled: bool) {.gcsafe, raises: [].} = discard
-
-  proc getFontInfoTerminalPlatform(self: TerminalPlatform, fontSize: float, flags: UINodeFlags): ptr FontInfo {.gcsafe, raises: [].} =
+  proc getFontInfoTerminalPlatform(self: TerminalPlatform, fontSize: float,
+      flags: UINodeFlags): ptr FontInfo {.gcsafe, raises: [].} =
     self.fontInfo.addr
-
-  proc processEventsTerminalPlatform(self: TerminalPlatform): int {.gcsafe.} =
-    try:
-      var eventCounter = 0
-      var buffer = ""
-
-      if self.readInputOnThread:
-        while true:
-          let (ok, c) = chan.tryRecv()
-          if not ok:
-            break
-          buffer.add c
-      else:
-        when defined(linux):
-          buffer.setLen(100)
-          var i = 0
-          while kbhit() > 0 and i < buffer.len:
-            var ret = read(0, buffer[i].addr, 1)
-            if ret > 0:
-              i += ret
-            else:
-              break
-          buffer.setLen(i)
-        else:
-          # todo
-          discard
-
-      # if buffer.len > 0 and self.noUI:
-      #   stdout.write &"> {buffer.toOpenArrayByte(0, buffer.high)}, {buffer.toOpenArray(0, buffer.high)}\r\n"
-      for event in self.inputParser.parseInput(buffer.toOpenArray(0, buffer.high)):
-        if self.noUI:
-          stdout.write &"{event}\r\n"
-
-        case event.kind
-        of Text:
-          if not self.noUI:
-            for r in event.text.runes:
-              if not self.builder.handleKeyPressed(r.int64, {}):
-                self.onKeyPress.invoke (r.int64, event.textMods)
-        of Key:
-          var input = event.input
-          if Shift in event.mods and input > 0:
-            input = input.Rune.toUpper.int
-          if not self.noUI:
-            case event.action
-            of Press, Repeat:
-              if not self.builder.handleKeyPressed(input.int64, event.mods):
-                self.onKeyPress.invoke (input.int64, event.mods)
-            of Release:
-              if not self.builder.handleKeyReleased(input.int64, event.mods):
-                self.onKeyRelease.invoke (input.int64, event.mods)
-          if self.noUI:
-            if event.input == 'c'.int64 and event.mods == {Control}:
-              exitProc()
-              stdout.write &"exited\r\n"
-              stdout.flushFile()
-              quit(1)
-        of Mouse:
-          if not self.noUI:
-            let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
-            case event.mouse.action
-            of Press, Repeat:
-              self.mouseButtons.incl event.mouse.button
-              if not self.builder.handleMousePressed(event.mouse.button, event.mouse.mods, pos):
-                self.onMousePress.invoke (event.mouse.button, event.mouse.mods, pos)
-            else:
-              self.mouseButtons.excl event.mouse.button
-              if not self.builder.handleMouseReleased(event.mouse.button, event.mouse.mods, pos):
-                self.onMouseRelease.invoke (event.mouse.button, event.mouse.mods, pos)
-        of MouseMove:
-          if not self.noUI:
-            let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
-            if not self.builder.handleMouseMoved(pos, {}, event.move.mods):
-              self.onMouseMove.invoke (pos, vec2(0, 0), event.move.mods, {})
-        of MouseDrag:
-          if not self.noUI:
-            let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
-            if not self.builder.handleMouseMoved(pos, {event.drag.button}, event.drag.mods):
-              self.onMouseMove.invoke (pos, vec2(0, 0), event.drag.mods, {event.drag.button})
-        of Scroll:
-          if not self.noUI:
-            let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
-            if not self.builder.handleMouseScroll(pos, vec2(0, event.scroll.delta.float), event.scroll.mods):
-              self.onScroll.invoke (pos, vec2(0, event.scroll.delta.float), event.scroll.mods)
-        of GridSize:
-          self.gridSize = ivec2(event.width.int32, event.height.int32)
-          self.requestRender(true)
-        of PixelSize:
-          self.pixelSize = ivec2(event.width.int32, event.height.int32)
-          self.requestRender(true)
-        of CellPixelSize:
-          self.cellPixelSize = ivec2(event.width.int32, event.height.int32)
-          self.requestRender(true)
-        of KittyKeyboardFlags:
-          if self.noUI:
-            stdout.write &"KittyKeyboardFlags: current: {event.flags}, requested: {self.kittyKeyboardFlags}\r\n"
-          log lvlInfo, &"Enable kitty keyboard protocol with flags {event.flags} (requested ({self.kittyKeyboardFlags})"
-          if DisambiguateEscapeCodes in event.flags:
-            self.inputParser.enableEscapeTimeout = false
-          self.useKittyKeyboard = true
-          self.kittyKeyboardFlags = event.flags
-
-        inc eventCounter
-        inc self.eventCounter
-
-      stdout.flushFile()
-
-      let terminalSize = self.getTerminalSize()
-      let sizeChanged = self.buffer.width != terminalSize.x.int or self.buffer.height != terminalSize.y.int
-      if sizeChanged:
-        self.requestRender(true)
-      return eventCounter
-    except:
-      discard
-
-  proc toStdColor(color: chroma.Color): stdcolors.Color =
-    let rgb = color.asRgb
-    return stdcolors.rgb(rgb.r, rgb.g, rgb.b)
-
-  proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) {.gcsafe.}
-
-  proc flushBorders(self: TerminalPlatform) =
-    self.buffer.write(self.borderBuffer, writeStyle = false)
-    self.borderBuffer.clear(0, 0, int.high, int.high)
-
-  proc renderTerminalPlatform(self: TerminalPlatform, rerender: bool) {.gcsafe.} =
-    try:
-      let terminalSize = self.getTerminalSize()
-      let sizeChanged = self.buffer.width != terminalSize.x.int or self.buffer.height != terminalSize.y.int
-      if rerender or sizeChanged:
-        if sizeChanged:
-          log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {terminalSize.x}x{terminalSize.y}, recreate buffer")
-          self.buffer.initTerminalBuffer(terminalSize.x, terminalSize.y)
-          self.buffer.clear()
-          self.borderBuffer.resize(terminalSize.x, terminalSize.y)
-          self.redrawEverything = true
-
-        if self.builder.root.lastSizeChange == self.builder.frameIndex:
-          self.redrawEverything = true
-
-        self.cursor.visible = false
-        self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
-        self.buffer.write(self.borderBuffer, writeStyle = false)
-        self.flushBorders()
-
-        # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
-        try:
-          if not self.noUI:
-            {.gcsafe.}:
-              self.buffer.display()
-
-          self.redrawEverything = false
-        except CatchableError as e:
-          log(lvlError, fmt"Failed to display buffer: {e.msg}")
-          stdout.write fmt"Failed to display buffer: {e.msg}\r\n"
-          self.redrawEverything = true
-
-      stdout.flushFile()
-    except:
-      discard
-
-
-  proc setForegroundColor(self: TerminalPlatform, color: chroma.Color) =
-    if self.trueColorSupport:
-      self.buffer.setForegroundColor(color.toStdColor)
-    else:
-      let stdColor = color.toStdColor.extractRGB
-      let fgColor = getClosestColor[tui.ForegroundColor](stdColor.r, stdColor.g, stdColor.b, tui.fgWhite)
-      self.buffer.setForegroundColor(fgColor)
-
-  proc setBackgroundColor(self: TerminalPlatform, color: chroma.Color) =
-    if self.trueColorSupport:
-      self.buffer.setBackgroundColor(color.toStdColor, color.a)
-    else:
-      let stdColor = color.toStdColor.extractRGB
-      let bgColor = getClosestColor[tui.BackgroundColor](stdColor.r, stdColor.g, stdColor.b, tui.bgBlack)
-      self.buffer.setBackgroundColor(bgColor)
-
-  proc fillRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
-    let mask = if self.masks.len > 0:
-      self.masks[self.masks.high]
-    else:
-      rect(vec2(0, 0), self.size)
-
-    let bounds = bounds and mask
-
-    self.setBackgroundColor(color)
-    self.buffer.fillBackground(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
-    self.buffer.setBackgroundColor(bgNone)
-    self.borderBuffer.clear(bounds.x.int + 1, bounds.y.int + 1, bounds.xw.int - 1 - 1, bounds.yh.int - 1 - 1)
-
-  proc drawRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
-    let mask = if self.masks.len > 0:
-      self.masks[self.masks.high]
-    else:
-      rect(vec2(0, 0), self.size)
-
-    let bounds = bounds and mask
-
-    self.setForegroundColor(color)
-    self.buffer.drawRect(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
-
-  proc drawBorder(self: TerminalPlatform, bounds: Rect, color: chroma.Color, border: UIBorder, backgroundColor: chroma.Color) =
-    let mask = if self.masks.len > 0:
-      self.masks[self.masks.high]
-    else:
-      rect(vec2(0, 0), self.size)
-
-    var boundsMaskedV = bounds and rect(mask.x, float.low, mask.w, float.high)
-    var boundsMaskedH = bounds and rect(float.low, mask.y, float.high, mask.h)
-
-    self.setForegroundColor(color)
-    self.setBackgroundColor(backgroundColor)
-    if border.left > 0:
-      self.fillRect(rect(bounds.x, bounds.y, 1, bounds.h), backgroundColor)
-      self.buffer.drawVertLine(bounds.x.int, boundsMaskedH.y.int, boundsMaskedH.yh.int - 1)
-      self.borderBuffer.drawVertLine(bounds.x.int, boundsMaskedH.y.int, boundsMaskedH.yh.int - 1)
-    if border.right > 0:
-      self.fillRect(rect(bounds.xw - 1, bounds.y, 1, bounds.h), backgroundColor)
-      self.buffer.drawVertLine(bounds.xw.int - 1, boundsMaskedH.y.int, boundsMaskedH.yh.int - 1)
-      self.borderBuffer.drawVertLine(bounds.xw.int - 1, boundsMaskedH.y.int, boundsMaskedH.yh.int - 1)
-    if border.top > 0:
-      self.fillRect(rect(bounds.x, bounds.y, bounds.w, 1), backgroundColor)
-      self.buffer.drawHorizLine(boundsMaskedV.x.int, boundsMaskedV.xw.int - 1, bounds.y.int)
-      self.borderBuffer.drawHorizLine(boundsMaskedV.x.int, boundsMaskedV.xw.int - 1, bounds.y.int)
-    if border.bottom > 0:
-      self.fillRect(rect(bounds.x, bounds.yh - 1, bounds.w, 1), backgroundColor)
-      self.buffer.drawHorizLine(boundsMaskedV.x.int, boundsMaskedV.xw.int - 1, bounds.yh.int - 1)
-      self.borderBuffer.drawHorizLine(boundsMaskedV.x.int, boundsMaskedV.xw.int - 1, bounds.yh.int - 1)
-
-  # proc drawRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
-  #   let mask = if self.masks.len > 0:
-  #     self.masks[self.masks.high]
-  #   else:
-  #     rect(vec2(0, 0), self.size)
-
-  #   let bounds = bounds and mask
-
-  #   self.setBackgroundColor(color)
-  #   self.buffer.drawRect(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
-  #   self.buffer.setBackgroundColor(bgNone)
-
-  proc writeLine(self: TerminalPlatform, pos: Vec2, text: string, italic: bool): int =
-    let mask = if self.masks.len > 0:
-      self.masks[self.masks.high]
-    else:
-      rect(vec2(0, 0), self.size)
-
-    # Check if text outside vertically
-    if pos.y < mask.y or pos.y >= mask.yh:
-      return
-
-    var x = pos.x.int
-    for r in text.runes:
-      let props = r.runeProps
-      if props.isCombining:
-        # Combining characters overlay on the previous character's cell
-        if x > pos.x.int:
-          dec x
-        if x >= mask.x.int and x <= mask.xw.int:
-          self.buffer.writeRune(x, pos.y.int, r, 0, 0, italic)
-      else:
-        if x >= mask.x.int and x + props.displayWidth <= mask.xw.int:
-          self.buffer.writeRune(x, pos.y.int, r, props.selectionWidth, props.displayWidth - props.selectionWidth, italic)
-        x += props.displayWidth
-        result += props.displayWidth
-        if x >= mask.xw.int:
-          break
-
-  proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int, RuneCount) {.gcsafe.} =
-    var len = 0.RuneCount
-    var bytes = 0
-    while start + bytes < str.len and len < maxLen:
-      let rune = str.runeAt(start + bytes)
-      if bytes > 0 and rune.isWhiteSpace:
-        break
-      inc len
-      bytes += str.runeLenAt(start + bytes)
-
-    return (bytes, len)
-
-  proc writeText(self: TerminalPlatform, pos: Vec2, text: string, color: chroma.Color, spaceColor: chroma.Color, spaceRune: Rune, wrap: bool, lineLen: RuneCount, italic: bool, flags: UINodeFlags) =
-    var yOffset = 0.0
-
-    let spaceText = $spaceRune
-
-    self.setForegroundColor(color)
-    for line in text.splitLines:
-      let runeLen = line.runeLen
-
-      if wrap and runeLen > lineLen:
-        var startByte = 0
-        var startRune = 0.RuneIndex
-
-        while startByte < line.len:
-          var endByte = startByte
-          var endRune = startRune
-          var currentRuneLen = 0.RuneCount
-
-          while true:
-            let (bytes, runes) = line.nextWrapBoundary(endByte, lineLen - currentRuneLen)
-            if currentRuneLen + runes >= lineLen.RuneIndex or bytes == 0:
-              break
-
-            endByte += bytes
-            endRune += runes
-            currentRuneLen += runes
-
-          if startByte >= line.len or endByte > line.len:
-            break
-
-          discard self.writeLine(pos + vec2(0, yOffset), line[startByte..<endByte], italic)
-
-          yOffset += 1
-
-          if startByte == endByte:
-            break
-
-          startByte = endByte
-          startRune = endRune
-
-      else:
-        if TextDrawSpaces in flags:
-          var start = 0
-          var xOffset = 0
-          var i = line.find(' ')
-          if i == -1:
-            discard self.writeLine(pos + vec2(0, yOffset), line, italic)
-          else:
-            while i != -1:
-              xOffset += self.writeLine(pos + vec2(xOffset.float, yOffset), line[start..<i], italic)
-              self.setForegroundColor(spaceColor)
-              xOffset += self.writeLine(pos + vec2(xOffset.float, yOffset), spaceText, italic)
-              self.setForegroundColor(color)
-              start = i + 1
-              i = line.find(' ', start)
-
-            if start < line.len:
-              discard self.writeLine(pos + vec2(xOffset.float, yOffset), line[start..^1], italic)
-        else:
-          discard self.writeLine(pos + vec2(0, yOffset), line, italic)
-        yOffset += 1
-
-  proc handleCommand(builder: UINodeBuilder, platform: TerminalPlatform, renderCommands: ptr RenderCommands, command: RenderCommand, offsets: var seq[Vec2], offset: var Vec2) =
-    const cursorFlags = &{CursorBlock, CursorBar, CursorUnderline, CursorBlinking}
-    case command.kind
-    of RenderCommandKind.Rect:
-      platform.drawRect(command.bounds + offset, command.color)
-    of RenderCommandKind.FilledRect:
-      if command.flags * cursorFlags != 0.UINodeFlags:
-        let pos = command.bounds + offset
-        platform.cursor.shape = command.flags * cursorFlags
-        platform.cursor.visible = true
-        platform.cursor.col = pos.x.int
-        platform.cursor.row = pos.y.int
-      else:
-        platform.fillRect(command.bounds + offset, command.color)
-    of RenderCommandKind.Image:
-      discard
-    of RenderCommandKind.TextRaw:
-      var text = newStringOfCap(command.len)
-      if command.len > 0:
-        text.setLen(command.len)
-        copyMem(text[0].addr, command.data, command.len)
-        platform.buffer.setBackgroundColor(bgNone)
-        platform.writeText(command.bounds.xy + offset, text, command.color, renderCommands.spacesColor, renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
-    of RenderCommandKind.Text:
-      # todo: don't copy string data
-      let text = renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
-      platform.buffer.setBackgroundColor(bgNone)
-      platform.writeText(command.bounds.xy + offset, text, command.color, renderCommands.spacesColor, renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
-    of RenderCommandKind.ScissorStart:
-      platform.pushMask(command.bounds + offset)
-    of RenderCommandKind.ScissorEnd:
-      platform.popMask()
-    of RenderCommandKind.TransformStart:
-      offsets.add offset
-      offset += command.bounds.xy
-    of RenderCommandKind.TransformEnd:
-      if offsets.len > 0:
-        offset = offsets.pop()
-
-  proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
-    {.gcsafe.}:
-      var nodePos = offset
-      nodePos.x += node.boundsActual.x
-      nodePos.y += node.boundsActual.y
-
-      var force = force
-
-      if builder.useInvalidation and not force and node.lastChange < builder.frameIndex:
-        return
-
-      node.lastRenderTime = builder.frameIndex
-
-      if node.flags.any &{UINodeFlag.FillBackground, DrawText}:
-        force = true
-
-      node.lx = nodePos.x
-      node.ly = nodePos.y
-      node.lw = node.boundsActual.w
-      node.lh = node.boundsActual.h
-      let bounds = rect(nodePos.x, nodePos.y, node.boundsActual.w, node.boundsActual.h)
-
-      const cursorFlags = &{CursorBlock, CursorBar, CursorUnderline, CursorBlinking}
-      if FillBackground in node.flags:
-        if node.flags * cursorFlags != 0.UINodeFlags:
-          platform.cursor.shape = node.flags * cursorFlags
-          platform.cursor.visible = true
-          platform.cursor.col = bounds.x.int
-          platform.cursor.row = bounds.y.int
-        else:
-          platform.fillRect(bounds, node.backgroundColor)
-
-      # Mask the rest of the rendering is this function to the contentBounds
-      if MaskContent in node.flags:
-        platform.pushMask(bounds)
-      defer:
-        if MaskContent in node.flags:
-          platform.popMask()
-
-      if DrawText in node.flags:
-        platform.buffer.setBackgroundColor(bgNone)
-        platform.writeText(bounds.xy, node.text, node.textColor, node.textColor, ' '.Rune, TextWrap in node.flags, round(bounds.w).RuneCount, TextItalic in node.flags, node.flags)
-
-      if DrawChildrenReverse in node.flags:
-        for c in node.rchildren:
-          builder.drawNode(platform, c, nodePos, force)
-      else:
-        for _, c in node.children:
-          builder.drawNode(platform, c, nodePos, force)
-
-      if FlushBorders in node.flags:
-        platform.flushBorders()
-
-      var offset = nodePos
-      var offsets: seq[Vec2]
-      for list in node.renderCommandList:
-        offsets.setLen(0)
-        offset = nodePos
-        for command in list.commands:
-          handleCommand(builder, platform, list[].addr, command, offsets, offset)
-
-        offsets.setLen(0)
-        offset = nodePos
-        for command in list[].decodeRenderCommands:
-          handleCommand(builder, platform, list[].addr, command, offsets, offset)
-
-      offsets.setLen(0)
-      offset = nodePos
-      for command in node.renderCommands.commands:
-        handleCommand(builder, platform, node.renderCommands.addr, command, offsets, offset)
-
-      offsets.setLen(0)
-      offset = nodePos
-      for command in node.renderCommands.decodeRenderCommands:
-        handleCommand(builder, platform, node.renderCommands.addr, command, offsets, offset)
-
-      if DrawBorderTerminal in node.flags:
-        platform.drawBorder(bounds, node.borderColor, node.border, node.backgroundColor)
 
   proc newTerminalPlatform*(): Platform {.raises: [].} =
     var res = TerminalPlatform()
@@ -905,10 +529,29 @@ when implModule:
       self.TerminalPlatform.charGapTerminalPlatform()
     res.setVsyncImpl = proc(self: Platform, enabled: bool) =
       self.TerminalPlatform.setVsyncTerminalPlatform(enabled)
-    res.getFontInfoImpl = proc(self: Platform, fontSize: float, flags: UINodeFlags): ptr FontInfo =
+    res.getFontInfoImpl = proc(self: Platform, fontSize: float,
+        flags: UINodeFlags): ptr FontInfo =
       self.TerminalPlatform.getFontInfoTerminalPlatform(fontSize, flags)
-
+    res.shouldRenderImpl = proc(self: Platform): bool =
+      self.TerminalPlatform.shouldRenderTerminalPlatform()
+    res.beginNuiFrameImpl = proc(self: Platform) =
+      self.TerminalPlatform.beginNuiFrameTerminalPlatform()
+    res.endNuiFrameImpl = proc(self: Platform) =
+      self.TerminalPlatform.endNuiFrameTerminalPlatform()
     return res
 
+  proc init_module_terminal_platform*() {.cdecl, exportc, dynlib.} =
+    discard
+
+  {.pop: raises.}
+  {.pop: gcsafe.}
+
+elif implModule:
+  proc init_module_terminal_platform*() {.cdecl, exportc, dynlib.} =
+    discard
+  proc newTerminalPlatform*(): Platform {.raises: [].} =
+    assert false
+    nil
+else:
   proc init_module_terminal_platform*() {.cdecl, exportc, dynlib.} =
     discard

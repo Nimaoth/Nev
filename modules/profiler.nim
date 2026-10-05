@@ -14,7 +14,6 @@ when implModule and defined(profiler):
   import std/[algorithm, tables, json, strformat, strutils, sugar, os, atomics]
   import std/times except milliseconds
   import misc/[custom_async, myjsonutils, util, timer, event]
-  import ui/node
   import misc/[render_command]
   import theme
   import vmath, chroma
@@ -861,14 +860,6 @@ when implModule and defined(profiler):
     let p = getProfiler()
     p.allocatorEventsSinceLastSnapshot += p.processAllocatorEvents()
 
-  proc textPanel(builder: UINodeBuilder, text: string, textColor: Color, fontScale: float = 1) =
-    builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = text, textColor = textColor, fontScale = fontScale)
-
-  proc button(builder: UINodeBuilder, text: string, textColor: Color, backgroundColor: Color, handler: proc() {.gcsafe, raises: [].}) =
-    builder.panel(&{SizeToContentX, SizeToContentY, DrawText, FillBackground, MouseHover, DrawBorder}, text = text, textColor = textColor, backgroundColor = backgroundColor, border = textColor, border = border(1)):
-      onClickAny btn:
-        handler()
-
   proc formatMemoryMulti(value: int): string =
     let clamped = max(0, value)
     let kb = clamped.float / 1024.0
@@ -1065,366 +1056,7 @@ when implModule and defined(profiler):
     except CatchableError:
       discard
 
-  proc renderSnapshotChart(self: ProfilerView, builder: UINodeBuilder, barUpColor: Color, barDownColor: Color, chartBackgroundColor: Color, seriesKind: SnapshotSeriesKind, viewportTop: float, viewportBottom: float, tagBit: int = -1, chartHeight: float = 100) =
-    builder.panel(&{FillX, SizeToContentY, LayoutVertical}):
-      let currentSeriesValue =
-        if self.snapshotLen > 0:
-          max(0, snapshotSeriesValue(self.snapshotAt(self.snapshotLen - 1), seriesKind, tagBit))
-        else:
-          0
-      let baselineValue = self.baselineSeriesValue(seriesKind, tagBit, currentSeriesValue)
-      let deltaValue = currentSeriesValue - baselineValue
-      let headerText = &"{seriesLabel(seriesKind, tagBit)}: {formatMemoryMulti(currentSeriesValue)} | Delta {formatSignedMemoryMulti(deltaValue)}"
-      textPanel(builder, headerText, barUpColor, fontScale = 0.9)
-      builder.panel(&{FillX, SizeToContentY, FillBackground, MouseHover}, h = chartHeight, backgroundColor = chartBackgroundColor, tag = "profiler-chart"):
-        let boundsAbsolute = currentNode.boundsAbsolute
-        let chartTop = boundsAbsolute.y
-        let chartBottom = boundsAbsolute.y + boundsAbsolute.h
-        if chartBottom <= viewportTop or chartTop >= viewportBottom:
-          currentNode.renderCommands.clear()
-          currentNode.renderCommandList.setLen(0)
-          return
-
-        let bounds = currentNode.bounds
-        currentNode.renderCommands.clear()
-        currentNode.renderCommandList.setLen(0)
-
-        if self.snapshotLen <= 0:
-          return
-
-        let chartCommands = self.acquireRenderCommandBuffer()
-        currentNode.renderCommandList.add(chartCommands)
-
-        let maxBars = max(1, int(bounds.w * 0.5))
-        let displayedBars = min(self.snapshotLen, maxBars)
-        let logicalSamplesPerBar = self.snapshotLen.float / displayedBars.float
-        self.snapshotAggregatedValues.setLen(displayedBars)
-        for i in 0..<displayedBars:
-          let rangeStart = i.float * logicalSamplesPerBar
-          let rangeEnd = (i + 1).float * logicalSamplesPerBar
-          self.snapshotAggregatedValues[i] = self.averagedSnapshotSeriesValue(seriesKind, tagBit, rangeStart, rangeEnd)
-
-        var minAllocatedBytesVisible = int.high
-        var maxAllocatedBytes = int.low
-        for i in 0..<displayedBars:
-          let value = self.snapshotAggregatedValues[i]
-          minAllocatedBytesVisible = min(minAllocatedBytesVisible, value)
-          maxAllocatedBytes = max(maxAllocatedBytes, value)
-
-        let nthOffset = max(0, self.baselineSnapshotN - 1)
-        let desiredBaselineLogicalIndex = nthOffset
-        let baselineLogicalIndex =
-          if desiredBaselineLogicalIndex in 0..<self.snapshotLen:
-            desiredBaselineLogicalIndex
-          elif desiredBaselineLogicalIndex - 1 in 0..<self.snapshotLen:
-            desiredBaselineLogicalIndex - 1
-          else:
-            max(0, self.snapshotLen - 1)
-        let dynamicBaseline = max(0, snapshotSeriesValue(self.snapshotAt(baselineLogicalIndex), seriesKind, tagBit))
-        let minAllocatedBytes = max(0, self.baselineSeriesValue(seriesKind, tagBit, dynamicBaseline))
-        let maxAboveThreshold = max(0, maxAllocatedBytes - minAllocatedBytes)
-        let maxBelowThreshold = max(0, minAllocatedBytes - minAllocatedBytesVisible)
-
-        let barWidth = max(1.0, bounds.w / displayedBars.float)
-
-        onHover:
-          let hoveredDisplayedIndex = clamp(int(floor(pos.x / barWidth)), 0, displayedBars - 1)
-          let hoveredRangeStart = hoveredDisplayedIndex.float * logicalSamplesPerBar
-          let hoveredRangeEnd = (hoveredDisplayedIndex + 1).float * logicalSamplesPerBar
-          let hoveredLogicalIndex = clamp(int((hoveredRangeStart + hoveredRangeEnd) * 0.5), 0, self.snapshotLen - 1)
-          if hoveredLogicalIndex != self.hoveredSnapshotLogicalIndex or self.hoveredSeriesKind != seriesKind or self.hoveredSeriesTagBit != tagBit:
-            self.hoveredSnapshotLogicalIndex = hoveredLogicalIndex
-            self.hoveredSeriesKind = seriesKind
-            self.hoveredSeriesTagBit = tagBit
-            self.markDirty()
-
-        onEndHover:
-          if self.hoveredSnapshotLogicalIndex >= 0:
-            self.hoveredSnapshotLogicalIndex = -1
-            self.markDirty()
-
-        buildCommands(chartCommands[]):
-          let centerY = bounds.h * 0.5
-          for i in 0..<displayedBars:
-            let bytes = self.snapshotAggregatedValues[i]
-            let delta = bytes - minAllocatedBytes
-            let x = i.float * barWidth
-            if delta >= 0:
-              let ratio = min(1.0, max(0.0, abs(delta).float / maxAboveThreshold.float))
-              let barHeight = max(1.0, centerY * ratio)
-              let y = centerY - barHeight
-              let barColor = barUpColor
-              fillRect(rect(x, y, barWidth, barHeight), barColor)
-            else:
-              let ratio = min(1.0, max(0.0, abs(delta).float / maxBelowThreshold.float))
-              let barHeight = max(1.0, centerY * ratio)
-              let y = centerY
-              let barColor = barDownColor
-              fillRect(rect(x, y, barWidth, barHeight), barColor)
-
-  proc renderStackAllocationChart(self: ProfilerView, builder: UINodeBuilder, chartBackgroundColor: Color, textColor: Color, increasingColor: Color, decreasingColor: Color, viewportTop: float, viewportBottom: float, chartHeight: float = 140) =
-    let sortMode = self.stackSortMode
-    builder.panel(&{FillX, SizeToContentY, LayoutVertical}):
-      self.stackScratch.setLen(0)
-      var hiddenTotalSize = 0
-      var hiddenTotalCount = 0
-      for _, summary in self.stackAllocationsByHash:
-        if passesStackMetricThreshold(summary, sortMode):
-          self.stackScratch.add(summary)
-        else:
-          hiddenTotalSize += max(0, summary.totalAllocatedSize)
-          hiddenTotalCount += max(0, summary.allocationCount)
-
-      textPanel(builder, &"Total Unique Stacks: {self.stackScratch.len} ({stackSortModeLabel(sortMode)} {stackMetricThresholdLabel(sortMode)})", textColor)
-      textPanel(builder, &"Stacks ({self.stackScratch.len}) | Sorted by {stackSortModeLabel(sortMode)}", textColor)
-
-      button(builder, " Stack Sort: " & stackSortModeLabel(self.stackSortMode) & " ", textColor, chartBackgroundColor.lighten(0.2), proc() {.gcsafe, raises: [].} =
-        self.stackSortMode = nextStackSortMode(self.stackSortMode)
-        self.markDirty()
-      )
-
-      sortStacksByMetric(self.stackScratch, sortMode)
-
-      builder.panel(&{FillX, SizeToContentY, FillBackground, MouseHover}, h = chartHeight, backgroundColor = chartBackgroundColor, tag = "profiler-stack-chart"):
-        let boundsAbsolute = currentNode.boundsAbsolute
-        let chartTop = boundsAbsolute.y
-        let chartBottom = boundsAbsolute.y + boundsAbsolute.h
-        if chartBottom <= viewportTop or chartTop >= viewportBottom:
-          currentNode.renderCommands.clear()
-          currentNode.renderCommandList.setLen(0)
-          return
-
-        let bounds = currentNode.bounds
-        currentNode.renderCommands.clear()
-        currentNode.renderCommandList.setLen(0)
-
-        if self.stackScratch.len == 0 or bounds.w <= 0:
-          return
-
-        let chartCommands = self.acquireRenderCommandBuffer()
-        currentNode.renderCommandList.add(chartCommands)
-
-        var maxMetric = 1.0
-        for stackSummary in self.stackScratch:
-          maxMetric = max(maxMetric, max(stackBaselineMetricValue(stackSummary, sortMode), stackMetricValue(stackSummary, sortMode)))
-        let barWidth = bounds.w / self.stackScratch.len.float
-
-        onHover:
-          let hoveredDisplayedIndex = clamp(int(floor(pos.x / barWidth)), 0, self.stackScratch.high)
-          let hoveredHash = self.stackScratch[hoveredDisplayedIndex].returnAddressHash
-          if hoveredHash != self.hoveredStackReturnAddressHash:
-            self.hoveredStackReturnAddressHash = hoveredHash
-            self.markDirty()
-
-        onClickAny btn:
-          if btn == MouseButton.Middle:
-            let clickedDisplayedIndex = clamp(int(floor(pos.x / barWidth)), 0, self.stackScratch.high)
-            let clickedHash = self.stackScratch[clickedDisplayedIndex].returnAddressHash
-            daSetBreakOnReturnAddressHash(clickedHash)
-            if clickedHash != self.hoveredStackReturnAddressHash:
-              self.hoveredStackReturnAddressHash = clickedHash
-            self.markDirty()
-
-        onEndHover:
-          discard
-
-        buildCommands(chartCommands[]):
-          for i in 0..<self.stackScratch.len:
-            let stackSummary = self.stackScratch[i]
-            let x = i.float * barWidth
-            let baselineMetric = stackBaselineMetricValue(stackSummary, sortMode)
-            let currentMetric = stackMetricValue(stackSummary, sortMode)
-            let baselineRatio = min(1.0, max(0.0, baselineMetric / maxMetric))
-            let currentRatio = min(1.0, max(0.0, currentMetric / maxMetric))
-            let baselineBarHeight = max(1.0, bounds.h * baselineRatio)
-            let currentBarHeight = max(1.0, bounds.h * currentRatio)
-            let baselineY = bounds.h - baselineBarHeight
-            let currentY = bounds.h - currentBarHeight
-
-            let trendColor =
-              if currentMetric > baselineMetric:
-                increasingColor
-              elif currentMetric < baselineMetric:
-                decreasingColor
-              else:
-                textColor
-
-            let currentBarColor =
-              if self.hoveredStackReturnAddressHash != 0 and stackSummary.returnAddressHash == self.hoveredStackReturnAddressHash:
-                trendColor.lighten(0.2)
-              else:
-                trendColor
-            let baselineBarColor = trendColor.darken(0.2).withAlpha(0.5)
-            fillRect(rect(x, currentY, max(1.0, barWidth), currentBarHeight), currentBarColor)
-            fillRect(rect(x, baselineY, max(1.0, barWidth), baselineBarHeight), baselineBarColor)
-
-      var hoveredVisibleIndex = -1
-      if self.hoveredStackReturnAddressHash != 0:
-        for i, stackSummary in self.stackScratch:
-          if stackSummary.returnAddressHash == self.hoveredStackReturnAddressHash:
-            hoveredVisibleIndex = i
-            break
-
-      if hoveredVisibleIndex >= 0:
-        let hoveredStack = self.stackScratch[hoveredVisibleIndex]
-        let hoveredStackHash = hoveredStack.returnAddressHash
-        let baselineMetric = stackBaselineMetricValue(hoveredStack, sortMode)
-        let currentMetric = stackMetricValue(hoveredStack, sortMode)
-        var biggerTotalSize = 0
-        var biggerTotalCount = 0
-        var smallerTotalSize = 0
-        var smallerTotalCount = 0
-        for stackSummary in self.stackScratch:
-          if stackMetricValue(stackSummary, sortMode) > stackMetricValue(hoveredStack, sortMode):
-            biggerTotalSize += max(0, stackSummary.totalAllocatedSize)
-            biggerTotalCount += max(0, stackSummary.allocationCount)
-          elif stackMetricValue(stackSummary, sortMode) < stackMetricValue(hoveredStack, sortMode):
-            smallerTotalSize += max(0, stackSummary.totalAllocatedSize)
-            smallerTotalCount += max(0, stackSummary.allocationCount)
-
-        textPanel(builder, &"Hash:     0x{hoveredStack.returnAddressHash.toHex}", textColor, fontScale = 0.9)
-        textPanel(builder, &"count:    {max(0, hoveredStack.allocationCount)}", textColor, fontScale = 0.9)
-        textPanel(builder, &"size:     {formatMemoryMulti(max(0, hoveredStack.totalAllocatedSize))}", textColor, fontScale = 0.9)
-        textPanel(builder, &"current:  {formatStackMetricValue(currentMetric, sortMode)}", textColor, fontScale = 0.9)
-        textPanel(builder, &"baseline: {formatStackMetricValue(baselineMetric, sortMode)}", textColor, fontScale = 0.9)
-        textPanel(builder, &"delta:    {formatStackMetricValue(currentMetric - baselineMetric, sortMode)}", textColor, fontScale = 0.9)
-        textPanel(builder, &"> Hover:  {formatMemoryMulti(biggerTotalSize)} | allocs: {biggerTotalCount}", textColor, fontScale = 0.9)
-        textPanel(builder, &"< Hover:  {formatMemoryMulti(smallerTotalSize)} | allocs: {smallerTotalCount}", textColor, fontScale = 0.9)
-        button(builder, " Dump Stack Graph ", textColor, chartBackgroundColor.lighten(0.2), proc() {.gcsafe, raises: [].} =
-          var i = 0
-          for allocation in self.allocationsForStackHash(hoveredStackHash):
-            let dumpPath = "logs/allocation-graph-" & hoveredStackHash.toHex & "-" & allocation.ptrValue.toHex & ".dot"
-            if self.dumpAllocationGraphToFile(cast[pointer](allocation.ptrValue), 10, dumpPath = dumpPath):
-              inc i
-            if i > 10:
-              break
-        )
-        textPanel(builder, &"Hidden:   {formatMemoryMulti(hiddenTotalSize)} | allocs: {hiddenTotalCount}", textColor, fontScale = 0.9)
-        builder.panel(&{DrawText, TextMultiline, TextWrap, SizeToContentX, SizeToContentY},
-          text = &"  {formatLeakStackTrace(hoveredStack.stackTrace)}", textColor = textColor, fontScale = 0.9)
-      else:
-        button(builder, " Dump Stack Graph ", textColor, chartBackgroundColor.lighten(0.2), proc() {.gcsafe, raises: [].} =
-          discard
-        )
-
-  proc renderMemoryTab(self: ProfilerView, builder: UINodeBuilder,
-      backgroundColor: Color, textColor: Color, numberColor: Color,
-      chartColor: Color, chartDownColor: Color, chartBackgroundColor: Color,
-      increasedColor: Color, decreasedColor: Color,
-      viewportTop: float, viewportBottom: float) =
-    let allocatedBytes = self.latestSnapshotBytes()
-    let allocatedMb = allocatedBytes.float / (1024.0 * 1024.0)
-    let allocatedGb = allocatedBytes.float / (1024.0 * 1024.0 * 1024.0)
-    let allocatedKb = allocatedBytes.float / 1024.0
-    let gbText = &"{allocatedGb:.2f}"
-    let mbText = &"{allocatedMb:.2f}"
-    let kbText = &"{allocatedKb:.2f}"
-    let byteText = $allocatedBytes
-    let stackTraceCacheBytes = max(0, daGetStackTraceCacheBytes())
-    let debugAllocatorStaticBytes = max(0, daGetDebugAllocatorStaticBytes())
-    let profilerStaticBytes = max(0, getProfilerStaticBytes())
-    let profilerTaggedBytes =
-      if ord(daProfiler) in 0..<64:
-        max(0, self.tagAllocatedSizes[ord(daProfiler)])
-      else:
-        0
-
-    builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-      button(builder, " Set Baseline ", textColor, backgroundColor.lighten(0.2), proc() {.gcsafe, raises: [].} =
-        self.forceSetBaselineReference()
-        self.markDirty()
-      )
-      button(builder, " Export Snapshot Dump ", textColor, backgroundColor.lighten(0.2), proc() {.gcsafe, raises: [].} =
-        self.writeSnapshotDumpToFile()
-      )
-
-    builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}):
-      builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-        textPanel(builder, $self.allocationsByPtr.len, numberColor)
-        textPanel(builder, " allocations", textColor)
-      builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-        textPanel(builder, gbText, numberColor)
-        textPanel(builder, " GB", textColor)
-      builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-        textPanel(builder, mbText, numberColor)
-        textPanel(builder, " MB", textColor)
-      builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-        textPanel(builder, kbText, numberColor)
-        textPanel(builder, " KB", textColor)
-      builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-        textPanel(builder, byteText, numberColor)
-        textPanel(builder, " B", textColor)
-      builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-        textPanel(builder, formatMemoryMulti(stackTraceCacheBytes), numberColor)
-        textPanel(builder, " allocator dynamic stack trace cache", textColor)
-      builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-        textPanel(builder, formatMemoryMulti(debugAllocatorStaticBytes), numberColor)
-        textPanel(builder, " allocator static", textColor)
-      builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-        textPanel(builder, formatMemoryMulti(profilerTaggedBytes), numberColor)
-        textPanel(builder, " profiler dynamic tagged", textColor)
-      builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-        textPanel(builder, formatMemoryMulti(profilerStaticBytes), numberColor)
-        textPanel(builder, " profiler static", textColor)
-
-    if self.hoveredSnapshotLogicalIndex in 0..<self.snapshotLen:
-      let hoveredSnapshot = self.snapshotAt(self.hoveredSnapshotLogicalIndex)
-      let hoveredValue = max(0, snapshotSeriesValue(hoveredSnapshot, self.hoveredSeriesKind, self.hoveredSeriesTagBit))
-      let hoveredBaseline = max(0, self.baselineSeriesValue(self.hoveredSeriesKind, self.hoveredSeriesTagBit, hoveredValue))
-      let hoveredDelta = hoveredValue - hoveredBaseline
-      let hoveredKb = hoveredValue.float / 1024.0
-      let hoveredMb = hoveredValue.float / (1024.0 * 1024.0)
-      let hoveredGb = hoveredValue.float / (1024.0 * 1024.0 * 1024.0)
-      let hoveredText = &"Hover {seriesLabel(self.hoveredSeriesKind, self.hoveredSeriesTagBit)}: {hoveredValue} B | {hoveredKb:.2f} KB | {hoveredMb:.2f} MB | {hoveredGb:.2f} GB | Delta {formatSignedMemoryMulti(hoveredDelta)}"
-      builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-        textPanel(builder, hoveredText, textColor)
-    else:
-      builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-        textPanel(builder, " ", textColor)
-
-    self.renderSnapshotChart(builder, chartColor, chartDownColor, chartBackgroundColor, sskAllocatorEvents, viewportTop, viewportBottom, chartHeight = 50)
-    self.renderSnapshotChart(builder, chartColor, chartDownColor, chartBackgroundColor, sskTotal, viewportTop, viewportBottom, chartHeight = 100)
-    self.renderSnapshotChart(builder, chartColor, chartDownColor, chartBackgroundColor, sskUntagged, viewportTop, viewportBottom, chartHeight = 50)
-
-    for bit in self.sortedTagBitsByAllocationSize():
-      self.renderSnapshotChart(builder, chartColor, chartDownColor, chartBackgroundColor, sskTag, viewportTop, viewportBottom, tagBit = bit, chartHeight = 50)
-
-    self.renderStackAllocationChart(builder, chartBackgroundColor, textColor, increasedColor, decreasedColor, viewportTop, viewportBottom)
-
-  proc renderLeaksTab(self: ProfilerView, builder: UINodeBuilder,
-      backgroundColor: Color, textColor: Color, leakLabelColor: Color) =
-    let potentialLeaks = self.cachedPotentialLeaks
-    builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}):
-      textPanel(builder, &"Potential Leaks ({potentialLeaks.len}/{self.potentialLeakCandidates.len}) | Tags: {self.formatVisibleLeakTags()}", leakLabelColor)
-
-      if potentialLeaks.len == 0:
-        textPanel(builder, &"No candidates older than {leakMinAgeSeconds:.0f}s", textColor)
-      else:
-        for i in 0..<potentialLeaks.len:
-          let leak {.cursor.} = potentialLeaks[i]
-          let leakHeader = &"#{i + 1} ptr=0x{leak.ptrValue.toHex} size={leak.usableSize} age={leak.ageSeconds:.1f}s tag=0x{leak.tagMask.toHex} tid={leak.threadId} hash=0x{leak.returnAddressHash.toHex}"
-          let leakHeaderColor =
-            if self.hoveredPotentialLeakPtr != 0 and leak.ptrValue == self.hoveredPotentialLeakPtr:
-              textColor.lighten(0.2)
-            else:
-              textColor
-          let ptrValue = leak.ptrValue
-          builder.panel(&{DrawText, SizeToContentX, SizeToContentY, MouseHover, FillBackground}, text = leakHeader, textColor = leakHeaderColor, backgroundColor = backgroundColor):
-            capture ptrValue:
-              onHover:
-                if self.hoveredPotentialLeakPtr != ptrValue:
-                  self.hoveredPotentialLeakPtr = ptrValue
-                  self.markDirty()
-
-        if self.hoveredPotentialLeakPtr != 0:
-          for i in 0..<potentialLeaks.len:
-            let leak {.cursor.} = potentialLeaks[i]
-            if leak.ptrValue == self.hoveredPotentialLeakPtr:
-              builder.panel(&{DrawText, TextMultiline, TextWrap, SizeToContentX, SizeToContentY},
-                text = &"  {formatLeakStackTrace(leak.stackTrace)}", textColor = textColor, fontScale = 0.9)
-
   # ---------------------------------------------------------------------------
-  # NUI (nuigi) rendering – mirrors the legacy UINodeBuilder path above.
   # Styling: chrome via fillBackground().styleIndex(Panel/Header) +
   # accentVariation for active state (gotcha 13); text via textStyleIndex
   # before text (gotcha 1); chart bars via customRenderCommands content
@@ -1589,7 +1221,7 @@ when implModule and defined(profiler):
           except:
             discard
         nui.layoutHorizontal("profiler-stack-maxbars"):
-          discard nui.fillX().fitY().gap(4)
+          discard nui.fillX().fitY().backendGap(4)
           profilerTextNui(nui, " Max bars: ")
           if nui.dragFloat(self.stackMaxBars, 256'f32, 16'f32, 512'f32):
             try:
@@ -1743,7 +1375,7 @@ when implModule and defined(profiler):
     {.cast(gcsafe).}:
       try:
         nui.layoutHorizontal("profiler-mem-buttons"):
-          discard nui.fillX().fitY().padding(4).gap(4)
+          discard nui.fillX().fitY().backendPadding(4).backendGap(4)
           if nui.button(" Set Baseline "):
             try:
               self.forceSetBaselineReference()
@@ -1891,9 +1523,9 @@ when implModule and defined(profiler):
         let headerBase = nui.themeStyle(UiStyleIndexHeader)[].fillColor
         let headerColor = if self.active: accentVariation(headerBase, 0.04'f32, 1.10'f32) else: headerBase
         nui.layoutVertical("profiler-root"):
-          discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).padding(4).gap(4)
+          discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).backendPadding(4).backendGap(4)
           nui.layoutHorizontal("profiler-tabs"):
-            discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backgroundColor(headerColor).padding(4).gap(4)
+            discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backgroundColor(headerColor).backendPadding(4).backendGap(4)
             let memLabel =
               if self.activeTabIndex == 0: "[Memory]"
               else: " Memory "
@@ -1909,70 +1541,13 @@ when implModule and defined(profiler):
           nui.scrollBox:
             discard nui.fillX().fitY()
             nui.layoutVertical("profiler-content"):
-              discard nui.fillX().fitY().gap(4)
+              discard nui.fillX().fitY().backendGap(4)
               if self.activeTabIndex == 0:
                 self.renderMemoryTabNui(nui)
               else:
                 self.renderLeaksTabNui(nui)
       except:
         discard
-
-  proc renderProfiler*(self: ProfilerView, builder: UINodeBuilder) =
-    daTag(daProfiler)
-    self.renderCommandPoolCursor = 0
-    let dirty = self.dirty
-    self.resetDirty()
-
-    let backgroundColor = if self.active: builder.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(-0.025)
-    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-    let increasedColor = builder.theme.color("terminal.ansiBrightRed", color(120/255, 200/255, 120/255))
-    let decreasedColor = builder.theme.color("terminal.ansiBrightGreen", color(220/255, 120/255, 120/255))
-    let chartColor = builder.theme.color("terminal.ansiBrightRed", textColor.lighten(0.0))
-    let chartDownColor = builder.theme.color("terminal.ansiBrightBlue", chartColor.darken(0.0))
-    let chartBackgroundColor = builder.theme.color("editorWidget.background", backgroundColor.lighten(0.025))
-    let leakLabelColor = builder.theme.color("terminal.ansiBrightYellow", textColor)
-    let activeTabColor = builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255))
-    let inactiveTabColor = builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
-    let borderColor = builder.theme.color("panel.border", color(0, 0, 0))
-
-    let allocatedBytes = self.latestSnapshotBytes()
-    let previousAllocatedBytes = self.previousSnapshotBytes()
-    let numberColor =
-      if self.snapshotLen > 1 and allocatedBytes > previousAllocatedBytes: increasedColor
-      elif self.snapshotLen > 1 and allocatedBytes < previousAllocatedBytes: decreasedColor
-      else: textColor
-
-    const tabLabels = ["Memory", "Leaks"]
-
-    builder.panel(&{FillBackground, FillX, FillY, MaskContent, LayoutVertical}, backgroundColor = backgroundColor, tag = "profiler"):
-      # Tab bar
-      builder.panel(&{FillX, SizeToContentY, LayoutHorizontal, FillBackground}, backgroundColor = inactiveTabColor):
-        for i in 0..<2:
-          let tabBg = if self.activeTabIndex == i: activeTabColor else: inactiveTabColor
-          capture i:
-            button(builder, " " & tabLabels[i] & " ", textColor, tabBg, proc() {.gcsafe, raises: [].} =
-              self.activeTabIndex = i
-              self.tabScrollOffsets[i] = 0
-              self.markDirty()
-            )
-      builder.panel(&{DrawBorder, DrawBorderTerminal, FillX}, h = 1, border = border(0, 0, 1, 0), borderColor = borderColor, backgroundColor = inactiveTabColor)
-
-      # Scrollable content area
-      builder.panel(&{FillX, FillY}):
-        let viewportTop = currentNode.boundsAbsolute.y
-        let viewportBottom = currentNode.boundsAbsolute.y + currentNode.boundsAbsolute.h
-        onScroll:
-          self.tabScrollOffsets[self.activeTabIndex] -= delta.y * builder.textHeight * 2
-          self.markDirty()
-
-        builder.panel(&{FillX, SizeToContentY, LayoutVertical}, tag = "scroll"):
-          if self.activeTabIndex == 0:
-            self.renderMemoryTab(builder, backgroundColor, textColor, numberColor, chartColor, chartDownColor, chartBackgroundColor, increasedColor, decreasedColor, viewportTop, viewportBottom)
-          else:
-            self.renderLeaksTab(builder, backgroundColor, textColor, leakLabelColor)
-
-        self.tabScrollOffsets[self.activeTabIndex] = self.tabScrollOffsets[self.activeTabIndex].max(0)
-        builder.currentChild.rawY = -self.tabScrollOffsets[self.activeTabIndex]
 
   proc getEventHandler(self: ProfilerView, context: string): EventHandler =
     let events = getServiceChecked(EventHandlerService)
@@ -2020,9 +1595,6 @@ when implModule and defined(profiler):
     let allocatorEventsProcessed = view.processAllocatorEvents()
     view.addSnapshot(view.globalAllocatedSize, allocatorEventsProcessed)
     view.tryCaptureBaselineReference()
-
-    view.renderImpl = proc(view: View, builder: UINodeBuilder): seq[OverlayFunction] {.closure, raises: [].} =
-      renderProfiler(view.ProfilerView, builder)
 
     view.renderNuiImpl = proc(view: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
       {.cast(gcsafe).}:

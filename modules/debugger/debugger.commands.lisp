@@ -9,18 +9,6 @@
   (command toggle-debugger-output toggleDebuggerOutput [(focus bool true) (slot string "#debugger-output")] () "")
   (command toggle-debugger-toolbar toggleDebuggerToolbar [(focus bool true) (slot string "#debugger-toolbar")] () "")
 
-  (command delete-last-variable-filter-char debuggerDeleteLastVariableFilterChar [] () "")
-  (command clear-variable-filter debuggerClearVariableFilter [] () "")
-  (command select-first-variable debuggerSelectFirstVariable [] () "")
-  (command select-last-variable debuggerSelectLastVariable [] () "")
-  (command prev-variable debuggerPrevVariable [(skipChildren bool false)] () "")
-  (command next-variable debuggerNextVariable [(skipChildren bool false)] () "")
-  (command expand-variable debuggerExpandVariable [] () "")
-  (command expand-variable-children debuggerExpandVariableChildren [] () "")
-  (command collapse-variable debuggerCollapseVariable [] () "")
-  (command expand-or-collapse-variable debuggerExpandOrCollapseVariable [] () "")
-  (command collapse-variable-children debuggerCollapseVariableChildren [] () "")
-
   (command prev-thread prevThread [] () "")
   (command next-thread nextThread [] () "")
   (command prev-stack-frame prevStackFrame [] () "")

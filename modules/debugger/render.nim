@@ -8,8 +8,8 @@ from nuigi import UiBuilder, UiBackendType, UiStyleIndex, UiTextStyleIndex,
   UiNodeStorageData, text, textStyleIndex, fit, fitY, node, fillX, fillY,
   fillBackground, styleIndex, backgroundColor, accentVariation, themeStyle,
   padding, gap, layoutVertical, layoutHorizontal, currentNode, currentNodeIndex,
-  nodeStorage, nodeStorageGet, nodeStorageParent, nodeStorageParents,
-  nodeIdValue, wasClicked, wasHovered, wrapText
+  nodeStorage, nodeStorageGet, nodeStorageParent,
+  wasClicked, wasHovered, wrapText
 import nuigi/widgets/dynamic_virtuallist
 import nuigi/widgets/tree_table
 from nuigi/widgets import tableColumnProportional
@@ -20,8 +20,6 @@ from std/unicode import runeLen, runeSubStr
 {.used.}
 
 logCategory "widget_builder_debugger"
-
-const debuggerMaxVarRows = 2000
 
 proc truncDebuggerText*(s: string, maxRunes: int): string {.gcsafe, raises: [].} =
   ## Truncates to maxRunes runes (never splitting UTF-8) with an ellipsis.
@@ -46,7 +44,7 @@ template debuggerChrome(nui: var UiBuilder, view: View, rootName,
       else: headerBase
     nui.layoutVertical(rootName):
       discard nui.fillX().fillY().fillBackground().styleIndex(
-        UiStyleIndexPanel).backgroundColor(bgColor).padding(4).gap(4)
+        UiStyleIndexPanel).backgroundColor(bgColor).backendPadding(4).backendGap(4)
       try:
         if nui.wasClicked(includeChildren = true):
           getServiceChecked(LayoutService).tryActivateView(view)
@@ -54,7 +52,7 @@ template debuggerChrome(nui: var UiBuilder, view: View, rootName,
         discard
       nui.layoutHorizontal(rootName & "-header"):
         discard nui.fillX().fitY().fillBackground().styleIndex(
-          UiStyleIndexHeader).backgroundColor(headerColor).padding(4).gap(4)
+          UiStyleIndexHeader).backgroundColor(headerColor).backendPadding(4).backendGap(4)
         nui.node:
           discard nui.fit().textStyleIndex(
             int(UiStyleIndexHeaderText)).text(titleText)
@@ -250,162 +248,251 @@ proc createThreadsUINui*(self: ThreadsView, nui: var UiBuilder,
     except:
       discard
 
-# Variables tree table: DebuggerVariablesCursor (declared in types_impl)
-# navigates scopes/variables live through the debugger tables (cf.
-# file_explorer's VirtualFileSystemCursor), so visible rows resolve on demand
-# and never need precalculating. Index-based paths/keys stay valid across DAP
-# refetches that remap VariablesReferences (see updateVariables); expansion is
-# owned by the tree widget, with collapsedVariables kept in sync for the legacy
-# renderer and keyboard navigation.
+# Variables tree table: DebuggerVariablesCursor navigates a DebuggerVarCache
+# (cf. file_explorer's VirtualFileSystemCursorCache). Every cursor operation is
+# a single hashtable lookup: listings are copied out of the debugger tables
+# into per-key nodes, and row display data rides along in parent-linked
+# locations, so rendering a row needs no lookup at all. Index-based keys stay
+# valid across DAP refetches; copies are dropped wholesale whenever the
+# context or table version changes. Expansion and keyboard navigation are owned
+# entirely by the tree widget. Locations are immutable once published (never
+# mutated in place), so sharing them between cloned cursors is safe.
 
-type DebuggerVarDetail = tuple
-  ok: bool
-  name: string
-  typ: string
-  value: string
-  childRef: VariablesReference
-  cached: bool
-  count: int
-
-proc childCountAt(c: DebuggerVariablesCursor, path: seq[int]): int {.gcsafe, raises: [].} =
-  ## Live child count for an index path: scopes at the root, cached variables
-  ## below. Uncached containers report 0 until requestDebuggerChildren fetches
-  ## them (file_explorer cache-miss pattern).
-  prof("childCountAt")
+proc copyVarChildren(vars: Variables): seq[DebuggerVarChild] {.gcsafe, raises: [].} =
+  ## Copies one variables listing into display-ready children (first value
+  ## line, truncated like the old precalculated rows).
   try:
-    if c.debugger == nil:
-      return 0
-    let scopes = c.debugger.currentScopes().getOr:
-      return 0
-    let ids = c.debugger.currentVariablesContext().getOr:
-      return 0
+    prof("copyVarChildren")
+    result = newSeqOfCap[DebuggerVarChild](vars.variables.len)
+    for va in vars.variables:
+      let firstLine =
+        try:
+          if va.value.len == 0: ""
+          else: va.value.splitLines()[0]
+        except: va.value
+      result.add DebuggerVarChild(name: va.name, typ: va.`type`.get(""),
+        value: truncDebuggerText(firstLine, 160),
+        childRef: va.variablesReference)
+  except:
+    result = @[]
+
+proc fillVarRoot(cache: DebuggerVarCache) {.gcsafe, raises: [].} =
+  ## (Re)builds the root scopes listing synchronously — scopes always live in
+  ## memory, so this never needs the network.
+  try:
+    prof("fillVarRoot")
+    if cache == nil or cache.debugger == nil:
+      return
+    var children: seq[DebuggerVarChild] = @[]
+    try:
+      if cache.debugger.currentScopes().getSome(scopes):
+        children = newSeqOfCap[DebuggerVarChild](scopes[].scopes.len)
+        for s in scopes[].scopes:
+          children.add DebuggerVarChild(name: s.name, typ: "", value: "",
+            childRef: s.variablesReference)
+    except:
+      discard
+    cache.nodes[DebuggerVarRootKey] = DebuggerVarNode(
+      childRef: 0.VariablesReference, fetched: true, children: children)
+  except:
+    discard
+
+proc beginVarFrame(view: VariablesView,
+    debugger: Debugger): DebuggerVarCache {.gcsafe, raises: [].} =
+  ## Call once per render: validates the cache against the current context and
+  ## table version (dropping stale listings), and ensures the root scopes
+  ## listing. Returns nil when there is nothing to show.
+  try:
+    prof("beginVarFrame")
+    if view == nil or debugger == nil:
+      return nil
+    if view.varCache == nil:
+      view.varCache = DebuggerVarCache(debugger: debugger, view: view)
+    result = view.varCache
+    result.debugger = debugger
+    result.view = view
+    let ids = debugger.currentVariablesContext().getOr:
+      result.valid = false
+      return nil
+    if not result.valid or result.ids != ids or
+        result.version != debugger.varCacheVersion:
+      result.nodes.clear()
+      result.ids = ids
+      result.version = debugger.varCacheVersion
+      result.valid = true
+      result.fillVarRoot()
+    return result
+  except:
+    return nil
+
+proc varNode(cache: DebuggerVarCache,
+    loc: DebuggerVarLocation): ptr DebuggerVarNode {.gcsafe, raises: [].} =
+  ## The single-lookup accessor for a location's listing. Fills synchronously
+  ## from the debugger tables when the data is already there, and triggers a
+  ## guarded DAP fetch otherwise (file_explorer cache-miss pattern: empty for
+  ## this frame, view marked dirty on arrival).
+  try:
+    prof("varNode")
+    if cache == nil or loc == nil or cache.debugger == nil or
+        cache.view == nil or not cache.valid:
+      return nil
+    if not cache.nodes.contains(loc.key):
+      if loc.key == DebuggerVarRootKey:
+        cache.fillVarRoot()
+      else:
+        var node = DebuggerVarNode(childRef: loc.container, fetched: false)
+        if loc.container != 0.VariablesReference:
+          let dbg = cache.debugger
+          if dbg.variables.contains(cache.ids & loc.container):
+            node.children = copyVarChildren(
+              dbg.variables[cache.ids & loc.container])
+            node.fetched = true
+          else:
+            cache.view.requestVariableChildren(dbg, cache.ids, loc.container)
+        else:
+          node.fetched = true
+        cache.nodes[loc.key] = node
+    result = addr cache.nodes.mgetOrPut(loc.key, DebuggerVarNode())
+    if not result.fetched and loc.container != 0.VariablesReference:
+      cache.view.requestVariableChildren(cache.debugger, cache.ids,
+        loc.container)
+    return result
+  except:
+    return nil
+
+proc applyVarLocation(c: DebuggerVariablesCursor,
+    loc: DebuggerVarLocation) {.gcsafe, raises: [].} =
+  try:
+    prof("applyVarLocation")
+    c.location = loc
+    if loc == nil:
+      c.fieldName = ""
+      c.path = @[]
+      c.index = 0
+      return
+    c.fieldName = loc.name
+    c.path = loc.path
+    c.index = loc.index
+  except:
+    discard
+
+proc cursorAtVarLocation(c: DebuggerVariablesCursor,
+    loc: DebuggerVarLocation): DebuggerVariablesCursor {.gcsafe, raises: [].} =
+  ## Fresh cursor sharing the cache and location (clone semantics).
+  try:
+    if c == nil or c.cache == nil:
+      return nil
+    result = DebuggerVariablesCursor(cache: c.cache)
+    result.applyVarLocation(loc)
+  except:
+    result = nil
+
+proc childVarPath(parent: DebuggerVarLocation, index: int): seq[int] {.gcsafe, raises: [].} =
+  ## Fresh index path for a child (navigation-only copy, like file_explorer's
+  ## pathWithIndex).
+  try:
+    if parent == nil:
+      return @[index]
+    result = newSeq[int](parent.path.len + 1)
+    for i in 0 ..< parent.path.len:
+      result[i] = parent.path[i]
+    result[^1] = index
+  except:
+    result = @[]
+
+proc listedVarChild(c: DebuggerVariablesCursor, parent: DebuggerVarLocation,
+    child: DebuggerVarChild, index: int): DebuggerVarLocation {.gcsafe, raises: [].} =
+  ## Builds a child location from already-listed parent data — no lookups.
+  try:
+    prof("listedVarChild")
+    if c == nil or parent == nil:
+      return nil
+    result = DebuggerVarLocation(
+      parent: parent,
+      key: parent.key & "/" & $index,
+      scopeIdx: if parent.scopeIdx < 0: index else: parent.scopeIdx,
+      index: index,
+      path: childVarPath(parent, index),
+      name: child.name,
+      typ: child.typ,
+      value: child.value,
+      container: child.childRef)
+  except:
+    result = nil
+
+proc locationForVarPath(cache: DebuggerVarCache,
+    path: seq[int]): DebuggerVarLocation {.gcsafe, raises: [].} =
+  ## Rebuilds a location top-down (used only by updatePath/replacePathPrefix,
+  ## which the tree calls rarely when rebasing moved rows).
+  try:
+    prof("locationForVarPath")
+    if cache == nil:
+      return nil
+    var loc = DebuggerVarLocation(key: DebuggerVarRootKey, scopeIdx: -1,
+      index: 0, path: @[], name: "Variables",
+      container: 0.VariablesReference)
     if path.len == 0:
-      return scopes[].scopes.len
-    let scopeIdx = path[0]
-    if scopeIdx < 0 or scopeIdx > scopes[].scopes.high:
-      return 0
-    var container = scopes[].scopes[scopeIdx].variablesReference
-    for j in 1 ..< path.len:
-      if container == 0.VariablesReference:
-        return 0
-      if not c.debugger.variables.contains(ids & container):
-        return 0
-      let vars = c.debugger.variables[ids & container]
-      let idx = path[j]
-      if idx < 0 or idx > vars.variables.high:
-        return 0
-      container = vars.variables[idx].variablesReference
-    if container == 0.VariablesReference:
-      return 0
-    if not c.debugger.variables.contains(ids & container):
-      return 0
-    return c.debugger.variables[ids & container].variables.len
+      return loc
+    for depthIdx in 0 ..< path.len:
+      let node = cache.varNode(loc)
+      if node == nil:
+        return nil
+      let idx = path[depthIdx]
+      if idx < 0 or idx >= node.children.len:
+        return nil
+      let child = node.children[idx]
+      var childPath = newSeq[int](loc.path.len + 1)
+      for i in 0 ..< loc.path.len:
+        childPath[i] = loc.path[i]
+      childPath[^1] = idx
+      loc = DebuggerVarLocation(parent: loc, key: loc.key & "/" & $idx,
+        scopeIdx: if loc.scopeIdx < 0: idx else: loc.scopeIdx,
+        index: idx, path: childPath, name: child.name, typ: child.typ,
+        value: child.value, container: child.childRef)
+    return loc
   except:
-    return 0
-
-proc resolveDebuggerVar(c: DebuggerVariablesCursor,
-    path: seq[int]): DebuggerVarDetail {.gcsafe, raises: [].}
-
-proc nameAt(c: DebuggerVariablesCursor, path: seq[int]): string {.gcsafe, raises: [].} =
-  try:
-    if c.debugger == nil:
-      return ""
-    if path.len == 0:
-      return "Variables"
-    let scopes = c.debugger.currentScopes().getOr:
-      return ""
-    if path[0] < 0 or path[0] > scopes[].scopes.high:
-      return ""
-    if path.len == 1:
-      return scopes[].scopes[path[0]].name
-    let d = c.resolveDebuggerVar(path)
-    if d.ok:
-      return d.name
-    return ""
-  except:
-    return ""
-
-proc resolveDebuggerVar(c: DebuggerVariablesCursor,
-    path: seq[int]): DebuggerVarDetail {.gcsafe, raises: [].} =
-  prof("resolveDebuggerVar")
-  result = (false, "", "", "", 0.VariablesReference, false, 0)
-  try:
-    if c.debugger == nil or path.len == 0:
-      return
-    let scopes = c.debugger.currentScopes().getOr:
-      return
-    let ids = c.debugger.currentVariablesContext().getOr:
-      return
-    let scopeIdx = path[0]
-    if scopeIdx < 0 or scopeIdx > scopes[].scopes.high:
-      return
-    if path.len == 1:
-      let scope = scopes[].scopes[scopeIdx]
-      let cached = c.debugger.variables.contains(ids & scope.variablesReference)
-      let count =
-        if cached: c.debugger.variables[ids & scope.variablesReference].variables.len
-        else: 0
-      return (true, scope.name, "", "", scope.variablesReference, cached, count)
-    var container = scopes[].scopes[scopeIdx].variablesReference
-    for j in 1 ..< path.high:
-      if not c.debugger.variables.contains(ids & container):
-        return
-      let vars = c.debugger.variables[ids & container]
-      let idx = path[j]
-      if idx < 0 or idx > vars.variables.high:
-        return
-      container = vars.variables[idx].variablesReference
-      if container == 0.VariablesReference:
-        return
-    if not c.debugger.variables.contains(ids & container):
-      return
-    let vars = c.debugger.variables[ids & container]
-    let idx = path[^1]
-    if idx < 0 or idx > vars.variables.high:
-      return
-    let va = vars.variables[idx]
-    let cached = va.variablesReference != 0.VariablesReference and
-      c.debugger.variables.contains(ids & va.variablesReference)
-    let count =
-      if cached: c.debugger.variables[ids & va.variablesReference].variables.len
-      else: 0
-    return (true, va.name, va.`type`.get(""), va.value, va.variablesReference,
-      cached, count)
-  except:
-    result = (false, "", "", "", 0.VariablesReference, false, 0)
+    return nil
 
 method clone*(c: DebuggerVariablesCursor): TreeCursor {.gcsafe, raises: [].} =
   try:
     prof("clone")
-    result = DebuggerVariablesCursor(debugger: c.debugger, view: c.view)
-    result.path = c.path
-    result.index = c.index
-    result.fieldName = c.fieldName
+    return c.cursorAtVarLocation(c.location)
   except:
-    result = nil
+    return nil
 
 method cursorKey*(c: DebuggerVariablesCursor): string {.gcsafe, raises: [].} =
   try:
     prof("cursorKey")
-    return debuggerVarCursorKey(c.path)
+    if c.location == nil:
+      return DebuggerVarRootKey
+    return c.location.key
   except:
-    return "dbgvar:root"
+    return DebuggerVarRootKey
 
 method childCount*(c: DebuggerVariablesCursor): int {.gcsafe, raises: [].} =
   try:
     prof("childCount")
-    return c.childCountAt(c.path)
+    if c.cache == nil or c.location == nil:
+      return 0
+    let node = c.cache.varNode(c.location)
+    if node == nil:
+      return 0
+    return node.children.len
   except:
     return 0
 
 method enterChild*(c: DebuggerVariablesCursor): bool {.gcsafe, raises: [].} =
   try:
     prof("enterChild")
-    if c.childCount() <= 0:
+    if c.cache == nil or c.location == nil:
       return false
-    c.path.add(0)
-    c.index = 0
-    c.fieldName = c.nameAt(c.path)
+    let node = c.cache.varNode(c.location)
+    if node == nil or node.children.len == 0:
+      return false
+    let childLoc = c.listedVarChild(c.location, node.children[0], 0)
+    if childLoc == nil:
+      return false
+    c.applyVarLocation(childLoc)
     return true
   except:
     return false
@@ -413,161 +500,148 @@ method enterChild*(c: DebuggerVariablesCursor): bool {.gcsafe, raises: [].} =
 method exitChild*(c: DebuggerVariablesCursor): bool {.gcsafe, raises: [].} =
   try:
     prof("exitChild")
-    if c.path.len == 0:
+    if c.location == nil or c.location.parent == nil:
       return false
-    discard c.path.pop()
-    c.index = if c.path.len > 0: c.path[^1] else: 0
-    c.fieldName = c.nameAt(c.path)
+    c.applyVarLocation(c.location.parent)
     return true
   except:
     return false
 
-proc siblingCountAt(c: DebuggerVariablesCursor, path: seq[int]): int {.gcsafe, raises: [].} =
-  ## Children of the parent of `path` (i.e. siblings including self).
+proc moveVarSibling(c: DebuggerVariablesCursor,
+    count: int): bool {.gcsafe, raises: [].} =
   try:
-    if path.len == 0:
-      return 0
-    if path.len == 1:
-      if c.debugger == nil:
-        return 0
-      let scopes = c.debugger.currentScopes().getOr:
-        return 0
-      return scopes[].scopes.len
-    return c.childCountAt(path[0 ..< path.high])
+    prof("moveVarSibling")
+    if c.cache == nil or c.location == nil or c.location.parent == nil:
+      return false
+    let parent = c.location.parent
+    let node = c.cache.varNode(parent)
+    if node == nil:
+      return false
+    let target = c.location.index + count
+    if target < 0 or target >= node.children.len:
+      return false
+    let childLoc = c.listedVarChild(parent, node.children[target], target)
+    if childLoc == nil:
+      return false
+    c.applyVarLocation(childLoc)
+    return true
   except:
-    return 0
+    return false
 
 method moveNext*(c: DebuggerVariablesCursor, count: int = 1): bool {.gcsafe, raises: [].} =
   try:
-    if c.path.len == 0:
-      return false
-    let n = c.siblingCountAt(c.path)
-    let target = c.path[^1] + count
-    if target < 0 or target >= n:
-      return false
-    c.path[^1] = target
-    c.index = target
-    c.fieldName = c.nameAt(c.path)
-    return true
+    return c.moveVarSibling(count)
   except:
     return false
 
 method movePrev*(c: DebuggerVariablesCursor, count: int = 1): bool {.gcsafe, raises: [].} =
   try:
-    if c.path.len == 0:
-      return false
-    let n = c.siblingCountAt(c.path)
-    let target = c.path[^1] - count
-    if target < 0 or target >= n:
-      return false
-    c.path[^1] = target
-    c.index = target
-    c.fieldName = c.nameAt(c.path)
-    return true
+    return c.moveVarSibling(-count)
   except:
     return false
 
 method updatePath*(c: DebuggerVariablesCursor, path: seq[int]) {.gcsafe, raises: [].} =
   try:
-    c.path = path
-    c.index = if path.len > 0: path[^1] else: 0
-    c.fieldName = c.nameAt(path)
+    prof("updatePath")
+    if c.cache == nil:
+      return
+    let loc = locationForVarPath(c.cache, path)
+    if loc != nil:
+      c.applyVarLocation(loc)
   except:
     discard
 
 method replacePathPrefix*(c: DebuggerVariablesCursor, oldPrefixLen: int,
     newPrefix: seq[int]) {.gcsafe, raises: [].} =
   try:
+    prof("replacePathPrefix")
+    if c.cache == nil or c.location == nil:
+      return
+    let oldPath = c.location.path
+    var newPath: seq[int]
     if oldPrefixLen == newPrefix.len:
-      for i in 0 ..< newPrefix.len:
-        if i < c.path.len:
-          c.path[i] = newPrefix[i]
+      newPath = newSeq[int](oldPath.len)
+      for i in 0 ..< oldPath.len:
+        newPath[i] = if i < newPrefix.len: newPrefix[i] else: oldPath[i]
     else:
-      let suffixLen = max(0, c.path.len - oldPrefixLen)
-      var newPath = newSeq[int](newPrefix.len + suffixLen)
+      let suffixLen = max(0, oldPath.len - oldPrefixLen)
+      newPath = newSeq[int](newPrefix.len + suffixLen)
       for i in 0 ..< newPrefix.len:
         newPath[i] = newPrefix[i]
       for i in 0 ..< suffixLen:
-        newPath[newPrefix.len + i] = c.path[oldPrefixLen + i]
-      c.path = newPath
-    c.index = if c.path.len > 0: c.path[^1] else: 0
-    c.fieldName = c.nameAt(c.path)
+        newPath[newPrefix.len + i] = oldPath[oldPrefixLen + i]
+    let loc = locationForVarPath(c.cache, newPath)
+    if loc != nil:
+      c.applyVarLocation(loc)
   except:
     discard
 
 method resolveChild*(c: DebuggerVariablesCursor,
     child: TreeCursor): TreeCursor {.gcsafe, raises: [].} =
   try:
-    if child == nil or not (child of DebuggerVariablesCursor):
+    prof("resolveChild")
+    if c.cache == nil or c.location == nil or child == nil or
+        not (child of DebuggerVariablesCursor):
       return nil
     let e = DebuggerVariablesCursor(child)
-    if e.path.len != c.path.len + 1:
+    if e.location == nil or e.location.parent == nil:
       return nil
-    for i in 0 ..< c.path.len:
-      if e.path[i] != c.path[i]:
-        return nil
-    if e.path[^1] < 0 or e.path[^1] >= c.childCount():
+    if e.location.parent.key != c.location.key or e.location.index < 0:
       return nil
-    result = DebuggerVariablesCursor(debugger: c.debugger, view: c.view)
-    result.path = e.path
-    result.index = e.path[^1]
-    result.fieldName = c.nameAt(e.path)
+    let node = c.cache.varNode(c.location)
+    if node == nil or e.location.index >= node.children.len:
+      return nil
+    let childLoc = c.listedVarChild(c.location,
+      node.children[e.location.index], e.location.index)
+    if childLoc == nil:
+      return nil
+    var fresh = DebuggerVariablesCursor(cache: c.cache)
+    fresh.applyVarLocation(childLoc)
+    result = fresh
   except:
     result = nil
 
 proc toVariableCursor(c: DebuggerVariablesCursor): Option[VariableCursor] {.gcsafe, raises: [].} =
-  ## Best-effort mapping back to the selection model, resolving live varRefs.
+  ## Best-effort mapping back to the selection model via the parent chain —
+  ## pointer hops only, no table lookups.
   try:
-    if c.debugger == nil or c.path.len == 0 or c.path[0] < 0:
+    prof("toVariableCursor")
+    if c.location == nil or c.location.scopeIdx < 0:
       return VariableCursor.none
-    let scopes = c.debugger.currentScopes().getOr:
-      return VariableCursor.none
-    let ids = c.debugger.currentVariablesContext().getOr:
-      return VariableCursor.none
-    if c.path[0] > scopes[].scopes.high:
-      return VariableCursor.none
-    if c.path.len == 1:
-      return VariableCursor(scope: c.path[0]).some
     var pairs = newSeq[tuple[index: int, varRef: VariablesReference]]()
-    var container = scopes[].scopes[c.path[0]].variablesReference
-    for j in 1 ..< c.path.len:
-      if not c.debugger.variables.contains(ids & container):
-        return VariableCursor.none
-      let vars = c.debugger.variables[ids & container]
-      if c.path[j] < 0 or c.path[j] > vars.variables.high:
-        return VariableCursor.none
-      pairs.add((c.path[j], container))
-      container = vars.variables[c.path[j]].variablesReference
-    return VariableCursor(scope: c.path[0], path: pairs).some
+    var cur = c.location
+    while cur.parent != nil and cur.parent.parent != nil:
+      pairs.add((cur.index, cur.parent.container))
+      cur = cur.parent
+    for i in 0 ..< pairs.len div 2:
+      swap(pairs[i], pairs[pairs.high - i])
+    return VariableCursor(scope: c.location.scopeIdx, path: pairs).some
   except:
     return VariableCursor.none
 
 proc renderDebuggerVariablesRow(b: var UiBuilder, cursor: TreeCursor,
     index: int) {.nimcall, gcsafe, raises: [].} =
+  ## Draws one row purely from its location — no table lookups. Uncached
+  ## parents already triggered their fetch while the tree walked here.
   discard index
   try:
+    prof("renderDebuggerVariablesRow")
     if cursor == nil or not (cursor of DebuggerVariablesCursor):
       return
     let c = DebuggerVariablesCursor(cursor)
-    if c.debugger == nil or c.view == nil or c.path.len == 0:
+    if c.cache == nil or c.cache.view == nil or c.location == nil or
+        c.location.scopeIdx < 0:
       return
-    let view = c.view
-    let debugger = c.debugger
-    let ids = debugger.currentVariablesContext().getOr:
-      return
-    let d = c.resolveDebuggerVar(c.path)
-    if not d.ok:
-      return
-    if d.childRef != 0.VariablesReference and not d.cached:
-      view.requestVariableChildren(debugger, ids, d.childRef)
+    let view = c.cache.view
+    let loc = c.location
     var selected = false
     try:
-      if view.variablesCursor.scope == c.path[0]:
-        selected = view.variablesCursor.variableCursorIndexPath() == c.path
+      if view.variablesCursor.scope == loc.scopeIdx:
+        selected = view.variablesCursor.variableCursorIndexPath() == loc.path
     except:
       discard
-    # Background only for the selected row; the tree widget itself owns hover
-    # and indentation guides (no custom +/- markers: the chevron shows state).
+    # Background only for the selected row; the tree widget itself owns hover,
+    # focus, chevrons and indentation guides.
     if selected:
       discard b.fillBackground().styleIndex(UiStyleIndexMenuItemHover)
     else:
@@ -577,113 +651,29 @@ proc renderDebuggerVariablesRow(b: var UiBuilder, cursor: TreeCursor,
     else:
       UiStyleIndexMenuItemText)
     b.node:
-      discard b.fit().textStyleIndex(rowTextStyle).text(d.name)
+      discard b.fit().textStyleIndex(rowTextStyle).text(loc.name)
     if b.wasClicked(includeChildren = true):
       let sel = c.toVariableCursor()
       if sel.isSome:
         view.variablesCursor = sel.get()
         view.markDirty()
     b.node:
-      discard b.fit().textStyleIndex(rowTextStyle).text(d.typ)
+      discard b.fit().textStyleIndex(rowTextStyle).text(loc.typ)
     b.node:
-      let firstLine =
-        try: d.value.splitLines()[0]
-        except: d.value
-      discard b.fit().textStyleIndex(rowTextStyle).text(truncDebuggerText(firstLine, 160))
-    # Chevron clicks toggle tree state only; mirror into collapsedVariables so
-    # keyboard navigation (which reads it) stays coherent.
-    for storage in b.nodeStorageParents():
-      if storage of TreeTable:
-        let tree = TreeTable(storage)
-        if d.childRef != 0.VariablesReference:
-          let ck = ids & d.childRef
-          if isVarTreeExpanded(tree, c.cursorKey()) and view.isCollapsed(ck):
-            view.collapsedVariables.excl(ck)
-          elif not isVarTreeExpanded(tree, c.cursorKey()) and
-              not view.isCollapsed(ck):
-            view.collapsedVariables.incl(ck)
-        break
-  except:
-    discard
-
-proc expandVarSubtree(self: VariablesView, debugger: Debugger,
-    ids: (ThreadId, FrameId), tree: TreeTable, parentPath: seq[int],
-    depth: int, budget: var int) {.gcsafe, raises: [].} =
-  try:
-    if depth > 24 or budget <= 0 or tree == nil:
-      return
-    let probe = DebuggerVariablesCursor(debugger: debugger, view: self)
-    probe.path = parentPath
-    let n = probe.childCount()
-    for i in 0 ..< n:
-      if budget <= 0:
-        break
-      var childPath = newSeq[int](parentPath.len + 1)
-      for j in 0 ..< parentPath.len:
-        childPath[j] = parentPath[j]
-      childPath[^1] = i
-      let d = probe.resolveDebuggerVar(childPath)
-      if not d.ok or d.childRef == 0.VariablesReference or not d.cached:
-        continue
-      if self.isCollapsed(ids & d.childRef):
-        continue
-      var cur = DebuggerVariablesCursor(debugger: debugger, view: self)
-      cur.path = childPath
-      cur.index = i
-      cur.fieldName = d.name
-      tree.expandNode(cur)
-      dec budget
-      self.expandVarSubtree(debugger, ids, tree, childPath, depth + 1, budget)
-  except:
-    discard
-
-proc bulkSyncVarTree(self: VariablesView, debugger: Debugger,
-    ids: (ThreadId, FrameId)) {.gcsafe, raises: [].} =
-  ## Rebuilds tree expansion from collapsedVariables after context changes or
-  ## first render (the tree starts fully collapsed; the legacy view starts
-  ## expanded). Capped like the old row precalculation was.
-  try:
-    var tree = self.varTree
-    if tree == nil:
-      return
-    let scopes = debugger.currentScopes().getOr:
-      return
-    tree.collapseAll()
-    var budget = debuggerMaxVarRows
-    for scopeIdx in 0 .. scopes[].scopes.high:
-      if budget <= 0:
-        break
-      let scope = scopes[].scopes[scopeIdx]
-      if self.isCollapsed(ids & scope.variablesReference):
-        continue
-      var cur = DebuggerVariablesCursor(debugger: debugger, view: self)
-      cur.path = @[scopeIdx]
-      cur.index = scopeIdx
-      cur.fieldName = scope.name
-      tree.expandNode(cur)
-      dec budget
-      self.expandVarSubtree(debugger, ids, tree, cur.path, 0, budget)
-    self.markDirty()
+      discard b.fit().textStyleIndex(rowTextStyle).text(loc.value)
   except:
     discard
 
 # NUI-GAP vs the removed legacy renderer (custom render-command tree): no
-# multiline values, no valueChanged background, no filter match highlight, no
-# evaluation row, no drag-resize/detach, no SizeToContent modes; rows show
-# truncated single-line values with click to select and chevron
-# expand/collapse, and the selected row is not keyboard-followed (see §25).
+# multiline values, no valueChanged background, no filter, no evaluation row,
+# no drag-resize/detach, no SizeToContent modes; navigation (including the
+# keyboard) is owned entirely by the tree widget (see §25).
 proc createVariablesUINui*(self: VariablesView, nui: var UiBuilder,
     debugger: Debugger) {.gcsafe, raises: [].} =
   {.cast(gcsafe).}:
     try:
       self.resetDirty()
-      var title = "Variables"
-      try:
-        if self.variablesFilter.len > 0:
-          title.add &" - Filter: {self.variablesFilter}"
-      except:
-        discard
-      debuggerChrome(nui, self, "debugger-variables", title):
+      debuggerChrome(nui, self, "debugger-variables", "Variables"):
         nui.node("debugger-var-body"):
           discard nui.fillX().fillY()
           var scopeCount = 0
@@ -692,53 +682,26 @@ proc createVariablesUINui*(self: VariablesView, nui: var UiBuilder,
               scopeCount = scopes[].scopes.len
           except:
             discard
-          let idsOpt =
-            try: debugger.currentVariablesContext()
-            except: none[(ThreadId, FrameId)]()
-          if scopeCount == 0 or idsOpt.isNone:
+          if scopeCount == 0:
             debuggerEmpty(nui, "No variables")
           else:
-            var options = defaultTreeTableOptions()
-            options.columns = @[tableColumnProportional(1), tableColumnProportional(1), tableColumnProportional(1)]
-            options.hideRoot = true
-            options.showColumnLines = true
-            options.showIndentationLines = true
-            options.highlightHoveredRow = true
-            options.expandCollapseButtons = false
-            # Ensure the container holds a TreeTable (a stale wrong-typed
-            # storage from a previous renderer generation is replaced).
-            let existingStorage = nui.nodeStorageGet(nui.currentNode)
-            var tree: TreeTable = nil
-            if existingStorage != nil and existingStorage of TreeTable:
-              tree = cast[TreeTable](existingStorage)
+            let cache = beginVarFrame(self, debugger)
+            if cache == nil:
+              debuggerEmpty(nui, "No variables")
             else:
-              tree = TreeTable()
-              nui.nodeStorage(nui.currentNode, tree)
-            var root = DebuggerVariablesCursor(debugger: debugger, view: self)
-            root.path = @[]
-            root.index = 0
-            root.fieldName = "Variables"
-            let bodyId = nui.currentNode.id
-            nui.treeTable(root, options, renderDebuggerVariablesRow)
-            # Adopt the live storage and rebuild expansion when the context is
-            # new (first render, storage replacement, thread/frame switch).
-            # The id check guards against widget internals leaving a different
-            # node current; a miss simply retries next frame (valid stays false).
-            try:
-              if nui.currentNode.id.nodeIdValue() == bodyId.nodeIdValue():
-                let live = cast[TreeTable](nui.nodeStorageGet(nui.currentNode))
-                if live != nil:
-                  let ids = idsOpt.get()
-                  if not self.varTreeValid or self.varTree != live or
-                      self.varTreeIds != ids:
-                    self.varTree = live
-                    self.varTreeIds = ids
-                    self.varTreeValid = true
-                    self.bulkSyncVarTree(debugger, ids)
-                  else:
-                    self.varTree = live
-            except:
-              discard
+              var options = defaultTreeTableOptions()
+              options.columns = @[tableColumnProportional(1), tableColumnProportional(1), tableColumnProportional(1)]
+              options.hideRoot = true
+              options.showColumnLines = true
+              options.showIndentationLines = true
+              options.highlightHoveredRow = true
+              options.expandCollapseButtons = false
+              var root = DebuggerVariablesCursor(cache: cache)
+              root.applyVarLocation(DebuggerVarLocation(
+                key: DebuggerVarRootKey, scopeIdx: -1, index: 0, path: @[],
+                name: "Variables",
+                container: 0.VariablesReference))
+              nui.treeTable(root, options, renderDebuggerVariablesRow)
     except:
       discard
 

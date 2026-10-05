@@ -78,7 +78,6 @@ when not defined(useDynlib):
   import "../modules/lsp_server.nim"
   import "../modules/vim.nim"
   import "../modules/log_terminal.nim"
-  import "../modules/gui_platform/gui_platform.nim"
   import "../modules/markdown_component.nim"
   import "../modules/vcs_commands.nim"
   import "../modules/app/app.nim"
@@ -160,7 +159,6 @@ proc initModules*() =
   when declared(init_module_lsp_server): init_module_lsp_server()
   when declared(init_module_vim): init_module_vim()
   when declared(init_module_log_terminal): init_module_log_terminal()
-  when declared(init_module_gui_platform): init_module_gui_platform()
   when declared(init_module_markdown_component): init_module_markdown_component()
   when declared(init_module_vcs_commands): init_module_vcs_commands()
   when declared(init_module_app): init_module_app()
@@ -171,7 +169,6 @@ proc shutdownModules*() =
   when declared(shutdown_module_app): shutdown_module_app()
   when declared(shutdown_module_vcs_commands): shutdown_module_vcs_commands()
   when declared(shutdown_module_markdown_component): shutdown_module_markdown_component()
-  when declared(shutdown_module_gui_platform): shutdown_module_gui_platform()
   when declared(shutdown_module_log_terminal): shutdown_module_log_terminal()
   when declared(shutdown_module_vim): shutdown_module_vim()
   when declared(shutdown_module_lsp_server): shutdown_module_lsp_server()
@@ -324,7 +321,6 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("lsp_server")
   loadModule("vim")
   loadModule("log_terminal")
-  loadModule("gui_platform")
   loadModule("markdown_component")
   loadModule("vcs_commands")
   loadModule("app")

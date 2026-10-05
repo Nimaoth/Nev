@@ -2,7 +2,6 @@ import std/[options, tables, json, sets]
 import misc/[event, id]
 import input_handler/input_handler, document_editor
 import bumpy
-import ui/node
 from nuigi import UiBuilder, enqueueNextFrame, fillX, fillY, focusScope,
   isFocusWithin, node, popId, pushId, requestFocus, restoreFocus, wasPressed
 
@@ -21,7 +20,6 @@ type
     onDetached*: Event[void]
     detached*: bool # Whether the view is detached from any parent and can be moved around freely
     absoluteBounds*: Rect # Absolute bounds when detached
-    renderImpl*: proc(view: View, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].}
     renderNuiImpl*: proc(view: View, nui: var UiBuilder) {.gcsafe, raises: [].}
     requestActivateNuiImpl*: proc(view: View) {.gcsafe, raises: [].}
     copyImpl*: proc(self: View): View {.gcsafe, raises: [].}
@@ -132,11 +130,6 @@ proc markDirty*(self: View, notify: bool = true) =
   else:
     self.markDirtyBase(notify)
 
-proc createUI*(view: View, builder: UINodeBuilder): seq[OverlayFunction] =
-  if view.renderImpl != nil:
-    return view.renderImpl(view, builder)
-  return @[]
-
 proc getEventHandlers*(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
   if self.getEventHandlersImpl != nil:
     return self.getEventHandlersImpl(self, inject)
@@ -161,11 +154,6 @@ proc saveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode =
   else:
     result = newJObject()
     result["id"] = self.id.toJson
-
-proc render*(self: View, builder: UINodeBuilder): seq[OverlayFunction] =
-  if self.renderImpl != nil:
-    return self.renderImpl(self, builder)
-  return @[]
 
 proc render*(view: View, nui: var UiBuilder) =
   if view.renderNuiImpl == nil:

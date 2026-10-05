@@ -31,7 +31,6 @@ when implModule:
   import chroma, pixie, pixie/fileformats/png
   import nimsumtree/[rope]
   import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, async_process, wrap, case_swap, jsonex, array_set, tui]
-  import ui/node
   from nuigi import UiBuilder
   import platform
   import finder, previewer
@@ -693,6 +692,7 @@ when implModule:
 
         of InputEventKind.MouseClick:
           if event.button in {input_api.MouseButton.Left, input_api.MouseButton.Middle, input_api.MouseButton.Right}: # todo: other buttons. DoubleClick would currently be interpreted as scroll
+            state.vterm.mouseMove(event.row.cint, event.col.cint, event.modifiers.toVtermModifiers)
             state.vterm.mouseButton(event.button.toVtermButton, event.pressed, event.modifiers.toVtermModifiers)
 
         of InputEventKind.Scroll:
@@ -2650,18 +2650,6 @@ when implModule:
         renderBuffer: newStringOfCap(1024),
       )
 
-      proc renderTerminal(self: TerminalView, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].} =
-        if view.isInPreview and builder.currentParent.tag != "preview":
-          return
-        var
-          width: int
-          height: int
-          cellWidth: int
-          cellHeight: int
-        result = renderTerminal(view, builder, width, height, cellWidth, cellHeight)
-        view.setSize(width, height, cellWidth, cellHeight)
-
-      view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = renderTerminal(self.TerminalView, builder)
       view.renderNuiImpl = proc(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
         {.cast(gcsafe).}:
           let tv = self.TerminalView
@@ -2728,18 +2716,6 @@ when implModule:
         renderBuffer: newStringOfCap(1024),
       )
 
-      proc renderTerminal(self: TerminalView, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].} =
-        if view.isInPreview and builder.currentParent.tag != "preview":
-          return
-        var
-          width: int
-          height: int
-          cellWidth: int
-          cellHeight: int
-        result = renderTerminal(view, builder, width, height, cellWidth, cellHeight)
-        view.setSize(width, height, cellWidth, cellHeight)
-
-      view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = renderTerminal(self.TerminalView, builder)
       view.renderNuiImpl = proc(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
         {.cast(gcsafe).}:
           let tv = self.TerminalView

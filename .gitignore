@@ -62,11 +62,12 @@ test_module3
 *.tar.gz
 *.tar
 
-deps
-deps/winim
+vendor
 tags
 stdtags
-deps/tags
+deps
+deps/**
+deps/*
 nim.cfg
 
 *.nev-session

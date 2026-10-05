@@ -1,13 +1,13 @@
 {
   "items": {
     "vmath.Nimaoth.github.com": {
-      "dir": "$deps/vmath.Nimaoth.github.com",
+      "dir": "$deps/vmath",
       "url": "https://github.com/Nimaoth/vmath",
       "commit": "661bdaac7546e16d087f066adfeb6ea7590106b4",
       "version": ""
     },
     "pixie.Nimaoth.github.com": {
-      "dir": "$deps/pixie.Nimaoth.github.com",
+      "dir": "$deps/pixie",
       "url": "https://github.com/Nimaoth/pixie",
       "commit": "7168ac52824fe2d3ad59171f8fb3b496add20e4d",
       "version": ""
@@ -31,7 +31,7 @@
       "version": ""
     },
     "nim-regex.nitely.github.com": {
-      "dir": "$deps/nim-regex.nitely.github.com",
+      "dir": "$deps/nim-regex",
       "url": "https://github.com/nitely/nim-regex",
       "commit": "cb8b7bfdcdc2272aadf92153c668acd3c901bd6b",
       "version": ""
@@ -69,7 +69,7 @@
     "chronos": {
       "dir": "$deps/chronos",
       "url": "https://github.com/status-im/nim-chronos",
-      "commit": "45f43a9ad8bd8bcf5903b42f365c1c879bd54240",
+      "commit": "0646c444fce7c7ed08ef6f2c9a7abfd172ffe655",
       "version": ""
     },
     "malebolgia": {
@@ -79,55 +79,55 @@
       "version": ""
     },
     "fsnotify.Nimaoth.github.com": {
-      "dir": "$deps/fsnotify.Nimaoth.github.com",
+      "dir": "$deps/fsnotify",
       "url": "https://github.com/Nimaoth/fsnotify",
-      "commit": "0484be9ff57a935893ae8207b5222176edb8e3e9",
+      "commit": "68c49946753b43d1c9d10c8c7f366a580ecaafeb",
       "version": ""
     },
     "windy.Nimaoth.github.com": {
-      "dir": "$deps/windy.Nimaoth.github.com",
+      "dir": "$deps/windy",
       "url": "https://github.com/Nimaoth/windy",
       "commit": "e09b336a567da286b64797755ec025a9dd6d01f1",
       "version": ""
     },
     "lrucache.nim.Nimaoth.github.com": {
-      "dir": "$deps/lrucache.nim.Nimaoth.github.com",
+      "dir": "$deps/lrucache.nim",
       "url": "https://github.com/Nimaoth/lrucache.nim",
       "commit": "479d4cf03a961d00fb2204e4773c394fe62ac44b",
       "version": ""
     },
     "boxy.Nimaoth.github.com": {
-      "dir": "$deps/boxy.Nimaoth.github.com",
+      "dir": "$deps/boxy",
       "url": "https://github.com/Nimaoth/boxy",
       "commit": "1ec24ebe4915d6c8655e29bb559ad58b6553b342",
       "version": ""
     },
     "nimtreesitter-api.Nimaoth.github.com": {
-      "dir": "$deps/nimtreesitter-api.Nimaoth.github.com",
+      "dir": "$deps/nimtreesitter-api",
       "url": "https://github.com/Nimaoth/nimtreesitter-api",
       "commit": "893dd7103a86b30de7951185c047068b9d2f3347",
       "version": ""
     },
     "nimwasmtime.Nimaoth.github.com": {
-      "dir": "$deps/nimwasmtime.Nimaoth.github.com",
+      "dir": "$deps/nimwasmtime",
       "url": "https://github.com/Nimaoth/nimwasmtime",
       "commit": "2a33f8bc6193307c7b17f04e14f8aaec5e1f966d",
       "version": ""
     },
     "nimsumtree.Nimaoth.github.com": {
-      "dir": "$deps/nimsumtree.Nimaoth.github.com",
+      "dir": "$deps/nimsumtree",
       "url": "https://github.com/Nimaoth/nimsumtree",
       "commit": "91439868aab3776904ef1af287f2907090583b59",
       "version": ""
     },
     "asynctools.Nimaoth.github.com": {
-      "dir": "$deps/asynctools.Nimaoth.github.com",
+      "dir": "$deps/asynctools",
       "url": "https://github.com/Nimaoth/asynctools",
       "commit": "214b057fc7d875687932874a86672b2142cb722b",
       "version": ""
     },
     "zippy.Nimaoth.github.com": {
-      "dir": "$deps/zippy.Nimaoth.github.com",
+      "dir": "$deps/zippy",
       "url": "https://github.com/Nimaoth/zippy",
       "commit": "ab4d3d52e966b725cad2468aa0594da5db7fa2ac",
       "version": ""
@@ -145,7 +145,7 @@
       "version": ""
     },
     "nimtreesitter.Nimaoth.github.com": {
-      "dir": "$deps/nimtreesitter.Nimaoth.github.com",
+      "dir": "$deps/nimtreesitter",
       "url": "https://github.com/Nimaoth/nimtreesitter",
       "commit": "5de1b7516a3c0c83a4fd0c2ae71c86ebd489594e",
       "version": ""
@@ -250,12 +250,12 @@
   "nimcfg": [
     "############# begin Atlas config section ##########",
     "--noNimblePath",
-    "--path:\"deps/vmath.Nimaoth.github.com/src\"",
-    "--path:\"deps/pixie.Nimaoth.github.com/src\"",
+    "--path:\"deps/vmath/src\"",
+    "--path:\"deps/pixie/src\"",
     "--path:\"deps/chroma/src\"",
     "--path:\"deps/winim\"",
     "--path:\"deps/fusion/src\"",
-    "--path:\"deps/nim-regex.nitely.github.com/src\"",
+    "--path:\"deps/nim-regex/src\"",
     "--path:\"deps/glob/src\"",
     "--path:\"deps/patty\"",
     "--path:\"deps/npeg/src\"",
@@ -263,18 +263,18 @@
     "--path:\"deps/results\"",
     "--path:\"deps/chronos\"",
     "--path:\"deps/malebolgia/src\"",
-    "--path:\"deps/fsnotify.Nimaoth.github.com/src\"",
-    "--path:\"deps/windy.Nimaoth.github.com/src\"",
-    "--path:\"deps/lrucache.nim.Nimaoth.github.com/src\"",
-    "--path:\"deps/boxy.Nimaoth.github.com/src\"",
-    "--path:\"deps/nimtreesitter-api.Nimaoth.github.com\"",
-    "--path:\"deps/nimwasmtime.Nimaoth.github.com/src\"",
-    "--path:\"deps/nimsumtree.Nimaoth.github.com/src\"",
-    "--path:\"deps/asynctools.Nimaoth.github.com\"",
-    "--path:\"deps/zippy.Nimaoth.github.com/src\"",
+    "--path:\"deps/fsnotify/src\"",
+    "--path:\"deps/windy/src\"",
+    "--path:\"deps/lrucache.nim/src\"",
+    "--path:\"deps/boxy/src\"",
+    "--path:\"deps/nimtreesitter-api\"",
+    "--path:\"deps/nimwasmtime/src\"",
+    "--path:\"deps/nimsumtree/src\"",
+    "--path:\"deps/asynctools\"",
+    "--path:\"deps/zippy/src\"",
     "--path:\"deps/libssh2\"",
     "--path:\"deps/ssh2/src\"",
-    "--path:\"deps/nimtreesitter.Nimaoth.github.com\"",
+    "--path:\"deps/nimtreesitter\"",
     "--path:\"deps/flatty/src\"",
     "--path:\"deps/nimsimd/src\"",
     "--path:\"deps/bumpy/src\"",
@@ -301,7 +301,7 @@
       "  import system/nimscript",
       "  var commandLineParams: seq[string]",
       "",
-      "version       = \"0.5.0\"",
+      "version       = \"0.5.1\"",
       "author        = \"Nimaoth\"",
       "description   = \"Text Editor\"",
       "license       = \"MIT\"",
@@ -324,8 +324,8 @@
       "requires \"results >= 0.5.0\"",
       "requires \"chronos#45f43a9ad8bd8bcf5903b42f365c1c879bd54240\"",
       "requires \"https://github.com/Araq/malebolgia#ab17bef\"",
-      "requires \"https://github.com/Nimaoth/fsnotify >= 0.1.6\"",
-      "requires \"https://github.com/Nimaoth/windy#212963e\"",
+      "requires \"https://github.com/Nimaoth/fsnotify#68c4994\"",
+      "requires \"https://github.com/Nimaoth/windy#e09b336\"",
       "requires \"https://github.com/Nimaoth/lrucache.nim#479d4cf\"",
       "requires \"https://github.com/Nimaoth/boxy#1ec24eb\"",
       "requires \"https://github.com/Nimaoth/nimtreesitter-api#893dd71\"",

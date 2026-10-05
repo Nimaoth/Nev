@@ -979,7 +979,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
   logIter &"Overlay.next {self.overlayPoint}, {self.styledChunks.point}, {self.subIterKind}, localOffset: {self.localOffset}"
 
   if self.subIterKind == OverlayMapChunkKind.Identity:
-    if self.styledChunk.isNone or self.localOffset > self.styledChunk.get.len:
+    if self.styledChunk.isNone or self.localOffset > self.styledChunk.get.len or self.overlayChunk.get.len == 0:
       self.styledChunk = self.styledChunks.next()
       self.localOffset = 0
       logIter &"  newStyledChunk {self.styledChunk}"

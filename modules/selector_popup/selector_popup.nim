@@ -70,7 +70,6 @@ when implModule:
   import nimsumtree/[rope, buffer]
   import popup, input_handler/input_handler, selector_popup/builder, layout/layout, service, command_service
   import search_component, document_editor, text_component, text_editor_component, config_component
-  import ui/node
 
   logCategory "selector"
 
@@ -539,9 +538,6 @@ when implModule:
     popup.getActiveEditorImpl = proc(self: View): Option[DocumentEditor] = selectorPopupGetActiveEditor(self.SelectorPopupImpl)
     popup.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] = selectorPopupGetEventHandlers(self.SelectorPopupImpl)
     popup.handleActionImpl = proc(self: Popup, action: string, arg: string): Option[JsonNode] = selectorPopupHandleAction(self.SelectorPopupImpl, action, arg)
-    popup.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] =
-      {.gcsafe.}:
-        selectorPopupCreateUI(self.SelectorPopupImpl, builder)
     popup.renderNuiImpl = proc(self: View, nui: var UiBuilder) =
       selectorPopupCreateUINui(self.SelectorPopupImpl, nui)
     popup.handleAddedToLayoutImpl = proc(self: Popup) = selectorPopupHandleAddedToLayout(self.SelectorPopupImpl)

@@ -1,7 +1,6 @@
 import std/[tables, options, sets, hashes, json]
 import bumpy
 import misc/[event, custom_logger, id, custom_async, util, generational_seq, jsonex]
-import ui/node
 import input_handler/input_handler
 import component
 
@@ -41,7 +40,6 @@ type
     onDocumentChanged*: Event[tuple[old: Document]]
     config*: ConfigStore
 
-    renderImpl*: proc(self: DocumentEditor, builder: UINodeBuilder): seq[proc() {.closure, gcsafe, raises: [].}] {.gcsafe, raises: [].}
     renderNuiImpl*: proc(self: DocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].}
     getStateImpl*: proc(self: DocumentEditor): JsonNode {.gcsafe, raises: [].}
     restoreStateImpl*: proc(self: DocumentEditor, state: JsonNode) {.gcsafe, raises: [].}
@@ -105,11 +103,6 @@ proc markDirty*(self: DocumentEditor, notify: bool = true) =
 
 proc resetDirty*(self: DocumentEditor) =
   self.mDirty = false
-
-proc render*(self: DocumentEditor, builder: UINodeBuilder): seq[proc() {.closure, gcsafe, raises: [].}] {.gcsafe, raises: [].} =
-  if self.renderImpl != nil:
-    return self.renderImpl(self, builder)
-  return @[]
 
 proc renderNui*(self: DocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].} =
   if self.renderNuiImpl == nil:
@@ -236,9 +229,6 @@ when implModule:
   import vmath
 
   addBuiltinService(DocumentEditorService)
-
-  method createUI*(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayFunction] {.base.} =
-    discard
 
   method init*(self: DocumentEditorService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"DocumentEditorService.init"

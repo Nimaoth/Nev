@@ -20,10 +20,9 @@ import text/[overlay_map, tab_map, wrap_map, diff_map, display_map, snippet, ind
 import completion_provider_document, completion_provider_lsp, completion_provider_snippet, completion
 import lisp
 import view
-import scroll_box, component, treesitter_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, snippet_component, text_component, contextline_component
+import component, treesitter_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, snippet_component, text_component, contextline_component
 import move_component
 import text_editor_component
-import ui/node
 from nuigi import UiBuilder
 import command_line, file_previewer
 
@@ -309,6 +308,18 @@ proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap, o
 proc updateColorOverlays(self: TextDocumentEditor) {.async.}
 proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor)
 proc hideSignatureHelp*(self: TextDocumentEditor)
+
+template withoutScrollRequest(self: TextDocumentEditor, body: untyped): untyped =
+  ## Run `body` while ignoring scroll requests (e.g. when selections only move
+  ## along with external edits).
+  let tec = self.textEditorComponent
+  if tec != nil:
+    inc tec.suppressScrollRequests
+  try:
+    body
+  finally:
+    if tec != nil:
+      dec tec.suppressScrollRequests
 proc showSignatureHelp*(self: TextDocumentEditor)
 proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selection], move: string, count: int = 0, includeEol: bool = true, wrap: bool = true, options: JsonNode = nil): seq[Selection]
 
@@ -343,9 +354,6 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections, addToHisto
     return
 
   self.textEditorComponent.setSelections(selections.mapIt(it.toRange), addToHistory)
-
-proc scrollBox*(self: TextDocumentEditor): var ScrollBox =
-  self.textEditorComponent.scrollBox
 
 proc handleSelectionsChanged(self: TextDocumentEditor, old: openArray[Range[Point]]) =
   self.cursorVisible = true
@@ -384,8 +392,7 @@ proc handleSelectionsChanged(self: TextDocumentEditor, old: openArray[Range[Poin
 
   self.onSelectionsChanged.invoke (self,)
 
-  self.scrollBox.scrollTo(self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int, center = false)
-  self.textEditorComponent.requestNuiScrollTo(self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int, center = false)
+  self.textEditorComponent.requestNuiScrollTo(self.selection.last.toPoint, center = false)
 
   # echo self.displayMap.visualLineRange(self.displayMap.toWrapPoint(self.selection.last.toPoint), Bias.Right)
   # echo self.displayMap.wrapMap.snapshot.lineLength(self.displayMap.toWrapPoint(self.selection.last.toPoint))
@@ -774,12 +781,6 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   # debugf"scrollToCursor {cursor}, {margin}, {scrollBehaviour}"
 
   let targetPoint = cursor.toPoint
-  let charWidth = self.platform.charWidth
-  let displayPoint = self.displayMap.toDisplayPoint(targetPoint)
-  let targetColumnX = displayPoint.column.float32 * charWidth + self.scrollBox.currentOffset.x
-
-  # todo: make this configurable
-  let marginX = charWidth * 5
 
   # debugf"scrollToCursor {cursor}, {margin}, {scrollBehaviour.get(self.defaultScrollBehaviour)}"
   let (centerY, centerOffscreenY) = case scrollBehaviour.get(self.defaultScrollBehaviour):
@@ -789,49 +790,17 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
     of ScrollToMargin: (false, false)
     of TopOfScreen: (false, false)
 
-  let centerX = case scrollBehaviour.get(self.defaultScrollBehaviour):
-    of CenterAlways: true
-    of CenterOffscreen: targetColumnX < 0 or targetColumnX + charWidth > self.lastContentBounds.w
-    of CenterMargin: targetColumnX < marginX or targetColumnX + charWidth > self.lastContentBounds.w - marginX
-    of ScrollToMargin: false
-    of TopOfScreen: false
-
-  self.scrollBox.scrollTo(displayPoint.row.int, center = centerY, centerOffscreen = centerOffscreenY)
-  self.textEditorComponent.requestNuiScrollTo(displayPoint.row.int, center = centerY, centerOffscreen = centerOffscreenY)
-  # NUI: horizontal scroll has no virtual-list equivalent yet (vertical only).
-
-  if self.scrollBox.offset.x != 0 or not self.config.getTextWrapLines():
-    let cursorX = displayPoint.column.float * charWidth
-    let currentX = self.scrollBox.currentOffset.x
-    if centerX:
-      self.scrollBox.scrollToX(cursorX - self.lastContentBounds.w * 0.5 + charWidth * 0.5)
-    else:
-      case scrollBehaviour.get(self.defaultScrollBehaviour)
-      of TopOfScreen:
-        self.scrollBox.scrollToX(cursorX - self.lastContentBounds.w * 0.5 + charWidth * 0.5)
-      else:
-        if cursorX + currentX < marginX:
-          self.scrollBox.scrollWithMomentum(vec2(marginX - cursorX - currentX, 0))
-        elif cursorX + currentX + charWidth > self.lastContentBounds.w - self.lineNumberWidth - marginX:
-          self.scrollBox.scrollWithMomentum(vec2(self.lastContentBounds.w - self.lineNumberWidth - marginX - charWidth - cursorX - currentX, 0))
+  self.textEditorComponent.requestNuiScrollTo(targetPoint, center = centerY, centerOffscreen = centerOffscreenY)
 
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
 
 proc scrollToTop*(self: TextDocumentEditor) =
-  self.scrollBox.scrollToY(0, 0)
-  self.textEditorComponent.requestNuiScrollToY(0, 0)
+  self.textEditorComponent.requestNuiScrollToY(point(0, 0), 0)
   self.textEditorComponent.onScroll.invoke()
 
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5, snap: bool = false) =
-  let displayPoint = self.displayMap.toDisplayPoint(cursor.toPoint)
-  if snap and self.scrollBox.size.y > 0:
-    self.scrollBox.scrollToY(displayPoint.row.int, self.scrollBox.size.y * 0.5)
-    # NUI equivalent: centering (viewport height is resolved at render time).
-    self.textEditorComponent.requestNuiScrollTo(displayPoint.row.int, center = true, snap = snap)
-  else:
-    self.scrollBox.scrollTo(displayPoint.row.int, center = true, centerOffscreen = false, snap = snap)
-    self.textEditorComponent.requestNuiScrollTo(displayPoint.row.int, center = true, centerOffscreen = false, snap = snap)
+  self.textEditorComponent.requestNuiScrollTo(cursor.toPoint, center = true, centerOffscreen = false, snap = snap)
 
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
@@ -992,22 +961,24 @@ proc wrapEndPoint*(self: TextDocumentEditor): WrapPoint =
 proc screenLineCount*(self: TextDocumentEditor): int =
   ## Returns the number of lines that can be shown on the screen
   ## This value depends on the size of the view this editor is in and the font size
+  if self.textEditorComponent != nil:
+    let visibleLines = self.textEditorComponent.screenLineCount()
+    if visibleLines > 0:
+      return visibleLines
   # todo
   return (self.lastContentBounds.h / self.platform.totalLineHeight).int
 
 proc visibleDisplayRange*(self: TextDocumentEditor, buffer: int = 0): Range[DisplayPoint] =
   assert self.numDisplayLines > 0
-  if self.scrollBox.items.len > 0:
-    let firstDisplayLine = self.scrollBox.items[0].index
-    let lastDisplayLine = self.scrollBox.items[^1].index
-    return displayPoint(firstDisplayLine, 0)...displayPoint(lastDisplayLine + 1, 0).clamp(displayPoint(), self.displayMap.endDisplayPoint)
-
+  if self.textEditorComponent != nil:
+    return self.textEditorComponent.visibleDisplayRange(buffer)
   return displayPoint(0, 0)...displayPoint(0, 0)
 
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
-  let displayRange = self.visibleDisplayRange(buffer)
-  result.first = self.displayMap.toPoint(displayRange.a).toCursor
-  result.last = self.displayMap.toPoint(displayRange.b).toCursor
+  if self.textEditorComponent != nil:
+    let range = self.textEditorComponent.visibleTextRange(buffer)
+    return (range.a.toCursor, range.b.toCursor)
+  return ((0, 0), (0, 0))
 
 proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): float64 =
   let node = c.currentNode
@@ -1915,7 +1886,6 @@ proc pasteAt*(self: TextDocumentEditor, selections: seq[Selection], registerName
 proc scrollText*(self: TextDocumentEditor, amount: float32) =
   if self.disableScrolling:
     return
-  self.scrollBox.scrollWithMomentum(amount)
   self.textEditorComponent.addNuiScrollDeltaY(amount.float)
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
@@ -1923,8 +1893,8 @@ proc scrollText*(self: TextDocumentEditor, amount: float32) =
 proc scrollTextHorizontal*(self: TextDocumentEditor, amount: float32) =
   if self.disableScrolling:
     return
-  self.scrollBox.scrollWithMomentum(vec2(amount * self.platform.charWidth, 0))
-  # NUI: horizontal scroll has no virtual-list equivalent yet (vertical only).
+  # NUI virtual lists currently provide vertical scrolling only; wire horizontal
+  # input when the text renderer supports a content offset.
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
 
@@ -1934,7 +1904,6 @@ proc scrollLines*(self: TextDocumentEditor, amount: int) =
   if self.disableScrolling:
     return
 
-  self.scrollBox.scrollWithMomentum(self.platform.totalLineHeight * amount.float)
   self.textEditorComponent.addNuiScrollDeltaY(self.platform.totalLineHeight * amount.float)
   self.textEditorComponent.onScroll.invoke()
 
@@ -2594,15 +2563,11 @@ proc setDefaultSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSna
   self.defaultSnapBehaviour = snapBehaviour
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float, cursor: SelectionCursor = SelectionCursor.Config) =
-  let displayPoint = self.displayMap.toDisplayPoint(self.getCursor(cursor).toPoint)
-  self.scrollBox.scrollToY(displayPoint.row.int, offset)
-  self.textEditorComponent.requestNuiScrollToY(displayPoint.row.int, offset)
+  self.textEditorComponent.requestNuiScrollToY(self.getCursor(cursor).toPoint, offset)
   self.markDirty()
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, cursor: Cursor, offset: float) =
-  let displayPoint = self.displayMap.toDisplayPoint(cursor.toPoint)
-  self.scrollBox.scrollToY(displayPoint.row.int, offset * self.platform.totalLineHeight)
-  self.textEditorComponent.requestNuiScrollToY(displayPoint.row.int, offset * self.platform.totalLineHeight)
+  self.textEditorComponent.requestNuiScrollToY(cursor.toPoint, offset * self.platform.totalLineHeight)
   self.markDirty()
 
 proc getContentBounds*(self: TextDocumentEditor): Vec2 =
@@ -4472,12 +4437,16 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
       let newSelections = temp.mapIt (it[0].get, it[1].get).toSelection
 
       if newSelections.len > 0:
-        self.selections = newSelections
+        # Selections are only carried along with the edit, which must not
+        # scroll the view (e.g. on external reloads).
+        self.withoutScrollRequest:
+          self.selections = newSelections
     else:
       log lvlWarn, &"Invalid anchors: {self.selectionAnchors} -> {temp}"
       self.selectionAnchors = @[]
 
-  self.clampSelection()
+  self.withoutScrollRequest:
+    self.clampSelection()
   self.searchComponent.updateSearchResults()
   self.inlayHints.updateInlayHints()
   asyncSpawn self.updateDiffLinesAsync()
@@ -4514,8 +4483,15 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
         self.scrollToCursor()
 
   elif self.selectionsBeforeReload.len > 0:
-    self.selections = self.selectionsBeforeReload
-    self.scrollToCursor()
+    # Diff based reloads move the selections through anchors in
+    # handleTextDocumentTextChanged. Only a full replacement loses them, so
+    # restore the old positions then. The viewport is kept stable by the scroll
+    # anchor, so don't scroll to the cursor here.
+    let fullReplace = changes.len == 1 and changes[0].first == (0, 0) and
+      changes[0].last == self.document.lastCursor
+    if fullReplace:
+      self.withoutScrollRequest:
+        self.selections = self.selectionsBeforeReload
 
   self.cursorHistories.setLen(0)
   self.textEditorComponent.clearTargetSelections()
@@ -4538,27 +4514,12 @@ proc handleCompletionsUpdated(self: TextDocumentEditor) =
   self.markDirty()
 
 proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapMapSnapshot) =
+  # Scroll stability is handled by the content scroll anchor at render time
+  # (see widget_builder_text_document.restoreScrollAnchorNui).
   if self.document.isNil:
     return
 
-  if wrapMap == self.displayMap.wrapMap:
-    let centerY = self.scrollBox.size.y * 0.5
-    var minCenterDistance = float.high
-    var minCenterIndex = -1
-    var minCenterBounds: Rect
-    for item in self.scrollBox.items:
-      let itemCenterY = item.bounds.y + item.bounds.h * 0.5
-      let dist = abs(itemCenterY - centerY)
-      if dist < minCenterDistance:
-        minCenterDistance = dist
-        minCenterIndex = item.index
-        minCenterBounds = item.bounds
-
-    if minCenterIndex >= 0:
-      let point = old.toInputPoint(wrapPoint(minCenterIndex, 0))
-      let newDisplayPoint = wrapMap.toWrapPoint(point)
-      self.scrollBox.scrollToY(newDisplayPoint.row.int, minCenterBounds.y)
-      self.textEditorComponent.requestNuiScrollToY(newDisplayPoint.row.int, minCenterBounds.y.float)
+  self.markDirty()
 
   if self.diffDocument.isNil:
     return
@@ -4683,9 +4644,6 @@ proc newTextEditor*(document: TextDocument, services: Services, initialSettings:
   self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 
   self.setDefaultMode(forceNotify = true)
-
-  self.renderImpl = proc(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayFunction] =
-    self.TextDocumentEditor.createUI(builder)
 
   self.renderNuiImpl = proc(self: DocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].} =
     self.TextDocumentEditor.createUINui(nui)

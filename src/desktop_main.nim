@@ -258,9 +258,7 @@ when enableTerminal:
 
 when enableGui:
   import misc/[tui]
-  import "../modules/gui_platform"/gui_platform
-  when defined(sdlPlatform):
-    import "../modules/sdl_platform"/sdl_platform
+  import "../modules/sdl_platform"/sdl_platform
 
   if backend.get == Gui:
     let trueColorSupport = myEnableTrueColors()
@@ -294,23 +292,12 @@ of Terminal:
 
 of Gui:
   when enableGui:
-    if useSdlBackend:
-      when defined(sdlPlatform):
-        log(lvlInfo, "Creating SDL renderer (nuigi/sdl3)")
-        plat = newSdlPlatform()
-        plat.backend = Gui
-      else:
-        echo "[error] SDL GUI backend not available in this build"
-        quit(1)
-    else:
-      log(lvlInfo, "Creating GUI renderer")
-      plat = newGuiPlatform()
-      plat.backend = Gui
+    log(lvlInfo, "Creating SDL renderer (nuigi/sdl3)")
+    plat = newSdlPlatform()
+    plat.backend = Gui
   else:
     echo "[error] GUI backend not available in this build"
     quit(1)
-
-import ui/node
 
 import chronos/config
 
@@ -392,30 +379,20 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
 
       let updateTimer = startTimer()
 
-      plat.builder.frameTime = delta
       plat.onPreRender.invoke(plat)
       eventBus.emit(&"platform/prerender", "")
 
       let size = plat.size
       let platformRequestedRender = plat.shouldRender()
       var rerender = false
-      if size != plat.builder.root.boundsActual.wh or plat.requestedRender or platformRequestedRender:
+      if plat.requestedRender or platformRequestedRender:
         plat.requestedRender = false
         plat.beginNuiFrame()
-        plat.builder.beginFrame(size, plat.redrawEverything)
         try:
-          app.render(plat.builder, frameIndex)
-          plat.builder.endFrame()
+          app.render(frameIndex)
         except:
           discard
         plat.endNuiFrame()
-        rerender = true
-      elif plat.builder.animatingNodes.len > 0:
-        plat.builder.frameIndex.inc
-        try:
-          plat.builder.postProcessNodes()
-        except:
-          discard
         rerender = true
 
       updateTime = updateTimer.elapsed.ms
@@ -555,10 +532,8 @@ proc main() =
 
     p.beginNuiFrame()
     p.requestedRender = false
-    p.builder.beginFrame(size)
     try:
-      app.render(p.builder, frameIndex)
-      p.builder.endFrame()
+      app.render(frameIndex)
     except:
       discard
     p.endNuiFrame()

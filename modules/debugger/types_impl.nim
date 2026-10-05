@@ -24,14 +24,53 @@ type
     scope*: int
     path*: seq[tuple[index: int, varRef: VariablesReference]]
 
-  DebuggerVariablesCursor* = ref object of TreeCursor
-    ## Tree-table cursor for the variables view (see file_explorer's
-    ## VirtualFileSystemCursor). Navigation state is just the TreeCursor index
-    ## path @[scopeIdx, childIdx...] (hidden root is @[]); variable identities
-    ## are resolved live through the debugger tables so cursors never go stale
-    ## across DAP refetches and rows never need precalculating.
+  DebuggerVarChild* = object
+    ## One lazily listed child row: precomposed display strings plus the
+    ## container holding *its* children (0.VariablesReference = leaf).
+    name*: string
+    typ*: string
+    value*: string
+    childRef*: VariablesReference
+
+  DebuggerVarNode* = object
+    ## Cached listing for one tree key: the container holding this node's
+    ## children (0.VariablesReference = leaf) plus the fetched children.
+    ## `fetched=false` means a DAP fetch is in flight (or not yet requested).
+    childRef*: VariablesReference
+    fetched*: bool
+    children*: seq[DebuggerVarChild]
+
+  DebuggerVarCache* = ref object
+    ## Listing cache for the variables tree (see file_explorer's
+    ## VirtualFileSystemCursorCache): every cursor operation is a single
+    ## hashtable lookup. Listings are copied out of the debugger tables and
+    ## dropped wholesale whenever the context or table version changes, so
+    ## copies can never go stale. Expansion state itself lives in the tree
+    ## widget (keyed by stable index paths), not here.
     debugger*: Debugger
     view*: VariablesView
+    ids*: (ThreadId, FrameId)
+    version*: int
+    valid*: bool
+    nodes*: Table[string, DebuggerVarNode]
+
+  DebuggerVarLocation* = ref object
+    ## A position in the variables tree (see file_explorer's
+    ## VirtualFileSystemCursorLocation): parent-linked, so exitChild is a
+    ## pointer hop and row data rides along without any table lookup.
+    parent*: DebuggerVarLocation
+    key*: string
+    scopeIdx*: int
+    index*: int
+    path*: seq[int]
+    name*: string
+    typ*: string
+    value*: string
+    container*: VariablesReference
+
+  DebuggerVariablesCursor* = ref object of TreeCursor
+    cache*: DebuggerVarCache
+    location*: DebuggerVarLocation
 
   BreakpointInfo* = object
     path*: string
@@ -74,6 +113,9 @@ type
 
     # Cached data from server
     timestamp*: int = 1
+    # Bumped on every variables/scopes table store; the variables tree cache
+    # (DebuggerVarCache) drops its listings when this changes.
+    varCacheVersion*: int = 0
     threads*: seq[ThreadInfo]
     stackTraces*: Table[ThreadId, StackTraceResponse]
     scopes*: Table[(ThreadId, FrameId), Scopes]
@@ -89,19 +131,11 @@ type
   StacktraceView* = ref object of View
   VariablesView* = ref object of View
     variablesCursor*: VariableCursor
-    collapsedVariables*: HashSet[(ThreadId, FrameId, VariablesReference)]
-    variablesFilter*: string = ""
-    filteredVariables*: HashSet[(int, VariablesReference)]
-    filteredCursors*: seq[VariableCursor]
-    filterVersion*: int = 0
     evaluation*: EvaluateResponse
     evaluationName*: string
     eventHandler*: EventHandler
-    # NUI tree-table state (render.nim): cached TreeTable storage so keyboard
-    # commands can drive the same expansion the tree widget owns.
-    varTree*: TreeTable
-    varTreeValid*: bool = false
-    varTreeIds*: (ThreadId, FrameId)
+    # Lazy listing cache for the tree table (see DebuggerVarCache).
+    varCache*: DebuggerVarCache
     # In-flight async children fetches, guarded so lazy rows don't spam DAP.
     pendingVariableFetches*: HashSet[(ThreadId, FrameId, VariablesReference)]
 
@@ -112,18 +146,8 @@ type
     debugger*: Debugger
     evaluations*: Table[tuple[file: string, range: rope.Range[Point], expression: string], Response[EvaluateResponse]]
 
-proc debuggerVarCursorKey*(path: seq[int]): string {.gcsafe, raises: [].} =
-  ## Stable index-based key shared by the cursor override (render.nim) and the
-  ## keyboard tree writes (debugger.nim). Indices (not varRefs) stay valid
-  ## across DAP refetches that remap variable references.
-  try:
-    if path.len == 0:
-      return "dbgvar:root"
-    result = "dbgvar:s" & $path[0]
-    for i in 1 ..< path.len:
-      result.add "/" & $path[i]
-  except:
-    result = "dbgvar:root"
+const DebuggerVarRootKey* = "vars"
+  ## Key of the hidden tree root (its children are the scopes).
 
 proc variableCursorIndexPath*(cursor: VariableCursor): seq[int] {.gcsafe, raises: [].} =
   ## Maps a VariableCursor to a tree-table index path: @[scope, childIdx...].
@@ -136,21 +160,4 @@ proc variableCursorIndexPath*(cursor: VariableCursor): seq[int] {.gcsafe, raises
   except:
     result = @[]
 
-proc findVarTreeNode*(tree: TreeTable, key: string): int {.gcsafe, raises: [].} =
-  ## Finds an active expanded slot by cursor key. Uses only public TreeTable
-  ## fields (free slots have nil cursors). Returns -1 when absent/nil.
-  try:
-    if tree == nil:
-      return -1
-    for i in 0 ..< tree.nodes.len:
-      if tree.nodes[i].cursor != nil and tree.nodes[i].cursor.cursorKey() == key:
-        return i
-    return -1
-  except:
-    return -1
 
-proc isVarTreeExpanded*(tree: TreeTable, key: string): bool {.gcsafe, raises: [].} =
-  try:
-    return findVarTreeNode(tree, key) >= 0
-  except:
-    return false
