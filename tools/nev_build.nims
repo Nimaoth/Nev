@@ -239,6 +239,7 @@ while i < cmds.len:
   of "debug-win":
     echo &"Build debug for windows..."
     # exec """nim c --out:nev.exe -D:enableGui=true -D:enableTerminal=true -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types "--passL:-ladvapi32.lib -luser32.lib" --passC:-std=gnu11 src/desktop_main.nim"""
+    buildNuigiStaticDependencies()
     buildStatic()
 
   of "package-win":
@@ -267,6 +268,7 @@ while i < cmds.len:
   of "debug-linux":
     echo &"Build debug for linux..."
     # exec &"""nim c --out:nev --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=true -D:enableTerminal=true --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} src/desktop_main.nim"""
+    buildNuigiStaticDependencies()
     buildStatic()
 
   of "package-linux":
