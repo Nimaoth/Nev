@@ -42,7 +42,7 @@ jobs:
           apt-get update
           apt-get install -y \
             gcc-mingw-w64 libx11-xcb-dev curl wget build-essential git musl-tools \
-            cmake clang meson ninja-build pkg-config python3 glslc \
+            cmake clang meson ninja-build pkg-config python3 \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
             libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
             libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb xauth
