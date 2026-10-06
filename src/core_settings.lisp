@@ -362,10 +362,10 @@ code actions.")
 
   (group ColorHighlightSettings "text.color-highlight"
     (setting enable "bool" false
-      "Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language
+      "Add interactive color pickers before strings representing colors. Closing a picker applies its color to the text. Color detection is configured per language
 in `text.color-highlight.{language-id}.`")
 
-    (setting regex "RegexSetting" "#([0-9a-fA-F]{6})|#([0-9a-fA-F]{8})"
+    (setting regex "RegexSetting" "#([0-9a-fA-F]{8})|#([0-9a-fA-F]{6})"
       "Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kind.")
 
     (setting kind "ColorType" hex

@@ -96,6 +96,8 @@ type TextDocumentEditorNuiStorage* = ref object of UiNodeStorageData
   multiClickValid*: bool
   highlightCommands*: seq[UiRenderCommand]
   listStorage*: UiDynamicVirtualListStorage
+  diffListStorage*: UiDynamicVirtualListStorage
+  diffListNodeIndex*: int
   widthDocument: TextDocument
   widthRevision: int
   diffWidthDocument: TextDocument
@@ -105,9 +107,7 @@ type TextDocumentEditorNuiStorage* = ref object of UiNodeStorageData
   itemHeightHint*: float32
   textIter*: DisplayChunkIterator
   iterNextRow*: int
-  # Diff view (side-by-side in a single virtual list row, mirrors legacy
-  # createTextLines renderDiff path at widget_builder_text_document.nim:1358):
-  # left pane shows diffDisplayMap (old), right pane shows displayMap (new).
+  # The old and current documents have separate, synchronized virtual lists.
   renderDiff*: bool
   diffTextIter*: DisplayChunkIterator
   diffIterNextRow*: int
@@ -631,6 +631,9 @@ proc buildTextMouseSelectionNui(b: var UiBuilder, nodeIdx: int, userData: int) {
         return
       let storage = b.getOrCreateTextEditorNuiStorage(b.frame.nodes[userData].addr)
       let self = storage.editor
+      if self != nil and self.colorPickerStorage != nil and self.colorPickerStorage.open:
+        if findNodeIndexById(b.frame.nodes, self.colorPickerStorage.ownerId) < 0:
+          self.closeColorPicker(b)
       if self == nil or self.document == nil or not self.document.isInitialized:
         storage.mouseSelecting = false
         return
@@ -646,6 +649,8 @@ proc buildTextMouseSelectionNui(b: var UiBuilder, nodeIdx: int, userData: int) {
       if storage.textListNodeIndex < 0 or storage.textListNodeIndex >= b.frame.nodes.len:
         return
       var pressed = b.wasPressed(storage.textListNodeIndex, includeChildren = true)
+      if self.colorPickerPressedFrame == input.frameIndex:
+        pressed = false
       if storage.listStorage != nil and storage.listStorage.scrollbarTrackIndex >= 0:
         if b.wasPressed(storage.listStorage.scrollbarTrackIndex, includeChildren = true):
           pressed = false
@@ -654,7 +659,8 @@ proc buildTextMouseSelectionNui(b: var UiBuilder, nodeIdx: int, userData: int) {
           pressed = false
       if storage.renderDiff:
         let listPos = b.absoluteNodePos(storage.textListNodeIndex)
-        if input.mouse.x < listPos.x + storage.diffSplitWidth:
+        let listWidth = b.frame.nodes[storage.textListNodeIndex].size.x
+        if input.mouse.x < listPos.x or input.mouse.x >= listPos.x + listWidth:
           pressed = false
       if MouseLeft in input.mousePressed and not pressed:
         storage.mouseSelecting = false
@@ -1217,22 +1223,25 @@ proc buildTextSignColumnMenuNui(b: var UiBuilder, nodeIdx: int,
     except:
       discard
 
+proc nuiTextTrailingSpaceHeight(editorHeight, lineHeight: float32): float32 =
+  max(0.0'f32, editorHeight - 5.0'f32 * lineHeight)
+
 proc buildTextDiffLineNui(b: var UiBuilder, itemIndex: int,
-    storage: TextDocumentEditorNuiStorage, self: TextDocumentEditor) {.nimcall, gcsafe, raises: [].} =
-  ## One diff row of the single virtual list: left pane renders the diff (old)
-  ## side, right pane renders the current (new) side (mirrors the legacy
-  ## side-by-side panes at widget_builder_text_document.nim:1413, drawn via
-  ## drawLines + drawDiffLines sharing one virtual list). Only the right pane is
-  ## interactive (cursor, clicks, chunk index); the left pane is read-only.
+    userData: int) {.nimcall, gcsafe, raises: [].} =
+  discard b.fillX().fitY()
   {.cast(gcsafe).}:
     try:
-      if storage.iterNextRow != itemIndex:
-        storage.textIter.seekLine(itemIndex)
-        discard storage.textIter.next()
+      let storage = b.getOrCreateTextEditorNuiStorage(b.frame.nodes[userData].addr)
+      let self = storage.editor
+      if itemIndex == storage.displayLineCount:
+        discard b.fitY(false).height(nuiTextTrailingSpaceHeight(
+          b.frame.nodes[userData].size.y, storage.lineHeight))
+        return
       if storage.diffIterNextRow != itemIndex:
         storage.diffTextIter.seekLine(itemIndex)
         discard storage.diffTextIter.next()
       let arenaCheckpoint = storage.arena.checkpoint()
+      defer: storage.arena.restoreCheckpoint(arenaCheckpoint)
       let lineNumbers = storage.lineNumbers
       let cursorLine = storage.cursorLine
       # Cursor line mapped onto the diff side (legacy diffState.cursorLine at
@@ -1288,30 +1297,11 @@ proc buildTextDiffLineNui(b: var UiBuilder, itemIndex: int,
         indentDiff += wrapIndentCols.float32 * storage.charWidth
       # Whole-line backgrounds per side (legacy drawDiffBackgrounds).
       let (bgL, hasBgL) = self.nuiDiffLineBackground(storage, itemIndex, true)
-      let (bgR, hasBgR) = self.nuiDiffLineBackground(storage, itemIndex, false)
       let bgLUi = rgba(bgL.r.float32, bgL.g.float32, bgL.b.float32, bgL.a.float32)
-      let bgRUi = rgba(bgR.r.float32, bgR.g.float32, bgR.b.float32, bgR.a.float32)
-      # Chunk index y replicates the virtual list's own itemTop math
-      # (dynamic_virtuallist.estimatedItemTop) minus its scroll offset.
-      var yLine = 0.0'f32
-      if storage.listStorage != nil:
-        var top = itemIndex.float32 * storage.itemHeightHint
-        for sample in storage.listStorage.heights:
-          if sample.itemIndex >= itemIndex:
-            break
-          top += sample.height - storage.itemHeightHint
-        yLine = top - storage.listStorage.scrollOffsetY
-      var lineH = storage.lineHeight
-      # Panes are anchored on X using calculated split width from storage.
-      # Two fillX children in a horizontal layout do NOT split the row (first
-      # takes all, second gets zero width). Anchored children are skipped by the
-      # flow cursor but still count toward the parent's content extent, so the
-      # row keeps its fitY height. Mirrors layout_render.nim renderHorizontalLayoutNui.
       b.node:
         discard b.fillX().fitY()
-        # Left pane – diff (old) side, read-only.
         b.layoutVertical:
-          discard b.width(storage.diffSplitWidth).fitY().finishAnchors()
+          discard b.fillX().fitY()
           if hasBgL:
             discard b.fillBackground().backgroundColor(bgLUi)
           b.layoutHorizontal:
@@ -1324,7 +1314,6 @@ proc buildTextDiffLineNui(b: var UiBuilder, itemIndex: int,
             elif isContDiff:
               b.node:
                 discard b.width(indentDiff).fitY()
-            var xCursor = indentDiff
             var hasChunks = false
             while storage.diffTextIter.displayChunk.isSome:
               let chunk = storage.diffTextIter.displayChunk.get
@@ -1346,35 +1335,21 @@ proc buildTextDiffLineNui(b: var UiBuilder, itemIndex: int,
               hasChunks = true
               let uiColor = rgba(chunkColor.r.float32, chunkColor.g.float32, chunkColor.b.float32, chunkColor.a.float32)
               let (hlBg, hasHl) = self.nuiDiffChunkHighlight(storage, chunkPoint, chunkEndPoint, true)
-              var chunkNodeIdx = -1
               b.node:
-                chunkNodeIdx = b.currentNodeIndex
                 discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText))
                 if hasHl:
                   discard b.fillBackground().backgroundColor(rgba(hlBg.r.float32, hlBg.g.float32, hlBg.b.float32, hlBg.a.float32))
                 discard b.textColor(uiColor).textFlags(chunkTextFlags).underlineColor(underlineUiColor).underlineThickness(2)
                   .fontSize(baseFontSize * chunkScale.float32).text(chunk.toOpenArray)
-                xCursor += b.currentNode.size.x
-              lineH = max(lineH, b.frame.nodes[chunkNodeIdx].size.y)
             if not hasChunks:
               b.node:
                 discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(" ")
           if storage.lineGap != 0.0'f32:
             b.node:
               discard b.fillX().height(storage.lineGap)
-        # Right pane – current (new) side, interactive + indexed.
-        b.node:
-          discard b.position(storage.diffSplitWidth, 0).width(storage.diffSplitWidth).fitY().finishAnchors()
-          if hasBgR:
-            discard b.fillBackground().backgroundColor(bgRUi)
-          b.buildInteractiveTextLineNui(itemIndex, storage, self, lineH, true)
       storage.diffIterNextRow = itemIndex + 1
-      storage.arena.restoreCheckpoint(arenaCheckpoint)
-    except:
-      discard
-
-proc nuiTextTrailingSpaceHeight(editorHeight, lineHeight: float32): float32 =
-  max(0.0'f32, editorHeight - 5.0'f32 * lineHeight)
+    except CatchableError as e:
+      log lvlError, "Failed to render diff line: ", e.msg
 
 proc cacheTextTrailingSpaceHeight(storage: TextDocumentEditorNuiStorage,
     editorHeight: float32) =
@@ -1416,8 +1391,7 @@ proc requestTextCursorVisibleXNui(b: var UiBuilder, itemIndex: int,
   let point = tec.nuiPendingScrollToX.get
   if editor.displayMap.toDisplayPoint(point).row.int != itemIndex:
     return
-  let diffOffset = if storage.renderDiff: storage.diffSplitWidth else: 0.0'f32
-  let anchor = b.nuiPopupAnchor(storage, point, diffOffset)
+  let anchor = b.nuiPopupAnchor(storage, point)
   if not anchor.found:
     return
   let cursorX = anchor.cx + storage.listStorage.scrollOffsetX
@@ -1449,12 +1423,6 @@ proc buildTextLineNui(b: var UiBuilder, itemIndex: int, userData: int) {.nimcall
           b.node:
             discard b.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text("")
         return
-      # Diff view renders both sides in this one row (single virtual list).
-      if storage.renderDiff and not self.diffDisplayMap.isNil and
-          not self.diffDocument.isNil and self.diffChanges.isSome:
-        b.buildTextDiffLineNui(itemIndex, storage, self)
-        b.requestTextCursorVisibleXNui(itemIndex, storage)
-        return
       # Stored iterator reused across lines (created once per frame in createUINui):
       # only seek when the frontier does not match; rows arrive ascending so the
       # frontier only moves forward, which keeps every level's forward-only seeks
@@ -1464,7 +1432,12 @@ proc buildTextLineNui(b: var UiBuilder, itemIndex: int, userData: int) {.nimcall
         discard storage.textIter.next()
       let arenaCheckpoint = storage.arena.checkpoint()
       var lineH = storage.lineHeight
-      b.buildInteractiveTextLineNui(itemIndex, storage, self, lineH)
+      if storage.renderDiff:
+        let (bg, hasBg) = self.nuiDiffLineBackground(storage, itemIndex, false)
+        if hasBg:
+          discard b.fillBackground().backgroundColor(
+            rgba(bg.r.float32, bg.g.float32, bg.b.float32, bg.a.float32))
+      b.buildInteractiveTextLineNui(itemIndex, storage, self, lineH, storage.renderDiff)
       b.requestTextCursorVisibleXNui(itemIndex, storage)
       storage.arena.restoreCheckpoint(arenaCheckpoint)
     except:
@@ -1481,20 +1454,39 @@ proc buildTextLinesListNui(b: var UiBuilder, rootIndex, lineCount: int,
       list.heights.setLen(list.heights.len - 1)
   storage.displayLineCount = lineCount
   storage.fitContentY = fitContentY
-  storage.textListNodeIndex = b.frame.nodes.len
   let editor = storage.editor
   let revision = if editor.document != nil: editor.document.revision else: 0
   let diffRevision = if editor.diffDocument != nil: editor.diffDocument.revision else: 0
   if storage.widthDocument != editor.document or storage.widthRevision != revision or
       storage.diffWidthDocument != editor.diffDocument or storage.diffWidthRevision != diffRevision:
     storage.listStorage.clearMeasuredWidths()
+    storage.diffListStorage.clearMeasuredWidths()
     storage.widthDocument = editor.document
     storage.widthRevision = revision
     storage.diffWidthDocument = editor.diffDocument
     storage.diffWidthRevision = diffRevision
-  result = b.dynamicVirtualList(lineCount + ord(not fitContentY),
-    storage.itemHeightHint, buildTextLineNui, rootIndex,
-    horizontalScroll = not editor.config.getTextWrapLines())
+  if storage.renderDiff:
+    b.node("text-current-pane"):
+      discard b.anchorsX(0.5, 1).finishAnchors()
+      if fitContentY: discard b.fitY()
+      else: discard b.fillY()
+      storage.textListNodeIndex = b.frame.nodes.len
+      result = b.dynamicVirtualList(lineCount + ord(not fitContentY),
+        storage.itemHeightHint, buildTextLineNui, rootIndex,
+        horizontalScroll = not editor.config.getTextWrapLines(), synchronized = true)
+    b.node("text-diff-pane"):
+      discard b.anchorsX(0, 0.5).finishAnchors()
+      if fitContentY: discard b.fitY()
+      else: discard b.fillY()
+      storage.diffListNodeIndex = b.frame.nodes.len
+      storage.diffListStorage = b.dynamicVirtualList(lineCount + ord(not fitContentY),
+        storage.itemHeightHint, buildTextDiffLineNui, rootIndex,
+        horizontalScroll = not editor.config.getTextWrapLines(), synchronizeWith = result)
+  else:
+    storage.textListNodeIndex = b.frame.nodes.len
+    result = b.dynamicVirtualList(lineCount + ord(not fitContentY),
+      storage.itemHeightHint, buildTextLineNui, rootIndex,
+      horizontalScroll = not editor.config.getTextWrapLines())
   storage.listStorage = result
   storage.cacheTextTrailingSpaceHeight(b.frame.nodes[rootIndex].size.y)
 
@@ -1683,9 +1675,12 @@ proc buildTextHighlightsNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nim
       if userData < 0 or userData >= b.frame.nodes.len:
         return
       let storage = b.getOrCreateTextEditorNuiStorage(b.frame.nodes[userData].addr)
-      if storage.listStorage != nil and storage.listStorage.horizontalScrollbarTrackIndex >= 0:
+      if storage.listStorage != nil and (storage.renderDiff or
+          storage.listStorage.horizontalScrollbarTrackIndex >= 0):
         discard b.fillX(false).fillY(false).size(
           storage.listStorage.viewportWidth, storage.listStorage.viewportHeight).maskChildren()
+        if storage.renderDiff:
+          discard b.position(storage.diffSplitWidth, 0)
       if storage.listStorage != nil:
         let viewportIndex = b.firstChildIndex(storage.textListNodeIndex)
         let viewportY = b.absoluteNodePos(viewportIndex).y
@@ -1702,14 +1697,10 @@ proc buildTextHighlightsNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nim
         return
 
       storage.highlightCommands.setLen(0)
-      # In diff view the chunk index is right-pane-relative; the highlight
-      # layer spans both panes, so shift highlights by the diff split width
-      # (half the layer width).
+      # Chunk coordinates and this clipped layer are current-pane-relative.
       var diffXOffset = 0.0'f32
       if storage.listStorage != nil:
         diffXOffset -= storage.listStorage.scrollOffsetX
-      if storage.renderDiff:
-        diffXOffset += storage.diffSplitWidth
       for highlights in self.decorations.customHighlights.values:
         for highlight in highlights:
           let highlightColor = storage.theme.color(highlight.color,
@@ -1742,9 +1733,12 @@ proc buildTextCursorNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nimcall
         return
       var storage = b.getOrCreateTextEditorNuiStorage(b.frame.nodes[userData].addr)
       var self = storage.editor
-      if storage.listStorage != nil and storage.listStorage.horizontalScrollbarTrackIndex >= 0:
+      if storage.listStorage != nil and (storage.renderDiff or
+          storage.listStorage.horizontalScrollbarTrackIndex >= 0):
         discard b.fillX(false).fillY(false).size(
           storage.listStorage.viewportWidth, storage.listStorage.viewportHeight).maskChildren()
+        if storage.renderDiff:
+          discard b.position(storage.diffSplitWidth, 0)
       if self.isNil or self.displayMap.isNil or self.document.isNil or storage.theme.isNil:
         return
       if not self.document.isInitialized or storage.chunkIndex.len == 0 or not self.cursorVisible:
@@ -1757,13 +1751,10 @@ proc buildTextCursorNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nimcall
       let bgUi = rgba(cursorBg.r.float32, cursorBg.g.float32, cursorBg.b.float32, cursorBg.a.float32)
       let charW = storage.charWidth
       let thick = self.isThickCursor()
-      # In diff view the chunk index is right-pane-relative; shift cursors by
-      # the diff split width.
+      # Chunk coordinates and this clipped layer are current-pane-relative.
       var diffXOffset = 0.0'f32
       if storage.listStorage != nil:
         diffXOffset -= storage.listStorage.scrollOffsetX
-      if storage.renderDiff:
-        diffXOffset += storage.diffSplitWidth
       for s in self.selections:
         let p = s.last.toPoint
         # Last entry starting at/before the cursor on its row (entries are built in
@@ -2444,9 +2435,7 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
           storage.signColumnShow = core_settings.SignColumnShowKind.No
           storage.signColumnWidth = 0
           storage.signColumnWidthPx = 0.0'f32
-        # Diff view snapshots (mirrors legacy createTextLines at
-        # widget_builder_text_document.nim:1358): one virtual list renders both
-        # sides per row, so snapshot both iterators + diff theme colors here.
+        # Snapshot both diff iterators and their theme colors for the lists.
         storage.renderDiff = self.diffDocument != nil and
           self.diffDocument.isInitialized and self.diffChanges.isSome and
           self.diffDisplayMap != nil

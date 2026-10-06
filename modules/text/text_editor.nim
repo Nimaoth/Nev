@@ -23,7 +23,8 @@ import view
 import component, treesitter_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, snippet_component, text_component, contextline_component
 import move_component
 import text_editor_component
-from nuigi import UiBuilder
+from nuigi import UiBuilder, UiColor, rgba, enqueueNextFrame, wasPressed, `==`
+from nuigi/widgets/colorpicker import ColorPickerStorage, colorPicker
 import command_line, file_previewer
 
 import workspace_edit, search_component
@@ -50,6 +51,14 @@ type
       command: language_server.Command
     of CodeActionKind.CodeAction:
       action: language_server.CodeAction
+
+type ColorOverlay = ref object
+  document: TextDocument
+  first, last: Anchor
+  original: string
+  kind: ColorType
+  value: UiColor
+  rendererId: CustomRendererId
 
 type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
@@ -95,6 +104,12 @@ type TextDocumentEditor* = ref object of DocumentEditor
   signatureHelpId*: Id
   diagnosticsId*: Id
   overlayIdColorHighlight*: Option[int]
+  colorPickerStorage*: ColorPickerStorage
+  editedColor*: UiColor
+  editedColorOverlay: ColorOverlay
+  colorOverlays: seq[ColorOverlay]
+  colorOverlayRequest: int
+  colorPickerPressedFrame*: uint64 = uint64.high
   lastCursorLocationBounds*: Option[Rect]
   lastHoverLocationBounds*: Option[Rect]
   lastSignatureHelpLocationBounds*: Option[Rect]
@@ -429,6 +444,17 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
     self.blinkCursorTask.reschedule()
 
 proc clearDocument*(self: TextDocumentEditor) =
+  inc self.colorOverlayRequest
+  for overlay in self.colorOverlays:
+    self.decorations.removeCustomRenderer(overlay.rendererId)
+  self.colorOverlays.setLen(0)
+  self.editedColorOverlay = nil
+  if self.colorPickerStorage != nil:
+    self.colorPickerStorage.open = false
+    self.colorPickerStorage.openPrev = false
+  if self.overlayIdColorHighlight.isSome:
+    self.displayMap.overlay.releaseId(self.overlayIdColorHighlight.get)
+    self.overlayIdColorHighlight = int.none
   self.closeDiff()
   if self.document.isNotNil:
     # log lvlInfo, &"[clearDocument] ({self.id}): '{self.document.filename}'"
@@ -4361,12 +4387,136 @@ proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Sele
   if self.config.getTextWrapLines():
     self.displayMap.wrapMap.update(self.displayMap.tabMap.snapshot.clone(), force = true)
 
+proc parseOverlayColor(text: string, kind: ColorType): UiColor {.raises: [CatchableError].} =
+  case kind
+  of Hex:
+    let hex = if text.startsWith("#"): text[1..^1] else: text
+    if hex.len notin [6, 8] or hex.anyIt(it notin HexDigits):
+      raise newException(ValueError, "Invalid hex color: " & text)
+    let c = if hex.len == 8: parseHexAlpha(hex) else: parseHex(hex)
+    return rgba(c.r, c.g, c.b, c.a)
+  of Float1, Float255:
+    let numbers = text.findAllBounds(0, re"(\d+(\.\d+)?)")
+    if numbers.len < 3:
+      raise newException(ValueError, "Color requires at least three components: " & text)
+    let scale = if kind == Float255: 255.0 else: 1.0
+    var channels = [0.0'f32, 0.0'f32, 0.0'f32, 1.0'f32]
+    for i in 0..<min(numbers.len, 4):
+      let bounds = numbers[i]
+      channels[i] = (text[bounds.first.column..<bounds.last.column].parseFloat / scale).float32
+      if channels[i] < 0 or channels[i] > 1:
+        raise newException(ValueError, "Color component is out of range: " & text)
+    return rgba(channels[0], channels[1], channels[2], channels[3])
+
+proc formatOverlayColor(text: string, kind: ColorType, value: UiColor): string {.raises: [CatchableError].} =
+  case kind
+  of Hex:
+    let prefix = if text.startsWith("#"): "#" else: ""
+    let hex = text[prefix.len..^1]
+    let c = color(value.r, value.g, value.b, value.a)
+    var formatted = if hex.len == 8 or value.a < 1: c.toHexAlpha else: c.toHex
+    if hex.anyIt(it in {'a'..'f'}) and not hex.anyIt(it in {'A'..'F'}):
+      formatted = formatted.toLowerAscii()
+    return prefix & formatted
+  of Float1, Float255:
+    let numbers = text.findAllBounds(0, re"(\d+(\.\d+)?)")
+    let channels = [value.r, value.g, value.b, value.a]
+    let scale = if kind == Float255: 255.0'f32 else: 1.0'f32
+    var offset = 0
+    for i in 0..<min(numbers.len, 4):
+      let bounds = numbers[i]
+      result.add text[offset..<bounds.first.column]
+      let original = text[bounds.first.column..<bounds.last.column]
+      let scaled = channels[i] * scale
+      var component = if kind == Float255 and not original.contains('.'):
+          $scaled.round.int
+        else:
+          formatFloat(scaled.float, ffDecimal, 6)
+      component.trimZeros()
+      result.add component
+      offset = bounds.last.column
+    result.add text[offset..^1]
+
+proc commitEditedColor(self: TextDocumentEditor, builder: var UiBuilder) =
+  let overlay = self.editedColorOverlay
+  let value = self.editedColor
+  self.editedColorOverlay = nil
+  if overlay == nil or value == overlay.value:
+    return
+  builder.enqueueNextFrame(proc() {.gcsafe, raises: [].} =
+    try:
+      if self.document != overlay.document or self.document == nil:
+        log lvlWarn, "Color edit cancelled because the document changed"
+        return
+      if self.document.readOnly:
+        log lvlWarn, "Cannot edit color in a read-only document"
+        return
+      let snapshot = self.document.buffer.snapshot.clone()
+      let first = overlay.first.summaryOpt(Point, snapshot, resolveDeleted = false)
+      let last = overlay.last.summaryOpt(Point, snapshot, resolveDeleted = false)
+      if first.isNone or last.isNone or first.get > last.get:
+        log lvlWarn, "Color edit cancelled because its range no longer exists"
+        return
+      let selection = (first.get...last.get).toSelection
+      if self.document.contentString(selection) != overlay.original:
+        log lvlWarn, "Color edit cancelled because its text changed"
+        return
+      let replacement = formatOverlayColor(overlay.original, overlay.kind, value)
+      if replacement != overlay.original:
+        self.document.addNextCheckpoint("color-picker")
+        discard self.edit(@[selection], @[replacement])
+        discard self.document.buffer.endTransaction()
+    except CatchableError as e:
+      log lvlError, "Failed to edit color: ", e.msg)
+
+proc closeColorPicker*(self: TextDocumentEditor, builder: var UiBuilder) =
+  if self.colorPickerStorage != nil:
+    self.colorPickerStorage.open = false
+    self.colorPickerStorage.openPrev = false
+  self.commitEditedColor(builder)
+
+proc renderColorOverlay(self: TextDocumentEditor, overlay: ColorOverlay,
+    builder: var UiBuilder): Vec2 =
+  if self.colorPickerStorage == nil:
+    self.colorPickerStorage = ColorPickerStorage()
+  let storage = self.colorPickerStorage
+  let wasActive = self.editedColorOverlay == overlay
+  var value = if wasActive: self.editedColor else: overlay.value
+  let pickerIndex = builder.frame.nodes.len
+  let changed = builder.colorPicker(value, storage)
+  if builder.wasPressed(pickerIndex, includeChildren = true):
+    self.colorPickerPressedFrame = builder.frameCtx.input.frameIndex
+  let ownsPicker = storage.ownerId == builder.frame.nodes[pickerIndex].id
+  if not wasActive and ownsPicker and storage.open:
+    if self.editedColorOverlay != nil:
+      self.commitEditedColor(builder)
+    self.editedColorOverlay = overlay
+    self.editedColor = if changed: value else: overlay.value
+  elif wasActive:
+    if changed:
+      self.editedColor = value
+    if not storage.open or not ownsPicker:
+      self.commitEditedColor(builder)
+  return vec2(builder.frame.nodes[pickerIndex].size.x,
+    builder.frame.nodes[pickerIndex].size.y)
+
 proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
+  if self.document == nil:
+    return
+  inc self.colorOverlayRequest
+  let request = self.colorOverlayRequest
   if not self.config.getTextColorHighlightEnable():
     if self.overlayIdColorHighlight.isSome:
       self.displayMap.overlay.clear(self.overlayIdColorHighlight.get)
       self.displayMap.overlay.releaseId(self.overlayIdColorHighlight.get)
       self.overlayIdColorHighlight = int.none
+    for overlay in self.colorOverlays:
+      self.decorations.removeCustomRenderer(overlay.rendererId)
+    self.colorOverlays.setLen(0)
+    self.editedColorOverlay = nil
+    if self.colorPickerStorage != nil:
+      self.colorPickerStorage.open = false
+      self.colorPickerStorage.openPrev = false
     return
 
   if self.overlayIdColorHighlight.isNone:
@@ -4376,51 +4526,64 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
 
   let regex = self.config.getTextColorHighlightRegex().decodeRegex()
   let kind = self.config.getTextColorHighlightKind()
-  let floatRegex = re"(\d+(\.\d+)?)"
-
   try:
-    let rope = self.document.rope.clone()
+    let document = self.document
+    let revision = document.revision
+    let snapshot = document.buffer.snapshot.clone()
+    let rope = snapshot.visibleText.clone()
     let colorRanges = await findAllAsync(rope.slice(int), regex)
-    if self.document.isNil:
+    if self.document != document or self.colorOverlayRequest != request or
+        document.revision != revision:
       return
 
-    # todo: this can scale up pretty quickly, could be done in a background thread
-    # self.displayMap.overlay.clear(self.overlayIdColorHighlight.get)
     var overlays: seq[overlay_map.OverlayDef] = @[]
+    var colorOverlays: seq[ColorOverlay]
+    var retainedRenderers: HashSet[uint64] = initHashSet[uint64]()
+    var previousByRange: Table[(Point, Point), ColorOverlay] = initTable[(Point, Point), ColorOverlay]()
+    for previous in self.colorOverlays:
+      if previous.document != document:
+        continue
+      let first = previous.first.summaryOpt(Point, snapshot, resolveDeleted = false)
+      let last = previous.last.summaryOpt(Point, snapshot, resolveDeleted = false)
+      if first.isSome and last.isSome:
+        previousByRange[(first.get, last.get)] = previous
     for r in colorRanges:
-      let text = rope[r]
-      let color = case kind
-      of Hex:
-        if text.startsWith("#"):
-          $text
-        else:
-          "#" & $text
-      of Float1:
-        var c = color(0, 0, 0)
-        let text = $text
-        let numbers = text.findAllBounds(0, floatRegex)
-        if numbers.len >= 3:
-          c.r = (text[numbers[0].first.column..<numbers[0].last.column]).parseFloat
-          c.g = (text[numbers[1].first.column..<numbers[1].last.column]).parseFloat
-          c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat
-        "#" & c.toHex
-      of Float255:
-        var c = color(0, 0, 0)
-        let text = $text
-        let numbers = text.findAllBounds(0, floatRegex)
-        if numbers.len >= 3:
-          c.r = (text[numbers[0].first.column..<numbers[0].last.column]).parseFloat / 255.0
-          c.g = (text[numbers[1].first.column..<numbers[1].last.column]).parseFloat / 255.0
-          c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat / 255.0
-        "#" & c.toHex
-
-      # self.displayMap.overlay.addOverlay(r.a...r.a, " ■ ", overlayIdColorHighlight, color, renderId = 1)
-      overlays.add (r.a...r.a, " ■ ", color, Bias.Left, 1, overlay_map.OverlayRenderLocation.Inline)
+      let text = $rope[r]
+      var value: UiColor
+      try:
+        value = parseOverlayColor(text, kind)
+      except CatchableError as e:
+        log lvlWarn, "Invalid color overlay: ", e.msg
+        continue
+      var entry = previousByRange.getOrDefault((r.a, r.b))
+      if entry != nil and (entry.original != text or entry.kind != kind):
+        entry = nil
+      if entry == nil:
+        entry = ColorOverlay(document: document, original: text, kind: kind,
+          value: value, first: snapshot.anchorAfter(r.a), last: snapshot.anchorBefore(r.b))
+        capture entry:
+          entry.rendererId = self.decorations.addCustomRenderer(
+            proc(id: int, size: Vec2, localOffset: int, builder: var UiBuilder): Vec2 =
+              if localOffset != 0:
+                return vec2(0, size.y)
+              return self.renderColorOverlay(entry, builder))
+      colorOverlays.add entry
+      retainedRenderers.incl entry.rendererId.uint64
+      overlays.add (r.a...r.a, " ", "", Bias.Left,
+        entry.rendererId.uint64.int, overlay_map.OverlayRenderLocation.Inline)
 
     if self.overlayIdColorHighlight.isSome:
       self.displayMap.overlay.addOverlays(self.overlayIdColorHighlight.get, true, overlays)
+    for previous in self.colorOverlays:
+      if previous.rendererId.uint64 notin retainedRenderers:
+        self.decorations.removeCustomRenderer(previous.rendererId)
+        if self.editedColorOverlay == previous:
+          self.editedColorOverlay = nil
+          self.colorPickerStorage.open = false
+          self.colorPickerStorage.openPrev = false
+    self.colorOverlays = colorOverlays
 
-  except Exception as e:
+  except CatchableError as e:
     log lvlError, &"Failed to find colors: {e.msg}"
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =

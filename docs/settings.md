@@ -65,9 +65,9 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `text.code-actions.sign` | string | "⚑" | Character to use as sign for lines where code actions are available. Empty string or null means no sign will be shown for code actions. |
 | `text.code-actions.sign-color` | string | "info" | What color the sign for code actions should be. Can be a theme color name or hex code (e.g. `#12AB34`). |
 | `text.code-actions.sign-width` | int | 1 | How many columns the sign occupies. |
-| `text.color-highlight.enable` | bool | false | Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language in `text.color-highlight.{language-id}.` |
+| `text.color-highlight.enable` | bool | false | Add interactive color pickers before strings representing colors. Closing a picker applies its color to the text. Color detection is configured per language in `text.color-highlight.{language-id}.` |
 | `text.color-highlight.kind` | "hex", "float1", "float255" | "hex" | How to interpret the number. 'hex' means the number is written as either 6 or 8 hex characters, e.g. ABBACA7. 'float1' means the number is a float with 0 being black and 1 being white. 'float255' means the number is a float or int with 0 being black and 255 being white. |
-| `text.color-highlight.regex` | regex | "#([0-9a-fA-F]{6})\|#([0-9a-fA-F]{8})" | Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kind. |
+| `text.color-highlight.regex` | regex | "#([0-9a-fA-F]{8})\|#([0-9a-fA-F]{6})" | Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kind. |
 | `text.completion-mode` | string | "editor.text" | Mode to activate while completion window is open. |
 | `text.completion-word-chars` | seq[string or seq[string]] | [["a","z"],["A","Z"],["0","9"],"_"] |  |
 | `text.control-click-command` | string | "goto-definition" | Command to run after control clicking on some text. |
