@@ -1191,33 +1191,17 @@ proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope, arena: ptr Ar
   if result.highlighter.isSome:
     result.layerIterator = result.highlighter.get.snapshot[].layerIterator
 
-  if theme != nil:
-    result.defaultColor = theme.color("editor.foreground", color(1, 1, 1))
-    result.errorColor = theme.tokenColor("error", result.defaultColor)
-    result.warningColor = theme.tokenColor("warning", result.defaultColor)
-    result.infoColor = theme.tokenColor("info", result.defaultColor)
-    result.hintColor = theme.tokenColor("hint", result.defaultColor)
-
-    const names = [
-      "rainbow0",
-      "rainbow1",
-      "rainbow2",
-      "rainbow3",
-      "rainbow4",
-      "rainbow5",
-      "rainbow6",
-      "rainbow7",
-      "rainbow8",
-      "rainbow9",
-    ]
-    if result.highlighter.isSome and result.highlighter.get.rainbowParens:
-      for name in names:
-        let c = theme.color(name, color(0, 0, 0, 0))
-        if c == color(0, 0, 0, 0):
-          break
-        result.parenColors.add c
-      if result.parenColors.len > 0 and result.highlighter.get.snapshot[].layers.len > 0:
-        result.treeCursor = initTreeCursor(result.highlighter.get.snapshot[].layers[0].tree.root).some
+proc setThemeColors*(self: var StyledChunkIterator,
+    foreground, error, warning, info, hint: Color, rainbow: seq[Color]) =
+  self.defaultColor = foreground
+  self.errorColor = error
+  self.warningColor = warning
+  self.infoColor = info
+  self.hintColor = hint
+  self.parenColors = rainbow
+  if self.highlighter.isSome and self.highlighter.get.rainbowParens:
+    if self.parenColors.len > 0 and self.highlighter.get.snapshot[].layers.len > 0:
+      self.treeCursor = initTreeCursor(self.highlighter.get.snapshot[].layers[0].tree.root).some
 
 func point*(self: StyledChunkIterator): Point = self.chunks.state.nextPoint
 func point*(self: StyledChunk): Point = self.chunk.point

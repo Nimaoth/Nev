@@ -374,19 +374,16 @@ when implModule:
             b.node:
               discard b.fit().textStyleIndex(int(UiStyleIndexSmallText)).text(label)
               if status != None:
-                let (textKey, lineKey, fallback) = case status
+                let index = case status
                   of Added, Untracked:
-                    ("diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground", color(0.1, 0.2, 0.1))
+                    UiStyleIndexDiffInsertedText
                   of Deleted:
-                    ("diffEditor.removedTextBackground", "diffEditor.removedLineBackground", color(0.2, 0.1, 0.1))
+                    UiStyleIndexDiffRemovedText
                   else:
-                    ("diffEditor.changedTextBackground", "diffEditor.changedLineBackground", color(0.2, 0.2, 0.1))
-                var statusColor = fallback.lighten(0.1)
-                if view.themes != nil and view.themes.theme != nil:
-                  let theme = view.themes.theme
-                  let lineColor = theme.color(@[lineKey, textKey], fallback)
-                  statusColor = theme.color(textKey, lineColor.lighten(0.1))
-                discard b.textColor(rgba(statusColor.r, statusColor.g, statusColor.b, 1))
+                    UiStyleIndexDiffChangedText
+                var statusColor = b.themeStyle(index)[].fillColor
+                statusColor.a = 1
+                discard b.textColor(statusColor)
         b.node:
           let (_, name) = file.path.splitPath
           discard b.fitY().flex(1, 1, 0).maskChildren().textStyleIndex(int(if selected:
@@ -540,11 +537,8 @@ when implModule:
         asyncSpawn self.refreshCommitsAsync()
         asyncSpawn self.refreshChangelistsAsync()
 
-      let panelBase = nui.themeStyle(UiStyleIndexPanel)[].fillColor
-      let panelColor = if self.active:
-        accentVariation(panelBase, 0.06'f32, 1.12'f32)
-      else:
-        panelBase
+      let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
+      let headerStyle = if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
       let sectionGap = if nui.backendType == UiBackendType.Terminal:
         1.0'f32
       else:
@@ -552,7 +546,7 @@ when implModule:
 
       template sectionTitle(title: string) =
         nui.node:
-          discard nui.fillX().fitY().styleIndex(UiStyleIndexHeader)
+          discard nui.fillX().fitY().styleIndex(headerStyle)
             .fillBackground().backendPadding(2)
             .textStyleIndex(int(UiStyleIndexHeaderText)).text(title)
 
@@ -577,13 +571,13 @@ when implModule:
       # leaders, keyword/comment colors); new replaces rules with sectionTitle
       # bars + gaps and hides commands behind the "…" menu (see §24).
       nui.layoutVertical("git-ui"):
-        discard nui.fillX().fillY().styleIndex(UiStyleIndexPanel)
-          .fillBackground().backgroundColor(panelColor).padding(0).backendGap(2)
+        discard nui.fillX().fillY().styleIndex(panelStyle)
+          .fillBackground().padding(0).backendGap(2)
         if nui.wasClicked(includeChildren = true):
           getServiceChecked(LayoutService).tryActivateView(self)
 
         nui.layoutHorizontal("git-ui-header"):
-          discard nui.fillX().fitY().styleIndex(UiStyleIndexHeader)
+          discard nui.fillX().fitY().styleIndex(headerStyle)
             .fillBackground().backendPadding(4).backendGap(8).cornerRadius(0)
           nui.node:
             discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))

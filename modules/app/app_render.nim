@@ -8,6 +8,7 @@ import popup, view
 import status_line
 from scripting_api import nil
 import vcs, service
+import nuigi/debug/profiler
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -15,12 +16,13 @@ import vcs, service
 logCategory "widget_builder"
 
 import app
+import app/theme_styles
 from nuigi import UiBuilder, UiColor, UiBackendType, rgba, fillX, fillY, fitY, fit, height,
   backgroundColor, borderColor, borderWidth, padding, gap, text, textColor,
   wrapText, node, layoutVertical, layoutHorizontal, layoutVerticalReverse,
   layoutHorizontalReverse, fillBackground, styleIndex, textStyleIndex,
   anchors, anchorsX, offsets, pivotY, finishAnchors, noHover, size,
-  pushId, popId, themeStyle, maskChildren, UiStyleIndex, UiTextStyleIndex
+  pushId, popId, themeStyle, themeTextStyle, maskChildren, UiStyleIndex, UiTextStyleIndex
 from nuigi/widgets import TableColumn, tableLayout, tableColumnFit,
   tableColumnFill
 
@@ -40,8 +42,7 @@ proc renderNextPossibleInputsNui(
       return
 
     let themes = getServiceChecked(ThemeService)
-    let defaultColor = themes.theme.color(
-      "editor.foreground", color(225 / 255, 200 / 255, 200 / 255))
+    let defaultColor = nui.themeTextStyle(UiStyleIndexDefaultText)[].textColor.toColor
     let defaultUiColor = toUiColorNui(defaultColor)
     let keyColor = toUiColorNui(
       themes.theme.tokenColor("number", defaultColor))
@@ -96,8 +97,7 @@ proc renderToastsNui(self: App, nui: var UiBuilder) {.raises: [Exception].} =
       return
 
     let themes = getServiceChecked(ThemeService)
-    let defaultTextColor = themes.theme.color(
-      "editor.foreground", color(225 / 255, 200 / 255, 200 / 255))
+    let defaultTextColor = nui.themeTextStyle(UiStyleIndexDefaultText)[].textColor.toColor
     let toastStyle = self.config.runtime.getUiToastStyle()
     let toastMaxTime = self.config.runtime.getUiToastDuration().float64 * 0.001
     let animateToasts = self.config.runtime.getUiToastAnimation()
@@ -198,8 +198,10 @@ proc renderToastsNui(self: App, nui: var UiBuilder) {.raises: [Exception].} =
 {.pop gcsafe.}
 
 proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.raises: [Exception].} =
-  ## New version using nuigi builder – builds a status line and stubs the rest of the UI.
   {.cast(gcsafe).}:
+    prof("updateWidgetTreeNui")
+    let themes = getServiceChecked(ThemeService)
+    nui.syncThemeStyles(themes.theme)
     let commands = getServiceChecked(CommandLineService)
     let layout = getServiceChecked(LayoutService)
     let runtimeConfig = self.config.runtime
@@ -213,12 +215,12 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
       discard nui.fillX().fillY()
       # Status bar – built with nuigi, mimics old builder's status line
       # layoutHorizontalReverse already creates its own node, so we use it directly as the status bar container
-      # NUI-GAP: old status bar switches tab.active/inactiveBackground on
-      # commandLineMode, separates sections with " | " via section() helper and
-      # supports fg/bg theme overloads; new uses fixed Header style + gap(8) and
-      # DefaultText only (see §24).
+      # NUI-GAP: old status bar separates sections with " | " via section()
+      # and supports fg/bg theme overloads; new uses gap(8) and DefaultText.
       nui.layoutHorizontalReverse("nui-status-line"):
         discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backendPadding(4).backendGap(8)
+        if commands.commandLineMode:
+          discard nui.backgroundColor(nui.themeStyle(UiStyleIndexTabBarItemActive)[].fillColor)
         # Left side: status sections from config
         nui.layoutHorizontal("nui-status-left"):
           discard nui.fit().backendGap(8)

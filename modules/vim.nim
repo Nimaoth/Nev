@@ -173,7 +173,7 @@ when implModule:
   proc highlightTempAsync(editor: TextEditor, ranges: seq[Range[Point]]) {.async.} =
     if editor.editor.getDecorationComponent().getSome(decos):
       for range in ranges:
-        decos.addCustomHighlight(copyHighlightId, range, "editor.findMatchBackground")
+        decos.addCustomHighlight(copyHighlightId, range, "search-match")
       try:
         await sleepAsync(150.milliseconds)
       except CatchableError:

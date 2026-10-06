@@ -17,6 +17,7 @@ when implModule:
   import command_service
   import vmath, chroma
   import theme
+  import app/theme_styles
   import misc/[render_command, event]
   import nuigi
   import nuigi/widgets
@@ -39,6 +40,7 @@ when implModule:
       cachedBufferId: BufferID
       cachedLen: int
       cachedMaxCol: int
+      cachedBranchColors: array[7, Color]
       selected*: int
       autoApply*: bool = false
 
@@ -295,20 +297,20 @@ when implModule:
           if nodeIndex != -1:
             cmd.executeCommand(&"switch-undo-branch {nodeIndex}")
 
-  proc generateLines(self: UndoTreeView, buffer: Buffer, theme: Theme) =
+  proc undoBranchColors(nui: UiBuilder): array[7, Color] =
+    const indices = [UiStyleIndexTerminalAnsiBrightYellowText,
+      UiStyleIndexTerminalAnsiRedText, UiStyleIndexTerminalAnsiGreenText,
+      UiStyleIndexTerminalAnsiBlueText, UiStyleIndexTerminalAnsiMagentaText,
+      UiStyleIndexTerminalAnsiCyanText, UiStyleIndexTerminalAnsiYellowText]
+    for i, index in indices:
+      result[i] = nui.themeTextStyle(index)[].textColor.toColor
+
+  proc generateLines(self: UndoTreeView, buffer: Buffer, nui: UiBuilder) =
     # let t = startTimer()
     # defer:
     #   echo &"parse took {t.elapsed.ms}ms"
 
-    let branchColors = [
-      (theme.color("terminal.ansiBrightYellow", color(1.0, 1.0, 0.7)), &{TextBold}),
-      (theme.color("terminal.ansiRed", color(1.0, 0.5, 0.5)), 0.UINodeFlags),
-      (theme.color("terminal.ansiGreen", color(0.5, 1.0, 0.5)), 0.UINodeFlags),
-      (theme.color("terminal.ansiBlue", color(0.5, 0.5, 1.0)), 0.UINodeFlags),
-      (theme.color("terminal.ansiMagenta", color(1.0, 0.5, 1.0)), 0.UINodeFlags),
-      (theme.color("terminal.ansiCyan", color(0.5, 1.0, 1.0)), 0.UINodeFlags),
-      (theme.color("terminal.ansiYellow", color(1.0, 1.0, 0.5)), 0.UINodeFlags),
-    ]
+    self.cachedBranchColors = nui.undoBranchColors()
 
     let tree {.cursor.} = buffer.history.undoTree
     if buffer.remoteId != self.cachedBufferId:
@@ -347,9 +349,9 @@ when implModule:
           newPrevNodes.add (cell.col, line.nodeIdx, lineIndex)
           prev = newPrevNodes.high
 
-        let (charColor, charStyle) = branchColors[prev mod branchColors.len]
-        cell.color = charColor
-        cell.style = charStyle
+        let colorIndex = prev mod self.cachedBranchColors.len
+        cell.color = self.cachedBranchColors[colorIndex]
+        cell.style = if colorIndex == 0: &{TextBold} else: 0.UINodeFlags
         if prev in 0..prevNodes.high:
           cell.nodeLineIndex = prevNodes[prev].child
 
@@ -466,9 +468,9 @@ when implModule:
           if tree.nodes.len > 0:
             hasTree = true
             if buffer.remoteId != self.cachedBufferId or
-                tree.nodes.len != self.cachedLen:
-              self.generateLines(buffer,
-                getServiceChecked(ThemeService).theme)
+                tree.nodes.len != self.cachedLen or
+                self.cachedBranchColors != nui.undoBranchColors():
+              self.generateLines(buffer, nui)
             currentNode = tree.current
             let now = getTime().toUnix().int64
             lineDetails = newSeq[string](self.cachedLines.len)
@@ -497,14 +499,11 @@ when implModule:
         charWidth = 1.0'f32
         lineHeight = 1.0'f32
 
-      let panelBase = nui.themeStyle(UiStyleIndexPanel)[].fillColor
-      let panelColor = if self.active:
-        accentVariation(panelBase, 0.06'f32, 1.12'f32)
-      else:
-        panelBase
+      let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
+      let headerStyle = if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
       nui.layoutVertical("undo-tree"):
-        discard nui.fillX().fillY().styleIndex(UiStyleIndexPanel)
-          .fillBackground().backgroundColor(panelColor).backendPadding(0).backendGap(4)
+        discard nui.fillX().fillY().styleIndex(panelStyle)
+          .fillBackground().backendPadding(0).backendGap(4)
         nui.nodeStorageParent()
         let rootIndex = nui.currentNodeIndex
         let storage = nui.getOrCreateUndoTreeNuiStorage(nui.currentNode)
@@ -518,7 +517,7 @@ when implModule:
           layout.tryActivateView(self)
 
         nui.layoutHorizontal("undo-tree-header"):
-          discard nui.fillX().fitY().styleIndex(UiStyleIndexHeader)
+          discard nui.fillX().fitY().styleIndex(headerStyle)
             .fillBackground().backendPadding(4).backendGap(4).cornerRadius(0)
           nui.node:
             discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))

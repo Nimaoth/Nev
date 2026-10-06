@@ -142,12 +142,14 @@ when implModule:
     nui.layoutVertical:
       discard nui.fillX().fitY().backendPadding(4).backendGap(2).maskChildren()
       if section.border:
-        discard nui.styleIndex(UiStyleIndexPanel).fillBackground()
+        let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
+        discard nui.styleIndex(panelStyle).fillBackground()
           .backendBorderWidth(1).backendPadding(8, 1)
-          .borderColor(nui.themeStyle(UiStyleIndexPanel)[].borderColor)
+          .borderColor(nui.themeStyle(panelStyle)[].borderColor)
       if section.title.len > 0:
         nui.node:
-          discard nui.fillX().fitY().styleIndex(UiStyleIndexHeader)
+          discard nui.fillX().fitY().styleIndex(
+            if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader)
             .fillBackground().backendPadding(2)
             .textStyleIndex(int(UiStyleIndexHeaderText)).text(section.title)
       if section.renderer in self.sectionRenderers:
@@ -179,15 +181,9 @@ when implModule:
         0.0'f32
       else:
         max(8.0'f32, parentWidth * colGapPercent)
-      let panelBase = nui.themeStyle(UiStyleIndexPanel)[].fillColor
-      let panelColor = if self.active:
-        accentVariation(panelBase, 0.06'f32, 1.08'f32)
-      else:
-        panelBase
-
       nui.layoutVertical("dashboard"):
-        discard nui.fillX().fillY().styleIndex(UiStyleIndexPanel)
-          .fillBackground().backgroundColor(panelColor)
+        discard nui.fillX().fillY().styleIndex(
+          if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel).fillBackground()
         if nui.wasClicked(includeChildren = true):
           getServiceChecked(LayoutService).tryActivateView(self)
 

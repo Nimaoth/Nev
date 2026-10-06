@@ -1518,14 +1518,12 @@ when implModule and defined(profiler):
       try:
         self.renderCommandPoolCursor = 0
         self.resetDirty()
-        let baseBg = nui.themeStyle(UiStyleIndexPanel)[].fillColor
-        let bgColor = if self.active: accentVariation(baseBg, 0.06'f32, 1.12'f32) else: baseBg
-        let headerBase = nui.themeStyle(UiStyleIndexHeader)[].fillColor
-        let headerColor = if self.active: accentVariation(headerBase, 0.04'f32, 1.10'f32) else: headerBase
+        let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
+        let headerStyle = if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
         nui.layoutVertical("profiler-root"):
-          discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).backendPadding(4).backendGap(4)
+          discard nui.fillX().fillY().fillBackground().styleIndex(panelStyle).backendPadding(4).backendGap(4)
           nui.layoutHorizontal("profiler-tabs"):
-            discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backgroundColor(headerColor).backendPadding(4).backendGap(4)
+            discard nui.fillX().fitY().fillBackground().styleIndex(headerStyle).backendPadding(4).backendGap(4)
             let memLabel =
               if self.activeTabIndex == 0: "[Memory]"
               else: " Memory "

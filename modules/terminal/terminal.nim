@@ -31,7 +31,9 @@ when implModule:
   import chroma, pixie, pixie/fileformats/png
   import nimsumtree/[rope]
   import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, async_process, wrap, case_swap, jsonex, array_set, tui]
-  from nuigi import UiBuilder
+  from nuigi import UiBuilder, UiStyleIndexTerminalAnsiBlackText,
+    UiStyleIndexTerminalAnsiBrightWhiteText, themeTextStyle
+  import app/theme_styles
   import platform
   import finder, previewer
   import input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, selector_popup/builder, vfs, vfs_service
@@ -2537,24 +2539,11 @@ when implModule:
   proc setTheme(self: Terminal, theme: Theme) =
     if theme == nil:
       return
-    let colors1 = @[
-      theme.color("terminal.ansiBlack", color(0.5, 0.5, 0.5)),
-      theme.color("terminal.ansiRed", color(1.0, 0.5, 0.5)),
-      theme.color("terminal.ansiGreen", color(0.5, 1.0, 0.5)),
-      theme.color("terminal.ansiYellow", color(1.0, 1.0, 0.5)),
-      theme.color("terminal.ansiBlue", color(0.5, 0.5, 1.0)),
-      theme.color("terminal.ansiMagenta", color(1.0, 0.5, 1.0)),
-      theme.color("terminal.ansiCyan", color(0.5, 1.0, 1.0)),
-      theme.color("terminal.ansiWhite", color(1.0, 1.0, 1.0)),
-      theme.color("terminal.ansiBrightBlack", color(0.7, 0.7, 0.7)),
-      theme.color("terminal.ansiBrightRed", color(1.0, 0.7, 0.7)),
-      theme.color("terminal.ansiBrightGreen", color(0.7, 1.0, 0.7)),
-      theme.color("terminal.ansiBrightYellow", color(1.0, 1.0, 0.7)),
-      theme.color("terminal.ansiBrightBlue", color(0.7, 0.7, 1.0)),
-      theme.color("terminal.ansiBrightMagenta", color(1.0, 0.7, 1.0)),
-      theme.color("terminal.ansiBrightCyan", color(0.7, 1.0, 1.0)),
-      theme.color("terminal.ansiBrightWhite", color(1.0, 1.0, 1.0)),
-    ]
+    let platform = getServiceChecked(PlatformService).platform
+    platform.nui.syncThemeStyles(theme)
+    var colors1: seq[chroma.Color]
+    for index in UiStyleIndexTerminalAnsiBlackText .. UiStyleIndexTerminalAnsiBrightWhiteText:
+      colors1.add platform.nui.themeTextStyle(index)[].textColor.toColor
     let colors2: seq[tuple[r, g, b: uint8]] = colors1.mapIt((
       r: (it.r * 255).int.clamp(0, 255).uint8,
       g: (it.g * 255).int.clamp(0, 255).uint8,

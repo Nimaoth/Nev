@@ -4,6 +4,7 @@ import pixie
 import misc/[util, custom_logger, custom_unicode, tui]
 import misc/input_api as input_api
 import theme, view, config_provider, platform
+import app/theme_styles
 import types_impl, core_settings
 
 from std/colors as colors import nil
@@ -121,9 +122,9 @@ proc buildTerminalRowNui(nui: var UiBuilder, itemIndex, userData: int) {.nimcall
     let charH = storage.cellHeight
     let fontSize = storage.fontSize
     let monoFontId = storage.fontId
-    let textColor = self.terminals.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-    var cursorFg = self.terminals.themes.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
-    let cursorBg = self.terminals.themes.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
+    let textColor = nui.themeTextStyle(UiStyleIndexDefaultText)[].textColor.toColor
+    var cursorFg = nui.themeTextStyle(UiStyleIndexCursorText)[].textColor.toColor
+    let cursorBg = nui.themeStyle(UiStyleIndexCursor)[].fillColor.toColor
     if self.mode == "normal":
       cursorFg = cursorFg.darken(0.3)
     let drawCursor = self.terminal.cursor.visible
@@ -319,14 +320,12 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder,
     outWidth, outHeight, outCellWidth, outCellHeight: var int) {.gcsafe, raises: [].} =
   {.cast(gcsafe).}:
     self.resetDirty()
-    let baseBg = nui.themeStyle(UiStyleIndexPanel)[].fillColor
-    let bgColor = if self.active: accentVariation(baseBg, 0.06'f32, 1.12'f32) else: baseBg
-    let headerBase = nui.themeStyle(UiStyleIndexHeader)[].fillColor
-    let headerColor = if self.active: accentVariation(headerBase, 0.04'f32, 1.10'f32) else: headerBase
+    let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
+    let headerStyle = if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
     nui.layoutVertical("terminal-root"):
-      discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).backendPadding(0).backendGap(4)
+      discard nui.fillX().fillY().fillBackground().styleIndex(panelStyle).backendPadding(0).backendGap(4)
       nui.layoutHorizontal("terminal-header"):
-        discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backgroundColor(headerColor).backendPadding(4).backendGap(4).cornerRadius(0)
+        discard nui.fillX().fitY().fillBackground().styleIndex(headerStyle).backendPadding(4).backendGap(4).cornerRadius(0)
         template addSection(txt: string) =
           nui.node:
             discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(txt)
@@ -349,7 +348,7 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder,
           else:
             addSection(self.terminal.command)
       nui.node("terminal-body"):
-        discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).padding(0).maskChildren()
+        discard nui.fillX().fillY().fillBackground().styleIndex(panelStyle).padding(0).maskChildren()
         let bodyIndex = nui.currentNodeIndex
         let existing = nui.nodeStorageGet(nui.currentNode)
         let storage = if existing != nil and existing of TerminalInputNuiStorage:

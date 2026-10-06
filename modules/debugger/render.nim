@@ -6,7 +6,7 @@ import types_impl, debugger, dap_client
 
 from nuigi import UiBuilder, UiBackendType, UiStyleIndex, UiTextStyleIndex,
   UiNodeStorageData, text, textStyleIndex, fit, fitY, node, fillX, fillY,
-  fillBackground, styleIndex, backgroundColor, accentVariation, themeStyle,
+  fillBackground, styleIndex,
   padding, gap, layoutVertical, layoutHorizontal, currentNode, currentNodeIndex,
   nodeStorage, nodeStorageGet, nodeStorageParent,
   wasClicked, wasHovered, wrapText
@@ -34,17 +34,11 @@ template debuggerChrome(nui: var UiBuilder, view: View, rootName,
     titleText: string, body: untyped) =
   ## Shared Panel root + Header bar chrome (mirrors renderView in widget_library).
   block:
-    let baseBg = nui.themeStyle(UiStyleIndexPanel)[].fillColor
-    let bgColor =
-      if view.active: accentVariation(baseBg, 0.06'f32, 1.12'f32)
-      else: baseBg
-    let headerBase = nui.themeStyle(UiStyleIndexHeader)[].fillColor
-    let headerColor =
-      if view.active: accentVariation(headerBase, 0.04'f32, 1.10'f32)
-      else: headerBase
+    let panelStyle = if view.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
+    let headerStyle = if view.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
     nui.layoutVertical(rootName):
       discard nui.fillX().fillY().fillBackground().styleIndex(
-        UiStyleIndexPanel).backgroundColor(bgColor).backendPadding(4).backendGap(4)
+        panelStyle).backendPadding(4).backendGap(4)
       try:
         if nui.wasClicked(includeChildren = true):
           getServiceChecked(LayoutService).tryActivateView(view)
@@ -52,7 +46,7 @@ template debuggerChrome(nui: var UiBuilder, view: View, rootName,
         discard
       nui.layoutHorizontal(rootName & "-header"):
         discard nui.fillX().fitY().fillBackground().styleIndex(
-          UiStyleIndexHeader).backgroundColor(headerColor).backendPadding(4).backendGap(4)
+          headerStyle).backendPadding(4).backendGap(4)
         nui.node:
           discard nui.fit().textStyleIndex(
             int(UiStyleIndexHeaderText)).text(titleText)

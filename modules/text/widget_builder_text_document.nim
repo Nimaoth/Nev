@@ -11,6 +11,7 @@ import text/[syntax_map, overlay_map, wrap_map, diff_map, display_map]
 import view, treesitter/treesitter
 import treesitter_component, decoration_component, hover_component, contextline_component
 import text_editor_component
+import app/theme_styles
 
 import nuigi
 import nuigi/debug/profiler
@@ -38,6 +39,20 @@ proc `*`(c: Color, v: Color): Color {.inline.} =
   result.g = c.g * v.g
   result.b = c.b * v.b
   result.a = c.a * v.a
+
+proc setThemeStyles(iter: var StyledChunkIterator, b: UiBuilder) =
+  var rainbow: seq[Color]
+  for index in UiStyleIndexRainbow0Text .. UiStyleIndexRainbow9Text:
+    let c = b.themeTextStyle(index)[].textColor.toColor
+    if c == color(0, 0, 0, 0):
+      break
+    rainbow.add c
+  iter.setThemeColors(
+    b.themeTextStyle(UiStyleIndexDefaultText)[].textColor.toColor,
+    b.themeTextStyle(UiStyleIndexErrorText)[].textColor.toColor,
+    b.themeTextStyle(UiStyleIndexWarningText)[].textColor.toColor,
+    b.themeTextStyle(UiStyleIndexInfoText)[].textColor.toColor,
+    b.themeTextStyle(UiStyleIndexHintText)[].textColor.toColor, rainbow)
 
 const textLineHeightHint* = 18.0'f32
 
@@ -164,6 +179,7 @@ proc collectTextContextLineNui(b: var UiBuilder,
           highlighter = Highlighter.init(sm, storage.rainbowParens).some
       self.displayMap.setWhitespaceRendering(storage.whitespaceChar, storage.whitespaceColor)
       var iter = self.displayMap.iter(storage.arena.addr, highlighter, storage.theme)
+      iter.styledChunks.setThemeStyles(b)
       if start.column == 0:
         iter.seekLine(start.row.int)
       else:
@@ -268,8 +284,7 @@ proc buildTextContextOverlayNui(b: var UiBuilder, nodeIdx: int,
       let entries = self.contextLineComponent.getContextLines()
       if entries.len == 0:
         return
-      let contextColor = storage.theme.color(@["breadcrumbPicker.background"],
-        storage.baseBackground.lighten(0.05))
+      let contextColor = b.themeStyle(UiStyleIndexContext)[].fillColor.toColor
       let contextUiColor = rgba(contextColor.r.float32, contextColor.g.float32,
         contextColor.b.float32, contextColor.a.float32)
       let gutterWidth = if storage.lineNumbers == LineNumbers.None: 0.0'f32
@@ -293,8 +308,7 @@ proc buildTextContextOverlayNui(b: var UiBuilder, nodeIdx: int,
               b.buildTextContextChunksNui(line.chunks)
       else:
         let separator = " " & self.config.getContextLinesSeparator() & " "
-        let separatorColor = storage.theme.color("breadcrumb.foreground",
-          color(1, 1, 1).darken(0.3))
+        let separatorColor = b.themeTextStyle(UiStyleIndexContextText)[].textColor.toColor
         let separatorUiColor = rgba(separatorColor.r.float32,
           separatorColor.g.float32, separatorColor.b.float32,
           separatorColor.a.float32)
@@ -365,7 +379,7 @@ proc buildTextContextOverlayNui(b: var UiBuilder, nodeIdx: int,
     except:
       discard
 
-proc createNuiIter(self: TextDocumentEditor, storage: TextDocumentEditorNuiStorage) =
+proc createNuiIter(self: TextDocumentEditor, storage: TextDocumentEditorNuiStorage, b: UiBuilder) =
   ## Fresh forward iterator for this frame, stored on the node storage and reused
   ## across lines (one construction per frame instead of per line).
   ## Display iterators are single-pass by design: no level clears atEnd/done on
@@ -381,13 +395,14 @@ proc createNuiIter(self: TextDocumentEditor, storage: TextDocumentEditorNuiStora
       highlighter = Highlighter.init(sm, storage.rainbowParens).some
   editor.displayMap.setWhitespaceRendering(storage.whitespaceChar, storage.whitespaceColor)
   storage.textIter = editor.displayMap.iter(storage.arena.addr, highlighter, storage.theme)
+  storage.textIter.styledChunks.setThemeStyles(b)
   storage.textIter.styledChunks.diagnosticEndPoints = editor.document.diagnosticEndPoints
   if storage.indentGuide:
     storage.textIter.indentGuideColumn =
       editor.document.rope.indentRunes(storage.cursorLine).int.some
   storage.iterNextRow = -1
 
-proc createNuiDiffIter(self: TextDocumentEditor, storage: TextDocumentEditorNuiStorage) =
+proc createNuiDiffIter(self: TextDocumentEditor, storage: TextDocumentEditorNuiStorage, b: UiBuilder) =
   ## Fresh forward iterator over the diff (old) side for this frame, mirroring
   ## legacy createDiffIter (widget_builder_text_document.nim:1393).
   var editor = self
@@ -403,6 +418,7 @@ proc createNuiDiffIter(self: TextDocumentEditor, storage: TextDocumentEditorNuiS
   try:
     editor.diffDisplayMap.setWhitespaceRendering(storage.whitespaceChar, storage.whitespaceColor)
     storage.diffTextIter = editor.diffDisplayMap.iter(storage.arena.addr, highlighter, storage.theme)
+    storage.diffTextIter.styledChunks.setThemeStyles(b)
   except:
     discard
   storage.diffIterNextRow = -1
@@ -756,18 +772,14 @@ proc nuiArenaIntText(b: var UiBuilder, num: int): tuple[buf: ptr UncheckedArray[
     copyMem(mem, buf[0].addr, len)
     return (cast[ptr UncheckedArray[char]](mem), len)
 
-proc nuiDiagnosticColor(storage: TextDocumentEditorNuiStorage,
+proc nuiDiagnosticColor(b: UiBuilder,
     severity: Option[language_server.DiagnosticSeverity]): UiColor {.nimcall, gcsafe, raises: [].} =
-  let (tokenName, fallback) = case severity.get(language_server.DiagnosticSeverity.Hint)
-    of language_server.DiagnosticSeverity.Error: ("error", color(0.8, 0.2, 0.2))
-    of language_server.DiagnosticSeverity.Warning: ("warning", color(0.8, 0.8, 0.2))
-    of language_server.DiagnosticSeverity.Information: ("information", color(0.8, 0.8, 0.8))
-    of language_server.DiagnosticSeverity.Hint: ("hint", color(0.7, 0.7, 0.7))
-  let diagnosticColor =
-    if storage.theme != nil: storage.theme.tokenColor(tokenName, fallback)
-    else: fallback
-  return rgba(diagnosticColor.r.float32, diagnosticColor.g.float32,
-    diagnosticColor.b.float32, diagnosticColor.a.float32)
+  let index = case severity.get(language_server.DiagnosticSeverity.Hint)
+    of language_server.DiagnosticSeverity.Error: UiStyleIndexErrorText
+    of language_server.DiagnosticSeverity.Warning: UiStyleIndexWarningText
+    of language_server.DiagnosticSeverity.Information: UiStyleIndexInfoText
+    of language_server.DiagnosticSeverity.Hint: UiStyleIndexHintText
+  b.themeTextStyle(index)[].textColor
 
 type TextCustomOverlayEntry = object
   renderId: int
@@ -883,9 +895,8 @@ proc buildInteractiveTextLineHorizontalNui(b: var UiBuilder, itemIndex: int,
             for sign in lineSigns:
               if usedSignWidth + sign.width > storage.signColumnWidth:
                 break
-              var signColor = color(225/255, 200/255, 200/255)
+              var signColor = b.themeTextStyle(UiStyleIndexDefaultText)[].textColor.toColor
               if storage.theme != nil:
-                signColor = storage.theme.color("editor.foreground", signColor)
                 if sign.color.len > 0:
                   signColor = storage.theme.tokenColor(sign.color, signColor)
               signColor = signColor * sign.tint
@@ -1029,7 +1040,7 @@ proc buildInteractiveTextLineHorizontalNui(b: var UiBuilder, itemIndex: int,
               var inlineMessage = " ■ " & message[0 ..< visibleMessageEnd]
               if visibleMessageEnd < diagnostic.message.len:
                 inlineMessage.add "..."
-              let diagnosticColor = storage.nuiDiagnosticColor(diagnostic.severity)
+              let diagnosticColor = b.nuiDiagnosticColor(diagnostic.severity)
               b.node:
                 discard b.position(xCursor, 0).fit().textStyleIndex(int(UiStyleIndexDefaultText))
                   .textColor(diagnosticColor).text(inlineMessage)
@@ -1138,7 +1149,7 @@ proc buildInteractiveTextLineNui(b: var UiBuilder, itemIndex: int,
             var message = diagnostic.message[0 ..< messageLimit]
             if messageLimit < diagnostic.message.len:
               message.add "..."
-            let diagnosticColor = storage.nuiDiagnosticColor(diagnostic.severity)
+            let diagnosticColor = b.nuiDiagnosticColor(diagnostic.severity)
             for messageLine in message.splitLines:
               var diagnosticNodeIdx = -1
               b.node:
@@ -1703,11 +1714,10 @@ proc buildTextHighlightsNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nim
         diffXOffset -= storage.listStorage.scrollOffsetX
       for highlights in self.decorations.customHighlights.values:
         for highlight in highlights:
-          let highlightColor = storage.theme.color(highlight.color,
-            color(200/255, 200/255, 200/255)) * highlight.tint
+          let highlightColor = b.highlightStyleColor(highlight.color).toColor * highlight.tint
           b.appendTextHighlightNui(storage, highlight.selection, highlightColor, true, diffXOffset)
 
-      let selectionColor = storage.theme.color("selection.background", color(200/255, 200/255, 200/255))
+      let selectionColor = b.themeStyle(UiStyleIndexSelection)[].fillColor.toColor
       let inclusive = self.config.get("text.inclusive-selection", false)
       let thick = self.isThickCursor()
       for selection in self.selections:
@@ -1745,8 +1755,8 @@ proc buildTextCursorNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nimcall
         return
       # TODO(nui-text): cursor trail animation (cursorHistories + markDirty loop),
       # lastCursorLocationBounds / hover + signature-help anchors (§14).
-      let cursorFg = storage.theme.color("editorCursor.foreground", color(200/255, 200/255, 200/255))
-      let cursorBg = storage.theme.color("editorCursor.background", color(50/255, 50/255, 50/255))
+      let cursorFg = b.themeTextStyle(UiStyleIndexCursorText)[].textColor.toColor
+      let cursorBg = b.themeStyle(UiStyleIndexCursor)[].fillColor.toColor
       let fgUi = rgba(cursorFg.r.float32, cursorFg.g.float32, cursorFg.b.float32, cursorFg.a.float32)
       let bgUi = rgba(cursorBg.r.float32, cursorBg.g.float32, cursorBg.b.float32, cursorBg.a.float32)
       let charW = storage.charWidth
@@ -2074,9 +2084,9 @@ proc buildTextHoverNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nimcall,
       let anchor = b.nuiPopupAnchor(storage, self.hoverComponent.hoverLocation, diffXOffset)
       if not anchor.found:
         return
-      let bg = storage.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
-      let border = storage.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
-      let fg = storage.theme.color("editor.foreground", color(1, 1, 1))
+      let bg = b.themeStyle(UiStyleIndexTooltip)[].fillColor.toColor
+      let border = b.themeStyle(UiStyleIndexTooltip)[].borderColor.toColor
+      let fg = b.themeTextStyle(UiStyleIndexDefaultText)[].textColor.toColor
       let bgUi = rgba(bg.r.float32, bg.g.float32, bg.b.float32, bg.a.float32)
       let borderUi = rgba(border.r.float32, border.g.float32, border.b.float32, border.a.float32)
       let fgUi = rgba(fg.r.float32, fg.g.float32, fg.b.float32, fg.a.float32)
@@ -2152,16 +2162,13 @@ proc buildTextSignatureHelpNui(b: var UiBuilder, nodeIdx: int, userData: int) {.
       let anchor = b.nuiPopupAnchor(storage, self.signatureHelpLocation.toPoint, diffXOffset)
       if not anchor.found:
         return
-      let bg = storage.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
-      let border = storage.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
-      let fg = storage.theme.color("editor.foreground", color(1, 1, 1))
-      let faded1 = storage.theme.color("editor.foreground.fade1", fg.darken(0.15))
-      let faded2 = storage.theme.color("editor.foreground.fade2", faded1.darken(0.15))
-      let highlighted = storage.theme.color("editor.foreground.highlight", fg.lighten(0.15))
-      let activeParamC = storage.theme.color("signatureHelp.activeParam", highlighted)
-      let activeSigC = storage.theme.color("signatureHelp.activeSignature", fg)
-      let inactiveParamC = storage.theme.color("signatureHelp.inactiveParam", faded1)
-      let inactiveSigC = storage.theme.color("signatureHelp.inactiveSignature", faded2)
+      let bg = b.themeStyle(UiStyleIndexTooltip)[].fillColor.toColor
+      let border = b.themeStyle(UiStyleIndexTooltip)[].borderColor.toColor
+      let fg = b.themeTextStyle(UiStyleIndexDefaultText)[].textColor.toColor
+      let activeParamC = b.themeTextStyle(UiStyleIndexSignatureActiveParamText)[].textColor.toColor
+      let activeSigC = b.themeTextStyle(UiStyleIndexSignatureActiveText)[].textColor.toColor
+      let inactiveParamC = b.themeTextStyle(UiStyleIndexSignatureInactiveParamText)[].textColor.toColor
+      let inactiveSigC = b.themeTextStyle(UiStyleIndexSignatureInactiveText)[].textColor.toColor
       let bgUi = rgba(bg.r.float32, bg.g.float32, bg.b.float32, bg.a.float32)
       let borderUi = rgba(border.r.float32, border.g.float32, border.b.float32, border.a.float32)
       let activeParamUi = rgba(activeParamC.r.float32, activeParamC.g.float32, activeParamC.b.float32, activeParamC.a.float32)
@@ -2324,13 +2331,11 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
 
   {.cast(gcsafe).}:
     self.resetDirty()
-    # Background color based on active state – use accentVariation instead of switching styleIndex (nuigi.nim:1122)
-    let baseBg = nui.themeStyle(UiStyleIndexPanel)[].fillColor
-    let bgColor = if self.active: accentVariation(baseBg, 0.06'f32, 1.12'f32) else: baseBg
-    let headerBase = nui.themeStyle(UiStyleIndexHeader)[].fillColor
-    let headerColor = if self.active: accentVariation(headerBase, 0.04'f32, 1.10'f32) else: headerBase
+    let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
+    let headerStyle = if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
+    let bgColor = nui.themeStyle(panelStyle)[].fillColor
     nui.layoutVertical("text-root"):
-      discard nui.fillX().fillBackground().styleIndex(UiStyleIndexPanel).backgroundColor(bgColor).padding(0).backendGap(4)
+      discard nui.fillX().fillBackground().styleIndex(panelStyle).padding(0).backendGap(4)
       if fitContentY:
         discard nui.fitY()
       else:
@@ -2359,10 +2364,7 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
         except:
           discard
         try:
-          let foreground = if storage.theme != nil:
-            storage.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-          else:
-            color(225/255, 200/255, 200/255)
+          let foreground = nui.themeTextStyle(UiStyleIndexDefaultText)[].textColor.toColor
           storage.whitespaceColor = if storage.theme != nil:
             storage.theme.tokenColor(self.config.getUiWhitespaceColor(), foreground)
           else:
@@ -2448,26 +2450,22 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
           storage.highlightInlineChanges = self.config.getUiHighlightInlineChanges()
         except:
           storage.highlightInlineChanges = false
-        if storage.theme != nil:
-          try:
-            storage.insertedLineBg = storage.theme.color(@["diffEditor.insertedLineBackground", "diffEditor.insertedTextBackground"], color(0.1, 0.2, 0.1))
-            storage.deletedLineBg = storage.theme.color(@["diffEditor.removedLineBackground", "diffEditor.removedTextBackground"], color(0.2, 0.1, 0.1))
-            storage.changedLineBg = storage.theme.color(@["diffEditor.changedLineBackground", "diffEditor.changedTextBackground"], color(0.2, 0.2, 0.1))
-            storage.insertedTextBg = storage.theme.color("diffEditor.insertedTextBackground", storage.insertedLineBg.lighten(0.1))
-            storage.deletedTextBg = storage.theme.color("diffEditor.removedTextBackground", storage.deletedLineBg.lighten(0.1))
-            storage.changedTextBg = storage.theme.color("diffEditor.changedTextBackground", storage.changedLineBg.lighten(0.1))
-          except:
-            discard
+        storage.insertedLineBg = nui.themeStyle(UiStyleIndexDiffInsertedLine)[].fillColor.toColor
+        storage.deletedLineBg = nui.themeStyle(UiStyleIndexDiffRemovedLine)[].fillColor.toColor
+        storage.changedLineBg = nui.themeStyle(UiStyleIndexDiffChangedLine)[].fillColor.toColor
+        storage.insertedTextBg = nui.themeStyle(UiStyleIndexDiffInsertedText)[].fillColor.toColor
+        storage.deletedTextBg = nui.themeStyle(UiStyleIndexDiffRemovedText)[].fillColor.toColor
+        storage.changedTextBg = nui.themeStyle(UiStyleIndexDiffChangedText)[].fillColor.toColor
         # Fresh forward iterator for this frame, reused across lines (one
         # construction per frame instead of per line).
         if self.document != nil and self.displayMap != nil:
-          createNuiIter(self, storage)
+          createNuiIter(self, storage, nui)
         if storage.renderDiff:
-          createNuiDiffIter(self, storage)
+          createNuiDiffIter(self, storage, nui)
       # Header – replicates `createHeader` logic from widget_library (mode, dirty, file, dir + right side)
       if self.renderHeader:
         nui.layoutHorizontal("text-header"):
-          discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backgroundColor(headerColor).backendPadding(4).backendGap(8).cornerRadius(0)
+          discard nui.fillX().fitY().fillBackground().styleIndex(headerStyle).backendPadding(4).backendGap(8).cornerRadius(0)
           let modeText = if self.mode.len == 0: "-" else: self.mode
           let isDirty = if self.document != nil: self.document.lastSavedRevision != self.document.revision else: false
           let dirtyMarker = if isDirty: "*" else: ""

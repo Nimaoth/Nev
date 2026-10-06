@@ -468,7 +468,7 @@ when implModule:
       self.readOnlyEditors.incl(editor)
 
       if editor.getDecorationComponent().getSome(decos):
-        decos.addCustomHighlight(debuggerCurrentLineId, point(location.row, 0)...point(location.row, uint32.high), "editorError.foreground", color(1, 1, 1, 0.3))
+        decos.addCustomHighlight(debuggerCurrentLineId, point(location.row, 0)...point(location.row, uint32.high), "error-text", color(1, 1, 1, 0.3))
       if editor.getInlayHintComponent().getSome(inlayHints):
         inlayHints.updateInlayHints(now = false)
       self.lastEditor = editor.some
