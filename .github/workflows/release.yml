@@ -63,7 +63,7 @@ jobs:
             deps
             nimcache
             emsdk
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('atlas.lock') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-atlas-0.11.0-${{ hashFiles('atlas.lock') }}
 
       - uses: actions/setup-python@v5
         with:
@@ -81,6 +81,12 @@ jobs:
       - run: echo "${GITHUB_WORKSPACE}/emsdk/upstream/emscripten" >> $GITHUB_PATH
 
       - run: nimble install https://github.com/Nimaoth/nimgen@0.5.4 -y
+
+      - name: Install Atlas 0.11.0
+        run: |
+          nimble install https://github.com/nim-lang/atlas@#b2b0b20feac205c75e5b6eff98a8dd8f0303ab64 -y
+          echo "$HOME/.nimble/bin" >> "$GITHUB_PATH"
+          "$HOME/.nimble/bin/atlas" --version
 
       - run: atlas rep
       - run: atlas install
@@ -124,7 +130,7 @@ jobs:
             deps
             nimcache
             emsdk
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('atlas.lock') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-atlas-0.11.0-${{ hashFiles('atlas.lock') }}
 
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         name: Download emscripten
@@ -135,6 +141,12 @@ jobs:
         run: ./emsdk/emsdk.ps1 install 4.0.10
 
       - run: nimble install https://github.com/Nimaoth/nimgen@0.5.4 -y
+
+      - name: Install Atlas 0.11.0
+        run: |
+          nimble install https://github.com/nim-lang/atlas@#b2b0b20feac205c75e5b6eff98a8dd8f0303ab64 -y
+          echo "$env:USERPROFILE\.nimble\bin" >> $env:GITHUB_PATH
+          & "$env:USERPROFILE\.nimble\bin\atlas.exe" --version
 
       - run: Invoke-WebRequest -Uri "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe" -OutFile "./rcedit-x64.exe"
 
