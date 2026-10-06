@@ -140,7 +140,7 @@ proc buildStatic() =
   let pathArgs = " " & ("--path:" & (nuigiDir / "src")).quoteShell &
     " " & ("--path:" & (nuigiDir / "vendor" / "nimfreetype")).quoteShell
   let output = when defined(windows): "nev-static.exe" else: "nev-static"
-  exec "nim c -o:" & output & " --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:nimcache/nev-static " &
+  exec "nim c -o:" & output & " --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:nimcache/nev-static -d:nimWasmtimeBuild " &
     staticArgs & pathArgs & linkArgs & " src/desktop_main.nim"
 
 var optParser = initOptParser("")
