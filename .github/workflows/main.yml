@@ -67,7 +67,7 @@ jobs:
             deps
             nimcache
             emsdk
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('atlas.lock') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-atlas-0.11.0-${{ hashFiles('atlas.lock') }}
 
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         name: Download emscripten
@@ -129,7 +129,7 @@ jobs:
             deps
             nimcache
             emsdk
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('atlas.lock') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-atlas-0.11.0-${{ hashFiles('atlas.lock') }}
 
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         name: Download emscripten
@@ -199,7 +199,7 @@ jobs:
           path: |
             deps
             nimcache
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('atlas.lock') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-atlas-0.11.0-${{ hashFiles('atlas.lock') }}
 
       - run: nimble install https://github.com/Nimaoth/nimgen@0.5.4 -y
 

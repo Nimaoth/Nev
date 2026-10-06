@@ -63,7 +63,7 @@ jobs:
             deps
             nimcache
             emsdk
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('atlas.lock') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-atlas-0.11.0-${{ hashFiles('atlas.lock') }}
 
       - uses: actions/setup-python@v5
         with:
@@ -130,7 +130,7 @@ jobs:
             deps
             nimcache
             emsdk
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('atlas.lock') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-atlas-0.11.0-${{ hashFiles('atlas.lock') }}
 
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         name: Download emscripten
