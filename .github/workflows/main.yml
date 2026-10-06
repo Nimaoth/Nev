@@ -145,7 +145,6 @@ jobs:
         run: |
           nimble install https://github.com/nim-lang/atlas@#b2b0b20feac205c75e5b6eff98a8dd8f0303ab64 -y
           echo "$env:USERPROFILE\.nimble\bin" >> $env:GITHUB_PATH
-          & "$env:USERPROFILE\.nimble\bin\atlas.exe" --version
 
       - run: atlas rep
       - run: atlas install
