@@ -1,11 +1,5 @@
 {
   "items": {
-    "vmath.Nimaoth.github.com": {
-      "dir": "$deps/vmath",
-      "url": "https://github.com/Nimaoth/vmath",
-      "commit": "661bdaac7546e16d087f066adfeb6ea7590106b4",
-      "version": ""
-    },
     "pixie.Nimaoth.github.com": {
       "dir": "$deps/pixie",
       "url": "https://github.com/Nimaoth/pixie",
@@ -162,12 +156,6 @@
       "commit": "b1cb7ec85f6e7690cf1261227cd2d552275e3e53",
       "version": ""
     },
-    "zippy": {
-      "dir": "$deps/zippy",
-      "url": "https://github.com/guzba/zippy",
-      "commit": "9ab82da84edfd6483d273dfcf8a921309945861e",
-      "version": ""
-    },
     "flatty": {
       "dir": "$deps/flatty",
       "url": "https://github.com/treeform/flatty",
@@ -220,12 +208,6 @@
       "dir": "$deps/opengl",
       "url": "https://github.com/nim-lang/opengl",
       "commit": "8e2e098f82dc5eefd874488c37b5830233cd18f4",
-      "version": ""
-    },
-    "pixie": {
-      "dir": "$deps/pixie",
-      "url": "https://github.com/treeform/pixie",
-      "commit": "5eda4949a3c8bea318cfac8e42060a8f90f3f35d",
       "version": ""
     },
     "urlly": {
