@@ -37,10 +37,15 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@v4.1.7
 
-      - run: apt-get update
-        continue-on-error: true
-      - run: apt-get install gcc-mingw-w64 libx11-xcb-dev curl wget build-essential git musl-tools cmake clang python3 -y
-        continue-on-error: true
+      - name: Install Linux build dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            gcc-mingw-w64 libx11-xcb-dev curl wget build-essential git musl-tools \
+            cmake clang meson ninja-build pkg-config python3 glslc \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
+            libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb xauth
 
       - name: Install stable rust toolchain
         uses: dtolnay/rust-toolchain@1.81
@@ -118,6 +123,9 @@ jobs:
           version: nightly:https://github.com/nim-lang/nightlies/releases/tag/2025-10-31-version-2-2-ab00c56904e3126ad826bb520d243513a139436a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Meson and Ninja
+        run: python -m pip install meson ninja
 
       - name: Cache nimble modules
         id: cache-nimble
