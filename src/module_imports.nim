@@ -64,6 +64,7 @@ when not defined(useDynlib):
   import "../modules/undo_tree.nim"
   import "../modules/language_server_paths.nim"
   import "../modules/angelscript_formatter.nim"
+  import "../modules/file_explorer.nim"
   import "../modules/debugger/debugger.nim"
   import "../modules/language_server_ctags.nim"
   import "../modules/language_server_regex.nim"
@@ -77,7 +78,6 @@ when not defined(useDynlib):
   import "../modules/lsp_server.nim"
   import "../modules/vim.nim"
   import "../modules/log_terminal.nim"
-  import "../modules/gui_platform/gui_platform.nim"
   import "../modules/markdown_component.nim"
   import "../modules/vcs_commands.nim"
   import "../modules/app/app.nim"
@@ -145,6 +145,7 @@ proc initModules*() =
   when declared(init_module_undo_tree): init_module_undo_tree()
   when declared(init_module_language_server_paths): init_module_language_server_paths()
   when declared(init_module_angelscript_formatter): init_module_angelscript_formatter()
+  when declared(init_module_file_explorer): init_module_file_explorer()
   when declared(init_module_debugger): init_module_debugger()
   when declared(init_module_language_server_ctags): init_module_language_server_ctags()
   when declared(init_module_language_server_regex): init_module_language_server_regex()
@@ -158,7 +159,6 @@ proc initModules*() =
   when declared(init_module_lsp_server): init_module_lsp_server()
   when declared(init_module_vim): init_module_vim()
   when declared(init_module_log_terminal): init_module_log_terminal()
-  when declared(init_module_gui_platform): init_module_gui_platform()
   when declared(init_module_markdown_component): init_module_markdown_component()
   when declared(init_module_vcs_commands): init_module_vcs_commands()
   when declared(init_module_app): init_module_app()
@@ -169,7 +169,6 @@ proc shutdownModules*() =
   when declared(shutdown_module_app): shutdown_module_app()
   when declared(shutdown_module_vcs_commands): shutdown_module_vcs_commands()
   when declared(shutdown_module_markdown_component): shutdown_module_markdown_component()
-  when declared(shutdown_module_gui_platform): shutdown_module_gui_platform()
   when declared(shutdown_module_log_terminal): shutdown_module_log_terminal()
   when declared(shutdown_module_vim): shutdown_module_vim()
   when declared(shutdown_module_lsp_server): shutdown_module_lsp_server()
@@ -183,6 +182,7 @@ proc shutdownModules*() =
   when declared(shutdown_module_language_server_regex): shutdown_module_language_server_regex()
   when declared(shutdown_module_language_server_ctags): shutdown_module_language_server_ctags()
   when declared(shutdown_module_debugger): shutdown_module_debugger()
+  when declared(shutdown_module_file_explorer): shutdown_module_file_explorer()
   when declared(shutdown_module_angelscript_formatter): shutdown_module_angelscript_formatter()
   when declared(shutdown_module_language_server_paths): shutdown_module_language_server_paths()
   when declared(shutdown_module_undo_tree): shutdown_module_undo_tree()
@@ -307,6 +307,7 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("undo_tree")
   loadModule("language_server_paths")
   loadModule("angelscript_formatter")
+  loadModule("file_explorer")
   loadModule("debugger")
   loadModule("language_server_ctags")
   loadModule("language_server_regex")
@@ -320,7 +321,6 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("lsp_server")
   loadModule("vim")
   loadModule("log_terminal")
-  loadModule("gui_platform")
   loadModule("markdown_component")
   loadModule("vcs_commands")
   loadModule("app")

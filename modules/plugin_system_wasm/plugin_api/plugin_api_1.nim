@@ -1,4 +1,4 @@
-import std/[macros, strutils, os, strformat, sequtils, json, sets, tables, atomics, locks]
+import std/[macros, strutils, os, strformat, sequtils, json, sets, tables, atomics, locks, unicode]
 import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils, regex, rope_regex, generational_seq, shared_buffer]
 import nimsumtree/[rope, sumtree, arc, clock, buffer]
 import service
@@ -15,6 +15,10 @@ import snippet_component, move_component, config_component, search_component
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 import lisp
 import vmath
+from nuigi import UiBuilder, UiImageId, UiNodeText, UiRenderCommand,
+  UiRenderCommandKind, customRenderCommands, rgba, uiString
+import nuigi/core/[arena, array_view]
+import nuigi/core/vecmath as nuiMath
 from scripting_api as sca import nil
 
 {.push gcsafe, raises: [].}
@@ -878,11 +882,133 @@ proc textEditorResolveAnchors*(instance: ptr InstanceData; editor: TextEditor; a
     let snapshot {.cursor.} = text.buffer.snapshot()
     return anchors.mapIt (it[0].summaryOpt(Point, snapshot).get(Point()), it[1].summaryOpt(Point, snapshot).get(Point())).toSelection.toWasm
 
+proc appendWasmOverlayCommand(command: RenderCommand, commands: ptr RenderCommands,
+    builder: var UiBuilder, output: var ArrayView[UiRenderCommand],
+    offsets: var seq[nuiMath.Vec2], currentOffset: var nuiMath.Vec2) =
+  case command.kind
+  of RenderCommandKind.Rect:
+    output.add UiRenderCommand(
+      kind: CmdRectStroke,
+      pos: nuiMath.vec2(command.bounds.x.float32, command.bounds.y.float32) + currentOffset,
+      size: nuiMath.vec2(command.bounds.w.float32, command.bounds.h.float32),
+      color: rgba(command.color.r, command.color.g, command.color.b, command.color.a),
+      thickness: 1)
+  of RenderCommandKind.FilledRect:
+    output.add UiRenderCommand(
+      kind: CmdRectFill,
+      pos: nuiMath.vec2(command.bounds.x.float32, command.bounds.y.float32) + currentOffset,
+      size: nuiMath.vec2(command.bounds.w.float32, command.bounds.h.float32),
+      color: rgba(command.color.r, command.color.g, command.color.b, command.color.a))
+  of RenderCommandKind.TextRaw:
+    if command.len > 0 and command.data != nil:
+      var textValue = newString(command.len)
+      copyMem(addr textValue[0], command.data, command.len)
+      let textIndex = block:
+        let index = builder.frame.texts.len
+        builder.frame.texts.add UiNodeText(
+          text: textValue.uiString,
+          fontSize: 16,
+          textColor: rgba(command.color.r, command.color.g, command.color.b, command.color.a))
+        (index + 1).uint16
+      output.add UiRenderCommand(
+        kind: CmdText,
+        pos: nuiMath.vec2(command.bounds.x.float32, command.bounds.y.float32) + currentOffset,
+        color: rgba(command.color.r, command.color.g, command.color.b, command.color.a),
+        textIndex: textIndex)
+  of RenderCommandKind.Text:
+    if command.arrangementIndex == uint32.high:
+      if command.textLen > 0 and commands != nil:
+        let textValue = commands[].strings[
+          command.textOffset.int ..< command.textOffset.int + command.textLen.int]
+        let textIndex = block:
+          let index = builder.frame.texts.len
+          builder.frame.texts.add UiNodeText(
+            text: textValue.uiString,
+            fontSize: 16 * max(0.1'f32, command.fontScale),
+            textColor: rgba(command.color.r, command.color.g, command.color.b, command.color.a))
+          (index + 1).uint16
+        output.add UiRenderCommand(
+          kind: CmdText,
+          pos: nuiMath.vec2(command.bounds.x.float32, command.bounds.y.float32) + currentOffset,
+          color: rgba(command.color.r, command.color.g, command.color.b, command.color.a),
+          textIndex: textIndex)
+    elif commands != nil and command.arrangementIndex.int < commands[].arrangements.len:
+      let indices = commands[].arrangements[command.arrangementIndex]
+      let arrangement = commands[].arrangement
+      let position = nuiMath.vec2(
+        command.bounds.x.float32, command.bounds.y.float32) + currentOffset
+      let color = rgba(command.color.r, command.color.g, command.color.b, command.color.a)
+      var textValue = newStringOfCap(
+        max(0, indices.runes.b - indices.runes.a + 1) * 4 + 4)
+      for index in indices.runes:
+        if index < 0 or index >= arrangement.runes.len:
+          continue
+        var rune = arrangement.runes[index]
+        if rune == ' '.Rune and TextDrawSpaces in command.flags:
+          rune = commands[].space
+        if rune.int32 < 32 and rune != ' '.Rune and rune != commands[].space:
+          continue
+        textValue.add($rune)
+      if textValue.len > 0:
+        let textIndex = block:
+          let index = builder.frame.texts.len
+          builder.frame.texts.add UiNodeText(
+            text: textValue.uiString,
+            fontSize: 16 * max(0.1'f32, command.fontScale),
+            textColor: color)
+          (index + 1).uint16
+        output.add UiRenderCommand(kind: CmdText, pos: position,
+          color: color, textIndex: textIndex)
+      if TextUndercurl in command.flags:
+        output.add UiRenderCommand(
+          kind: CmdRectFill,
+          pos: position + nuiMath.vec2(0, command.bounds.h.float32 - 2),
+          size: nuiMath.vec2(command.bounds.w.float32, 2),
+          color: rgba(command.underlineColor.r, command.underlineColor.g,
+            command.underlineColor.b, command.underlineColor.a))
+  of RenderCommandKind.Image:
+    output.add UiRenderCommand(
+      kind: CmdImage,
+      pos: nuiMath.vec2(command.bounds.x.float32, command.bounds.y.float32) + currentOffset,
+      size: nuiMath.vec2(command.bounds.w.float32, command.bounds.h.float32),
+      color: rgba(command.color.r, command.color.g, command.color.b, command.color.a),
+      imageId: UiImageId(cast[uint64](command.textureId)),
+      uv0: nuiMath.vec2(command.uv0.x, command.uv0.y),
+      uv1: nuiMath.vec2(command.uv1.x, command.uv1.y))
+  of RenderCommandKind.ScissorStart:
+    output.add UiRenderCommand(
+      kind: CmdClipPush,
+      pos: nuiMath.vec2(command.bounds.x.float32, command.bounds.y.float32) + currentOffset,
+      size: nuiMath.vec2(command.bounds.w.float32, command.bounds.h.float32))
+  of RenderCommandKind.ScissorEnd:
+    output.add UiRenderCommand(kind: CmdClipPop)
+  of RenderCommandKind.TransformStart:
+    offsets.add currentOffset
+    let offset = nuiMath.vec2(command.bounds.x.float32, command.bounds.y.float32)
+    currentOffset += offset
+    output.add UiRenderCommand(kind: CmdTransformPush, offset: offset)
+  of RenderCommandKind.TransformEnd:
+    if offsets.len > 0:
+      currentOffset = offsets.pop()
+    output.add UiRenderCommand(kind: CmdTransformPop)
+
+proc emitWasmOverlayCommands(builder: var UiBuilder, commands: var RenderCommands) =
+  var output = builder.frame.arena[].allocEmptyArray(
+    max(1, commands.commands.len * 2 + 1), UiRenderCommand)
+  var offsets: seq[nuiMath.Vec2]
+  var currentOffset = nuiMath.vec2(0, 0)
+  for command in commands.commands:
+    appendWasmOverlayCommand(
+      command, commands.addr, builder, output, offsets, currentOffset)
+  if output.len > 0:
+    discard builder.customRenderCommands(output)
+
 proc textEditorAddCustomRenderCallback*(instance: ptr InstanceData; editor: TextEditor; fun: uint32; data: uint32): int64 =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor.getDecorationComponent().getSome(decorations):
-    let id = decorations.addCustomRenderer proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 =
+    let id = decorations.addCustomRenderer proc(id: int, size: vmath.Vec2, localOffset: int, builder: var UiBuilder): vmath.Vec2 =
+      var commands: RenderCommands
       try:
         let ret = instance.funcs.handleTextOverlayRender(fun, data, id, size.toWasm, localOffset.int32).okOr(err):
           log lvlWarn, "Failed to call custom render callback: " & err.msg
@@ -900,6 +1026,7 @@ proc textEditorAddCustomRenderCallback*(instance: ptr InstanceData; editor: Text
             commands.commands.add(command)
         else:
           log lvlWarn, &"failed to get wasm buffer address"
+        builder.emitWasmOverlayCommands(commands)
         return vec2(width, height)
       except CatchableError as e:
         log lvlWarn, &"Failed to run custom render: {e.msg}"

@@ -31,7 +31,9 @@ when implModule:
   import chroma, pixie, pixie/fileformats/png
   import nimsumtree/[rope]
   import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, async_process, wrap, case_swap, jsonex, array_set, tui]
-  import ui/node
+  from nuigi import UiBuilder, UiStyleIndexTerminalAnsiBlackText,
+    UiStyleIndexTerminalAnsiBrightWhiteText, themeTextStyle
+  import app/theme_styles
   import platform
   import finder, previewer
   import input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, selector_popup/builder, vfs, vfs_service
@@ -219,19 +221,17 @@ when implModule:
     return rope
 
   proc createTerminalBuffer*(state: var TerminalThreadState): TerminalBuffer =
-    result.initTerminalBuffer(state.width, state.height)
+    let window = state.terminalRowWindow()
+    result.initTerminalBuffer(state.width, window.last - window.first)
 
     var cell: VTermScreenCell
     var pos: VTermPos
-    for scrolledRow in 0..<state.height:
+    for scrolledRow in 0..<result.height:
       var prevOverlap = 1
       for col in 0..<state.width:
         dec prevOverlap
 
-        let actualRow = if state.alternateScreen:
-          scrolledRow
-        else:
-          scrolledRow - state.scrollY
+        let actualRow = window.first + scrolledRow - state.scrollbackBufferLen
         if actualRow >= 0 and actualRow < state.height:
           pos.row = actualRow.cint
           pos.col = col.cint
@@ -248,6 +248,8 @@ when implModule:
             continue
 
           cell = state.scrollbackBuffer[scrollbackIndex][col]
+        else:
+          continue
 
         var c = TerminalChar(
           fg: fgNone,
@@ -338,9 +340,12 @@ when implModule:
   proc handleBufferOutputEvent(self: TerminalServiceImpl, terminal: Terminal, event: var OutputEvent) =
     # Swap to avoid expensive copies, and because ensureMove doesn't work for fields
     swap terminal.terminalBuffer, event.buffer
+    terminal.bufferFirstRow = event.firstRow
+    terminal.historyStart = event.historyStart
+    terminal.historyLength = event.historyLength
+    terminal.alternateScreen = event.alternateScreen
+    terminal.mouseTracking = event.mouseTracking
     terminal.sixels.setLen(0)
-    terminal.relativeScroll = event.relativeScroll
-    terminal.scrollHeight = event.scrollHeight
     for pos, s in event.sixels.mpairs:
       let h = s.contentHash
       terminal.sixels.add (h, pos[0], pos[1], s.px, s.py, s.width, s.height)
@@ -380,14 +385,16 @@ when implModule:
           terminal.cursor.shape = event.shape
         of OutputEventKind.Terminated:
           terminal.exitCode = event.exitCode
-          terminal.threadTerminated = true
           terminal.onTerminated.invoke(event.exitCode)
+        of OutputEventKind.ThreadStopped:
+          terminal.threadTerminated = true
           break
         of OutputEventKind.Rope:
           let rope = cast[ptr Rope](event.rope)
           terminal.onRope.invoke(rope)
         of OutputEventKind.Scroll:
           terminal.scrollY = event.scrollY
+          terminal.pendingScrollRows -= event.deltaY
         of OutputEventKind.Log:
           log event.level, &"[{terminal.id}][thread] {event.msg}"
 
@@ -656,6 +663,11 @@ when implModule:
     while state.inputChannel[].peek() > 0:
       try:
         let event = state.inputChannel[].recv()
+        if state.processTerminated and event.kind notin {
+            InputEventKind.Viewport, InputEventKind.Scroll, InputEventKind.Size,
+            InputEventKind.Terminate, InputEventKind.RequestRope,
+            InputEventKind.SetColorPalette, InputEventKind.EnableLog}:
+          continue
         case event.kind
         of InputEventKind.Text:
           let kittyKeyboardFlags = state.kittyKeyboardFlags
@@ -692,11 +704,12 @@ when implModule:
 
         of InputEventKind.MouseClick:
           if event.button in {input_api.MouseButton.Left, input_api.MouseButton.Middle, input_api.MouseButton.Right}: # todo: other buttons. DoubleClick would currently be interpreted as scroll
+            state.vterm.mouseMove(event.row.cint, event.col.cint, event.modifiers.toVtermModifiers)
             state.vterm.mouseButton(event.button.toVtermButton, event.pressed, event.modifiers.toVtermModifiers)
 
         of InputEventKind.Scroll:
-          let mouseFlags = state.vterm.getMouseFlags().int
-          if mouseFlags != 0 or state.alternateScreen:
+          let mouseFlags = if state.processTerminated: 0 else: state.vterm.getMouseFlags().int
+          if not state.processTerminated and (mouseFlags != 0 or state.alternateScreen):
             if event.deltaY > 0:
               state.vterm.mouseButton(4, true, event.modifiers.toVtermModifiers)
             else:
@@ -706,9 +719,19 @@ when implModule:
             let prevScrollY = state.scrollY
             state.scrollY += event.deltaY
             state.scrollY = state.scrollY.clamp(0, state.scrollbackBuffer.len)
-            state.outputChannel[].send OutputEvent(kind: OutputEventKind.Cursor, row: state.cursor.row + state.scrollY, col: state.cursor.col)
             state.outputChannel[].send OutputEvent(kind: OutputEventKind.Scroll, scrollY: state.scrollY, deltaY: state.scrollY - prevScrollY)
             state.dirty = true
+
+        of InputEventKind.Viewport:
+          state.viewportFirst = event.firstRow
+          state.viewportLast = event.lastRow
+          state.viewportRows = event.viewportRows
+          state.viewportHistoryStart = event.historyStart
+          state.viewportFollowTail = event.followTail
+          state.scrollY = if event.followTail: 0 else:
+            clamp(state.scrollbackBufferLen - event.scrollOffset.int +
+              int(state.historyStart - event.historyStart), 0, state.scrollbackBufferLen)
+          state.dirty = true
 
         of InputEventKind.Size:
           if event.col != 0 and event.row != 0:
@@ -725,7 +748,7 @@ when implModule:
               state.sendOutput(&"\e[8;{state.height};{state.width}t")
               state.sendOutput(&"\e[5;{state.cellPixelHeight};{state.cellPixelWidth}t")
 
-            if not state.useChannels:
+            if not state.useChannels and not state.processTerminated:
               when defined(windows):
                 ResizePseudoConsole(state.handles.hpcon, wincon.COORD(X: state.width.SHORT, Y: state.height.SHORT))
               else:
@@ -1585,6 +1608,19 @@ when implModule:
         return cmp(a.z, b.z)
       return cmp(a.imageId, b.imageId)
 
+  proc publishTerminalRows(state: var TerminalThreadState) =
+    state.outputChannel[].send OutputEvent(
+      kind: OutputEventKind.TerminalBuffer,
+      buffer: state.createTerminalBuffer(),
+      firstRow: state.terminalRowWindow().first,
+      historyStart: state.historyStart,
+      alternateScreen: state.alternateScreen,
+      mouseTracking: not state.processTerminated and state.vterm.getMouseFlags().int != 0,
+      sixels: state.sixels,
+      placements: state.kitty.createPlacements(),
+      historyLength: state.scrollbackBufferLen,
+    )
+
   proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
     daTag(daTerminal)
     var state = s
@@ -1609,20 +1645,13 @@ when implModule:
         for key in keysToRemove:
           state.sixels.del key
         if keysToRemove.len > 0:
-          state.outputChannel[].send OutputEvent(
-            kind: OutputEventKind.TerminalBuffer,
-            buffer: state[].createTerminalBuffer(),
-            sixels: state.sixels,
-            placements: state.kitty.createPlacements(),
-            relativeScroll: state.scrollY.float / state.scrollbackBufferLen.float,
-            scrollHeight: state.scrollbackBufferLen.float,
-          )
+          state.dirty = true
       ),
       movecursor: (proc(pos: VTermPos; oldpos: VTermPos; visible: cint; user: pointer): cint {.cdecl.} =
         let state = cast[ptr TerminalThreadState](user)
         state.cursor.row = pos.row.int
         state.cursor.col = pos.col.int
-        state.outputChannel[].send OutputEvent(kind: OutputEventKind.Cursor, row: pos.row.int + state.scrollY, col: pos.col.int)
+        state.outputChannel[].send OutputEvent(kind: OutputEventKind.Cursor, row: pos.row.int, col: pos.col.int)
         # state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorVisible, visible: visible != 0)
       ),
       settermprop: (proc(prop: VTermProp; val: ptr VTermValue; user: pointer): cint {.cdecl.} =
@@ -1631,6 +1660,7 @@ when implModule:
         of VTERM_PROP_ALTSCREEN:
           # echo &"settermmprop VTERM_PROP_ALTSCREEN {val.boolean != 0}"
           state.alternateScreen = val.boolean != 0
+          state.dirty = true
         of VTERM_PROP_CURSORVISIBLE:
           # log state, &"settermmprop VTERM_PROP_CURSORVISIBLE {val.boolean != 0}"
           state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorVisible, visible: val.boolean != 0)
@@ -1668,6 +1698,7 @@ when implModule:
           line[i] = cells[i]
         while state.scrollbackBuffer.len >= state.scrollbackLines:
           state.scrollbackBuffer.popFirst()
+          inc state.historyStart
         state.scrollbackBuffer.addLast(line)
         if state.scrollY != 0:
           inc state.scrollY
@@ -1688,6 +1719,7 @@ when implModule:
         # echo &"sb_clear: clear sixels"
         state.kitty.clear()
         state.sixels.clear()
+        state.historyStart += state.scrollbackBuffer.len.int64
         state.scrollbackBuffer.clear()
         state.scrollY = 0
         state.outputChannel[].send OutputEvent(kind: OutputEventKind.Scroll, scrollY: state.scrollY)
@@ -1816,14 +1848,7 @@ when implModule:
             state[].handleInputEvents()
             if state.dirty:
               state.dirty = false
-              state.outputChannel[].send OutputEvent(
-                kind: OutputEventKind.TerminalBuffer,
-                buffer: state[].createTerminalBuffer(),
-                sixels: state.sixels,
-                placements: state.kitty.createPlacements(),
-                relativeScroll: state.scrollY.float / state.scrollbackBufferLen.float,
-                scrollHeight: state.scrollbackBufferLen.float,
-              )
+              state[].publishTerminalRows()
           except CatchableError as e:
             echo "async error handle input events 1 ", e.msg
             discard
@@ -1838,14 +1863,7 @@ when implModule:
             state[].handleProcessOutput(state.processStdoutBuffer)
             if state.dirty:
               state.dirty = false
-              state.outputChannel[].send OutputEvent(
-                kind: OutputEventKind.TerminalBuffer,
-                buffer: state[].createTerminalBuffer(),
-                sixels: state.sixels,
-                placements: state.kitty.createPlacements(),
-                relativeScroll: state.scrollY.float / state.scrollbackBufferLen.float,
-                scrollHeight: state.scrollbackBufferLen.float,
-              )
+              state[].publishTerminalRows()
           except CatchableError as e:
             echo "async error handle process output 1 ", e.msg
             discard
@@ -1861,8 +1879,8 @@ when implModule:
       while true:
         if state.useChannels:
           try:
-            let timeout = 1000000000
-            poll(timeout)
+            # Input callbacks can request termination before poll blocks again.
+            poll(100)
           except AsyncError, CancelledError:
             # echo "async error ", getCurrentExceptionMsg()
             discard
@@ -1936,14 +1954,7 @@ when implModule:
 
         if state.dirty:
           state.dirty = false
-          state.outputChannel[].send OutputEvent(
-            kind: OutputEventKind.TerminalBuffer,
-            buffer: state.createTerminalBuffer(),
-            sixels: state.sixels,
-            placements: state.kitty.createPlacements(),
-            relativeScroll: state.scrollY.float / state.scrollbackBufferLen.float,
-            scrollHeight: state.scrollbackBufferLen.float,
-          )
+          state.publishTerminalRows()
 
     except OSError as e:
       log(&"terminal thread raised error: {e.msg}")
@@ -1951,20 +1962,30 @@ when implModule:
     # todo: on windows, could `buffer` still be in use by the overlapped read at this point?
     # If so we need to wait here, or cancel the read if possible.
 
-    log(&"terminal thread done, exit code {exitCode}")
+    log(&"terminal process done, exit code {exitCode}")
+    state.publishTerminalRows()
     state.outputChannel[].send OutputEvent(kind: OutputEventKind.Terminated, exitCode: exitCode)
-
-  proc sendEvent(self: Terminal, event: InputEvent) =
-    # debugf"sendEvent {event}"
-    if self.threadTerminated:
-      return
-    self.inputChannel[].send(event)
-    discard self.handles.inputEventSignal.fireSync()
-    when defined(windows):
-      discard SetEvent(self.handles.inputWriteEvent)
-    else:
-      var b: uint64 = 1
-      discard write(self.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
+    # Retain worker-owned history after the process exits, until the view closes.
+    try:
+      while state.processTerminated and not state.terminateRequested:
+        when defined(windows):
+          if WaitForSingleObject(state.handles.inputWriteEvent, INFINITE) == WAIT_FAILED:
+            raiseOSError(osLastError())
+        else:
+          var fd = TPollfd(fd: state.handles.inputWriteEventFd, events: POLLIN)
+          if poll(fd.addr, 1.Tnfds, -1) < 0:
+            raiseOSError(osLastError())
+          var signal: uint64
+          discard read(state.handles.inputWriteEventFd, signal.addr, sizeof(signal))
+        state.handleInputEvents()
+        if state.dirty:
+          state.dirty = false
+          state.publishTerminalRows()
+    except OSError as e:
+      state.outputChannel[].send OutputEvent(kind: OutputEventKind.Log,
+        level: lvlError, msg: &"Failed to serve terminal history: {e.msg}")
+    log("terminal thread done")
+    state.outputChannel[].send OutputEvent(kind: OutputEventKind.ThreadStopped)
 
   proc terminate*(self: Terminal) {.async.} =
     log lvlInfo, &"Close terminal '{self.command}'"
@@ -2357,7 +2378,6 @@ when implModule:
     result.inputChannel.createChannel()
     result.outputChannel.createChannel()
 
-    result.terminalBuffer.initTerminalBuffer(width, height)
     asyncSpawn self.handleOutputChannel(result)
 
     var threadState = TerminalThreadState(
@@ -2412,7 +2432,6 @@ when implModule:
     result.inputChannel.createChannel()
     result.outputChannel.createChannel()
 
-    result.terminalBuffer.initTerminalBuffer(width, height)
     asyncSpawn self.handleOutputChannel(result)
 
     var threadState = TerminalThreadState(
@@ -2520,24 +2539,11 @@ when implModule:
   proc setTheme(self: Terminal, theme: Theme) =
     if theme == nil:
       return
-    let colors1 = @[
-      theme.color("terminal.ansiBlack", color(0.5, 0.5, 0.5)),
-      theme.color("terminal.ansiRed", color(1.0, 0.5, 0.5)),
-      theme.color("terminal.ansiGreen", color(0.5, 1.0, 0.5)),
-      theme.color("terminal.ansiYellow", color(1.0, 1.0, 0.5)),
-      theme.color("terminal.ansiBlue", color(0.5, 0.5, 1.0)),
-      theme.color("terminal.ansiMagenta", color(1.0, 0.5, 1.0)),
-      theme.color("terminal.ansiCyan", color(0.5, 1.0, 1.0)),
-      theme.color("terminal.ansiWhite", color(1.0, 1.0, 1.0)),
-      theme.color("terminal.ansiBrightBlack", color(0.7, 0.7, 0.7)),
-      theme.color("terminal.ansiBrightRed", color(1.0, 0.7, 0.7)),
-      theme.color("terminal.ansiBrightGreen", color(0.7, 1.0, 0.7)),
-      theme.color("terminal.ansiBrightYellow", color(1.0, 1.0, 0.7)),
-      theme.color("terminal.ansiBrightBlue", color(0.7, 0.7, 1.0)),
-      theme.color("terminal.ansiBrightMagenta", color(1.0, 0.7, 1.0)),
-      theme.color("terminal.ansiBrightCyan", color(0.7, 1.0, 1.0)),
-      theme.color("terminal.ansiBrightWhite", color(1.0, 1.0, 1.0)),
-    ]
+    let platform = getServiceChecked(PlatformService).platform
+    platform.nui.syncThemeStyles(theme)
+    var colors1: seq[chroma.Color]
+    for index in UiStyleIndexTerminalAnsiBlackText .. UiStyleIndexTerminalAnsiBrightWhiteText:
+      colors1.add platform.nui.themeTextStyle(index)[].textColor.toColor
     let colors2: seq[tuple[r, g, b: uint8]] = colors1.mapIt((
       r: (it.r * 255).int.clamp(0, 255).uint8,
       g: (it.g * 255).int.clamp(0, 255).uint8,
@@ -2649,18 +2655,18 @@ when implModule:
         renderBuffer: newStringOfCap(1024),
       )
 
-      proc renderTerminal(self: TerminalView, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].} =
-        if view.isInPreview and builder.currentParent.tag != "preview":
-          return
-        var
-          width: int
-          height: int
-          cellWidth: int
-          cellHeight: int
-        result = renderTerminal(view, builder, width, height, cellWidth, cellHeight)
-        view.setSize(width, height, cellWidth, cellHeight)
-
-      view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = renderTerminal(self.TerminalView, builder)
+      view.renderNuiImpl = proc(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+        {.cast(gcsafe).}:
+          let tv = self.TerminalView
+          if tv.isInPreview:
+            return
+          var
+            width: int
+            height: int
+            cellWidth: int
+            cellHeight: int
+          renderTerminalNui(tv, nui, width, height, cellWidth, cellHeight)
+          tv.setSize(width, height, cellWidth, cellHeight)
       view.closeImpl = proc(self: View) = closeTerminalView(self.TerminalView)
       view.activateImpl = proc(self: View) = activateTerminalView(self.TerminalView)
       view.deactivateImpl = proc(self: View) = deactivateTerminalView(self.TerminalView)
@@ -2715,18 +2721,18 @@ when implModule:
         renderBuffer: newStringOfCap(1024),
       )
 
-      proc renderTerminal(self: TerminalView, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].} =
-        if view.isInPreview and builder.currentParent.tag != "preview":
-          return
-        var
-          width: int
-          height: int
-          cellWidth: int
-          cellHeight: int
-        result = renderTerminal(view, builder, width, height, cellWidth, cellHeight)
-        view.setSize(width, height, cellWidth, cellHeight)
-
-      view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = renderTerminal(self.TerminalView, builder)
+      view.renderNuiImpl = proc(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+        {.cast(gcsafe).}:
+          let tv = self.TerminalView
+          if tv.isInPreview:
+            return
+          var
+            width: int
+            height: int
+            cellWidth: int
+            cellHeight: int
+          renderTerminalNui(tv, nui, width, height, cellWidth, cellHeight)
+          tv.setSize(width, height, cellWidth, cellHeight)
       view.closeImpl = proc(self: View) = closeTerminalView(self.TerminalView)
       view.activateImpl = proc(self: View) = activateTerminalView(self.TerminalView)
       view.deactivateImpl = proc(self: View) = deactivateTerminalView(self.TerminalView)

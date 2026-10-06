@@ -1,5 +1,5 @@
-#use command_component layout text_editor_component command_service event_service input_handler toast treesitter
-import std/[options, algorithm, strutils, times, tables, json, sugar]
+#use command_component layout text_editor_component command_service event_service input_handler toast treesitter session
+import std/[options, algorithm, strutils, tables, json, sugar]
 import service
 import component
 import vcs
@@ -11,17 +11,22 @@ include module_base
 
 # Implementation
 when implModule:
-  import std/[sets, math, sequtils]
-  import misc/[custom_logger, util, id, myjsonutils, jsonex, rope_utils, async_process, custom_async]
+  import std/[sets, math, sequtils, os, osproc, streams]
+  import misc/[custom_logger, util, id, myjsonutils, jsonex, rope_utils, async_process, custom_async, delayed_task]
   import text_component, event_service, document_editor, document, view, layout/layout, command_component, platform
   import nimsumtree/[buffer, clock, rope]
-  import ui/node
-  import command_service, workspace, config_component, text_editor_component
+  import command_service, workspace, config_component, text_editor_component, session
+  import vfs
   import vmath, chroma
   import theme
   import misc/[render_command]
   import input_handler/input_handler
   import toast
+  import nuigi
+  import nuigi/widgets
+  import nuigi/widgets/dynamic_virtuallist
+  import nuigi/widgets/collapsing_header
+  import nuigi/layout/flex
 
   logCategory "git-ui"
 
@@ -43,6 +48,7 @@ when implModule:
       editors*: DocumentEditorService
       platform*: Platform
       vcsService*: VCSService
+      themes: ThemeService
       branches*: seq[string]
       lastMessage*: string = "Refreshed"
       lastMessageError*: bool = false
@@ -62,10 +68,80 @@ when implModule:
       hoveredFileIndex: int = -1
 
       lastUpdate: int = 0
+      actionsMenuOpen: bool = false
+      repositoryWatches: Table[string, VFSWatchHandle]
+      refreshTask: DelayedTask
+      refreshPending: bool = false
+      refreshing: bool = false
+      changelistsExpanded: Table[string, bool]
+      commitsExpanded: bool = true
+      branchesExpanded: bool = true
+
+    GitChangesNuiStorage = ref object of UiNodeStorageData
+      view: GitUiView
+      changelistIndex: int
+      listStorage: UiDynamicVirtualListStorage
+      lastSelected: int = -1
+      branchIndexes: seq[int]
 
   var gitUiViewInstance: GitUiView
 
+  proc saveGitUiSession(view: GitUiView): JsonNode {.gcsafe, raises: [].} =
+    result = newJObject()
+    let changelists = newJObject()
+    for key, expanded in view.changelistsExpanded:
+      changelists[key] = %expanded
+    result["changelistsExpanded"] = changelists
+    result["commitsExpanded"] = %view.commitsExpanded
+    result["branchesExpanded"] = %view.branchesExpanded
+
+  proc loadGitUiSession(view: GitUiView, data: JsonNode) {.gcsafe, raises: [].} =
+    try:
+      if data == nil or data.kind != JObject:
+        raise newException(ValueError, "Git UI session data must be an object")
+      var changelists: Table[string, bool]
+      var commitsExpanded = true
+      var branchesExpanded = true
+      if data.hasKey("changelistsExpanded"):
+        let states = data["changelistsExpanded"]
+        if states.kind != JObject:
+          raise newException(ValueError, "changelistsExpanded must be an object")
+        for key, state in states:
+          if state.kind != JBool:
+            raise newException(ValueError, "Changelist expansion state must be a boolean")
+          changelists[key] = state.getBool()
+      for key in ["commitsExpanded", "branchesExpanded"]:
+        if data.hasKey(key) and data[key].kind != JBool:
+          raise newException(ValueError, key & " must be a boolean")
+      if data.hasKey("commitsExpanded"):
+        commitsExpanded = data["commitsExpanded"].getBool()
+      if data.hasKey("branchesExpanded"):
+        branchesExpanded = data["branchesExpanded"].getBool()
+      view.changelistsExpanded = changelists
+      view.commitsExpanded = commitsExpanded
+      view.branchesExpanded = branchesExpanded
+      view.markDirty()
+    except CatchableError as e:
+      log lvlError, "Failed to restore Git UI session state: ", e.msg
+
   proc gitUiDiffSelected(view: GitUiView) {.raises: [], gcsafe.}
+  proc gitUiPush(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiPull(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiFetch(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiStash(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiStashPop(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiResetSoft(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiCommit(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiCommitAmend(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiCommitEditStart(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiCommitEditCancel(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiCommitEditConfirm(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiStageAll(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiStageSelected(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiUnstageSelected(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiRevertSelected(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiSwitchBranch(view: GitUiView) {.gcsafe, raises: [].}
+  proc gitUiRefresh(view: GitUiView) {.gcsafe, raises: [].}
 
   proc commitMessage(view: GitUiView): string =
     $view.commitDoc.getTextComponent().get.content
@@ -245,264 +321,378 @@ when implModule:
       result.add self.commitEditor.getEventHandlers(inject)
       result.add self.getGitUiViewEventHandler("gitui.message")
 
-  type
-    GitUiCommand* = tuple[command: string, label: string]
+  proc getOrCreateGitChangesStorage(b: var UiBuilder, node: auto): GitChangesNuiStorage =
+    let existing = b.nodeStorageGet(node)
+    if existing != nil:
+      return cast[GitChangesNuiStorage](existing)
+    result = GitChangesNuiStorage()
+    b.nodeStorage(node, result)
 
-  proc getGitUiCommands(): seq[GitUiCommand] =
-    @[
-      ("gitui.push", "Push"),
-      ("gitui.pull", "Pull"),
-      ("gitui.fetch", "Fetch"),
-      ("gitui.stash", "Stash"),
-      ("gitui.stash-pop", "Stash Pop"),
-      ("gitui.reset-soft", "Reset Soft"),
-    ]
+  proc stageGitFile(view: GitUiView, vcs: VersionControlSystem,
+      file: VCSFileInfo) {.async: (raises: []).} =
+    let message = if file.stagedStatus != None:
+      await vcs.unstageFile(file.path)
+    else:
+      await vcs.stageFile(file.path)
+    view.setMessage(message)
+    await view.refreshChangelistsAsync()
 
-  proc renderGitUiCommands*(self: GitUiView, builder: UINodeBuilder) =
-    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-    let accentColor = builder.theme.color("editorLineNumber.foreground", color(120/255, 120/255, 160/255))
-    let keyColor = builder.theme.tokenColor("keyword", accentColor)
-    let sepColor = builder.theme.tokenColor("comment", accentColor)
-    let lineColor = builder.theme.color("editor.background", color(25/255, 25/255, 40/255)).lighten(0.01)
+  proc revertGitFile(view: GitUiView, vcs: VersionControlSystem,
+      file: VCSFileInfo, confirm: bool) {.async: (raises: []).} =
+    if confirm:
+      let choice = await getServiceChecked(LayoutService).prompt(
+        @["Cancel", "Revert"], "Discard changes to " & file.path & "?")
+      if choice != "Revert".some:
+        return
+    let message = await vcs.revertFile(file.path)
+    view.setMessage(message)
+    await view.refreshChangelistsAsync()
 
-    var commandToKeys: Table[string, seq[string]]
-    if self.events != nil and self.events.commandInfos != nil:
-      if self.events.commandInfos.commandToKeys.len == 0:
-        self.events.rebuildCommandToKeysMap()
-      let commands = getGitUiCommands()
-      for (cmd, _) in commands:
-        if self.events.commandInfos.getInfos(cmd).getSome(infos):
-          for info in infos:
-            if info.context == "gitui":
-              commandToKeys.mgetOrPut(cmd, @[]).add info.keys
+  proc buildGitChangedFileRow(b: var UiBuilder, itemIndex: int,
+      userData: int) {.nimcall, gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      discard b.fitY()
+      let storage = b.getOrCreateGitChangesStorage(b.frame.nodes[userData].addr)
+      let view = storage.view
+      let changelistIndex = storage.changelistIndex
+      let fileIndex = itemIndex
+      let changelist {.cursor.} = view.changelists[changelistIndex].changelist
+      let file {.cursor.} = changelist.files[fileIndex]
+      b.node("git-ui-file"):
+        let selected = view.cursor.panel == Changelists and
+          view.cursor.changelistIndex == changelistIndex and
+          view.cursor.fileIndex == fileIndex
+        let hovered = b.wasHovered(includeChildren = true)
+        discard b.fillX().fitY().flexLayout().backendPadding(1).backendGap(1)
+          .styleIndex(if selected or hovered: UiStyleIndexMenuItemHover else: UiStyleIndexRow)
+          .fillBackground()
+        let staged = if file.stagedStatus != None: $file.stagedStatus else: " "
+        let unstaged = if file.unstagedStatus != None: $file.unstagedStatus else: " "
+        b.layoutHorizontal("git-ui-file-status"):
+          discard b.fit().gap(0)
+          for (status, label) in [(file.stagedStatus, staged), (file.unstagedStatus, unstaged & " ")]:
+            b.node:
+              discard b.fit().textStyleIndex(int(UiStyleIndexSmallText)).text(label)
+              if status != None:
+                let index = case status
+                  of Added, Untracked:
+                    UiStyleIndexDiffInsertedText
+                  of Deleted:
+                    UiStyleIndexDiffRemovedText
+                  else:
+                    UiStyleIndexDiffChangedText
+                var statusColor = b.themeStyle(index)[].fillColor
+                statusColor.a = 1
+                discard b.textColor(statusColor)
+        b.node:
+          let (_, name) = file.path.splitPath
+          discard b.fitY().flex(1, 1, 0).maskChildren().textStyleIndex(int(if selected:
+            UiStyleIndexMenuItemHoverText else: UiStyleIndexMenuItemText)).text(name)
+        var actionHovered = false
+        var actionClicked = false
+        if hovered:
+          b.layoutHorizontal("file-actions"):
+            discard b.fit().backendGap(1)
+            if b.button("↶"):
+              actionClicked = true
+              asyncSpawn view.revertGitFile(view.changelists[changelistIndex].vcs, file, confirm = true)
+            if b.button(if file.stagedStatus != None: "−" else: "＋"):
+              actionClicked = true
+              asyncSpawn view.stageGitFile(view.changelists[changelistIndex].vcs, file)
+            actionHovered = b.wasHovered(includeChildren = true)
+        if not actionClicked and not actionHovered and b.wasClicked(includeChildren = true):
+          view.cursor = UiCursor(panel: Changelists,
+            changelistIndex: changelistIndex, fileIndex: fileIndex)
+          view.markDirty()
+          view.gitUiDiffSelected()
 
-    for keys in commandToKeys.mvalues:
-      keys.sort(proc(a, b: string): int = cmp(a.len, b.len))
+  proc gitListTextHeight(b: var UiBuilder): float32 =
+    if b.backendType == UiBackendType.Terminal:
+      return 1.0'f32
+    let style = b.themeTextStyle(int(UiStyleIndexDefaultText))
+    let arrangement = b.getTextArrangement("M", style.fontId, style.fontSize)
+    max(1.0'f32, arrangement.size.y)
 
-    let cx = builder.charWidth
-    let cy = builder.textHeight
-    let availableWidth = builder.currentParent.bounds.w
+  proc followGitListSelection(storage: GitChangesNuiStorage, selectedRow,
+      rowCount: int, rowHeight: float32) =
+    if selectedRow < 0 or selectedRow >= rowCount:
+      storage.lastSelected = -1
+    elif storage.lastSelected != selectedRow:
+      let visible = storage.listStorage.visibleItemRange()
+      if selectedRow >= visible.first and selectedRow <= visible.last:
+        storage.lastSelected = selectedRow
+      else:
+        discard storage.listStorage.ensureItemVisible(selectedRow,
+          storage.listStorage.viewportHeight, rowHeight)
 
-    builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
-      builder.panel(&{SizeToContentY, FillX, DrawText}, text = "Commands", textColor = accentColor)
+  proc buildGitCommitRow(b: var UiBuilder, itemIndex: int,
+      userData: int) {.nimcall, gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      discard b.fitY()
+      let storage = b.getOrCreateGitChangesStorage(b.frame.nodes[userData].addr)
+      let view = storage.view
+      let commit {.cursor.} = view.commits[itemIndex]
+      b.layoutHorizontal("git-ui-commit"):
+        let selected = view.cursor.panel == Commits and view.cursor.commitIndex == itemIndex
+        let hovered = b.wasHovered(includeChildren = true)
+        discard b.fillX().fitY().backendPadding(1).backendGap(1)
+          .styleIndex(if selected or hovered: UiStyleIndexMenuItemHover else: UiStyleIndexRow)
+          .fillBackground()
+        b.node:
+          discard b.fit().textStyleIndex(int(UiStyleIndexSmallText)).text(commit.id)
+        b.node:
+          let description = if commit.description.len > 41:
+            commit.description[0 .. 40]
+          else:
+            commit.description
+          discard b.fillX().fitY().maskChildren().textStyleIndex(int(if selected:
+            UiStyleIndexMenuItemHoverText else: UiStyleIndexMenuItemText)).text(description)
+        if b.wasClicked(includeChildren = true):
+          view.cursor = UiCursor(panel: Commits, commitIndex: itemIndex)
+          view.markDirty()
 
-      let commands = getGitUiCommands()
-      for (cmd, label) in commands:
-        let hasKey = cmd in commandToKeys
-        let keys = if hasKey: commandToKeys[cmd] else: @[]
-        let totalKeyLen = if keys.len > 0: keys.mapIt(it.len).foldl(a + b) + (keys.len - 1) * 3 else: 0
-        let keyX = availableWidth - totalKeyLen.float * cx - cx * 3
-        let labelWidth = label.len.float * cx
+  proc buildGitBranchRow(b: var UiBuilder, itemIndex: int,
+      userData: int) {.nimcall, gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      discard b.fitY()
+      let storage = b.getOrCreateGitChangesStorage(b.frame.nodes[userData].addr)
+      let view = storage.view
+      let branchIndex = storage.branchIndexes[itemIndex]
+      b.node("git-ui-branch"):
+        let selected = view.cursor.panel == Branches and view.cursor.branchIndex == branchIndex
+        let hovered = b.wasHovered(includeChildren = true)
+        discard b.fillX().fitY().backendPadding(1)
+          .styleIndex(if selected or hovered: UiStyleIndexMenuItemHover else: UiStyleIndexRow)
+          .fillBackground().textStyleIndex(int(if selected:
+            UiStyleIndexMenuItemHoverText else: UiStyleIndexMenuItemText))
+          .text(view.branches[branchIndex])
+        if b.wasClicked(includeChildren = true):
+          view.cursor = UiCursor(panel: Branches, branchIndex: branchIndex)
+          view.markDirty()
 
-        builder.panel(&{SizeToContentY, FillX}):
-          builder.panel(&{SizeToContentY, FillX, DrawText}, text = label, textColor = textColor)
-          if hasKey:
-            let lineX = labelWidth + cx
-            let lineW = keyX - lineX - cx
-            if lineW > 0 and builder.textHeight > 1:
-              builder.panel(&{DrawBorder}, x = lineX, y = floor(cy * 0.5) - 1, w = lineW, h = 1, border = border(0, 0, 1, 0), borderColor = lineColor)
-            var xOff = keyX
-            for ki, key in keys:
-              if ki > 0:
-                builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = xOff, text = " | ", textColor = sepColor)
-                xOff += 3.0 * cx
-              builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = xOff, text = key, textColor = keyColor)
-              xOff += key.len.float * cx
+  proc buildGitHistoryList(view: GitUiView, b: var UiBuilder,
+      panel: CursorPanel) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      let textHeight = b.gitListTextHeight()
+      let rowHeight = textHeight + (if b.backendType == UiBackendType.Terminal: 0.0'f32 else: 2.0'f32)
+      b.node(if panel == Commits: "commits" else: "branches"):
+        discard b.fillX().fitY().maxHeight(25.0'f32 * textHeight)
+        b.nodeStorageParent()
+        let storage = b.getOrCreateGitChangesStorage(b.currentNode)
+        storage.view = view
+        var rowCount = view.commits.len
+        var selectedRow = -1
+        if panel == Branches:
+          storage.branchIndexes.setLen(0)
+          for i, branch in view.branches:
+            if branch.len > 0:
+              if view.cursor.panel == Branches and view.cursor.branchIndex == i:
+                selectedRow = storage.branchIndexes.len
+              storage.branchIndexes.add i
+          rowCount = storage.branchIndexes.len
+        elif view.cursor.panel == Commits:
+          selectedRow = view.cursor.commitIndex
+        storage.listStorage = b.dynamicVirtualList(rowCount, rowHeight,
+          (if panel == Commits: buildGitCommitRow else: buildGitBranchRow),
+          b.currentNodeIndex)
+        storage.followGitListSelection(selectedRow, rowCount, rowHeight)
 
-  proc renderGitUiCommand*(self: GitUiView, builder: UINodeBuilder, cmd: string, label: string, context: string = "gitui") =
-    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-    let accentColor = builder.theme.color("editorLineNumber.foreground", color(120/255, 120/255, 160/255))
-    let keyColor = builder.theme.tokenColor("keyword", accentColor)
-    let sepColor = builder.theme.tokenColor("comment", accentColor)
-    let lineColor = builder.theme.color("editor.background", color(25/255, 25/255, 40/255)).lighten(0.01)
+  proc buildGitChangesList(view: GitUiView, b: var UiBuilder) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      let textHeight = b.gitListTextHeight()
+      let rowHeight = textHeight + (if b.backendType == UiBackendType.Terminal: 0.0'f32 else: 2.0'f32)
+      b.layoutVertical("changes"):
+        discard b.fillX().fitY()
+        for i, changelist in view.changelists:
+          let key = changelist.vcs.root & "\0" & changelist.changelist.id & "\0" &
+            changelist.changelist.description
+          discard b.pushId(key)
+          var expanded = view.changelistsExpanded.getOrDefault(key, true)
+          b.collapsingHeader(changelist.changelist.description, expanded):
+            b.node("changelist-files"):
+              discard b.fillX().fitY().maxHeight(25.0'f32 * textHeight)
+              b.nodeStorageParent()
+              let storage = b.getOrCreateGitChangesStorage(b.currentNode)
+              storage.view = view
+              storage.changelistIndex = i
+              let rootIndex = b.currentNodeIndex
+              let rowCount = changelist.changelist.files.len
+              storage.listStorage = b.dynamicVirtualList(rowCount, rowHeight,
+                buildGitChangedFileRow, rootIndex)
+              let selectedRow = if view.cursor.panel == Changelists and view.cursor.changelistIndex == i:
+                view.cursor.fileIndex
+              else:
+                -1
+              storage.followGitListSelection(selectedRow, rowCount, rowHeight)
+          view.changelistsExpanded[key] = expanded
+          discard b.popId()
 
-    var keys: seq[string] = @[]
-    if self.events != nil and self.events.commandInfos != nil:
-      if self.events.commandInfos.commandToKeys.len == 0:
-        self.events.rebuildCommandToKeysMap()
-      if self.events.commandInfos.getInfos(cmd).getSome(infos):
-        for info in infos:
-          if info.context == context:
-            keys.add info.keys
-    keys.sort(proc(a, b: string): int = cmp(a.len, b.len))
+  proc renderGitUiNui*(self: GitUiView, nui: var UiBuilder) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      self.resetDirty()
+      if self.lastUpdate == 0:
+        self.lastUpdate = 1
+        asyncSpawn self.refreshStatusAsync()
+        asyncSpawn self.refreshBranchesAsync()
+        asyncSpawn self.refreshCommitsAsync()
+        asyncSpawn self.refreshChangelistsAsync()
 
-    let cx = builder.charWidth
-    let cy = builder.textHeight
-    let availableWidth = builder.currentParent.bounds.w
+      let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
+      let headerStyle = if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
+      let sectionGap = if nui.backendType == UiBackendType.Terminal:
+        1.0'f32
+      else:
+        8.0'f32
 
-    let hasKey = keys.len > 0
-    let totalKeyLen = if hasKey: keys.mapIt(it.len).foldl(a + b) + (keys.len - 1) * 3 else: 0
-    let keyX = availableWidth - totalKeyLen.float * cx - cx * 3
-    let labelWidth = label.len.float * cx
+      template sectionTitle(title: string) =
+        nui.node:
+          discard nui.fillX().fitY().styleIndex(headerStyle)
+            .fillBackground().backendPadding(2)
+            .textStyleIndex(int(UiStyleIndexHeaderText)).text(title)
 
-    builder.panel(&{SizeToContentY, FillX}):
-      builder.panel(&{SizeToContentY, FillX, DrawText}, text = label, textColor = textColor)
-      if hasKey:
-        let lineX = labelWidth + cx
-        let lineW = keyX - lineX - cx
-        if lineW > 0 and builder.textHeight > 1:
-          builder.panel(&{DrawBorder}, x = lineX, y = floor(cy * 0.5) - 1, w = lineW, h = 1, border = border(0, 0, 1, 0), borderColor = lineColor)
-        var xOff = keyX
-        for ki, key in keys:
-          if ki > 0:
-            builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = xOff, text = " | ", textColor = sepColor)
-            xOff += 3.0 * cx
-          builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = xOff, text = key, textColor = keyColor)
-          xOff += key.len.float * cx
+      template menuLabel(label: string) =
+        nui.node:
+          discard nui.fillX().fitY().backendPadding(1)
+            .textStyleIndex(int(UiStyleIndexLabelText)).text(label)
 
-  proc renderGitUi*(self: GitUiView, builder: UINodeBuilder) =
-    let dirty = self.dirty
-    self.resetDirty()
+      template menuCommand(label: string, action: untyped) =
+        nui.menuItem:
+          nui.node:
+            discard nui.fillX().fitY().backendPadding(1)
+              .textStyleIndex(int(UiStyleIndexMenuItemText)).text(label)
+        do:
+          discard
+        do:
+          self.actionsMenuOpen = false
+          action
 
-    var backgroundColor = if self.active: builder.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(-0.025)
+      # NUI-GAP: old view separates sections with separator() DrawBorder rules and
+      # keeps inline Commands rows with keybinding hints (commandToKeys, dotted
+      # leaders, keyword/comment colors); new replaces rules with sectionTitle
+      # bars + gaps and hides commands behind the "…" menu (see §24).
+      nui.layoutVertical("git-ui"):
+        discard nui.fillX().fillY().styleIndex(panelStyle)
+          .fillBackground().padding(0).backendGap(2)
+        if nui.wasClicked(includeChildren = true):
+          getServiceChecked(LayoutService).tryActivateView(self)
 
-    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-    let accentColor = builder.theme.color("editorLineNumber.foreground", color(120/255, 120/255, 160/255))
-    let keyColor = builder.theme.tokenColor("keyword", accentColor)
-    let selectionColor = builder.theme.color("editor.selectionBackground", color(60/255, 60/255, 80/255))
-    let errorColor = builder.theme.tokenColor("error", color(200/255, 25/255, 25/255))
+        nui.layoutHorizontal("git-ui-header"):
+          discard nui.fillX().fitY().styleIndex(headerStyle)
+            .fillBackground().backendPadding(4).backendGap(8).cornerRadius(0)
+          nui.node:
+            discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
+              .text("Git")
+          nui.layoutHorizontalReverse:
+            discard nui.fillX().fitY().backendGap(4)
+            let menuButtonIndex = nui.frame.nodes.len
+            if nui.button("…"):
+              self.actionsMenuOpen = not self.actionsMenuOpen
+            let menuButtonNode = nui.frame.nodes[menuButtonIndex]
+            let menuPosition = nui.absoluteNodePosPrev(
+              menuButtonNode.id, menuButtonIndex)
+            nui.menu(self.actionsMenuOpen,
+                menuPosition.x,
+                menuPosition.y + menuButtonNode.size.y):
+              menuLabel("Repository")
+              menuCommand("Refresh", self.gitUiRefresh())
+              menuCommand("Push", self.gitUiPush())
+              menuCommand("Pull", self.gitUiPull())
+              menuCommand("Fetch", self.gitUiFetch())
+              menuCommand("Stash", self.gitUiStash())
+              menuCommand("Stash Pop", self.gitUiStashPop())
+              menuCommand("Reset Soft", self.gitUiResetSoft())
 
-    if self.lastUpdate == 0:
-      self.lastUpdate += 1
-      asyncSpawn self.refreshStatusAsync()
-      asyncSpawn self.refreshBranchesAsync()
-      asyncSpawn self.refreshCommitsAsync()
-      asyncSpawn self.refreshChangelistsAsync()
+              menuLabel("Commit")
+              menuCommand("Commit", self.gitUiCommit())
+              menuCommand("Amend", self.gitUiCommitAmend())
+              if self.editCommit:
+                menuCommand("Cancel Message Edit", self.gitUiCommitEditCancel())
+                menuCommand("Confirm Message Edit", self.gitUiCommitEditConfirm())
+              else:
+                menuCommand("Edit Message", self.gitUiCommitEditStart())
 
-    builder.panel(&{FillBackground, FillX, FillY, MaskContent}, backgroundColor = backgroundColor, userId = self.uiId.newPrimaryId, tag = "gitui"):
-      onScroll:
-        self.scrollOffset -= delta.y * builder.textHeight * 2
-        self.markDirty()
+              menuLabel("Changes")
+              menuCommand("Stage All", self.gitUiStageAll())
+              menuCommand("Stage", self.gitUiStageSelected())
+              menuCommand("Unstage", self.gitUiUnstageSelected())
+              menuCommand("Revert", self.gitUiRevertSelected())
+              menuCommand("Diff", self.gitUiDiffSelected())
 
-      onClickAny btn:
-        getServiceChecked(LayoutService).tryActivateView(self)
+              menuLabel("Branches")
+              menuCommand("Checkout Selected", self.gitUiSwitchBranch())
 
-      if dirty or not builder.retain():
-        currentNode.renderCommands.clear()
-        currentNode.markDirty(builder)
+        # NUI-GAP: old view scrolls manually (onScroll delta.y*textHeight*2,
+        # clamp + rawY, custom fillRect thumb with scrollBar colors); new uses
+        # scrollBox so scrollOffset is dead and custom theming is gone (see §24).
+        nui.scrollBox:
+          discard nui.fillX().fitY()
+          nui.layoutVertical("git-ui-content"):
+            let scrollbarWidth = if nui.backendType == UiBackendType.Terminal:
+              1.0'f32
+            else:
+              10.0'f32
+            discard nui.anchorsX(0, 1).offsetsX(0, -scrollbarWidth).finishAnchors()
+              .fitY().backendGap(sectionGap).backendPadding(4)
 
-        proc separator() =
-          if builder.textHeight > 1:
-            builder.panel(&{}, h = floor(builder.textHeight * 0.5))
-          builder.panel(&{DrawBorder, DrawBorderTerminal, FillX, SizeToContentY, FillBackground}, border = border(0, 0, 1, 0), borderColor = accentColor, backgroundColor = backgroundColor)
-          if builder.textHeight > 1:
-            builder.panel(&{}, h = floor(builder.textHeight * 0.5))
+            # NUI-GAP: old status splits "Status: " + vcs.status into textColor +
+            # accentColor panels; new merges into one DefaultText node (see §24).
+            sectionTitle("Repository")
+            var status = "No repository"
+            if self.vcsService != nil:
+              for vcs in self.vcsService.versionControlSystems:
+                status = if vcs.status.len > 0: vcs.status else: "Clean"
+                break
+            nui.node:
+              discard nui.fillX().fitY()
+                .textStyleIndex(int(UiStyleIndexDefaultText))
+                .text("Status: " & status)
 
-        builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
-          builder.panel(&{SizeToContentY, FillX, DrawText}, text = "GitUi", textColor = textColor)
-
-          for vcs in self.vcsService.versionControlSystems:
-            separator()
-            builder.panel(&{SizeToContentY, FillX, LayoutHorizontal}):
-              builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = "Status: ", textColor = textColor)
-              builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = vcs.status, textColor = accentColor)
-            break
-
-          separator()
-          self.renderGitUiCommands(builder)
-
-          separator()
-          builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
-            self.renderGitUiCommand(builder, "gitui.commit", "Commit")
-            self.renderGitUiCommand(builder, "gitui.commit-amend", "Amend Commit")
-            self.renderGitUiCommand(builder, "gitui.commit-edit-start", "Edit Message")
-            separator()
+            # NUI-GAP: old commit editor is wrapped in separator() + inline
+            # Cancel/Confirm rows with TextWrap/Multiline; new uses a fixed-height
+            # masked box with Cancel/Confirm menu-only (see §24).
+            sectionTitle("Commit")
             if self.editCommit:
-              if self.commitEditor != nil:
-                discard self.commitEditor.render(builder)
-              separator()
-              self.renderGitUiCommand(builder, "gitui.commit-edit-cancel", "Cancel", "gitui.message")
-              self.renderGitUiCommand(builder, "gitui.commit-edit-confirm", "Confirm", "gitui.message")
+              nui.node("git-ui-commit-editor"):
+                discard nui.fillX().height(
+                  if nui.backendType == UiBackendType.Terminal:
+                    6.0'f32
+                  else:
+                    150.0'f32).maskChildren()
+                if self.commitEditor != nil:
+                  self.commitEditor.renderNui(nui)
             else:
-              let commitMessage = self.commitMessage
-              builder.panel(&{SizeToContentY, FillX, DrawText, TextWrap, TextMultiline}, text = if commitMessage.len == 0: "(empty)" else: commitMessage, textColor = textColor)
+              let message = self.commitMessage
+              nui.node("git-ui-commit-message"):
+                discard nui.fillX().fitY()
+                  .textStyleIndex(int(UiStyleIndexDefaultText))
+                  .text(if message.len > 0: message else: "(empty)")
+                if nui.wasClicked(includeChildren = true):
+                  self.gitUiCommitEditStart()
 
-          if self.changelists.len > 0:
-            separator()
-            builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
-              self.renderGitUiCommand(builder, "gitui.stage-all", "Stage All")
-              self.renderGitUiCommand(builder, "gitui.stage-selected", "Stage")
-              self.renderGitUiCommand(builder, "gitui.unstage-selected", "Unstage")
-              self.renderGitUiCommand(builder, "gitui.revert-selected", "Revert")
-              for clIdx, changelist in self.changelists:
-                builder.panel(&{SizeToContentY, FillX, DrawText}, text = changelist.changelist.description, textColor = accentColor)
-                for fileIdx, file in changelist.changelist.files:
-                  let isSelected = self.cursor.panel == Changelists and self.cursor.changelistIndex == clIdx and self.cursor.fileIndex == fileIdx
-                  let isHovered = self.hoveredChangelistIndex == clIdx and self.hoveredFileIndex == fileIdx
-                  let highlightBg = if isSelected: selectionColor elif isHovered: selectionColor.lighten(0.08) else: color(0, 0, 0, 0)
-                  let backgroundFlag = if isSelected or isHovered: &{FillBackground} else: 0.UINodeFlags
-                  let (_, name) = file.path.splitPath
-                  let stagedStr = if file.stagedStatus != None: $file.stagedStatus else: " "
-                  let unstagedStr = if file.unstagedStatus != None: $file.unstagedStatus else: " "
-                  builder.panel(&{SizeToContentY, FillX, LayoutHorizontal, MouseHover} + backgroundFlag, backgroundColor = highlightBg):
-                    capture clIdx, fileIdx:
-                      onHover:
-                        if self.hoveredChangelistIndex != clIdx or self.hoveredFileIndex != fileIdx:
-                          self.hoveredChangelistIndex = clIdx
-                          self.hoveredFileIndex = fileIdx
-                          self.markDirty()
-                      onEndHover:
-                        self.hoveredChangelistIndex = -1
-                        self.hoveredFileIndex = -1
-                        self.markDirty()
-                      onClickAny btn:
-                        if btn == MouseButton.Left:
-                          self.cursor = UiCursor(panel: Changelists, changelistIndex: clIdx, fileIndex: fileIdx)
-                          self.markDirty()
-                          self.gitUiDiffSelected()
-                    builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = stagedStr & unstagedStr & " ", textColor = keyColor)
-                    builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = name, textColor = textColor)
+            if self.changelists.len > 0:
+              sectionTitle("Changes")
+              self.buildGitChangesList(nui)
 
-          if not self.commitsFetched:
-            asyncSpawn self.refreshCommitsAsync()
+            if not self.commitsFetched:
+              asyncSpawn self.refreshCommitsAsync()
+            if self.commits.len > 0:
+              nui.collapsingHeader("Recent Commits", self.commitsExpanded):
+                self.buildGitHistoryList(nui, Commits)
 
-          if self.commits.len > 0:
-            separator()
-            builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
-              builder.panel(&{SizeToContentY, FillX, DrawText}, text = "Recent Commits", textColor = accentColor)
-              for commitIdx, commit in self.commits:
-                let isSelected = self.cursor.panel == Commits and self.cursor.commitIndex == commitIdx
-                let highlightBg = if isSelected: selectionColor else: color(0, 0, 0, 0)
-                let backgroundFlag = if isSelected: &{FillBackground} else: 0.UINodeFlags
-                builder.panel(&{SizeToContentY, FillX, LayoutHorizontal} + backgroundFlag, backgroundColor = highlightBg):
-                  builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = commit.id, textColor = keyColor)
-                  builder.panel(&{}, w = builder.charWidth)
-                  builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = commit.description[0..min(commit.description.high, 40)], textColor = textColor)
+            if self.branches.len > 0:
+              nui.collapsingHeader("Branches", self.branchesExpanded):
+                self.buildGitHistoryList(nui, Branches)
 
-          if self.branches.len > 0:
-            separator()
-            builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
-              builder.panel(&{SizeToContentY, FillX, DrawText}, text = "Branches", textColor = accentColor)
-              for branchIdx, branch in self.branches:
-                if branch.len > 0:
-                  let isSelected = self.cursor.panel == Branches and self.cursor.branchIndex == branchIdx
-                  let highlightBg = if isSelected: selectionColor else: color(0, 0, 0, 0)
-                  let backgroundFlag = if isSelected: &{FillBackground} else: 0.UINodeFlags
-                  builder.panel(&{SizeToContentY, FillX, DrawText} + backgroundFlag, text = "  " & branch, textColor = textColor, backgroundColor = highlightBg)
-
-          if self.lastMessage.len > 0:
-            separator()
-            let color = if self.lastMessageError:
-              errorColor
-            else:
-              accentColor
-            builder.panel(&{SizeToContentY, FillX, DrawText, TextWrap, TextMultiline}, text = "Last: " & self.lastMessage, textColor = color)
-
-        let size = builder.currentChild.bounds.wh
-        let scrollableAmount = max(size.y - builder.currentParent.bounds.h, 0)
-        self.scrollOffset = self.scrollOffset.clamp(0, scrollableAmount)
-
-        builder.currentChild.rawY = -self.scrollOffset
-
-        # Scroll bar
-        buildCommands(currentNode.renderCommands):
-          let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
-          let w = ceil(builder.charWidth * 0.5)
-          let thumbHeightRatio = currentNode.bounds.h / max(size.y, 1.0)
-          let thumbHeight = clamp(thumbHeightRatio * currentNode.bounds.h.float, builder.textHeight, max(currentNode.bounds.h - builder.textHeight, currentNode.bounds.h * 0.9))
-          let scrollableHeight = currentNode.bounds.h.float - thumbHeight
-          let thumbY = (self.scrollOffset / scrollableAmount) * scrollableHeight
-          fillRect(rect(currentNode.bounds.w - w, floor(thumbY), w, ceil(thumbHeight)), scrollBarColor)
+            # NUI-GAP: old last-message uses tokenColor("error") vs accentColor with
+            # TextWrap/Multiline; new reuses MenuItemHoverText/DefaultText, so the
+            # error token is lost (see §24).
+            if self.lastMessage.len > 0:
+              sectionTitle(if self.lastMessageError: "Last Error" else: "Last Result")
+              nui.node:
+                discard nui.fillX().fitY().textStyleIndex(int(if self.lastMessageError:
+                  UiStyleIndexMenuItemHoverText
+                else:
+                  UiStyleIndexDefaultText)).text(self.lastMessage)
 
   proc kind(self: GitUiView): string = "gitui"
   proc desc(self: GitUiView): string = "GitUi"
@@ -521,9 +711,8 @@ when implModule:
   proc newGitUiView*(): GitUiView =
     result = GitUiView()
     result.uiId = newId()
-    result.renderImpl = proc(view: View, builder: UINodeBuilder): seq[OverlayFunction] =
-      let gitUiView = view.GitUiView
-      renderGitUi(gitUiView, builder)
+    result.renderNuiImpl = proc(view: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+      renderGitUiNui(view.GitUiView, nui)
 
     result.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
       getGitUiViewEventHandlers(self.GitUiView, inject)
@@ -839,15 +1028,7 @@ when implModule:
     if file.stagedStatus != None:
       view.setError("Already staged")
       return
-    let localizedPath = file.path
-    for vcs in view.vcsService.versionControlSystems:
-      let vcs = vcs
-      proc stageTask() {.async: (raises: []).} =
-        let res = await vcs.stageFile(localizedPath)
-        view.setMessage(res)
-        asyncSpawn view.refreshChangelistsAsync()
-      asyncSpawn stageTask()
-      break
+    asyncSpawn view.stageGitFile(view.changelists[clIdx].vcs, file)
 
   proc gitUiUnstageSelected(view: GitUiView) =
     if view.cursor.panel != Changelists:
@@ -863,12 +1044,7 @@ when implModule:
     if file.stagedStatus == None:
       view.setError("Not staged")
       return
-    let localizedPath = file.path
-    proc unstageTask() {.async: (raises: []).} =
-      let res = await vcs.unstageFile(localizedPath)
-      view.setMessage(res)
-      asyncSpawn view.refreshChangelistsAsync()
-    asyncSpawn unstageTask()
+    asyncSpawn view.stageGitFile(vcs, file)
 
   proc gitUiRevertSelected(view: GitUiView) =
     if view.cursor.panel != Changelists:
@@ -881,12 +1057,7 @@ when implModule:
       return
     let vcs = view.changelists[clIdx].vcs
     let file = view.changelists[clIdx].changelist.files[fIdx]
-    let localizedPath = file.path
-    proc revertTask() {.async: (raises: []).} =
-      let res = await vcs.revertFile(localizedPath)
-      view.setMessage(res)
-      asyncSpawn view.refreshChangelistsAsync()
-    asyncSpawn revertTask()
+    asyncSpawn view.revertGitFile(vcs, file, confirm = false)
 
   proc gitUiDiffSelected(view: GitUiView) {.raises: [], gcsafe.} =
     let layout = getServiceChecked(LayoutService)
@@ -922,6 +1093,158 @@ when implModule:
     asyncSpawn view.refreshCommitsAsync()
     asyncSpawn view.refreshChangelistsAsync()
 
+  proc refreshRepositoryChanges(view: GitUiView) {.async: (raises: []).} =
+    view.refreshing = true
+    defer:
+      view.refreshing = false
+    while view.refreshPending:
+      view.refreshPending = false
+      await view.refreshStatusAsync()
+      await view.refreshBranchesAsync()
+      await view.refreshCommitsAsync()
+      await view.refreshChangelistsAsync()
+      view.markDirty()
+      view.platform.requestRender()
+
+  proc scheduleRepositoryRefresh(view: GitUiView) =
+    view.refreshPending = true
+    if not view.refreshing:
+      view.refreshTask.reschedule()
+
+  proc checkIgnoredPaths(args: tuple[root: string, paths: seq[string], directories: bool]):
+      tuple[output: string, exitCode: int, error: string] {.gcsafe, raises: [].} =
+    try:
+      var commandArgs = @["check-ignore", "-z", "--stdin"]
+      if args.directories:
+        commandArgs.add "--no-index"
+      let process = startProcess("git", workingDir = args.root,
+        args = commandArgs,
+        options = {poUsePath, poStdErrToStdOut})
+      defer: process.close()
+      process.inputStream.write(args.paths.join("\0") & "\0")
+      process.inputStream.close()
+      var buffer = newString(4096)
+      while true:
+        let count = process.outputStream.readData(buffer[0].addr, buffer.len)
+        if count == 0:
+          break
+        result.output.add buffer[0 ..< count]
+      result.exitCode = process.waitForExit()
+    except CatchableError as e:
+      result.error = e.msg
+
+  proc watchablePaths(view: GitUiView, paths: seq[string],
+      root: string, directories: bool = false): Future[seq[string]] {.async: (raises: []).} =
+    let vfs = view.vcsService.vfs
+    var candidates: seq[string]
+    for path in paths:
+      let path = vfs.normalize(path)
+      if path.split('/').anyIt(it.toLowerAscii == ".git") or
+          (directories and symlinkExists(vfs.localize(path))):
+        continue
+      candidates.add path
+    if root.len == 0:
+      return candidates
+    # Bound pipe traffic, and use NUL delimiters for unusual folder names.
+    for start in countup(0, candidates.high, 32):
+      let batch = candidates[start .. min(start + 31, candidates.high)]
+      var localPaths: seq[string]
+      for path in batch:
+        let kind = if directories: FileKind.Directory.some else: await vfs.getFileKind(path)
+        localPaths.add vfs.localize(path) & (if kind == FileKind.Directory.some: "/" else: "")
+      try:
+        let checked = await spawnAsync(checkIgnoredPaths,
+          (root: vfs.localize(root), paths: localPaths, directories: directories))
+        if checked.error.len > 0 or checked.exitCode notin {0, 1}:
+          log lvlError, &"Failed to check Git ignore rules in '{root}': {checked.error} {checked.output}"
+          continue
+        let ignored = checked.output.split('\0').toHashSet
+        for i, path in batch:
+          if localPaths[i] notin ignored:
+            result.add path
+      except CancelledError as e:
+        log lvlWarn, &"Cancelled Git ignore check in '{root}': {e.msg}"
+        return
+
+  proc watchRepositoryDirectory(view: GitUiView, path: string,
+    rescan: bool = false, root: string = "") {.async: (raises: []).}
+
+  proc watchCreatedDirectories(view: GitUiView, path: string,
+      events: seq[PathEvent], root: string = "") {.async: (raises: []).} =
+    # Registering watches inside a VFS callback would mutate its active iterator.
+    try:
+      await sleepAsync(chronos.milliseconds(1))
+    except CancelledError as e:
+      log lvlWarn, &"Cancelled Git repository watch update: {e.msg}"
+      return
+    for event in events:
+      let changedPath = case event.action
+        of FileEventAction.Create: path // event.name
+        of FileEventAction.Rename: path // event.newName
+        of FileEventAction.CreateSelf: path
+        else: ""
+      if changedPath.len > 0:
+        let kind = await view.vcsService.vfs.getFileKind(changedPath)
+        if kind == FileKind.Directory.some:
+          let paths = await view.watchablePaths(@[changedPath], root, directories = true)
+          for directory in paths:
+            await view.watchRepositoryDirectory(directory, rescan = true, root = root)
+
+  proc handleRepositoryChanges(view: GitUiView, path: string,
+      events: seq[PathEvent], root: string = "") {.async: (raises: []).} =
+    if events.len == 0:
+      return
+    await view.watchCreatedDirectories(path, events, root)
+    var changedPaths: seq[string]
+    for event in events:
+      case event.action
+      of FileEventAction.NonAction:
+        discard
+      of FileEventAction.Rename:
+        changedPaths.add path // event.name
+        changedPaths.add path // event.newName
+      of FileEventAction.Modify:
+        let changedPath = path // event.name
+        # Windows reports parent directory writes too; child watches handle the actual files.
+        let kind = await view.vcsService.vfs.getFileKind(changedPath)
+        if kind != FileKind.Directory.some:
+          changedPaths.add changedPath
+      else:
+        changedPaths.add path // event.name
+    let relevantPaths = await view.watchablePaths(changedPaths.deduplicate(), root)
+    if relevantPaths.len > 0:
+      view.scheduleRepositoryRefresh()
+
+  proc watchRepositoryDirectory(view: GitUiView, path: string,
+      rescan: bool = false, root: string = "") {.async: (raises: []).} =
+    let path = view.vcsService.vfs.normalize(path)
+    let vfs = view.vcsService.vfs
+    # Git roots are local; do not follow directory links outside the repository or into cycles.
+    if path.extractFilename.toLowerAscii == ".git" or symlinkExists(vfs.localize(path)):
+      return
+    if path in view.repositoryWatches:
+      if not rescan:
+        return
+    else:
+      var handle = vfs.watch(path, proc(events: seq[PathEvent]) =
+        asyncSpawn view.handleRepositoryChanges(path, events, root)
+      )
+      if not handle.isBound:
+        log lvlError, &"Failed to watch Git repository directory '{path}'"
+        return
+      view.repositoryWatches[path] = handle
+    let listing = await vfs.getDirectoryListing(path)
+    let directories = await view.watchablePaths(
+      listing.folders.mapIt(path // it), root, directories = true)
+    for directory in directories:
+      await view.watchRepositoryDirectory(directory, rescan, root)
+
+  proc watchRepository(view: GitUiView, vcs: VersionControlSystem) =
+    if vcs.name != "Git" or vcs.root.len == 0:
+      return
+    asyncSpawn view.watchRepositoryDirectory(vcs.root, root = vcs.root)
+    view.scheduleRepositoryRefresh()
+
   include generated/git_ui_commands
 
   proc init_module_git_ui*() {.cdecl, exportc, dynlib.} =
@@ -941,9 +1264,22 @@ when implModule:
     gitUiViewInstance = newGitUiView()
     let view = gitUiViewInstance
     view.vcsService = vcsService
+    view.themes = services.getServiceChecked(ThemeService)
     view.events = events
     view.editors = services.getServiceChecked(DocumentEditorService)
     view.platform = platform
+    let session = services.getServiceChecked(SessionService)
+    session.addSaveHandler "git-ui",
+      proc(): JsonNode = view.saveGitUiSession(),
+      proc(data: JsonNode) = view.loadGitUiSession(data)
+    view.refreshTask = newDelayedTask(250, false, false,
+      proc(): Future[void] {.async: (raises: []).} =
+        await view.refreshRepositoryChanges()
+    )
+    discard vcsService.onVcsRegistered.subscribe proc(vcs: VersionControlSystem) =
+      view.watchRepository(vcs)
+    for vcs in vcsService.versionControlSystems:
+      view.watchRepository(vcs)
 
     let eventService = getServiceChecked(EventService)
     eventService.listen(newId(), "app/initialized"):

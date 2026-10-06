@@ -75,6 +75,73 @@ proc copySharedFilesTo(dir: string) =
 
 var isCINimbleCached = "0"
 var cmds = newSeq[string]()
+var nuigiDir = getEnv("NUIGI_DIR", "deps" / "nuigi").absolutePath
+
+const staticLibDir = "nimcache" / "nuigi-static" / "libs"
+const staticLibraries = when defined(windows):
+    ["SDL3.lib", "freetype.lib"]
+  else:
+    ["libSDL3.a", "libfreetype.a"]
+
+proc requireNuigi() =
+  if not fileExists(nuigiDir / "build.nim"):
+    echo "[ERROR] Nuigi checkout not found at ", nuigiDir,
+      ". Set --nuigi-dir:<path> or NUIGI_DIR."
+    quit 1
+
+proc copyStaticLibrary(buildDir, sourceName, targetName: string) =
+  for path in walkDirRec(buildDir):
+    if path.extractFilename.toLowerAscii == sourceName.toLowerAscii:
+      mkDir staticLibDir
+      cpFile path, staticLibDir / targetName
+      return
+  echo "[ERROR] Static library ", sourceName, " not found in ", buildDir
+  quit 1
+
+proc buildNuigiStaticDependencies() =
+  requireNuigi()
+  let buildSource = readFile(nuigiDir / "build.nim")
+  if not buildSource.contains("\"sdl3-static\"") or
+      not buildSource.contains("\"freetype-static\""):
+    echo "[ERROR] This Nuigi checkout does not support static dependency builds.",
+      " Update it or select a newer checkout with --nuigi-dir:<path>."
+    quit 1
+  withDir nuigiDir:
+    exec "nim c -o:bin/nev-nuigi-build build.nim"
+    let builder = ("bin" / "nev-nuigi-build" &
+      (when defined(windows): ".exe" else: "")).absolutePath.quoteShell
+    exec builder & " sdl3-static"
+    exec builder & " freetype-static"
+  when defined(windows):
+    copyStaticLibrary(nuigiDir / "build" / "sdl3_static", "SDL3-static.lib", staticLibraries[0])
+    copyStaticLibrary(nuigiDir / "build" / "freetype_static", "freetype.lib", staticLibraries[1])
+  else:
+    copyStaticLibrary(nuigiDir / "build" / "sdl3_static", staticLibraries[0], staticLibraries[0])
+    copyStaticLibrary(nuigiDir / "build" / "freetype_static", staticLibraries[1], staticLibraries[1])
+
+proc buildStatic() =
+  requireNuigi()
+  var linkArgs = ""
+  for library in staticLibraries:
+    let path = (staticLibDir / library).absolutePath
+    if not fileExists(path):
+      echo "[ERROR] Missing ", path, ". Run nuigi-deps-static first."
+      quit 1
+    linkArgs.add " " & ("--passL:" & path.quoteShell).quoteShell
+  when defined(windows):
+    for library in ["kernel32", "user32", "gdi32", "winmm", "imm32",
+        "ole32", "oleaut32", "version", "uuid", "advapi32", "setupapi",
+        "shell32", "hid", "mincore", "dinput8"]:
+      linkArgs.add " --passL:-l" & library
+  elif defined(linux):
+    linkArgs.add " --passL:-lm --passL:-ldl --passL:-lpthread"
+  # Override only these dynlibs so absolute archives win over local library paths.
+  let staticArgs = "-d:sdlPlatform -d:nuiNoHarfbuzz -u:useDynlib -u:sdl3 -u:freetypeStatic --dynlibOverride:SDL3 --dynlibOverride:freetype"
+  let pathArgs = " " & ("--path:" & (nuigiDir / "src")).quoteShell &
+    " " & ("--path:" & (nuigiDir / "vendor" / "nimfreetype")).quoteShell
+  let output = when defined(windows): "nev-static.exe" else: "nev-static"
+  exec "nim c -o:" & output & " --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:nimcache/nev-static -d:nimWasmtimeBuild " &
+    staticArgs & pathArgs & linkArgs & " src/desktop_main.nim"
 
 var optParser = initOptParser("")
 for kind, key, val in optParser.getopt():
@@ -86,6 +153,18 @@ for kind, key, val in optParser.getopt():
     case key
     of "cache":
       isCINimbleCached = val
+    of "nuigi-dir":
+      if val.len == 0:
+        echo "[ERROR] --nuigi-dir requires a checkout path."
+        quit 1
+      nuigiDir = val.absolutePath
+    of "help", "h":
+      echo """Nev build commands (run from the repository root):
+  nuigi-deps-static  Build and stage Nuigi's static SDL3 and FreeType archives.
+  build-static      Build nev-static using those archives, without HarfBuzz/FriBidi.
+  --nuigi-dir:PATH   Nuigi checkout (default: NUIGI_DIR or deps/nuigi).
+Existing build, release and package commands are unchanged."""
+      quit 0
 
   of cmdEnd: assert(false) # cannot happen
 
@@ -151,9 +230,17 @@ while i < cmds.len:
   of "build":
     exec "nim c -o:nev.exe --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:nimcache/debug_clang ./src/desktop_main.nim"
 
+  of "nuigi-deps-static":
+    buildNuigiStaticDependencies()
+
+  of "build-static":
+    buildStatic()
+
   of "debug-win":
     echo &"Build debug for windows..."
-    exec """nim c --out:nev.exe -D:enableGui=true -D:enableTerminal=true -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types "--passL:-ladvapi32.lib -luser32.lib" --passC:-std=gnu11 src/desktop_main.nim"""
+    # exec """nim c --out:nev.exe -D:enableGui=true -D:enableTerminal=true -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types "--passL:-ladvapi32.lib -luser32.lib" --passC:-std=gnu11 src/desktop_main.nim"""
+    buildNuigiStaticDependencies()
+    buildStatic()
 
   of "package-win":
     echo &"Package for windows..."
@@ -179,8 +266,10 @@ while i < cmds.len:
     exec """nim c --out:nev-musl --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=false -D:enableTerminal=true --app:console -d:musl -d:nimWasmtimeBuildMusl -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} src/desktop_main.nim"""
 
   of "debug-linux":
-    echo &"Build debug for windows..."
-    exec &"""nim c --out:nev --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=true -D:enableTerminal=true --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} src/desktop_main.nim"""
+    echo &"Build debug for linux..."
+    # exec &"""nim c --out:nev --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=true -D:enableTerminal=true --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} src/desktop_main.nim"""
+    buildNuigiStaticDependencies()
+    buildStatic()
 
   of "package-linux":
     echo &"Package for linux..."

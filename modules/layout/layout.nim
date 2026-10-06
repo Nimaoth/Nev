@@ -1,10 +1,10 @@
 #use status_line text_editor_component command_service session input_handler
 # text_editor_component is needed for OpenEditorPreviewer. todo: OpenEditorPreviewer shouldn't care about text editors treesitter
 import std/[options, json]
-import misc/[custom_async, id]
+import misc/[custom_async, id, util]
 import service, view, popup, selector_popup/builder
 import document, document_editor
-import ui/node
+from nuigi import UiBuilder
 from scripting_api import EditorId
 
 const currentSourcePath2 = currentSourcePath()
@@ -76,7 +76,7 @@ proc layoutServiceMoveView(self: LayoutService, slot: string)
 proc layoutServiceWrapLayout(self: LayoutService, layout: JsonNode, slot: string = "**")
 proc layoutServiceOpen(self: LayoutService, path: string, slot: string = "")
 proc layoutServiceLayout(self: LayoutService): View
-proc layoutServiceRender(self: LayoutService, builder: UINodeBuilder): seq[OverlayFunction]
+proc layoutServiceRenderNui(self: LayoutService, nui: var UiBuilder)
 proc layoutChangeSplitSize(self: LayoutService, slot: string, size: float, vertical: bool, add: bool = true)
 proc layoutGetSlot(self: LayoutService, view: View): string
 proc layoutGetParent(self: LayoutService, view: View): View
@@ -139,7 +139,8 @@ proc moveView*(self: LayoutService, slot: string) = layoutServiceMoveView(self, 
 proc wrapLayout*(self: LayoutService, layout: JsonNode, slot: string = "**") = layoutServiceWrapLayout(self, layout, slot)
 proc open*(self: LayoutService, path: string, slot: string = "") = layoutServiceOpen(self, path, slot)
 proc rootLayout*(self: LayoutService): View = layoutServiceLayout(self)
-proc render*(self: LayoutService, builder: UINodeBuilder): seq[OverlayFunction] = layoutServiceRender(self, builder)
+proc renderNui*(self: LayoutService, nui: var UiBuilder) = layoutServiceRenderNui(self, nui)
+proc render*(self: LayoutService, nui: var UiBuilder) = layoutServiceRenderNui(self, nui)
 proc changeSplitSize*(self: LayoutService, slot: string, size: float, vertical: bool, add: bool = true) = layoutChangeSplitSize(self, slot, size, vertical, add)
 proc getSlot*(self: LayoutService, view: View): string = layoutGetSlot(self, view)
 proc getParent*(self: LayoutService, view: View): View = layoutGetParent(self, view)
@@ -166,7 +167,7 @@ proc getViews*(self: LayoutService, T: typedesc): seq[T] =
 
 # Implementation
 when implModule:
-  import std/[tables, sugar, deques, sets]
+  import std/[tables, sugar, deques, sets, strformat]
   import results, vmath
   import platform
   import misc/[custom_logger, rect_utils, myjsonutils, util, jsonex]
@@ -174,6 +175,7 @@ when implModule:
   import finder, previewer
   import input_handler/input_handler, config_provider, vfs, vfs_service, session, layouts, command_service, status_line, theme
   import nimsumtree/arc
+  from nuigi import UiBuilder, UiStyleIndex, UiTextStyleIndex, text, textStyleIndex, fit, node, fillX, fillY, fillBackground, styleIndex, layoutVertical, layoutHorizontal, gap, padding
 
   export layouts
 
@@ -245,6 +247,7 @@ when implModule:
   proc layoutServiceAddViewRegisterView(self: LayoutService, view: View, last = true) =
     assert view != nil
     let self = self.LayoutServiceImpl
+    view.requestActivateNuiImpl = proc(view: View) = self.tryActivateView(view)
     if view notin self.mAllViews:
       if last:
         self.mAllViews.add view
@@ -467,9 +470,21 @@ when implModule:
       self.mAllViews.removeShift(activeView)
       self.mAllViews.add(activeView)
 
-  proc editorViewRender(self: EditorView, builder: UINodeBuilder): seq[OverlayFunction] =
-    self.resetDirty()
-    self.editor.render(builder)
+  proc editorViewRenderNui(self: EditorView, nui: var UiBuilder) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      self.resetDirty()
+      if self.editor != nil:
+        self.editor.renderNui(nui)
+      else:
+        nui.node:
+          discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).padding(0)
+          let filename = if self.document != nil: self.document.filename else: self.path
+          if filename.len > 0:
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(filename)
+          else:
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text("EditorView")
 
   proc editorViewDesc(self: EditorView): string =
     if self.document == nil:
@@ -515,7 +530,7 @@ when implModule:
     if id.isSome:
       self.mId = id.get
 
-    self.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = editorViewRender(self.EditorView, builder)
+    self.renderNuiImpl = proc(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} = editorViewRenderNui(self.EditorView, nui)
     # self.closeImpl = proc(self: View) = editorViewClose(self.EditorView)
     self.activateImpl = proc(self: View) = editorViewActivate(self.EditorView)
     self.deactivateImpl = proc(self: View) = editorViewDeactivate(self.EditorView)
@@ -1435,36 +1450,46 @@ when implModule:
       path = self.workspace.getAbsolutePath(path)
     discard self.openFile(path, slot)
 
-  proc layoutServiceRender(self: LayoutService, builder: UINodeBuilder): seq[OverlayFunction] =
-    let self = self.LayoutServiceImpl
-    if self.layout == nil:
-      return
+  proc layoutServiceRenderNui(self: LayoutService, nui: var UiBuilder) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      let self = self.LayoutServiceImpl
+      if self.layout == nil:
+        return
 
-    let newActiveView = self.layout.activeLeafView()
-    if newActiveView != self.activeView and newActiveView != nil:
-      if self.activeView != nil:
-        self.activeView.deactivate()
-      newActiveView.activate()
-      self.activeView = newActiveView
-      newActiveView.markDirty(notify=false)
+      let newActiveView = self.layout.activeLeafView()
+      if newActiveView != self.activeView and newActiveView != nil:
+        if self.activeView != nil:
+          self.activeView.deactivate()
+        newActiveView.activate()
+        self.activeView = newActiveView
+        newActiveView.markDirty(notify=false)
 
-    if self.maximizeView:
-      let bounds = builder.currentParent.bounds
-      builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
-        let view = self.layout.activeLeafView()
-        if view != nil:
-          result.add view.createUI(builder)
-        elif self.fallbackView != nil:
-          result.add self.fallbackView.createUI(builder)
-        else:
-          builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
-
-    else:
-      let visibleViews = self.getNumVisibleViews()
-      if visibleViews == 0 and self.fallbackView != nil:
-        result.add self.fallbackView.createUI(builder)
+      if self.maximizeView:
+        nui.layoutVertical("layout-maximized"):
+          discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backendGap(4)
+          let view = self.layout.activeLeafView()
+          if view != nil:
+            view.render(nui)
+          elif self.fallbackView != nil:
+            self.fallbackView.render(nui)
+          else:
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text("No view")
       else:
-        result.add self.layout.createUI(builder)
+        let visibleViews = self.getNumVisibleViews()
+        if visibleViews == 0 and self.fallbackView != nil:
+          self.fallbackView.render(nui)
+        else:
+          # Render layout via NUI – if layout has NUI impl, use it, otherwise fallback to simple vertical container
+          if self.layout.renderNuiImpl != nil:
+            self.layout.render(nui)
+          else:
+            nui.layoutVertical("layout-root"):
+              discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backendGap(4)
+              for v in self.layout.visibleLeafViews():
+                nui.node:
+                  discard nui.fillX().fillY()
+                  v.render(nui)
 
   proc chooseOpen*(self: LayoutService, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6)
 
@@ -1519,7 +1544,7 @@ when implModule:
     let self = getServiceChecked(LayoutServiceImpl)
     registerCommands(cmds)
     if getService(StatusLineService).getSome(statusLine):
-      statusLine.addRenderer "layout", proc(builder: UINodeBuilder): seq[OverlayFunction] =
+      statusLine.addRendererNui "layout", proc(nui: var UiBuilder) {.gcsafe, raises: [].} =
         let layout = self.layout.activeLeafLayout()
         let maximizedText = if self.maximizeView:
           "Fullscreen"
@@ -1531,11 +1556,11 @@ when implModule:
             fmt"{layout.children.len}/{maxText}"
         else:
           ""
-        let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[Layout {self.layoutName} - {layout.desc} - {maximizedText}]")
-        return @[]
+        let desc = if layout != nil: layout.desc else: ""
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(&"[Layout {self.layoutName} - {desc} - {maximizedText}]")
 
-      statusLine.addRenderer "layout.min", proc(builder: UINodeBuilder): seq[OverlayFunction] =
+      statusLine.addRendererNui "layout.min", proc(nui: var UiBuilder) {.gcsafe, raises: [].} =
         let layout = self.layout.activeLeafLayout()
         let maximizedText = if self.maximizeView:
           "Fullscreen"
@@ -1547,9 +1572,8 @@ when implModule:
             fmt"{layout.children.len}/{maxText}"
         else:
           ""
-        let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[{maximizedText}]")
-        return @[]
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(&"[{maximizedText}]")
 
   import open_editor_previewer
   proc chooseOpen*(self: LayoutService, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) =

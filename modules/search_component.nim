@@ -106,7 +106,7 @@ when implModule:
       self.lastSearchResultUpdate = (buffer.remoteId, buffer.version, searchQuery)
       decorations.clearCustomHighlights(searchResultsId)
       for s in searchResults:
-        decorations.addCustomHighlight(searchResultsId, s, "editor.findMatchBackground")
+        decorations.addCustomHighlight(searchResultsId, s, "search-match")
 
       self.onSearchResultsUpdated.invoke(self)
 
@@ -213,7 +213,7 @@ when implModule:
 
         decorations.clearCustomHighlights(wordHighlightId)
         for r in ranges:
-          decorations.addCustomHighlight(wordHighlightId, r, "matching-text-highlight")
+          decorations.addCustomHighlight(wordHighlightId, r, "matching-text")
 
         break
       except Exception as e:

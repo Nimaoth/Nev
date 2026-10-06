@@ -1,10 +1,42 @@
 import std/[locks, options]
 import vmath, chroma
-import ui/node
-import misc/[event, timer, custom_async]
+import misc/[event, timer, custom_async, render_command]
 import vfs, app_options, scripting_api, pixie, misc/input_api, service
+import nuigi
 
 export input_api, event
+
+func backendSpacing*(builder: UiBuilder, graphicalValue: float32,
+    terminalValue = 0.0'f32): float32 {.inline.} =
+  if builder.backendType == UiBackendType.Terminal:
+    terminalValue
+  else:
+    graphicalValue
+
+proc backendPadding*(builder: var UiBuilder, graphicalValue: float32,
+    terminalValue = 0.0'f32): var UiBuilder {.discardable, inline.} =
+  discard builder.padding(builder.backendSpacing(graphicalValue, terminalValue))
+  builder
+
+proc backendPaddingX*(builder: var UiBuilder, graphicalValue: float32,
+    terminalValue = 0.0'f32): var UiBuilder {.discardable, inline.} =
+  discard builder.paddingX(builder.backendSpacing(graphicalValue, terminalValue))
+  builder
+
+proc backendPaddingY*(builder: var UiBuilder, graphicalValue: float32,
+    terminalValue = 0.0'f32): var UiBuilder {.discardable, inline.} =
+  discard builder.paddingY(builder.backendSpacing(graphicalValue, terminalValue))
+  builder
+
+proc backendGap*(builder: var UiBuilder, graphicalValue: float32,
+    terminalValue = 0.0'f32): var UiBuilder {.discardable, inline.} =
+  discard builder.gap(builder.backendSpacing(graphicalValue, terminalValue))
+  builder
+
+proc backendBorderWidth*(builder: var UiBuilder, graphicalValue: float32,
+    terminalValue = 1.0'f32): var UiBuilder {.discardable, inline.} =
+  discard builder.borderWidth(builder.backendSpacing(graphicalValue, terminalValue))
+  builder
 
 type
   RequestRenderImpl* = proc(self: Platform, redrawEverything: bool) {.gcsafe, raises: [].}
@@ -33,15 +65,19 @@ type
   SetClipboardTextImpl* = proc(self: Platform, str: string) {.gcsafe, raises: [].}
   GetClipboardTextImpl* = proc(self: Platform): Future[Option[string]] {.gcsafe, async: (raises: []).}
   SetTitleImpl* = proc(self: Platform, title: string) {.gcsafe, raises: [].}
+  ShouldRenderImpl* = proc(self: Platform): bool {.gcsafe, raises: [].}
+  BeginNuiFrameImpl* = proc(self: Platform) {.gcsafe, raises: [].}
+  EndNuiFrameImpl* = proc(self: Platform) {.gcsafe, raises: [].}
 
   Platform* = ref object of RootObj
-    builder*: UINodeBuilder
+    nui*: UiBuilder
     redrawEverything*: bool
     requestedRender*: bool
     showDrawnNodes*: bool = false
     supportsThinCursor*: bool
     focused*: bool
     deltaTime*: float
+    frameTimer*: Timer
     eventCounter*: int
     onResize*: Event[void]
     onKeyPress*: Event[tuple[input: int64, modifiers: Modifiers]]
@@ -86,6 +122,9 @@ type
     setClipboardTextImpl*: SetClipboardTextImpl
     getClipboardTextImpl*: GetClipboardTextImpl
     setTitleImpl*: SetTitleImpl
+    shouldRenderImpl*: ShouldRenderImpl
+    beginNuiFrameImpl*: BeginNuiFrameImpl
+    endNuiFrameImpl*: EndNuiFrameImpl
 
   PlatformService* = ref object of Service
     platform*: Platform
@@ -207,6 +246,22 @@ proc getClipboardText*(self: Platform): Future[Option[string]] {.async.} =
 proc setTitle*(self: Platform, title: string) =
   if self.setTitleImpl != nil:
     self.setTitleImpl(self, title)
+
+proc shouldRender*(self: Platform): bool =
+  if self.shouldRenderImpl != nil:
+    return self.shouldRenderImpl(self)
+  false
+
+proc controlsRenderScheduling*(self: Platform): bool =
+  self.shouldRenderImpl != nil
+
+proc beginNuiFrame*(self: Platform) =
+  if self.beginNuiFrameImpl != nil:
+    self.beginNuiFrameImpl(self)
+
+proc endNuiFrame*(self: Platform) =
+  if self.endNuiFrameImpl != nil:
+    self.endNuiFrameImpl(self)
 
 include misc/dynlib_export
 

@@ -9,13 +9,14 @@ when implModule:
   import chroma
   import nimsumtree/[buffer, sumtree, rope]
   import misc/[util, custom_logger, rope_utils, delayed_task, custom_async, arena, array_view, id, jsonex]
-  import misc/[event, render_command]
+  import misc/[event]
   import text/[syntax_map, snippet]
   import treesitter/[treesitter, treesitter_types, treesitter_type_conv]
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import service, event_service, document_editor, document, decoration_component, treesitter_component
   import text_component, language_component, text_editor_component, command_component, move_component, command_service
   import snippet_component, config_component, platform, component, config_provider
+  from nuigi import UiBuilder, node, position, size, finishAnchors, backgroundColor, rgba
 
   {.push warning[Deprecated]:off.}
   import std/[threadpool]
@@ -700,8 +701,10 @@ when implModule:
 
       let platform = getServices().getService(PlatformService)
       if platform.isSome and platform.get.platform.backend == Backend.Gui:
-        res.headerMarkerRendererId = decorations.addCustomRenderer proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 =
-          commands.fillRect(rect(5, -2, size.x - 10, 1), color(0.7, 0.7, 0.7, 0.2))
+        res.headerMarkerRendererId = decorations.addCustomRenderer proc(id: int, size: Vec2, localOffset: int, builder: var UiBuilder): Vec2 =
+          builder.node:
+            discard builder.position(5, -2).size(max(size.x - 10, 0.0'f32), 1)
+              .finishAnchors().backgroundColor(rgba(0.7, 0.7, 0.7, 0.2))
           return vec2(size.x, 0)
 
     res.updateTask = startDelayedPaused(1, false):
@@ -778,4 +781,3 @@ when implModule:
       except CatchableError as e:
         log lvlError, &"Error: {e.msg}"
     events.get.listen(newId(), "editor/*/registered", handleEditorRegistered)
-

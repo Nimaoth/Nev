@@ -92,7 +92,7 @@ proc fillDefaultSettings*(s: ConfigStore) =
   s.set("text.code-actions.sign-width", 1)
   s.set("text.code-actions.sign-color", "info")
   s.set("text.color-highlight.enable", false)
-  s.set("text.color-highlight.regex", "#([0-9a-fA-F]{6})|#([0-9a-fA-F]{8})")
+  s.set("text.color-highlight.regex", "#([0-9a-fA-F]{8})|#([0-9a-fA-F]{6})")
   s.set("text.color-highlight.kind", "hex")
   s.set("text.tab-width", 4)
   s.set("text.completion-word-chars", %*[["a","z"],["A","Z"],["0","9"],"_"])

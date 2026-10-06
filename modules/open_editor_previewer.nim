@@ -14,7 +14,7 @@ when implModule:
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import finder, document_editor, service
   import text_editor_component
-  import ui/node
+  from nuigi import UiBuilder
 
   logCategory "open-editor-previewer"
 
@@ -52,9 +52,9 @@ when implModule:
     let res = OpenEditorPreviewer()
     res.previewItemImpl = proc(self: Previewer, item: FinderItem, editor: DocumentEditor) = previewItemImpl(self.OpenEditorPreviewer, item, editor)
     res.deinitImpl = proc(self: Previewer) = deinitImpl(self.OpenEditorPreviewer)
-    res.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
+    res.renderNuiImpl = proc(self: Previewer, nui: var UiBuilder) =
       let self = self.OpenEditorPreviewer
       if self.editor.isNotNil:
-        result.add self.editor.render(builder)
+        self.editor.renderNui(nui)
 
     return res

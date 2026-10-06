@@ -1,7 +1,6 @@
 import command_service
 import std/[os, typedthreads, tables, hashes, macros, deques, genasts]
 import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, myjsonutils, render_command, tui]
-import ui/node
 import nimsumtree/[rope, arc]
 import view, input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, misc/channel, register
 from scripting_api import SshOptions, RunInTerminalOptions, CreateTerminalOptions
@@ -73,6 +72,7 @@ type
     SetColorPalette
     Paste
     EnableLog
+    Viewport
 
   InputEvent* = object
     modifiers*: Modifiers
@@ -105,6 +105,12 @@ type
       colors*: seq[tuple[r, g, b: uint8]]
     of InputEventKind.EnableLog:
       enableLog*: bool
+    of InputEventKind.Viewport:
+      firstRow*, lastRow*: int
+      scrollOffset*: float32 # In terminal rows, including fractional scrolling.
+      viewportRows*: float32
+      historyStart*: int64
+      followTail*: bool
 
   Sixel* = object
     colors*: seq[chroma.Color]
@@ -127,15 +133,18 @@ type
     textureId*: TextureId
 
   CursorShape* {.pure.} = enum Block, Underline, BarLeft
-  OutputEventKind* {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, CursorBlink, Terminated, Rope, Scroll, Log
+  OutputEventKind* {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, CursorBlink, Terminated, Rope, Scroll, Log, ThreadStopped
   OutputEvent* = object
     case kind*: OutputEventKind
     of OutputEventKind.TerminalBuffer:
       buffer*: TerminalBuffer
       sixels*: Table[(int, int), Sixel]
       placements*: seq[PlacedImage]
-      relativeScroll*: float
-      scrollHeight*: float
+      historyLength*: int
+      firstRow*: int
+      historyStart*: int64
+      alternateScreen*: bool
+      mouseTracking*: bool
     of OutputEventKind.Size:
       width*: int
       height*: int
@@ -160,6 +169,8 @@ type
     of OutputEventKind.Log:
       level*: Level
       msg*: string
+    of OutputEventKind.ThreadStopped:
+      discard
 
   OsHandles* = object
     inputEventSignal*: ThreadSignalPtr # used to signal input events when using channels. todo: use for native terminal aswell
@@ -226,6 +237,12 @@ type
     pixelWidth*: int
     pixelHeight*: int
     scrollY*: int = 0
+    viewportFirst*: int
+    viewportLast*: int = -1
+    viewportRows*: float32
+    viewportHistoryStart*: int64
+    viewportFollowTail*: bool = true
+    historyStart*: int64
     cursor*: tuple[row, col: int, visible: bool, blink: bool] = (0, 0, true, true)
     scrollbackBuffer*: Deque[seq[VTermScreenCell]]
     scrollbackLines*: int
@@ -255,7 +272,13 @@ type
     thread*: Thread[TerminalThreadState]
     inputChannel*: ptr system.Channel[InputEvent]
     outputChannel*: ptr system.Channel[OutputEvent]
-    terminalBuffer*: TerminalBuffer # The latest terminalBuffer received from the terminal thread
+    terminalBuffer*: TerminalBuffer # Bounded, prefetched row cache; not the whole terminal.
+    bufferFirstRow*: int
+    historyStart*: int64
+    historyLength*: int
+    alternateScreen*: bool
+    mouseTracking*: bool
+    pendingScrollRows*: int
     sixels*: seq[tuple[contentHash: Hash, row, col: int, px, py: int, width, height: int]]
     images*: seq[PlacedImage]
     cursor*: tuple[row, col: int, visible: bool, shape: CursorShape, blink: bool] = (0, 0, true, CursorShape.Block, true)
@@ -269,8 +292,6 @@ type
     createPty*: bool = false
     kittyPathPrefix*: string
     threadTerminated*: bool = false
-    relativeScroll*: float
-    scrollHeight*: float
 
     # Events
     lastUpdateTime*: timer.Timer
@@ -330,3 +351,29 @@ proc scrollbackBufferLen*(self: ptr TerminalThreadState): int =
   if self.alternateScreen:
     return 0
   return self.scrollbackBuffer.len
+
+proc terminalRowWindow*(state: TerminalThreadState): tuple[first, last: int] =
+  let total = state.scrollbackBufferLen + state.height
+  let visibleCount = if state.viewportLast >= state.viewportFirst:
+    state.viewportLast - state.viewportFirst + 1
+  else:
+    state.height
+  let first = if state.viewportFollowTail:
+    max(0, int(total.float32 - (if state.viewportRows > 0: state.viewportRows else: visibleCount.float32)))
+  else:
+    clamp(state.viewportFirst - int(state.historyStart - state.viewportHistoryStart), 0, max(0, total - 1))
+  let overscan = max(state.height, visibleCount)
+  (max(0, first - overscan), min(total, first + visibleCount + overscan))
+
+proc sendEvent*(self: Terminal, event: InputEvent) =
+  if self.threadTerminated:
+    return
+  self.inputChannel[].send(event)
+  discard self.handles.inputEventSignal.fireSync()
+  when defined(windows):
+    if self.handles.inputWriteEvent != 0:
+      discard SetEvent(self.handles.inputWriteEvent)
+  else:
+    if not self.useChannels:
+      var b: uint64 = 1
+      discard write(self.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))

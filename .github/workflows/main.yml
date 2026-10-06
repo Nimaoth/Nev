@@ -37,10 +37,15 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@v4.1.7
 
-      - run: apt-get update
-        continue-on-error: true
-      - run: apt-get install gcc-mingw-w64 libx11-xcb-dev curl wget build-essential git musl-tools cmake clang python3 -y
-        continue-on-error: true
+      - name: Install Linux build dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            gcc-mingw-w64 libx11-xcb-dev curl wget build-essential git musl-tools \
+            cmake clang meson ninja-build pkg-config python3 \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
+            libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb xauth
 
       - name: Install stable rust toolchain
         uses: dtolnay/rust-toolchain@1.81
@@ -119,6 +124,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Meson and Ninja
+        run: python -m pip install meson ninja
+
       - name: Cache nimble modules
         id: cache-nimble
         uses: actions/cache@v3
@@ -145,7 +153,6 @@ jobs:
         run: |
           nimble install https://github.com/nim-lang/atlas@#b2b0b20feac205c75e5b6eff98a8dd8f0303ab64 -y
           echo "$env:USERPROFILE\.nimble\bin" >> $env:GITHUB_PATH
-          & "$env:USERPROFILE\.nimble\bin\atlas.exe" --version
 
       - run: atlas rep
       - run: atlas install

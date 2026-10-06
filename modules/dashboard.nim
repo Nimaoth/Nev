@@ -56,17 +56,16 @@ const logos = @[
 ]
 
 when implModule:
-  import std/[tables, options, strformat, sequtils, random, json, algorithm, math]
-  import vmath, chroma
-  import misc/[custom_logger, util, custom_async, custom_unicode, jsonex, myjsonutils, timer]
-  import ui/node
+  import std/[tables, options, strformat, sequtils, random, json, algorithm]
+  import misc/[custom_logger, util, custom_async, jsonex, myjsonutils, timer]
+  import nuigi
+  import nuigi/layout/flex
+  import nuigi/widgets
   import view, layout/layout, service, input_handler/input_handler, command_service
-  import theme
   import vcs
   import platform, stats
   import session
   import config_provider
-  import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
   logCategory "dashboard"
 
@@ -129,7 +128,7 @@ when implModule:
     return state.cachedLogos
 
   type
-    SectionRenderFunc* = proc(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].}
+    SectionRenderFunc* = proc(self: DashboardView, nui: var UiBuilder, section: var SectionInfo) {.gcsafe, raises: [].}
 
     DashboardView* = ref object of View
       events*: EventHandlerService
@@ -139,97 +138,85 @@ when implModule:
       sectionRenderers*: Table[string, SectionRenderFunc]
       uptimeTimer: Timer
 
-  proc drawSection(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo, sectionRenderers: Table[string, SectionRenderFunc], x, y, w: float, textColor, sectionColor: Color) =
-    let cx = builder.charWidth
-    builder.panel(&{SizeToContentY, MaskContent}, x = x, y = y, w = w, backgroundColor = sectionColor):
-      builder.panel(&{LayoutVertical, SizeToContentY, FillX}, border = border(ceil(cx / 2))):
-        if section.title != "":
-          builder.panel(&{SizeToContentY, FillX, DrawText}, text = section.title, textColor = textColor)
-        if section.renderer in sectionRenderers:
-          sectionRenderers[section.renderer](self, builder, section)
+  proc drawSection(self: DashboardView, nui: var UiBuilder, section: var SectionInfo) =
+    nui.layoutVertical:
+      discard nui.fillX().fitY().backendPadding(4).backendGap(2).maskChildren()
       if section.border:
-        builder.panel(&{FillX, FillY, DrawBorder, DrawBorderTerminal}, border = border(1), borderColor = textColor, backgroundColor = sectionColor)
+        let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
+        discard nui.styleIndex(panelStyle).fillBackground()
+          .backendBorderWidth(1).backendPadding(8, 1)
+          .borderColor(nui.themeStyle(panelStyle)[].borderColor)
+      if section.title.len > 0:
+        nui.node:
+          discard nui.fillX().fitY().styleIndex(
+            if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader)
+            .fillBackground().backendPadding(2)
+            .textStyleIndex(int(UiStyleIndexHeaderText)).text(section.title)
+      if section.renderer in self.sectionRenderers:
+        self.sectionRenderers[section.renderer](self, nui, section)
 
-  proc renderDashboard(self: DashboardView, builder: UINodeBuilder): seq[OverlayFunction] =
-    self.resetDirty()
+  proc renderDashboardNui(self: DashboardView, nui: var UiBuilder) =
+    {.cast(gcsafe).}:
+      self.resetDirty()
 
-    let services = getServices()
-    let configService = services.getServiceChecked(ConfigService)
-    let configStore = configService.runtime
-
-    let minTwoColChars = configStore.get("dashboard.min-two-col-chars", 160)
-    let padXPercent = configStore.get("dashboard.pad-x", 0.1)
-    let padYPercent = configStore.get("dashboard.pad-y", 0.02)
-    let sectionGapPercent = configStore.get("dashboard.section-gap", 0.02)
-    let colGapPercent = configStore.get("dashboard.col-gap", 0.05)
-
-    let inactiveBrightnessChange = -0.025
-    var backgroundColor = if self.active:
-      builder.theme.color("editor.background", color(25/255, 25/255, 40/255))
-    else:
-      builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
-    backgroundColor.a = 1
-
-    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-
-    let parentBounds = builder.currentParent.bounds
-    let pw = parentBounds.w
-    let ph = parentBounds.h
-
-    let padX = padXPercent * pw
-    let padY = padYPercent * ph
-    let gapY = sectionGapPercent * ph
-    let colGapX = colGapPercent * pw
-
-    builder.panel(&{FillBackground, FillX, FillY}, backgroundColor = backgroundColor):
-      if pw < minTwoColChars.float * builder.charWidth:
-        # Single column layout
-        let colX = padX
-        let colW = pw - padX * 2
-
-        var y = padY
-        for section in self.sections.mitems:
-          if y > ph - padY:
-            continue
-          drawSection(self, builder, section, self.sectionRenderers, colX, y, colW, textColor, backgroundColor)
-          y += builder.currentChild.bounds.h + gapY
+      let configStore = getServices().getServiceChecked(ConfigService).runtime
+      let minTwoColChars = configStore.get("dashboard.min-two-col-chars", 160)
+      let padXPercent = configStore.get("dashboard.pad-x", 0.1).float32
+      let padYPercent = configStore.get("dashboard.pad-y", 0.02).float32
+      let sectionGapPercent = configStore.get("dashboard.section-gap", 0.02).float32
+      let colGapPercent = configStore.get("dashboard.col-gap", 0.05).float32
+      let parentWidth = nui.currentNode.size.x
+      let parentHeight = nui.currentNode.size.y
+      let monoSize = nui.themeTextStyle(UiStyleIndexDefaultMono)[].fontSize
+      let charWidth = if nui.backendType == UiBackendType.Terminal:
+        1.0'f32
       else:
-        # Two column layout
-        let totalContentW = pw - padX * 2 - colGapX
-        let leftColW = totalContentW * 0.5
-        let rightColW = totalContentW - leftColW
-        let leftColX = padX
-        let rightColX = padX + leftColW + colGapX
+        monoSize * 0.6'f32
+      let twoColumns = parentWidth >= minTwoColChars.float32 * charWidth
+      let padX = max(0.0'f32, parentWidth * padXPercent)
+      let padY = max(0.0'f32, parentHeight * padYPercent)
+      let sectionGap = max(if nui.backendType == UiBackendType.Terminal: 1.0'f32 else: 4.0'f32,
+        parentHeight * sectionGapPercent)
+      let columnGap = if nui.backendType == UiBackendType.Terminal:
+        0.0'f32
+      else:
+        max(8.0'f32, parentWidth * colGapPercent)
+      nui.layoutVertical("dashboard"):
+        discard nui.fillX().fillY().styleIndex(
+          if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel).fillBackground()
+        if nui.wasClicked(includeChildren = true):
+          getServiceChecked(LayoutService).tryActivateView(self)
 
-        var ly = padY
-        var ry = padY
-        for section in self.sections.mitems:
-          let (colX, colW) = if section.side == -1:
-            (leftColX, rightColX + rightColW - leftColX)
-          elif section.side == 0:
-            (leftColX, leftColW)
-          else:
-            (rightColX, rightColW)
-          var y = if section.side == -1:
-            max(ly, ry)
-          elif section.side == 0:
-            ly
-          else:
-            ry
-          if y > ph - padY:
-            continue
-          drawSection(self, builder, section, self.sectionRenderers, colX, y, colW, textColor, backgroundColor)
-          let sectionH = builder.currentChild.bounds.h
-          if section.side == -1:
-            let yh = y + sectionH + gapY
-            ly = yh
-            ry = yh
-          elif section.side == 0:
-            ly += sectionH + gapY
-          else:
-            ry += sectionH + gapY
+        nui.scrollBox:
+          discard nui.fillX().fillY()
+          nui.layoutVertical("dashboard-content"):
+            discard nui.fillX().fitY().backendPaddingX(padX)
+              .backendPaddingY(padY).backendGap(sectionGap)
 
-    return @[]
+            for section in self.sections.mitems:
+              if section.side == -1:
+                self.drawSection(nui, section)
+
+            if twoColumns:
+              nui.node("dashboard-columns"):
+                discard nui.fillX().fitY().flexLayout()
+                  .flexDirection(FlexDirectionRow).columnGap(columnGap)
+                nui.layoutVertical("dashboard-left"):
+                  discard nui.fitY().flex(1.0'f32, 1.0'f32, 0.0'f32)
+                    .backendGap(sectionGap)
+                  for section in self.sections.mitems:
+                    if section.side == 0:
+                      self.drawSection(nui, section)
+                nui.layoutVertical("dashboard-right"):
+                  discard nui.fitY().flex(1.0'f32, 1.0'f32, 0.0'f32)
+                    .backendGap(sectionGap)
+                  for section in self.sections.mitems:
+                    if section.side > 0:
+                      self.drawSection(nui, section)
+            else:
+              for section in self.sections.mitems:
+                if section.side != -1:
+                  self.drawSection(nui, section)
 
   proc desc(self: DashboardView): string = "Dashboard"
   proc kind(self: DashboardView): string = "dashboard"
@@ -283,16 +270,14 @@ when implModule:
   proc getEventHandlers(self: DashboardView, inject: Table[string, EventHandler]): seq[EventHandler] =
     result.add self.getEventHandler("dashboard")
 
-  proc renderLogo(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
-    let cx = builder.charWidth
-    let cy = builder.textHeight
-    let foregroundColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-
+  proc renderLogo(self: DashboardView, nui: var UiBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
     if section.state == nil:
       let state = LogoState()
       section.state = state
 
     let sectionLogos = section.getLogos()
+    if sectionLogos.len == 0:
+      return
     var state = section.state.LogoState
     if state.index < 0 or state.index > sectionLogos.high:
       state.index = rand(sectionLogos.high)
@@ -300,33 +285,28 @@ when implModule:
       let colorNames = ["Red", "Green", "Yellow", "Blue", "Magenta", "Cyan"]
       state.colorName = colorNames[rand(colorNames.high)]
 
-    let ansiColor = builder.theme.color("terminal.ansi" & state.colorName, foregroundColor).darken(0.1)
-    let ansiBrightColor = builder.theme.color("terminal.ansiBright" & state.colorName, foregroundColor).lighten(0.1)
     let lines {.cursor.} = sectionLogos[state.index]
-
-    var maxLineWidth = 0
-    for l in lines:
-      maxLineWidth = max(maxLineWidth, l.runeLen.int)
-
-    let availableWidth = builder.currentParent.bounds.w
-    let logoWidth = maxLineWidth.float * cx
-    let logoX = max(0.0, (availableWidth - logoWidth) / 2)
-
-    builder.panel(0.UINodeFlags, x = logoX, w = logoWidth, h = lines.len.float * cy):
-      currentNode.renderCommands.clear()
-      buildCommands(currentNode.renderCommands):
-        let brightnessSteps = lines.len.max(1)
-        for i, line in lines:
-          let y = i.float * cy
-          let t = i.float / (brightnessSteps - 1).float.max(1)
-          let lineColor = mix(ansiBrightColor, ansiColor, t)
-          drawText(line, rect(0, y, line.runeLen.float * cx, cy), lineColor, 0.UINodeFlags)
-
-  proc shouldRenderLines(): bool =
-    let services = getServices()
-    let platformService = services.getService(PlatformService).getOr:
-      return false
-    return platformService.platform.backend == Backend.Gui
+    let hueShift = case state.colorName
+      of "Red": -0.46'f32
+      of "Green": -0.28'f32
+      of "Yellow": -0.18'f32
+      of "Blue": 0.04'f32
+      of "Magenta": 0.18'f32
+      of "Cyan": -0.08'f32
+      else: 0.0'f32
+    let accent = nui.themeStyle(UiStyleIndexAccent)[].fillColor
+    nui.node("dashboard-logo"):
+      discard nui.fillX().fitY().flexLayout()
+        .flexDirection(FlexDirectionRow).justifyContent(FlexJustifyCenter)
+      nui.layoutVertical:
+        discard nui.fitX().fitY()
+        let brightnessSteps = max(1, lines.len - 1)
+        for lineIndex, line in lines:
+          nui.node:
+            let brightness = 1.15'f32 -
+              lineIndex.float32 / brightnessSteps.float32 * 0.35'f32
+            discard nui.fit().copyTextStyleIndex(UiStyleIndexDefaultMono)
+              .textColor(accentVariation(accent, hueShift, brightness)).text(line)
 
   proc maxItems(section: SectionInfo, default: int = 10): int =
     if section.config != nil:
@@ -334,12 +314,7 @@ when implModule:
     else:
       default
 
-  proc renderKeymaps(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
-    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-    let accentColor = builder.theme.color("editorLineNumber.foreground", color(120/255, 120/255, 160/255))
-    let keyColor = builder.theme.tokenColor("keyword", accentColor)
-    let sepColor = builder.theme.tokenColor("comment", accentColor)
-
+  proc renderKeymaps(self: DashboardView, nui: var UiBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
     var commands: seq[(string, string)] = @[]
     if section.config != nil and section.config.hasKey("commands"):
       for cmdNode in section.config["commands"].getElems:
@@ -365,34 +340,26 @@ when implModule:
     for keys in commandToKeys.mvalues:
       keys.sort(proc(a, b: string): int = cmp(a.len, b.len))
 
-    let renderLines = shouldRenderLines()
-    let cx = builder.charWidth
-    let cy = builder.textHeight
-    let availableWidth = builder.currentParent.bounds.w
-    let lineColor = builder.theme.color("editor.background", color(25/255, 25/255, 40/255)).lighten(0.01)
-    builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
+    nui.layoutVertical("dashboard-keymaps"):
+      discard nui.fillX().fitY().backendGap(1)
       for (cmd, label) in commands:
         let hasKey = cmd in commandToKeys
         let keys = if hasKey: commandToKeys[cmd] else: @[]
-        let totalKeyLen = if keys.len > 0: keys.mapIt(it.len).foldl(a + b) + (keys.len - 1) * 3 else: 0
-        let keyX = availableWidth - totalKeyLen.float * cx - cx * 3
-        let labelWidth = label.len.float * cx
-        builder.panel(&{SizeToContentY, FillX}):
-          builder.panel(&{SizeToContentY, FillX, DrawText}, text = label, textColor = textColor)
+        nui.node:
+          discard nui.fillX().fitY().flexLayout()
+            .flexDirection(FlexDirectionRow).columnGap(nui.backendSpacing(2))
+          nui.node:
+            discard nui.fitY().flex(1.0'f32, 1.0'f32, 0.0'f32)
+              .textStyleIndex(int(UiStyleIndexDefaultText)).text(label)
           if hasKey:
-            let lineX = labelWidth + cx
-            let lineW = keyX - lineX - cx
-            if lineW > 0 and renderLines:
-              builder.panel(&{DrawBorder}, x = lineX, y = floor(cy * 0.5) - 1, w = lineW, h = 1, border = border(0, 0, 1, 0), borderColor = lineColor)
-            var xOff = keyX
             for ki, key in keys:
               if ki > 0:
-                builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = xOff, text = " | ", textColor = sepColor)
-                xOff += 3.0 * cx
-              builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = xOff, text = key, textColor = keyColor)
-              xOff += key.len.float * cx
+                nui.node:
+                  discard nui.fit().textStyleIndex(int(UiStyleIndexMutedText)).text("|")
+              nui.node:
+                discard nui.fit().textStyleIndex(int(UiStyleIndexLabelText)).text(key)
 
-  proc renderRecentFiles(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
+  proc renderRecentFiles(self: DashboardView, nui: var UiBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
     discard
 
   proc refreshSessions(view: DashboardView, state: SessionsState) {.async.} =
@@ -411,13 +378,7 @@ when implModule:
       state.hasFetched = true
       view.markDirty()
 
-  proc renderSessions(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
-    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-    let accentColor = builder.theme.color("editorLineNumber.foreground", color(120/255, 120/255, 160/255))
-    let keyColor = builder.theme.tokenColor("keyword", accentColor)
-    let lineColor = builder.theme.color("editor.background", color(25/255, 25/255, 40/255)).lighten(0.01)
-    let renderLines = shouldRenderLines()
-
+  proc renderSessions(self: DashboardView, nui: var UiBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
     var state = SessionsState(section.state)
     if state == nil:
       state = SessionsState()
@@ -437,32 +398,32 @@ when implModule:
                 indexToKey[idx] = info.keys
             except: discard
 
-    builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
+    nui.layoutVertical("dashboard-sessions"):
+      discard nui.fillX().fitY().backendGap(1)
       if not state.hasFetched:
-        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = "Loading...", textColor = accentColor)
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexMutedText)).text("Loading...")
       elif state.sessions.len == 0:
-        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = "No recent sessions", textColor = accentColor)
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexMutedText)).text("No recent sessions")
       else:
-        let cx = builder.charWidth
-        let cy = builder.textHeight
-        let availableWidth = builder.currentParent.bounds.w
         let count = min(section.maxItems(9), state.sessions.len)
         for vi in 0 ..< count:
           let session = state.sessions[state.sessions.len - 1 - vi]
           let hasKey = vi in indexToKey
           let keyText = if hasKey: indexToKey[vi] else: ""
-          let keyX = availableWidth - keyText.len.float * cx - cx * 2
-          let sessionWidth = session.len.float * cx
-          builder.panel(&{SizeToContentY, FillX}):
-            builder.panel(&{SizeToContentY, FillX, DrawText}, text = session, textColor = textColor)
+          nui.node:
+            discard nui.fillX().fitY().flexLayout()
+              .flexDirection(FlexDirectionRow).columnGap(nui.backendSpacing(2))
+            nui.node:
+              discard nui.fitY().flex(1.0'f32, 1.0'f32, 0.0'f32)
+                .maskChildren()
+                .textStyleIndex(int(UiStyleIndexDefaultText)).text(session)
             if hasKey:
-              let lineX = sessionWidth + cx
-              let lineW = keyX - lineX - cx
-              if lineW > 0 and renderLines:
-                builder.panel(&{DrawBorder}, x = lineX, y = floor(cy * 0.5) - 1, w = lineW, h = 1, border = border(0, 0, 1, 0), borderColor = lineColor)
-              builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = keyX, text = keyText, textColor = keyColor)
+              nui.node:
+                discard nui.fit().textStyleIndex(int(UiStyleIndexLabelText)).text(keyText)
 
-  proc renderCurrentSession(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
+  proc renderCurrentSession(self: DashboardView, nui: var UiBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
     discard
 
   proc refreshGitStatus(view: DashboardView, state: GitStatusState) {.async.} =
@@ -489,29 +450,35 @@ when implModule:
     state.hasFetched = true
     view.markDirty()
 
-  proc renderGitStatus(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
-    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-    let accentColor = builder.theme.color("editorLineNumber.foreground", color(120/255, 120/255, 160/255))
-
+  proc renderGitStatus(self: DashboardView, nui: var UiBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
     var state = GitStatusState(section.state)
     if state == nil:
       state = GitStatusState()
       section.state = state
       asyncSpawn refreshGitStatus(self, state)
 
-    builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
+    nui.layoutVertical("dashboard-git-status"):
+      discard nui.fillX().fitY().backendGap(1)
       if not state.hasFetched:
-        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = "Loading...", textColor = accentColor)
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexMutedText)).text("Loading...")
       elif state.entries.len == 0:
-        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = "No changes", textColor = accentColor)
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexMutedText)).text("No changes")
       else:
         let maxEntries = section.maxItems(25)
         for i, entry in state.entries:
           if i >= maxEntries: break
-          builder.panel(&{SizeToContentY, FillX, LayoutHorizontal}):
+          nui.node:
+            discard nui.fillX().fitY().flexLayout()
+              .flexDirection(FlexDirectionRow).columnGap(nui.backendSpacing(2))
             let statusStr = entry.stagedStatus & entry.unstagedStatus & "  "
-            builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = statusStr, textColor = accentColor)
-            builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = entry.path, textColor = textColor)
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexSmallText)).text(statusStr)
+            nui.node:
+              discard nui.fitY().flex(1.0'f32, 1.0'f32, 0.0'f32)
+                .maskChildren()
+                .textStyleIndex(int(UiStyleIndexDefaultText)).text(entry.path)
 
   proc refreshCommitHistory(view: DashboardView, state: CommitHistoryState) {.async.} =
     let services = getServices()
@@ -530,65 +497,40 @@ when implModule:
     state.hasFetched = true
     view.markDirty()
 
-  proc renderCommitHistory(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
-    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-    let accentColor = builder.theme.color("editorLineNumber.foreground", color(120/255, 120/255, 160/255))
-    let commitIdColor = builder.theme.tokenColor("keyword", accentColor)
-    let descriptionColor = builder.theme.tokenColor("string", textColor)
-    let authorColor = builder.theme.tokenColor("comment", accentColor)
-    let dateColor = builder.theme.tokenColor("type", textColor)
-
+  proc renderCommitHistory(self: DashboardView, nui: var UiBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
     var state = CommitHistoryState(section.state)
     if state == nil:
       state = CommitHistoryState()
       section.state = state
       asyncSpawn refreshCommitHistory(self, state)
 
-    builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
+    nui.layoutVertical("dashboard-commit-history"):
+      discard nui.fillX().fitY().backendGap(1)
       if not state.hasFetched:
-        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = "Loading...", textColor = accentColor)
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexMutedText)).text("Loading...")
       elif state.commits.len == 0:
-        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = "No commits", textColor = accentColor)
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexMutedText)).text("No commits")
       else:
         let maxCommits = section.maxItems(20)
         let displayCommits = state.commits[0 ..< min(maxCommits, state.commits.len)]
-
-        var maxIdLen = 0
-        var maxDateLen = 0
-        var maxAuthorLen = 0
         for commit in displayCommits:
-          maxIdLen = max(maxIdLen, commit.id.runeLen.int)
-          maxDateLen = max(maxDateLen, commit.date.runeLen.int)
-          maxAuthorLen = max(maxAuthorLen, commit.author.runeLen.int)
+          nui.node:
+            discard nui.fillX().fitY().flexLayout()
+              .flexDirection(FlexDirectionRow).columnGap(nui.backendSpacing(4))
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexSmallText)).text(commit.id)
+            nui.node:
+              discard nui.fitY().flex(1.0'f32, 1.0'f32, 0.0'f32)
+                .maskChildren()
+                .textStyleIndex(int(UiStyleIndexDefaultText)).text(commit.description)
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexMutedText)).text(commit.date)
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexSmallText)).text(commit.author)
 
-        let colPad = 2
-        let cx = builder.charWidth
-        let availableWidth = builder.currentParent.bounds.w
-        let fixedWidth = (maxIdLen + maxDateLen + maxAuthorLen + colPad * 4).float * cx
-        let maxDescLen = max(10, int((availableWidth - fixedWidth) / cx))
-
-        let idX = 0.0
-        let descX = (maxIdLen + colPad).float * cx
-        let dateX = descX + (maxDescLen + colPad).float * cx
-        let authorX = dateX + (maxDateLen + colPad).float * cx
-
-        for commit in displayCommits:
-          var descText = commit.description
-          if descText.runeLen.int > maxDescLen:
-            descText = descText[0.RuneIndex ..< (maxDescLen - 1).RuneIndex] & "…"
-          builder.panel(&{SizeToContentY, FillX, LayoutHorizontal}):
-            builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = idX, text = commit.id, textColor = commitIdColor)
-            builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = descX, text = descText, textColor = descriptionColor)
-            builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = dateX, text = commit.date, textColor = dateColor)
-            builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = authorX, text = commit.author, textColor = authorColor)
-
-  proc renderStats(self: DashboardView, builder: UINodeBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
-    let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-    let accentColor = builder.theme.color("editorLineNumber.foreground", color(120/255, 120/255, 160/255))
-    let valueColor = builder.theme.tokenColor("keyword", accentColor)
-    let lineColor = builder.theme.color("editor.background", color(25/255, 25/255, 40/255)).lighten(0.01)
-    let renderLines = shouldRenderLines()
-
+  proc renderStats(self: DashboardView, nui: var UiBuilder, section: var SectionInfo) {.gcsafe, raises: [].} =
     var state = StatsState(section.state)
     if state == nil:
       let stats = getServices().getService(StatsService).getOr:
@@ -596,11 +538,8 @@ when implModule:
       state = StatsState(stats: stats)
       section.state = state
 
-    let cx = builder.charWidth
-    let cy = builder.textHeight
-    let availableWidth = builder.currentParent.bounds.w
-
-    builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
+    nui.layoutVertical("dashboard-stats"):
+      discard nui.fillX().fitY().backendGap(1)
       var uptime = self.uptimeTimer.elapsed.ms.int div 1000
       var uptimeUnit = "s"
       if uptime >= 60:
@@ -613,15 +552,14 @@ when implModule:
 
       for (name, stat) in state.stats.stats.pairs:
         let valueText = $stat.value & stat.unit
-        let valueX = availableWidth - valueText.len.float * cx - cx * 2
-        let labelWidth = name.len.float * cx
-        builder.panel(&{SizeToContentY, FillX}):
-          builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = name, textColor = textColor)
-          let lineX = labelWidth + cx
-          let lineW = valueX - lineX - cx
-          if lineW > 0 and renderLines:
-            builder.panel(&{DrawBorder}, x = lineX, y = floor(cy * 0.5) - 1, w = lineW, h = 1, border = border(0, 0, 1, 0), borderColor = lineColor)
-          builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, x = valueX, text = valueText, textColor = valueColor)
+        nui.node:
+          discard nui.fillX().fitY().flexLayout()
+            .flexDirection(FlexDirectionRow).columnGap(nui.backendSpacing(2))
+          nui.node:
+            discard nui.fitY().flex(1.0'f32, 1.0'f32, 0.0'f32)
+              .textStyleIndex(int(UiStyleIndexDefaultText)).text(name)
+          nui.node:
+            discard nui.fit().textStyleIndex(int(UiStyleIndexLabelText)).text(valueText)
 
   proc buildSectionsFromConfig(config: JsonNodeEx): seq[SectionInfo] =
     if config == nil or config.kind != JObject:
@@ -716,8 +654,8 @@ when implModule:
     view.sectionRenderers["commitHistory"] = renderCommitHistory
     view.sectionRenderers["stats"] = renderStats
 
-    view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] =
-      renderDashboard(self.DashboardView, builder)
+    view.renderNuiImpl = proc(self: View, nui: var UiBuilder) =
+      renderDashboardNui(self.DashboardView, nui)
     view.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
       getEventHandlers(self.DashboardView, inject)
     view.descImpl = proc(self: View): string = desc(self.DashboardView)

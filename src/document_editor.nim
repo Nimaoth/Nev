@@ -1,7 +1,6 @@
 import std/[tables, options, sets, hashes, json]
 import bumpy
 import misc/[event, custom_logger, id, custom_async, util, generational_seq, jsonex]
-import ui/node
 import input_handler/input_handler
 import component
 
@@ -11,6 +10,9 @@ include misc/dynlib_export
 
 import platform
 import document, service, config_provider
+
+from nuigi import UiBuilder, FitY, currentNode, fillX, fillY, fitY, focusScope, isFocusWithin, node,
+  popId, pushId, requestFocus, restoreFocus
 
 from scripting_api import EditorId
 
@@ -38,7 +40,7 @@ type
     onDocumentChanged*: Event[tuple[old: Document]]
     config*: ConfigStore
 
-    renderImpl*: proc(self: DocumentEditor, builder: UINodeBuilder): seq[proc() {.closure, gcsafe, raises: [].}] {.gcsafe, raises: [].}
+    renderNuiImpl*: proc(self: DocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].}
     getStateImpl*: proc(self: DocumentEditor): JsonNode {.gcsafe, raises: [].}
     restoreStateImpl*: proc(self: DocumentEditor, state: JsonNode) {.gcsafe, raises: [].}
     deinitImpl*: proc(self: DocumentEditor) {.gcsafe, raises: [].}
@@ -102,10 +104,29 @@ proc markDirty*(self: DocumentEditor, notify: bool = true) =
 proc resetDirty*(self: DocumentEditor) =
   self.mDirty = false
 
-proc render*(self: DocumentEditor, builder: UINodeBuilder): seq[proc() {.closure, gcsafe, raises: [].}] {.gcsafe, raises: [].} =
-  if self.renderImpl != nil:
-    return self.renderImpl(self, builder)
-  return @[]
+proc renderNui*(self: DocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].} =
+  if self.renderNuiImpl == nil:
+    return
+  {.cast(gcsafe).}:
+    nui.pushId(cast[uint64](self.id))
+    # If the parent sizes to content (fitY, e.g. inside a note with fitY),
+    # fit the editor height to its content so it grows instead of filling.
+    let parentFitY = FitY in nui.currentNode.flags
+    nui.node("document-editor-focus-root"):
+      discard nui.fillX().focusScope()
+      if parentFitY:
+        discard nui.fitY()
+      else:
+        discard nui.fillY()
+      self.renderNuiImpl(self, nui)
+      if self.active and not nui.isFocusWithin():
+        nui.restoreFocus()
+        if not nui.isFocusWithin():
+          nui.requestFocus()
+    discard nui.popId()
+
+proc render*(self: DocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].} =
+  self.renderNui(nui)
 
 proc getEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.inline.} =
   if self.getEventHandlersImpl != nil:
@@ -208,9 +229,6 @@ when implModule:
   import vmath
 
   addBuiltinService(DocumentEditorService)
-
-  method createUI*(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayFunction] {.base.} =
-    discard
 
   method init*(self: DocumentEditorService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
     log lvlInfo, &"DocumentEditorService.init"

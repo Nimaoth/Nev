@@ -20,10 +20,11 @@ import text/[overlay_map, tab_map, wrap_map, diff_map, display_map, snippet, ind
 import completion_provider_document, completion_provider_lsp, completion_provider_snippet, completion
 import lisp
 import view
-import scroll_box, component, treesitter_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, snippet_component, text_component, contextline_component
+import component, treesitter_component, config_component, decoration_component, inlay_hint_component, hover_component, command_component, snippet_component, text_component, contextline_component
 import move_component
 import text_editor_component
-import ui/node
+from nuigi import UiBuilder, UiColor, rgba, enqueueNextFrame, wasPressed, `==`
+from nuigi/widgets/colorpicker import ColorPickerStorage, colorPicker
 import command_line, file_previewer
 
 import workspace_edit, search_component
@@ -50,6 +51,14 @@ type
       command: language_server.Command
     of CodeActionKind.CodeAction:
       action: language_server.CodeAction
+
+type ColorOverlay = ref object
+  document: TextDocument
+  first, last: Anchor
+  original: string
+  kind: ColorType
+  value: UiColor
+  rendererId: CustomRendererId
 
 type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
@@ -95,6 +104,12 @@ type TextDocumentEditor* = ref object of DocumentEditor
   signatureHelpId*: Id
   diagnosticsId*: Id
   overlayIdColorHighlight*: Option[int]
+  colorPickerStorage*: ColorPickerStorage
+  editedColor*: UiColor
+  editedColorOverlay: ColorOverlay
+  colorOverlays: seq[ColorOverlay]
+  colorOverlayRequest: int
+  colorPickerPressedFrame*: uint64 = uint64.high
   lastCursorLocationBounds*: Option[Rect]
   lastHoverLocationBounds*: Option[Rect]
   lastSignatureHelpLocationBounds*: Option[Rect]
@@ -308,6 +323,18 @@ proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap, o
 proc updateColorOverlays(self: TextDocumentEditor) {.async.}
 proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor)
 proc hideSignatureHelp*(self: TextDocumentEditor)
+
+template withoutScrollRequest(self: TextDocumentEditor, body: untyped): untyped =
+  ## Run `body` while ignoring scroll requests (e.g. when selections only move
+  ## along with external edits).
+  let tec = self.textEditorComponent
+  if tec != nil:
+    inc tec.suppressScrollRequests
+  try:
+    body
+  finally:
+    if tec != nil:
+      dec tec.suppressScrollRequests
 proc showSignatureHelp*(self: TextDocumentEditor)
 proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selection], move: string, count: int = 0, includeEol: bool = true, wrap: bool = true, options: JsonNode = nil): seq[Selection]
 
@@ -342,9 +369,6 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections, addToHisto
     return
 
   self.textEditorComponent.setSelections(selections.mapIt(it.toRange), addToHistory)
-
-proc scrollBox*(self: TextDocumentEditor): var ScrollBox =
-  self.textEditorComponent.scrollBox
 
 proc handleSelectionsChanged(self: TextDocumentEditor, old: openArray[Range[Point]]) =
   self.cursorVisible = true
@@ -383,7 +407,7 @@ proc handleSelectionsChanged(self: TextDocumentEditor, old: openArray[Range[Poin
 
   self.onSelectionsChanged.invoke (self,)
 
-  self.scrollBox.scrollTo(self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int, center = false)
+  self.textEditorComponent.requestNuiScrollTo(self.selection.last.toPoint, center = false)
 
   # echo self.displayMap.visualLineRange(self.displayMap.toWrapPoint(self.selection.last.toPoint), Bias.Right)
   # echo self.displayMap.wrapMap.snapshot.lineLength(self.displayMap.toWrapPoint(self.selection.last.toPoint))
@@ -420,6 +444,17 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
     self.blinkCursorTask.reschedule()
 
 proc clearDocument*(self: TextDocumentEditor) =
+  inc self.colorOverlayRequest
+  for overlay in self.colorOverlays:
+    self.decorations.removeCustomRenderer(overlay.rendererId)
+  self.colorOverlays.setLen(0)
+  self.editedColorOverlay = nil
+  if self.colorPickerStorage != nil:
+    self.colorPickerStorage.open = false
+    self.colorPickerStorage.openPrev = false
+  if self.overlayIdColorHighlight.isSome:
+    self.displayMap.overlay.releaseId(self.overlayIdColorHighlight.get)
+    self.overlayIdColorHighlight = int.none
   self.closeDiff()
   if self.document.isNotNil:
     # log lvlInfo, &"[clearDocument] ({self.id}): '{self.document.filename}'"
@@ -772,12 +807,6 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   # debugf"scrollToCursor {cursor}, {margin}, {scrollBehaviour}"
 
   let targetPoint = cursor.toPoint
-  let charWidth = self.platform.charWidth
-  let displayPoint = self.displayMap.toDisplayPoint(targetPoint)
-  let targetColumnX = displayPoint.column.float32 * charWidth + self.scrollBox.currentOffset.x
-
-  # todo: make this configurable
-  let marginX = charWidth * 5
 
   # debugf"scrollToCursor {cursor}, {margin}, {scrollBehaviour.get(self.defaultScrollBehaviour)}"
   let (centerY, centerOffscreenY) = case scrollBehaviour.get(self.defaultScrollBehaviour):
@@ -787,43 +816,17 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
     of ScrollToMargin: (false, false)
     of TopOfScreen: (false, false)
 
-  let centerX = case scrollBehaviour.get(self.defaultScrollBehaviour):
-    of CenterAlways: true
-    of CenterOffscreen: targetColumnX < 0 or targetColumnX + charWidth > self.lastContentBounds.w
-    of CenterMargin: targetColumnX < marginX or targetColumnX + charWidth > self.lastContentBounds.w - marginX
-    of ScrollToMargin: false
-    of TopOfScreen: false
-
-  self.scrollBox.scrollTo(displayPoint.row.int, center = centerY, centerOffscreen = centerOffscreenY)
-
-  if self.scrollBox.offset.x != 0 or not self.config.getTextWrapLines():
-    let cursorX = displayPoint.column.float * charWidth
-    let currentX = self.scrollBox.currentOffset.x
-    if centerX:
-      self.scrollBox.scrollToX(cursorX - self.lastContentBounds.w * 0.5 + charWidth * 0.5)
-    else:
-      case scrollBehaviour.get(self.defaultScrollBehaviour)
-      of TopOfScreen:
-        self.scrollBox.scrollToX(cursorX - self.lastContentBounds.w * 0.5 + charWidth * 0.5)
-      else:
-        if cursorX + currentX < marginX:
-          self.scrollBox.scrollWithMomentum(vec2(marginX - cursorX - currentX, 0))
-        elif cursorX + currentX + charWidth > self.lastContentBounds.w - self.lineNumberWidth - marginX:
-          self.scrollBox.scrollWithMomentum(vec2(self.lastContentBounds.w - self.lineNumberWidth - marginX - charWidth - cursorX - currentX, 0))
+  self.textEditorComponent.requestNuiScrollTo(targetPoint, center = centerY, centerOffscreen = centerOffscreenY)
 
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
 
 proc scrollToTop*(self: TextDocumentEditor) =
-  self.scrollBox.scrollToY(0, 0)
+  self.textEditorComponent.requestNuiScrollToY(point(0, 0), 0)
   self.textEditorComponent.onScroll.invoke()
 
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5, snap: bool = false) =
-  let displayPoint = self.displayMap.toDisplayPoint(cursor.toPoint)
-  if snap and self.scrollBox.size.y > 0:
-    self.scrollBox.scrollToY(displayPoint.row.int, self.scrollBox.size.y * 0.5)
-  else:
-    self.scrollBox.scrollTo(displayPoint.row.int, center = true, centerOffscreen = false, snap = snap)
+  self.textEditorComponent.requestNuiScrollTo(cursor.toPoint, center = true, centerOffscreen = false, snap = snap)
 
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
@@ -984,22 +987,24 @@ proc wrapEndPoint*(self: TextDocumentEditor): WrapPoint =
 proc screenLineCount*(self: TextDocumentEditor): int =
   ## Returns the number of lines that can be shown on the screen
   ## This value depends on the size of the view this editor is in and the font size
+  if self.textEditorComponent != nil:
+    let visibleLines = self.textEditorComponent.screenLineCount()
+    if visibleLines > 0:
+      return visibleLines
   # todo
   return (self.lastContentBounds.h / self.platform.totalLineHeight).int
 
 proc visibleDisplayRange*(self: TextDocumentEditor, buffer: int = 0): Range[DisplayPoint] =
   assert self.numDisplayLines > 0
-  if self.scrollBox.items.len > 0:
-    let firstDisplayLine = self.scrollBox.items[0].index
-    let lastDisplayLine = self.scrollBox.items[^1].index
-    return displayPoint(firstDisplayLine, 0)...displayPoint(lastDisplayLine + 1, 0).clamp(displayPoint(), self.displayMap.endDisplayPoint)
-
+  if self.textEditorComponent != nil:
+    return self.textEditorComponent.visibleDisplayRange(buffer)
   return displayPoint(0, 0)...displayPoint(0, 0)
 
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
-  let displayRange = self.visibleDisplayRange(buffer)
-  result.first = self.displayMap.toPoint(displayRange.a).toCursor
-  result.last = self.displayMap.toPoint(displayRange.b).toCursor
+  if self.textEditorComponent != nil:
+    let range = self.textEditorComponent.visibleTextRange(buffer)
+    return (range.a.toCursor, range.b.toCursor)
+  return ((0, 0), (0, 0))
 
 proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): float64 =
   let node = c.currentNode
@@ -1907,14 +1912,15 @@ proc pasteAt*(self: TextDocumentEditor, selections: seq[Selection], registerName
 proc scrollText*(self: TextDocumentEditor, amount: float32) =
   if self.disableScrolling:
     return
-  self.scrollBox.scrollWithMomentum(amount)
+  self.textEditorComponent.addNuiScrollDeltaY(amount.float)
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
 
 proc scrollTextHorizontal*(self: TextDocumentEditor, amount: float32) =
   if self.disableScrolling:
     return
-  self.scrollBox.scrollWithMomentum(vec2(amount * self.platform.charWidth, 0))
+  # NUI virtual lists currently provide vertical scrolling only; wire horizontal
+  # input when the text renderer supports a content offset.
   self.textEditorComponent.onScroll.invoke()
   self.markDirty()
 
@@ -1924,7 +1930,7 @@ proc scrollLines*(self: TextDocumentEditor, amount: int) =
   if self.disableScrolling:
     return
 
-  self.scrollBox.scrollWithMomentum(self.platform.totalLineHeight * amount.float)
+  self.textEditorComponent.addNuiScrollDeltaY(self.platform.totalLineHeight * amount.float)
   self.textEditorComponent.onScroll.invoke()
 
   self.markDirty()
@@ -2583,13 +2589,11 @@ proc setDefaultSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSna
   self.defaultSnapBehaviour = snapBehaviour
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float, cursor: SelectionCursor = SelectionCursor.Config) =
-  let displayPoint = self.displayMap.toDisplayPoint(self.getCursor(cursor).toPoint)
-  self.scrollBox.scrollToY(displayPoint.row.int, offset)
+  self.textEditorComponent.requestNuiScrollToY(self.getCursor(cursor).toPoint, offset)
   self.markDirty()
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, cursor: Cursor, offset: float) =
-  let displayPoint = self.displayMap.toDisplayPoint(cursor.toPoint)
-  self.scrollBox.scrollToY(displayPoint.row.int, offset * self.platform.totalLineHeight)
+  self.textEditorComponent.requestNuiScrollToY(cursor.toPoint, offset * self.platform.totalLineHeight)
   self.markDirty()
 
 proc getContentBounds*(self: TextDocumentEditor): Vec2 =
@@ -4383,12 +4387,136 @@ proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Sele
   if self.config.getTextWrapLines():
     self.displayMap.wrapMap.update(self.displayMap.tabMap.snapshot.clone(), force = true)
 
+proc parseOverlayColor(text: string, kind: ColorType): UiColor {.raises: [CatchableError].} =
+  case kind
+  of Hex:
+    let hex = if text.startsWith("#"): text[1..^1] else: text
+    if hex.len notin [6, 8] or hex.anyIt(it notin HexDigits):
+      raise newException(ValueError, "Invalid hex color: " & text)
+    let c = if hex.len == 8: parseHexAlpha(hex) else: parseHex(hex)
+    return rgba(c.r, c.g, c.b, c.a)
+  of Float1, Float255:
+    let numbers = text.findAllBounds(0, re"(\d+(\.\d+)?)")
+    if numbers.len < 3:
+      raise newException(ValueError, "Color requires at least three components: " & text)
+    let scale = if kind == Float255: 255.0 else: 1.0
+    var channels = [0.0'f32, 0.0'f32, 0.0'f32, 1.0'f32]
+    for i in 0..<min(numbers.len, 4):
+      let bounds = numbers[i]
+      channels[i] = (text[bounds.first.column..<bounds.last.column].parseFloat / scale).float32
+      if channels[i] < 0 or channels[i] > 1:
+        raise newException(ValueError, "Color component is out of range: " & text)
+    return rgba(channels[0], channels[1], channels[2], channels[3])
+
+proc formatOverlayColor(text: string, kind: ColorType, value: UiColor): string {.raises: [CatchableError].} =
+  case kind
+  of Hex:
+    let prefix = if text.startsWith("#"): "#" else: ""
+    let hex = text[prefix.len..^1]
+    let c = color(value.r, value.g, value.b, value.a)
+    var formatted = if hex.len == 8 or value.a < 1: c.toHexAlpha else: c.toHex
+    if hex.anyIt(it in {'a'..'f'}) and not hex.anyIt(it in {'A'..'F'}):
+      formatted = formatted.toLowerAscii()
+    return prefix & formatted
+  of Float1, Float255:
+    let numbers = text.findAllBounds(0, re"(\d+(\.\d+)?)")
+    let channels = [value.r, value.g, value.b, value.a]
+    let scale = if kind == Float255: 255.0'f32 else: 1.0'f32
+    var offset = 0
+    for i in 0..<min(numbers.len, 4):
+      let bounds = numbers[i]
+      result.add text[offset..<bounds.first.column]
+      let original = text[bounds.first.column..<bounds.last.column]
+      let scaled = channels[i] * scale
+      var component = if kind == Float255 and not original.contains('.'):
+          $scaled.round.int
+        else:
+          formatFloat(scaled.float, ffDecimal, 6)
+      component.trimZeros()
+      result.add component
+      offset = bounds.last.column
+    result.add text[offset..^1]
+
+proc commitEditedColor(self: TextDocumentEditor, builder: var UiBuilder) =
+  let overlay = self.editedColorOverlay
+  let value = self.editedColor
+  self.editedColorOverlay = nil
+  if overlay == nil or value == overlay.value:
+    return
+  builder.enqueueNextFrame(proc() {.gcsafe, raises: [].} =
+    try:
+      if self.document != overlay.document or self.document == nil:
+        log lvlWarn, "Color edit cancelled because the document changed"
+        return
+      if self.document.readOnly:
+        log lvlWarn, "Cannot edit color in a read-only document"
+        return
+      let snapshot = self.document.buffer.snapshot.clone()
+      let first = overlay.first.summaryOpt(Point, snapshot, resolveDeleted = false)
+      let last = overlay.last.summaryOpt(Point, snapshot, resolveDeleted = false)
+      if first.isNone or last.isNone or first.get > last.get:
+        log lvlWarn, "Color edit cancelled because its range no longer exists"
+        return
+      let selection = (first.get...last.get).toSelection
+      if self.document.contentString(selection) != overlay.original:
+        log lvlWarn, "Color edit cancelled because its text changed"
+        return
+      let replacement = formatOverlayColor(overlay.original, overlay.kind, value)
+      if replacement != overlay.original:
+        self.document.addNextCheckpoint("color-picker")
+        discard self.edit(@[selection], @[replacement])
+        discard self.document.buffer.endTransaction()
+    except CatchableError as e:
+      log lvlError, "Failed to edit color: ", e.msg)
+
+proc closeColorPicker*(self: TextDocumentEditor, builder: var UiBuilder) =
+  if self.colorPickerStorage != nil:
+    self.colorPickerStorage.open = false
+    self.colorPickerStorage.openPrev = false
+  self.commitEditedColor(builder)
+
+proc renderColorOverlay(self: TextDocumentEditor, overlay: ColorOverlay,
+    builder: var UiBuilder): Vec2 =
+  if self.colorPickerStorage == nil:
+    self.colorPickerStorage = ColorPickerStorage()
+  let storage = self.colorPickerStorage
+  let wasActive = self.editedColorOverlay == overlay
+  var value = if wasActive: self.editedColor else: overlay.value
+  let pickerIndex = builder.frame.nodes.len
+  let changed = builder.colorPicker(value, storage)
+  if builder.wasPressed(pickerIndex, includeChildren = true):
+    self.colorPickerPressedFrame = builder.frameCtx.input.frameIndex
+  let ownsPicker = storage.ownerId == builder.frame.nodes[pickerIndex].id
+  if not wasActive and ownsPicker and storage.open:
+    if self.editedColorOverlay != nil:
+      self.commitEditedColor(builder)
+    self.editedColorOverlay = overlay
+    self.editedColor = if changed: value else: overlay.value
+  elif wasActive:
+    if changed:
+      self.editedColor = value
+    if not storage.open or not ownsPicker:
+      self.commitEditedColor(builder)
+  return vec2(builder.frame.nodes[pickerIndex].size.x,
+    builder.frame.nodes[pickerIndex].size.y)
+
 proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
+  if self.document == nil:
+    return
+  inc self.colorOverlayRequest
+  let request = self.colorOverlayRequest
   if not self.config.getTextColorHighlightEnable():
     if self.overlayIdColorHighlight.isSome:
       self.displayMap.overlay.clear(self.overlayIdColorHighlight.get)
       self.displayMap.overlay.releaseId(self.overlayIdColorHighlight.get)
       self.overlayIdColorHighlight = int.none
+    for overlay in self.colorOverlays:
+      self.decorations.removeCustomRenderer(overlay.rendererId)
+    self.colorOverlays.setLen(0)
+    self.editedColorOverlay = nil
+    if self.colorPickerStorage != nil:
+      self.colorPickerStorage.open = false
+      self.colorPickerStorage.openPrev = false
     return
 
   if self.overlayIdColorHighlight.isNone:
@@ -4398,51 +4526,64 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
 
   let regex = self.config.getTextColorHighlightRegex().decodeRegex()
   let kind = self.config.getTextColorHighlightKind()
-  let floatRegex = re"(\d+(\.\d+)?)"
-
   try:
-    let rope = self.document.rope.clone()
+    let document = self.document
+    let revision = document.revision
+    let snapshot = document.buffer.snapshot.clone()
+    let rope = snapshot.visibleText.clone()
     let colorRanges = await findAllAsync(rope.slice(int), regex)
-    if self.document.isNil:
+    if self.document != document or self.colorOverlayRequest != request or
+        document.revision != revision:
       return
 
-    # todo: this can scale up pretty quickly, could be done in a background thread
-    # self.displayMap.overlay.clear(self.overlayIdColorHighlight.get)
     var overlays: seq[overlay_map.OverlayDef] = @[]
+    var colorOverlays: seq[ColorOverlay]
+    var retainedRenderers: HashSet[uint64] = initHashSet[uint64]()
+    var previousByRange: Table[(Point, Point), ColorOverlay] = initTable[(Point, Point), ColorOverlay]()
+    for previous in self.colorOverlays:
+      if previous.document != document:
+        continue
+      let first = previous.first.summaryOpt(Point, snapshot, resolveDeleted = false)
+      let last = previous.last.summaryOpt(Point, snapshot, resolveDeleted = false)
+      if first.isSome and last.isSome:
+        previousByRange[(first.get, last.get)] = previous
     for r in colorRanges:
-      let text = rope[r]
-      let color = case kind
-      of Hex:
-        if text.startsWith("#"):
-          $text
-        else:
-          "#" & $text
-      of Float1:
-        var c = color(0, 0, 0)
-        let text = $text
-        let numbers = text.findAllBounds(0, floatRegex)
-        if numbers.len >= 3:
-          c.r = (text[numbers[0].first.column..<numbers[0].last.column]).parseFloat
-          c.g = (text[numbers[1].first.column..<numbers[1].last.column]).parseFloat
-          c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat
-        "#" & c.toHex
-      of Float255:
-        var c = color(0, 0, 0)
-        let text = $text
-        let numbers = text.findAllBounds(0, floatRegex)
-        if numbers.len >= 3:
-          c.r = (text[numbers[0].first.column..<numbers[0].last.column]).parseFloat / 255.0
-          c.g = (text[numbers[1].first.column..<numbers[1].last.column]).parseFloat / 255.0
-          c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat / 255.0
-        "#" & c.toHex
-
-      # self.displayMap.overlay.addOverlay(r.a...r.a, " ■ ", overlayIdColorHighlight, color, renderId = 1)
-      overlays.add (r.a...r.a, " ■ ", color, Bias.Left, 1, overlay_map.OverlayRenderLocation.Inline)
+      let text = $rope[r]
+      var value: UiColor
+      try:
+        value = parseOverlayColor(text, kind)
+      except CatchableError as e:
+        log lvlWarn, "Invalid color overlay: ", e.msg
+        continue
+      var entry = previousByRange.getOrDefault((r.a, r.b))
+      if entry != nil and (entry.original != text or entry.kind != kind):
+        entry = nil
+      if entry == nil:
+        entry = ColorOverlay(document: document, original: text, kind: kind,
+          value: value, first: snapshot.anchorAfter(r.a), last: snapshot.anchorBefore(r.b))
+        capture entry:
+          entry.rendererId = self.decorations.addCustomRenderer(
+            proc(id: int, size: Vec2, localOffset: int, builder: var UiBuilder): Vec2 =
+              if localOffset != 0:
+                return vec2(0, size.y)
+              return self.renderColorOverlay(entry, builder))
+      colorOverlays.add entry
+      retainedRenderers.incl entry.rendererId.uint64
+      overlays.add (r.a...r.a, " ", "", Bias.Left,
+        entry.rendererId.uint64.int, overlay_map.OverlayRenderLocation.Inline)
 
     if self.overlayIdColorHighlight.isSome:
       self.displayMap.overlay.addOverlays(self.overlayIdColorHighlight.get, true, overlays)
+    for previous in self.colorOverlays:
+      if previous.rendererId.uint64 notin retainedRenderers:
+        self.decorations.removeCustomRenderer(previous.rendererId)
+        if self.editedColorOverlay == previous:
+          self.editedColorOverlay = nil
+          self.colorPickerStorage.open = false
+          self.colorPickerStorage.openPrev = false
+    self.colorOverlays = colorOverlays
 
-  except Exception as e:
+  except CatchableError as e:
     log lvlError, &"Failed to find colors: {e.msg}"
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
@@ -4459,12 +4600,16 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
       let newSelections = temp.mapIt (it[0].get, it[1].get).toSelection
 
       if newSelections.len > 0:
-        self.selections = newSelections
+        # Selections are only carried along with the edit, which must not
+        # scroll the view (e.g. on external reloads).
+        self.withoutScrollRequest:
+          self.selections = newSelections
     else:
       log lvlWarn, &"Invalid anchors: {self.selectionAnchors} -> {temp}"
       self.selectionAnchors = @[]
 
-  self.clampSelection()
+  self.withoutScrollRequest:
+    self.clampSelection()
   self.searchComponent.updateSearchResults()
   self.inlayHints.updateInlayHints()
   asyncSpawn self.updateDiffLinesAsync()
@@ -4501,8 +4646,15 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
         self.scrollToCursor()
 
   elif self.selectionsBeforeReload.len > 0:
-    self.selections = self.selectionsBeforeReload
-    self.scrollToCursor()
+    # Diff based reloads move the selections through anchors in
+    # handleTextDocumentTextChanged. Only a full replacement loses them, so
+    # restore the old positions then. The viewport is kept stable by the scroll
+    # anchor, so don't scroll to the cursor here.
+    let fullReplace = changes.len == 1 and changes[0].first == (0, 0) and
+      changes[0].last == self.document.lastCursor
+    if fullReplace:
+      self.withoutScrollRequest:
+        self.selections = self.selectionsBeforeReload
 
   self.cursorHistories.setLen(0)
   self.textEditorComponent.clearTargetSelections()
@@ -4525,26 +4677,12 @@ proc handleCompletionsUpdated(self: TextDocumentEditor) =
   self.markDirty()
 
 proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapMapSnapshot) =
+  # Scroll stability is handled by the content scroll anchor at render time
+  # (see widget_builder_text_document.restoreScrollAnchorNui).
   if self.document.isNil:
     return
 
-  if wrapMap == self.displayMap.wrapMap:
-    let centerY = self.scrollBox.size.y * 0.5
-    var minCenterDistance = float.high
-    var minCenterIndex = -1
-    var minCenterBounds: Rect
-    for item in self.scrollBox.items:
-      let itemCenterY = item.bounds.y + item.bounds.h * 0.5
-      let dist = abs(itemCenterY - centerY)
-      if dist < minCenterDistance:
-        minCenterDistance = dist
-        minCenterIndex = item.index
-        minCenterBounds = item.bounds
-
-    if minCenterIndex >= 0:
-      let point = old.toInputPoint(wrapPoint(minCenterIndex, 0))
-      let newDisplayPoint = wrapMap.toWrapPoint(point)
-      self.scrollBox.scrollToY(newDisplayPoint.row.int, minCenterBounds.y)
+  self.markDirty()
 
   if self.diffDocument.isNil:
     return
@@ -4670,8 +4808,8 @@ proc newTextEditor*(document: TextDocument, services: Services, initialSettings:
 
   self.setDefaultMode(forceNotify = true)
 
-  self.renderImpl = proc(self: DocumentEditor, builder: UINodeBuilder): seq[OverlayFunction] =
-    self.TextDocumentEditor.createUI(builder)
+  self.renderNuiImpl = proc(self: DocumentEditor, nui: var UiBuilder) {.gcsafe, raises: [].} =
+    self.TextDocumentEditor.createUINui(nui)
 
   self.getMemoryStatsImpl = textEditorGetMemoryStats
   return self

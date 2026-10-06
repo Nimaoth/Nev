@@ -5,6 +5,7 @@ import misc/diff, syntax_map, overlay_map, wrap_map
 import nimsumtree/sumtree except mapIt
 import theme
 import malebolgia
+import nuigi/debug/profiler
 
 {.push warning[Deprecated]:off.}
 import std/[threadpool]
@@ -467,6 +468,7 @@ proc seekLine*(self: var DiffChunkIterator, line: int) =
   self.seek(diffPoint(line))
 
 proc next*(self: var DiffChunkIterator): Option[DiffChunk] =
+  prof("DiffChunkIterator.next")
   if self.atEnd:
     self.diffChunk = DiffChunk.none
     return

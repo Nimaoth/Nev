@@ -14,12 +14,14 @@ when implModule:
   import misc/[custom_logger, util, id, myjsonutils]
   import text_component, document_editor, document, layout/layout, command_component, input_handler/input_handler, platform
   import nimsumtree/[buffer, clock]
-  import ui/node
   import command_service
   import vmath, chroma
   import theme
+  import app/theme_styles
   import misc/[render_command, event]
-  import scroll_box
+  import nuigi
+  import nuigi/widgets
+  import nuigi/widgets/dynamic_virtuallist
 
   logCategory "undo-tree"
 
@@ -38,11 +40,37 @@ when implModule:
       cachedBufferId: BufferID
       cachedLen: int
       cachedMaxCol: int
+      cachedBranchColors: array[7, Color]
       selected*: int
-      scrollBox*: ScrollBox
       autoApply*: bool = false
 
+    UndoTreeNuiStorage = ref object of UiNodeStorageData
+      view: UndoTreeView
+      lineDetails: seq[string]
+      currentNode: int32
+      charWidth: float32
+      lineHeight: float32
+      listStorage: UiDynamicVirtualListStorage
+      lastSelected: int = -1
+
   var gUndoTreeView: UndoTreeView
+
+  proc undoTreeToggleAutoApply(view: UndoTreeView) {.gcsafe, raises: [].}
+  proc undoTreePrevChange(view: UndoTreeView) {.gcsafe, raises: [].}
+  proc undoTreeNextChange(view: UndoTreeView) {.gcsafe, raises: [].}
+  proc undoTreeFirstChange(view: UndoTreeView) {.gcsafe, raises: [].}
+  proc undoTreeLastChange(view: UndoTreeView) {.gcsafe, raises: [].}
+  proc undoTreeSelectCurrent(view: UndoTreeView) {.gcsafe, raises: [].}
+  proc undoTreeApplySelected(view: UndoTreeView) {.gcsafe, raises: [].}
+
+  proc getOrCreateUndoTreeNuiStorage(
+      b: var UiBuilder, node: auto): UndoTreeNuiStorage =
+    let existing = b.nodeStorageGet(node)
+    if existing != nil:
+      return cast[UndoTreeNuiStorage](existing)
+    var storage = UndoTreeNuiStorage()
+    b.nodeStorage(node, storage)
+    storage
 
   proc add(line: var seq[AsciiGraphCell], item: tuple[col: int, char: char]) =
     line.add (item.col, item.char, -1, color(0, 0, 0), 0.UINodeFlags)
@@ -269,20 +297,20 @@ when implModule:
           if nodeIndex != -1:
             cmd.executeCommand(&"switch-undo-branch {nodeIndex}")
 
-  proc generateLines(self: UndoTreeView, buffer: Buffer, theme: Theme) =
+  proc undoBranchColors(nui: UiBuilder): array[7, Color] =
+    const indices = [UiStyleIndexTerminalAnsiBrightYellowText,
+      UiStyleIndexTerminalAnsiRedText, UiStyleIndexTerminalAnsiGreenText,
+      UiStyleIndexTerminalAnsiBlueText, UiStyleIndexTerminalAnsiMagentaText,
+      UiStyleIndexTerminalAnsiCyanText, UiStyleIndexTerminalAnsiYellowText]
+    for i, index in indices:
+      result[i] = nui.themeTextStyle(index)[].textColor.toColor
+
+  proc generateLines(self: UndoTreeView, buffer: Buffer, nui: UiBuilder) =
     # let t = startTimer()
     # defer:
     #   echo &"parse took {t.elapsed.ms}ms"
 
-    let branchColors = [
-      (theme.color("terminal.ansiBrightYellow", color(1.0, 1.0, 0.7)), &{TextBold}),
-      (theme.color("terminal.ansiRed", color(1.0, 0.5, 0.5)), 0.UINodeFlags),
-      (theme.color("terminal.ansiGreen", color(0.5, 1.0, 0.5)), 0.UINodeFlags),
-      (theme.color("terminal.ansiBlue", color(0.5, 0.5, 1.0)), 0.UINodeFlags),
-      (theme.color("terminal.ansiMagenta", color(1.0, 0.5, 1.0)), 0.UINodeFlags),
-      (theme.color("terminal.ansiCyan", color(0.5, 1.0, 1.0)), 0.UINodeFlags),
-      (theme.color("terminal.ansiYellow", color(1.0, 1.0, 0.5)), 0.UINodeFlags),
-    ]
+    self.cachedBranchColors = nui.undoBranchColors()
 
     let tree {.cursor.} = buffer.history.undoTree
     if buffer.remoteId != self.cachedBufferId:
@@ -321,9 +349,9 @@ when implModule:
           newPrevNodes.add (cell.col, line.nodeIdx, lineIndex)
           prev = newPrevNodes.high
 
-        let (charColor, charStyle) = branchColors[prev mod branchColors.len]
-        cell.color = charColor
-        cell.style = charStyle
+        let colorIndex = prev mod self.cachedBranchColors.len
+        cell.color = self.cachedBranchColors[colorIndex]
+        cell.style = if colorIndex == 0: &{TextBold} else: 0.UINodeFlags
         if prev in 0..prevNodes.high:
           cell.nodeLineIndex = prevNodes[prev].child
 
@@ -345,165 +373,195 @@ when implModule:
 
     self.cachedMaxCol = self.cachedMaxCol + 3
 
-  proc renderUndoTree*(self: UndoTreeView, builder: UINodeBuilder) =
-    var backgroundColor = if self.active: builder.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(-0.025)
-    let layout = getServiceChecked(LayoutService)
+  proc buildUndoTreeRowNui(
+      b: var UiBuilder, itemIndex: int, userData: int) {.nimcall, gcsafe, raises: [].} =
+    if userData < 0 or userData >= b.frame.nodes.len:
+      return
+    let existing = b.nodeStorageGet(b.frame.nodes[userData].addr)
+    if existing == nil or not (existing of UndoTreeNuiStorage):
+      return
+    let storage = cast[UndoTreeNuiStorage](existing)
+    let view = storage.view
+    if view == nil or itemIndex < 0 or itemIndex >= view.cachedLines.len:
+      return
 
-    builder.panel(&{FillBackground, FillX, FillY, MaskContent}, backgroundColor = backgroundColor):
-      onScroll:
-        self.scrollBox.scroll(delta.y * builder.textHeight * 5)
-      onClickAny btn:
-        if btn == Left:
-          for item in self.scrollBox.items:
-            if item.bounds.contains(pos - builder.textHeight * 2):
-              self.selected = item.index
-        elif btn == DoubleClick:
-          for item in self.scrollBox.items:
-            if item.bounds.contains(pos - builder.textHeight * 2):
-              self.selected = item.index
-          self.applySelected()
-        getServiceChecked(LayoutService).tryActivateView(self)
+    try:
+      let line {.cursor.} = view.cachedLines[itemIndex]
+      let selected = itemIndex == view.selected
+      let hovered = b.wasHovered(includeChildren = true)
+      discard b.fillX().fitY().backendPadding(2).gap(0)
+        .styleIndex(if selected or hovered:
+          UiStyleIndexMenuItemHover
+        else:
+          UiStyleIndexRow)
+        .fillBackground()
 
-      currentNode.renderCommands.clear()
-      currentNode.markDirty(builder)
+      # NUI-GAP: old graph cells honor per-cell UINodeFlags (TextBold for first
+      # branch); new forces uniform UiStyleIndexDefaultMono (see §24).
+      b.node:
+        discard b.fillX().height(storage.lineHeight)
+        for cell in line.cells:
+          let isCurrent = line.nodeIdx == storage.currentNode and
+            cell.char in {'+', '*'}
+          let glyph = if isCurrent:
+            "(" & $cell.char & ")"
+          else:
+            $cell.char
+          let column = cell.col - (if isCurrent: 1 else: 0)
+          b.node:
+            discard b.position(column.float32 * storage.charWidth, 0)
+              .fit().copyTextStyleIndex(UiStyleIndexDefaultMono)
+              .textColor(rgba(cell.color.r.float32, cell.color.g.float32,
+                cell.color.b.float32, cell.color.a.float32)).text(glyph)
 
+        let detail = if itemIndex < storage.lineDetails.len:
+          storage.lineDetails[itemIndex]
+        else:
+          ""
+        # NUI-GAP: old detail splits saveMark/nodeText/timeStr into 3 drawText
+        # calls (lighten/darken + italic timestamp); new collapses to one text
+        # node (see §24).
+        # NUI-GAP: old selection is list.activeSelectionBackground fillRect with
+        # no hover state; new conflates transient wasHovered with selected and
+        # loses the exact theme color (see §24).
+        b.node:
+          discard b.position(
+            view.cachedMaxCol.float32 * storage.charWidth, 0)
+            .fit().textStyleIndex(int(if selected:
+              UiStyleIndexMenuItemHoverText
+            else:
+              UiStyleIndexDefaultMono)).text(detail)
+
+      # NUI-GAP: old Left click selects, DoubleClick selects + applySelected
+      # unconditionally; Nuigi has no double-click event so new only supports
+      # single click (+ autoApply) with an explicit Apply button (see §24).
+      if b.wasClicked(includeChildren = true):
+        view.selected = itemIndex
+        view.markDirty()
+        if view.autoApply:
+          view.applySelected()
+    except:
+      discard
+
+  proc renderUndoTreeNui*(self: UndoTreeView, nui: var UiBuilder) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      self.resetDirty()
+      let layout = getServiceChecked(LayoutService)
       var editor = layout.getActiveEditor()
       if editor.isNone:
         editor = self.lastEditor
-      if editor.isNone:
-        return
-      self.lastEditor = editor
 
-      let document = editor.get.currentDocument
-      if document.isNil:
-        return
-      let text = document.getTextComponent().get
-      let buffer {.cursor.} = text.buffer
-      let tree {.cursor.} = buffer.history.undoTree
-      if tree.nodes.len == 0:
-        return
-
-      let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-      let backgroundColor = builder.theme.color("editor.background", color(25/255, 25/255, 40/255))
-
-      let charWidth = builder.charWidth
-      let lineHeight = builder.textHeight.float
-
-      var headerColor = if self.active: builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
-      self.scrollBox.defaultItemHeight = builder.textHeight
-      self.scrollBox.scrollSpeed = builder.textHeight * 2
-      self.scrollBox.margin = (5 * builder.textHeight).min(builder.currentParent.bounds.h - 10 * builder.textHeight).max(0)
-      self.scrollBox.updateScroll(getServiceChecked(PlatformService).platform.deltaTime)
-
-      buildCommands(currentNode.renderCommands):
-        let b = rect(0, 0, builder.currentParent.bounds.w, lineHeight)
-        fillRect(b, headerColor)
+      var title = "Undo History"
+      var hasTree = false
+      var currentNode = -1'i32
+      var lineDetails: seq[string] = @[]
+      if editor.isSome and editor.get.currentDocument != nil:
+        self.lastEditor = editor
+        let document = editor.get.currentDocument
         let (path, name) = document.filename.splitPath
-        drawText("Undo History for " & name & " - " & path, b, textColor, 0.UINodeFlags)
+        title = "Undo History for " & name
+        if path.len > 0:
+          title.add(" - " & path)
+        if document.getTextComponent().getSome(text):
+          let buffer {.cursor.} = text.buffer
+          let tree {.cursor.} = buffer.history.undoTree
+          if tree.nodes.len > 0:
+            hasTree = true
+            if buffer.remoteId != self.cachedBufferId or
+                tree.nodes.len != self.cachedLen or
+                self.cachedBranchColors != nui.undoBranchColors():
+              self.generateLines(buffer, nui)
+            currentNode = tree.current
+            let now = getTime().toUnix().int64
+            lineDetails = newSeq[string](self.cachedLines.len)
+            for lineIndex, line in self.cachedLines:
+              if line.nodeIdx >= 0 and line.nodeIdx < tree.nodes.len:
+                let historyNode = tree.nodes[line.nodeIdx]
+                let currentMark = if line.nodeIdx == tree.current: "> " else: "  "
+                var detail: string
+                if tree.nodes.len == 1:
+                  detail = currentMark & "1 " &
+                    $historyNode.transaction.id.asNumber & " (base)"
+                else:
+                  detail = currentMark & $line.nodeIdx & " (" &
+                    formatTimeAgo(now, historyNode.transaction.timestampUnix) & ")"
+                  if historyNode.transaction.id == text.savedVersion:
+                    detail.add(" (saved)")
+                lineDetails[lineIndex] = detail
 
-      if buffer.remoteId != self.cachedBufferId or buffer.history.undoTree.nodes.len != self.cachedLen:
-        self.generateLines(buffer, builder.theme)
+      var charWidth = 8.0'f32
+      var lineHeight = 18.0'f32
+      let platform = getServiceChecked(PlatformService).platform
+      if platform != nil:
+        charWidth = max(1.0'f32, platform.charWidth.float32)
+        lineHeight = max(1.0'f32, platform.lineHeight.float32)
+      if nui.backendType == UiBackendType.Terminal:
+        charWidth = 1.0'f32
+        lineHeight = 1.0'f32
 
-      if tree.nodes.len == 1:
-        let node = tree.nodes[0]
-        let text = "*1 " & $node.transaction.id.asNumber & " (base)"
-        let bounds = rect(0, lineHeight * 2, text.len.float * charWidth, lineHeight)
-        buildCommands(currentNode.renderCommands):
-          fillRect(bounds, backgroundColor)
-          drawText(text, bounds, textColor, 0.UINodeFlags)
-        return
+      let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
+      let headerStyle = if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
+      nui.layoutVertical("undo-tree"):
+        discard nui.fillX().fillY().styleIndex(panelStyle)
+          .fillBackground().backendPadding(0).backendGap(4)
+        nui.nodeStorageParent()
+        let rootIndex = nui.currentNodeIndex
+        let storage = nui.getOrCreateUndoTreeNuiStorage(nui.currentNode)
+        storage.view = self
+        storage.lineDetails = lineDetails
+        storage.currentNode = currentNode
+        storage.charWidth = charWidth
+        storage.lineHeight = lineHeight
 
-      let now = getTime().toUnix().int64
+        if nui.wasClicked(includeChildren = true):
+          layout.tryActivateView(self)
 
-      let selectionColor = builder.theme.color("list.activeSelectionBackground", color(0.8, 0.8, 0.8))
-      self.scrollBox.beginRender(builder.currentParent.bounds.wh - 2 * lineHeight, 0.UINodeFlags, self.cachedLines.high)
+        nui.layoutHorizontal("undo-tree-header"):
+          discard nui.fillX().fitY().styleIndex(headerStyle)
+            .fillBackground().backendPadding(4).backendGap(4).cornerRadius(0)
+          nui.node:
+            discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
+              .text(title)
+          nui.layoutHorizontalReverse:
+            discard nui.fillX().fitY().backendGap(4)
+            if nui.button(if self.autoApply: "Auto: On" else: "Auto: Off"):
+              self.undoTreeToggleAutoApply()
 
-      proc drawLine(commands: var RenderCommands, index: int): Option[Vec2] =
-        if index notin 0..self.cachedLines.high:
-          return
+        nui.layoutHorizontal("undo-tree-actions"):
+          discard nui.fillX().fitY().backendGap(4)
+          if nui.button("Apply"):
+            self.undoTreeApplySelected()
+          if nui.button("Current"):
+            self.undoTreeSelectCurrent()
+          if nui.button("Newer"):
+            self.undoTreeNextChange()
+          if nui.button("Older"):
+            self.undoTreePrevChange()
+          if nui.button("Newest"):
+            self.undoTreeLastChange()
+          if nui.button("Oldest"):
+            self.undoTreeFirstChange()
 
-        let line {.cursor.} = self.cachedLines[index]
-
-        # Add a transform render command for which we later override the y offset to the correct y offset calculated by the
-        # scroll box. Every render command for a line can then just use (0, 0) as the origin.
-        commands.startTransform(vec2(0))
-        defer:
-          commands.endTransform()
-
-        let isSelected = (index == self.selected)
-        if isSelected:
-          commands.fillRect(rect(0, 0, builder.currentParent.bounds.w, builder.textHeight), selectionColor)
-
-        let isCurrent = (line.nodeIdx == tree.current)
-        for cell in line.cells:
-          let bounds = rect(cell.col.float * charWidth, 0, charWidth, lineHeight)
-          if isCurrent and cell.char in {'+', '*'}:
-            commands.drawText("(" & $cell.char & ")", bounds - vec2(charWidth, 0), cell.color, cell.style)
+        # Selection changes are brought into view by listStorage.ensureItemVisible
+        # below, replacing the old explicit scroll calls.
+        nui.node("undo-tree-body"):
+          discard nui.fillX().fillY()
+          if hasTree and self.cachedLines.len > 0:
+            storage.listStorage = nui.dynamicVirtualList(
+              self.cachedLines.len,
+              lineHeight + 4.0'f32,
+              buildUndoTreeRowNui,
+              rootIndex)
+            if storage.listStorage != nil and
+                storage.lastSelected != self.selected and
+                storage.listStorage.ensureItemVisible(
+                  self.selected, storage.listStorage.viewportHeight,
+                  lineHeight * 2.0'f32):
+              storage.lastSelected = self.selected
           else:
-            commands.drawText($cell.char, bounds, cell.color, cell.style)
-
-        if line.nodeIdx >= 0:
-          let node = tree.nodes[line.nodeIdx]
-          let seqNum = line.nodeIdx
-          let saveMark = if line.nodeIdx == tree.current: ">" else: " "
-          var timeStr = " (" & formatTimeAgo(now, node.transaction.timestampUnix) & ")"
-          if node.transaction.id == text.savedVersion:
-            timeStr.add " (saved)"
-          let nodeText = $seqNum
-          let bounds = rect(self.cachedMaxCol.float * charWidth, 0, nodeText.len.float * charWidth, lineHeight)
-          commands.drawText(saveMark, bounds, textColor.lighten(0.1), 0.UINodeFlags)
-          commands.drawText(nodeText, bounds + vec2(charWidth, 0), textColor, 0.UINodeFlags)
-          commands.drawText(timeStr, bounds + vec2(charWidth + nodeText.len.float * charWidth, 0), textColor.darken(0.1), &{TextItalic})
-
-
-        return vec2(builder.currentParent.bounds.w, lineHeight).some
-
-      # List of TransformStart render command indices where we need to fix the offset when we know it the offset after rendering all lines.
-      var fixups = newSeq[tuple[line: int, renderCommandHead: int]]()
-
-      while true:
-        let renderedItem = self.scrollBox.renderItemT:
-          let renderCommandHead = currentNode.renderCommands.commands.len
-          let size = drawLine(currentNode.renderCommands, self.scrollBox.currentIndex)
-          if size.isSome:
-            fixups.add (self.scrollBox.currentIndex, renderCommandHead)
-          size
-
-        if not renderedItem:
-          break
-
-      self.scrollBox.endRender()
-      self.scrollBox.clamp(self.cachedLines.high)
-
-      fixups.sort(proc(a, b: auto): int = cmp(a.line, b.line))
-      # Fixup chunk bounds and Transform render commands now that we know the line bounds
-      assert fixups.len == self.scrollBox.items.len
-      for i in 0..<fixups.len:
-        assert fixups[i].line == self.scrollBox.items[i].index
-        let fix = fixups[i]
-        let lineBounds = self.scrollBox.items[i].bounds
-
-        # Offset TransformStart render command according to scroll box item bounds
-        if fix.renderCommandHead in 0..currentNode.renderCommands.commands.high and
-            currentNode.renderCommands.commands[fix.renderCommandHead].kind == RenderCommandKind.TransformStart:
-          currentNode.renderCommands.commands[fix.renderCommandHead] = RenderCommand(
-            kind: RenderCommandKind.TransformStart,
-            bounds: rect((vec2(0, lineHeight * 2 + lineBounds.y)), vec2(0)),
-          )
-
-      # Scroll bar
-      buildCommands(currentNode.renderCommands):
-        if self.scrollBox.items.len > 0:
-          let scrollOffsetNorm = self.scrollBox.getScrollOffsetNorm()
-          let scrollableSize = self.scrollBox.getScrollableSize()
-          if scrollableSize > 0:
-            let scrollBarColor = builder.theme.color(@["scrollBar", "scrollbarSlider.background"], backgroundColor.lighten(0.1))
-            let w = ceil(builder.charWidth * 0.5)
-            let thumbHeightRatio = self.scrollBox.getScrollBarHandleHeightRatio()
-            let thumbHeight = clamp(thumbHeightRatio * currentNode.bounds.h.float, builder.textHeight, max(currentNode.bounds.h - builder.textHeight, currentNode.bounds.h * 0.9))
-            let scrollableHeight = currentNode.bounds.h.float - thumbHeight
-            let thumbY = scrollOffsetNorm * scrollableHeight
-            fillRect(rect(currentNode.bounds.w - w, floor(thumbY), w, ceil(thumbHeight)), scrollBarColor)
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText))
+                .text("No undo history")
 
   proc kind(self: UndoTreeView): string = "undotree"
   proc desc(self: UndoTreeView): string = "UndoTree"
@@ -519,9 +577,8 @@ when implModule:
 
   proc newUndoTreeView*(): UndoTreeView =
     result = UndoTreeView()
-    result.renderImpl = proc(view: View, builder: UINodeBuilder): seq[OverlayFunction] =
-      let undoView = view.UndoTreeView
-      renderUndoTree(undoView, builder)
+    result.renderNuiImpl = proc(view: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
+      renderUndoTreeNui(view.UndoTreeView, nui)
 
     result.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] =
       getUndoTreeViewEventHandlers(self.UndoTreeView, inject)
@@ -567,7 +624,6 @@ when implModule:
         body
 
   proc applySelected(view: UndoTreeView, editor: DocumentEditor, force = false) =
-    view.scrollBox.scrollTo(view.selected)
     if (view.autoApply or force) and editor.getCommandComponent().getSome(cmd):
       if view.selected in 0..view.cachedLines.high:
         let nodeIndex = view.cachedLines[view.selected].nodeIdx
@@ -699,7 +755,6 @@ when implModule:
       for i in 0..view.cachedLines.high:
         if view.cachedLines[i].nodeIdx == tree.current:
           view.selected = i
-          view.scrollBox.scrollTo(view.selected)
 
   proc undoTreeApplySelected(view: UndoTreeView) =
     withUndoTreeContext(view):
