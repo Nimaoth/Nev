@@ -82,6 +82,12 @@ jobs:
 
       - run: nimble install https://github.com/Nimaoth/nimgen@0.5.4 -y
 
+      - name: Install Atlas 0.11.0
+        run: |
+          nimble install https://github.com/nim-lang/atlas@#b2b0b20feac205c75e5b6eff98a8dd8f0303ab64 -y
+          echo "$HOME/.nimble/bin" >> "$GITHUB_PATH"
+          "$HOME/.nimble/bin/atlas" --version
+
       - run: atlas rep
       - run: atlas install
       - run: PATH=/github/home/.nimble/bin:$PATH nim ./tools/nev_build.nims markdown-parser markdown-plugin debug-linux package-linux --cache=${{steps.cache-nimble.outputs.cache-hit}}
@@ -134,6 +140,12 @@ jobs:
         run: ./emsdk/emsdk.ps1 install 4.0.10
 
       - run: nimble install https://github.com/Nimaoth/nimgen@0.5.4 -y
+
+      - name: Install Atlas 0.11.0
+        run: |
+          nimble install https://github.com/nim-lang/atlas@#b2b0b20feac205c75e5b6eff98a8dd8f0303ab64 -y
+          echo "$env:USERPROFILE\.nimble\bin" >> $env:GITHUB_PATH
+          & "$env:USERPROFILE\.nimble\bin\atlas.exe" --version
 
       - run: atlas rep
       - run: atlas install
@@ -190,6 +202,12 @@ jobs:
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('atlas.lock') }}
 
       - run: nimble install https://github.com/Nimaoth/nimgen@0.5.4 -y
+
+      - name: Install Atlas 0.11.0
+        run: |
+          nimble install https://github.com/nim-lang/atlas@#b2b0b20feac205c75e5b6eff98a8dd8f0303ab64 -y
+          echo "$HOME/.nimble/bin" >> "$GITHUB_PATH"
+          "$HOME/.nimble/bin/atlas" --version
 
       - run: atlas rep
       - run: atlas install
