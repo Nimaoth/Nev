@@ -20,7 +20,7 @@ daGlobalTag(daMain)
 import misc/[timer]
 let startupTimer = startTimer()
 
-import std/[parseopt, options, macros, strutils, os, strformat]
+import std/[parseopt, options, macros, strutils, os, strformat, times]
 import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
 import treesitter/treesitter
@@ -323,6 +323,18 @@ proc pollFutures() =
 
 import nuigi/debug/profiler
 
+when defined(perfProfiler):
+  proc startNevPerfProfiling() =
+    let executableName = getAppFilename().extractFilename.changeFileExt("")
+    let profileName = executableName & "-" &
+      now().format("yyyyMMdd-HHmmss") & "-" & $getCurrentProcessId() &
+      ".perfprof"
+    let profilePath = getAppDir() / "sessions" / profileName
+    if startProfiling(profilePath):
+      stderr.writeLine "[perf profiler] Recording to ", profilePath
+    else:
+      stderr.writeLine "[perf profiler] Cannot record to ", profilePath
+
 proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions, frameIndex: var int) =
   var frameTime = 0.0
 
@@ -344,6 +356,7 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
     defer:
       inc frameIndex
 
+    profilerFrameStart()
     plat.frameTimer = startTimer()
     let now = totalTime.elapsed.float
     plat.deltaTime = now - lastTime
@@ -515,6 +528,11 @@ profProcessAllocatorEvents()
 import misc/event
 
 proc main() =
+  when defined(perfProfiler):
+    startNevPerfProfiling()
+  defer:
+    stopProfiling()
+
   profProcessAllocatorEvents()
   let app = newApp(backend.get, plat, gServices, gAppOptions)
   log lvlInfo, &"Finished creating app"
@@ -524,6 +542,7 @@ proc main() =
 
   var p = plat
   discard plat.onResize.subscribe proc() {.gcsafe.} =
+    profilerFrameStart()
     p.frameTimer = startTimer()
     p.onPreRender.invoke(p)
     eventBus.emit(&"platform/prerender", "")

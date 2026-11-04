@@ -160,6 +160,7 @@ when implModule:
   import std/[algorithm, sugar, strutils, json, tables]
   import misc/[regex, timer, util, id, custom_logger, myjsonutils]
   import malebolgia
+  import nuigi/debug/profiler
 
   logCategory "finder"
 
@@ -198,6 +199,7 @@ when implModule:
     filtered: int
 
   proc parallelForChunk[T, C](items: ptr UncheckedArray[T], first: int, last: int, ctx: C, cb: proc(index: int, item: var T, ctx: C) {.nimcall, gcsafe, raises: [].}) =
+    prof("parallelForChunk")
     for i in first..<last:
       cb(i, items[i], ctx)
 
@@ -206,12 +208,14 @@ when implModule:
     if numChunks * chunkSize < items.len:
       inc numChunks
     var m = createMaster()
-    m.awaitAll:
-      var start = 0
-      while start < items.len:
-        let len = min(chunkSize, items.len - start)
-        m.spawn parallelForChunk[T, C](cast[ptr UncheckedArray[T]](items[0].addr), start, start + len, ctx, cb)
-        start += chunkSize
+    block:
+      prof("parallelFor.awaitAll")
+      m.awaitAll:
+        var start = 0
+        while start < items.len:
+          let len = min(chunkSize, items.len - start)
+          m.spawn parallelForChunk[T, C](cast[ptr UncheckedArray[T]](items[0].addr), start, start + len, ctx, cb)
+          start += chunkSize
 
   type FilterAndSortArgs = tuple[queries: seq[string], list: ptr ItemList, sort: bool, minScore: float, skipFirstQuery: bool]
 
@@ -231,6 +235,7 @@ when implModule:
         item.score = matchFuzzy(ctx.args.queries[ctx.queryIndex], "", finderFuzzyMatchConfig).score.float
 
   proc filterAndSortItemsThread(args: FilterAndSortArgs): FilterAndSortResult {.gcsafe.} =
+    prof("filterAndSortItemsThread")
     try:
       var list = args.list
       let scoreTimer = startTimer()

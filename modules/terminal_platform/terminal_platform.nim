@@ -15,6 +15,7 @@ when implModule and enableTerminal:
   import nuigi
   import nuigi/backend/terminal/terminal
   import nuigi/debug/debug_panel
+  import nuigi/debug/profiler
   import nuigi/demo/demo_window
   import nuigi/widgets
   import nuigi/widgets/windows
@@ -57,6 +58,7 @@ when implModule and enableTerminal:
   var inputThreadStarted = false
 
   proc terminalInputThread(state: ptr TerminalInputThreadState) {.thread, raises: [].} =
+    prof("terminalInputThread")
     discard state
     while true:
       try:

@@ -1,4 +1,5 @@
 import misc/timer
+import nuigi/debug/profiler
 
 ## Timer which can be used to check how much async processing has already happened this frame.
 ## Generally used `gAsyncFrameTimer.elapsed.ms` to get the time in milliseconds.
@@ -19,15 +20,19 @@ export chronos except asyncDiscard
 export threadsync
 
 proc runAsyncVoid[A](f: proc(options: A) {.gcsafe, raises: [].}, options: A): NoExceptionDestroy {.raises: [].} =
+  prof("runAsyncVoid")
   f(options)
 
 proc runAsync[T, A](f: proc(options: A): T {.gcsafe, raises: [].}, options: A, res: ptr T): NoExceptionDestroy {.raises: [].} =
+  prof("runAsync")
   res[] = f(options)
 
 proc runAsyncVoid(f: proc() {.gcsafe, raises: [].}): NoExceptionDestroy {.raises: [].} =
+  prof("runAsyncVoid")
   f()
 
 proc runAsync[T](f: proc(): T {.gcsafe, raises: [].}, res: ptr T): NoExceptionDestroy {.raises: [].} =
+  prof("runAsync")
   res[] = f()
 
 proc spawnAsync*[A](f: proc(options: A) {.gcsafe, raises: [].}, options: A): Future[void] {.async: (raises: [CancelledError]).} =

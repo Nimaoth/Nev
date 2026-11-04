@@ -35,6 +35,7 @@ when implModule and defined(appLspServer):
   import language_server
   import language_server_lsp/language_server_lsp
   import workspace
+  import nuigi/debug/profiler
 
   proc toJsonHook*(item: language_server.CompletionItem): JsonNode =
     result = newJObject()
@@ -114,6 +115,7 @@ when implModule and defined(appLspServer):
       result = n.int
 
   proc stdinReaderThread(state: ptr StdinThreadState) {.thread.} =
+    prof("stdinReaderThread")
     let chan = state.channel
     var buf: array[4096, uint8]
     while true:
@@ -142,6 +144,7 @@ when implModule and defined(appLspServer):
         break
 
   proc stdoutWriterThread(state: ptr StdoutThreadState) {.thread.} =
+    prof("stdoutWriterThread")
     let chan = state.channel
     var buf: array[4096, uint8]
     try:

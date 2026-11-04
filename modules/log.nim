@@ -72,6 +72,7 @@ when implModule:
   import nimsumtree/[arc]
   import misc/[util, custom_async]
   import misc/channel
+  import nuigi/debug/profiler
 
   type
     LogDrainThreadMessageKind = enum
@@ -213,6 +214,7 @@ when implModule:
       discard
 
   proc threadMain(i: int) {.thread.} =
+    prof("threadMain")
     {.gcsafe.}:
       var localChannels: seq[LogChannelImpl] = @[]
       while true:

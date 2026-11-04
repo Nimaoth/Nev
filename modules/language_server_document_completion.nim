@@ -13,6 +13,7 @@ proc getLanguageServerDocumentCompletion*(): LanguageServer {.rtl, gcsafe, raise
 when implModule:
   import language_server_component, config_component, language_component, text_component
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
+  import nuigi/debug/profiler
 
   logCategory "language-server-document-completion"
 
@@ -29,6 +30,7 @@ when implModule:
     items: seq[language_server.CompletionItem]
 
   proc collectWordsAndFilterThread(data: ptr CollectWordsThreadState) {.gcsafe, raises: [].} =
+    prof("collectWordsAndFilterThread")
     let rope = data.rope.clone()
     let filterText = data.filterText
     var buffer = ""

@@ -41,6 +41,7 @@ when implModule:
   import text_editor_component, config_component, register, service, command_service
   import types_impl
   import render
+  import nuigi/debug/profiler
 
   func serviceName*(_: typedesc[TerminalServiceImpl]): string = "TerminalService"
 
@@ -1622,6 +1623,7 @@ when implModule:
     )
 
   proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
+    prof("terminalThread")
     daTag(daTerminal)
     var state = s
     state.scrollbackLines = 16384

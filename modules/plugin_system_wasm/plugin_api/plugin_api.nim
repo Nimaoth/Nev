@@ -19,6 +19,7 @@ from nuigi import UiBuilder, UiImageId, UiNodeText, UiRenderCommand,
   UiRenderCommandKind, customRenderCommands, rgba, uiString
 import nuigi/core/[arena, array_view]
 import nuigi/core/vecmath as nuiMath
+import nuigi/debug/profiler
 from scripting_api as sca import nil
 
 {.push gcsafe, raises: [].}
@@ -1311,6 +1312,7 @@ type ThreadState = object
   thread: Arc[typedthreads.Thread[ThreadState]]
 
 proc threadFunc(s: ThreadState) {.thread, nimcall.} =
+  prof("threadFunc")
   chronosDontSkipCallbacksAtStart = true
   runInstanceThread(s.instance)
 

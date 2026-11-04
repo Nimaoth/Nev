@@ -14,6 +14,7 @@ when implModule:
   import language_server
   import text_component, move_component, language_component
   import scripting_api
+  import nuigi/debug/profiler
 
   import nimsumtree/[buffer, clock]
   import nimsumtree/sumtree except Cursor
@@ -85,6 +86,7 @@ when implModule:
       buffer.setLen(0)
 
   proc cacheWordsThread(data: ptr CompletionProviderDocumentThreadState) =
+    prof("cacheWordsThread")
     let rope = data.rope.clone()
     var buffer = ""
     var wordCache = initHashSet[string]()

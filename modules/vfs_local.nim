@@ -14,6 +14,7 @@ proc cacheDir*(self: VFS, path: string, ignore: Globs)
 
 when implModule:
   import fsnotify
+  import nuigi/debug/profiler
 
   when not defined(musl):
     import encodings
@@ -128,6 +129,7 @@ when implModule:
     return (&"Invalid utf-8 byte at {invalidUtf8Index}", true)
 
   proc loadFileThread(args: tuple[path: string, data: ptr string, invalidUtf8Error: ptr bool, flags: set[ReadFlag]]): bool =
+    prof("loadFileThread")
     try:
       let fileSize = getFileSize(args.path).int
       let s = newFileStream(args.path, fmRead, max(1024, fileSize))
@@ -152,6 +154,7 @@ when implModule:
       return false
 
   proc writeFileThread(args: tuple[path: string, data: string]): (bool, string) =
+    prof("writeFileThread")
     try:
       let dir = args.path.splitPath.head
       if not dirExists(dir):
@@ -162,6 +165,7 @@ when implModule:
       return (false, getCurrentExceptionMsg())
 
   proc writeRopeThread(args: tuple[path: string, data: sink RopeSlice[int]]): (bool, string) =
+    prof("writeRopeThread")
     try:
       let dir = args.path.splitPath.head
       if not dirExists(dir):
@@ -178,6 +182,7 @@ when implModule:
       return (false, getCurrentExceptionMsg())
 
   proc loadFileRopeThread(args: tuple[path: string, data: ptr Rope, err: ptr ref CatchableError, cancel: ptr Atomic[bool], threadDone: ptr Atomic[bool]]) =
+    prof("loadFileRopeThread")
     try:
       let s = newFileStream(args.path, fmRead, 1024 * 1024)
       if s.isNil:
@@ -282,6 +287,7 @@ when implModule:
       discard
 
   proc findFileThread(args: tuple[root: string, filename: string, maxResults: int, res: ptr seq[string], options: ptr FindFilesOptions]) =
+    prof("findFileThread")
     try:
       let filenameRegex = re(args.filename)
       findFilesRec(args.root, "", filenameRegex, args.maxResults, args.res[], args.options[].maxDepth)

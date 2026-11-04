@@ -27,6 +27,7 @@ when implModule:
   import nuigi/widgets/dynamic_virtuallist
   import nuigi/widgets/collapsing_header
   import nuigi/layout/flex
+  import nuigi/debug/profiler
 
   logCategory "git-ui"
 
@@ -1113,6 +1114,7 @@ when implModule:
 
   proc checkIgnoredPaths(args: tuple[root: string, paths: seq[string], directories: bool]):
       tuple[output: string, exitCode: int, error: string] {.gcsafe, raises: [].} =
+    prof("checkIgnoredPaths")
     try:
       var commandArgs = @["check-ignore", "-z", "--stdin"]
       if args.directories:

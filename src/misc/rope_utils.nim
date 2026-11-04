@@ -5,6 +5,7 @@ from scripting_api as api import nil
 import treesitter/treesitter
 import custom_async, custom_unicode, util, regex, timer
 import misc/diff
+import nuigi/debug/profiler
 
 export Bias
 
@@ -41,6 +42,7 @@ func toSelection*(self: (Point, Point)): Selection = (self[0].toCursor, self[1].
 func toSelection*(self: Range[Point]): Selection = (self.a.toCursor, self.b.toCursor)
 
 proc createRopeThread(args: tuple[str: ptr string, rope: ptr Rope, errorIndex: ptr int]) =
+  prof("createRopeThread")
   template content: openArray[char] = args.str[].toOpenArray(0, args.str[].high)
   let invalidUtf8Index = content.validateUtf8
   if invalidUtf8Index >= 0:
@@ -73,6 +75,7 @@ type DiffRopesData = object
   threadDone: Atomic[bool]
 
 proc diffRopeThread(data: ptr DiffRopesData) =
+  prof("diffRopeThread")
   defer:
     if data[].rc.fetchSub(1, moRelease) == 1:
       fence(moAcquire)
@@ -119,6 +122,7 @@ proc diffRopeAsync*(a, b: sink Rope, res: ptr RopeDiff[int]): Future[void] {.asy
     raise e
 
 proc diffRopeLinesThread(data: ptr DiffRopesData): seq[LineMapping] =
+  prof("diffRopeLinesThread")
   return diffLines(data.a, data.b)
 
 proc diffRopeLinesAsync*(a, b: sink Rope): Future[seq[LineMapping]] {.async.} =

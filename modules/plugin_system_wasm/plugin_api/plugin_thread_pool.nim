@@ -2,6 +2,7 @@
 import std/[macros, strformat, tables]
 import misc/[custom_async, util]
 import nimsumtree/[arc]
+import nuigi/debug/profiler
 
 type
   InstanceThreadState*[T] = object
@@ -19,6 +20,7 @@ type
     handler: proc(instance: sink Arc[T]) {.nimcall, gcsafe, raises: [].}
 
 proc workerThread[T](state: WorkerThreadState[T]) {.thread, nimcall, gcsafe.} =
+  prof("workerThread")
   chronosDontSkipCallbacksAtStart = true
 
   while true:
