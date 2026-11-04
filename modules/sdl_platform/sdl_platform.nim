@@ -27,6 +27,16 @@ when implModule:
   import nuigi/styling/theme_editor
   import nuigi/demo/demo_window
 
+  when defined(windows):
+    proc DwmSetWindowAttribute(
+      hwnd: pointer,
+      attribute: uint32,
+      value: pointer,
+      valueSize: uint32
+    ): int32 {.stdcall, dynlib: "dwmapi", importc.}
+
+    const dwmwaCaptionColor = 35'u32
+
   include nuigi/util/compat2
 
   {.push gcsafe.}
@@ -70,6 +80,8 @@ when implModule:
     SdlPlatform* = ref object of Platform
       window: Window
       renderer: Renderer
+      lastTitleBarColor: uint32
+      hasLastTitleBarColor: bool
       running*: bool
       winW*: cint
       winH*: cint
@@ -145,6 +157,30 @@ when implModule:
 
   func toUiColor(c: chroma.Color): UiColor =
     rgba(c.r.float32, c.g.float32, c.b.float32, c.a.float32)
+
+  when defined(windows):
+    proc updateTitleBarColor(self: SdlPlatform, color: UiColor) {.gcsafe, raises: [].} =
+      let r = (max(0.0'f32, min(1.0'f32, color.r)) * 255).uint32
+      let g = (max(0.0'f32, min(1.0'f32, color.g)) * 255).uint32
+      let b = (max(0.0'f32, min(1.0'f32, color.b)) * 255).uint32
+      let colorRef = r or (g shl 8) or (b shl 16)
+      if self.hasLastTitleBarColor and self.lastTitleBarColor == colorRef:
+        return
+
+      let properties = self.window.getWindowProperties()
+      let hwnd = sdl3.getPointerProperty(properties, sdl3.PROP_WINDOW_WIN32_HWND_POINTER, nil)
+      if hwnd == nil:
+        log lvlWarn, "SDL window does not expose its Win32 HWND; cannot set title bar color"
+        self.lastTitleBarColor = colorRef
+        self.hasLastTitleBarColor = true
+        return
+
+      var value = colorRef
+      let result = DwmSetWindowAttribute(hwnd, dwmwaCaptionColor, addr value, sizeof(value).uint32)
+      if result < 0:
+        log lvlWarn, "DwmSetWindowAttribute failed to set title bar color: HRESULT ", result
+      self.lastTitleBarColor = colorRef
+      self.hasLastTitleBarColor = true
 
   # ---------- font helpers (mirrors gui_platform) ----------
   proc getFontIdForFlags(self: SdlPlatform, flags: UINodeFlags): FontId {.gcsafe, raises: [].} =
@@ -802,7 +838,7 @@ when implModule:
       discard
 
   proc buildSettingsWindow(self: SdlPlatform, b: var UiBuilder) {.raises: [Exception].} =
-    b.window("Settings", 0.0, 0.0, 420.0, 640.0):
+    b.window("Settings", 1000.0, 0.0, 420.0, 640.0):
       b.scrollBox():
         discard b.sizeToParentX().fitY()
         b.layoutVertical:
@@ -985,6 +1021,8 @@ when implModule:
       {.cast(gcsafe).}:
         self.nui.endAttach() # base
         self.buildNuiUi()
+        when defined(windows):
+          self.updateTitleBarColor(self.nui.themeStyle(UiStyleIndexWindowTitleBar)[].fillColor)
         self.nui.endUiFrame(buildMeshRenderCommands = true)
 
         if self.renderer == nil or self.window == nil or self.redrawingUi:
