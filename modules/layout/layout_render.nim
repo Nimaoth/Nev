@@ -9,6 +9,12 @@ when not defined(nimony):
   proc forceNim2ToIncludeUiBuilderInTheGeneratedCFile3*(): UiBuilder {.exportc.} = UiBuilder()
 
 const SplitterHandleWidth = 2.0'f32
+const SplitterGap = 1.0'f32 ## Gap between a splitter handle and the views on either side
+
+proc splitterReservedSpace(nui: UiBuilder): float32 =
+  ## Total space reserved between two split views: gap, handle, gap.
+  ## The gap is dropped in the terminal backend, where units are cells.
+  SplitterHandleWidth + 2.0'f32 * nui.backendSpacing(SplitterGap)
 
 proc splitGap(areaExtent: float, pixelExtent, requestedWidth: float32): float32 =
   min(max(areaExtent.float32 * pixelExtent, 0.0'f32), requestedWidth)
@@ -52,8 +58,8 @@ proc buildSplitHandle(nui: var UiBuilder, key: string, boundary: float,
   if layoutExtent <= 0:
     return 0
   var delta = 0.0
-  let handleStart = max(0.0'f32, boundary.float32 * layoutExtent - 1.0'f32)
-  let handleEnd = min(layoutExtent, boundary.float32 * layoutExtent + 1.0'f32)
+  let handleStart = max(0.0'f32, boundary.float32 * layoutExtent - SplitterHandleWidth * 0.5'f32)
+  let handleEnd = min(layoutExtent, boundary.float32 * layoutExtent + SplitterHandleWidth * 0.5'f32)
   let topLeft = if verticalDivider:
     nuiVecMath.vec2(handleStart / layoutExtent, 0.0'f32)
   else:
@@ -67,10 +73,11 @@ proc buildSplitHandle(nui: var UiBuilder, key: string, boundary: float,
     var held = false
     nui.node("splitter-drag-hit"):
       discard nui.ignoreInContentExtent()
-      let leftOffset = if verticalDivider: -1.0'f32 else: 0.0'f32
-      let topOffset = if verticalDivider: 0.0'f32 else: -1.0'f32
-      let rightOffset = if verticalDivider: 1.0'f32 else: 0.0'f32
-      let bottomOffset = if verticalDivider: 0.0'f32 else: 1.0'f32
+      let hitPad = max(1.0'f32, nui.backendSpacing(SplitterGap))
+      let leftOffset = if verticalDivider: -hitPad else: 0.0'f32
+      let topOffset = if verticalDivider: 0.0'f32 else: -hitPad
+      let rightOffset = if verticalDivider: hitPad else: 0.0'f32
+      let bottomOffset = if verticalDivider: 0.0'f32 else: hitPad
       discard nui.anchors(0, 0, 1, 1)
         .offsets(leftOffset, topOffset, rightOffset, bottomOffset).finishAnchors()
       hovered = nui.wasHovered()
@@ -80,8 +87,9 @@ proc buildSplitHandle(nui: var UiBuilder, key: string, boundary: float,
       if (pressed or held) and ratioExtent > 0:
         let pointerDelta = if verticalDivider: nui.frameCtx.input.mouseDelta.x else: nui.frameCtx.input.mouseDelta.y
         delta = pointerDelta / ratioExtent
-    discard nui.anchors(topLeft, bottomRight).fillBackground()
-      .styleIndex(if hovered or held: UiStyleIndexAccent else: UiStyleIndexHeader)
+    if hovered or held:
+      discard nui.fillBackground().styleIndex(UiStyleIndexAccent)
+    discard nui.anchors(topLeft, bottomRight)
       .padding(0).finishAnchors()
   delta
 
@@ -92,7 +100,7 @@ proc renderHorizontalLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises:
     if self.children.len == 0:
       nui.node:
         nui.debugName("horizontal-layout")
-        discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel)
+        discard nui.fillX().fillY()
       return
     if self.maximize:
       nui.node:
@@ -104,12 +112,13 @@ proc renderHorizontalLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises:
       nui.debugName("horizontal-layout")
       discard nui.fillX().fillY()
       let layoutSize = nui.previousLayoutSize()
+      let splitterSpace = nui.splitterReservedSpace()
       var rects = newSeq[Rect]()
       var splitExtents = newSeq[float32]()
       var splitGaps = newSeq[float32]()
       var rect = rect(0, 0, 1, 1)
       for i, c in self.children:
-        let handleWidth = if i == self.children.high: 0.0'f32 else: SplitterHandleWidth
+        let handleWidth = if i == self.children.high: 0.0'f32 else: splitterSpace
         let ratio = if i == self.children.high: 1.0 else: self.getSplitRatio(i)
         let gap = splitGap(rect.w, layoutSize.x, handleWidth)
         splitExtents.add max(rect.w.float32 * layoutSize.x - gap, 0.0'f32)
@@ -125,11 +134,11 @@ proc renderHorizontalLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises:
         # NUI-GAP: old culled slots with bounds.w>0 and bounds.h>0; unconditional here.
         if c != nil:
           nui.node:
-            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).padding(0).finishAnchors()
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).padding(0).finishAnchors()
             c.render(nui)
         else:
           nui.node:
-            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).finishAnchors()
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).finishAnchors()
       for i in 0 ..< self.children.high:
         let boundary = splitterCenter(rects[i].x + rects[i].w, splitGaps[i], layoutSize.x)
         let delta = nui.buildSplitHandle("horizontal-splitter-" & $i, boundary,
@@ -144,7 +153,7 @@ proc renderVerticalLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [
     if self.children.len == 0:
       nui.node:
         nui.debugName("vertical-layout")
-        discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel)
+        discard nui.fillX().fillY()
       return
     if self.maximize:
       nui.node:
@@ -156,12 +165,13 @@ proc renderVerticalLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [
       nui.debugName("vertical-layout")
       discard nui.fillX().fillY()
       let layoutSize = nui.previousLayoutSize()
+      let splitterSpace = nui.splitterReservedSpace()
       var rects = newSeq[Rect]()
       var splitExtents = newSeq[float32]()
       var splitGaps = newSeq[float32]()
       var rect = rect(0, 0, 1, 1)
       for i, c in self.children:
-        let handleWidth = if i == self.children.high: 0.0'f32 else: SplitterHandleWidth
+        let handleWidth = if i == self.children.high: 0.0'f32 else: splitterSpace
         let ratio = if i == self.children.high: 1.0 else: self.getSplitRatio(i)
         let gap = splitGap(rect.h, layoutSize.y, handleWidth)
         splitExtents.add max(rect.h.float32 * layoutSize.y - gap, 0.0'f32)
@@ -176,11 +186,11 @@ proc renderVerticalLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [
         # NUI-GAP: old culled slots with bounds.w>0 and bounds.h>0; unconditional here.
         if c != nil:
           nui.node:
-            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).padding(0).finishAnchors()
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).padding(0).finishAnchors()
             c.render(nui)
         else:
           nui.node:
-            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).finishAnchors()
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).finishAnchors()
       for i in 0 ..< self.children.high:
         let boundary = splitterCenter(rects[i].y + rects[i].h, splitGaps[i], layoutSize.y)
         let delta = nui.buildSplitHandle("vertical-splitter-" & $i, boundary,
@@ -194,7 +204,7 @@ proc renderAlternatingLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises
     self.resetDirty()
     if self.children.len == 0:
       nui.node:
-        discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel)
+        discard nui.fillX().fillY()
       return
     if self.maximize:
       nui.node:
@@ -220,11 +230,11 @@ proc renderAlternatingLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises
         # bounds.w>0 and bounds.h>0 guard; guard dropped here (see §24).
         if c != nil:
           nui.node:
-            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).padding(0).finishAnchors()
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).padding(0).finishAnchors()
             c.render(nui)
         else:
           nui.node:
-            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).finishAnchors()
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).finishAnchors()
 
 proc renderTabLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
   {.cast(gcsafe).}:
@@ -233,7 +243,7 @@ proc renderTabLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
     let hideTabBarWhenSingle = true
     let idx = self.activeIndex.clamp(0, self.children.high)
     nui.layoutVertical("tab-" & $self.mId):
-      discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backendGap(4).backendPadding(0)
+      discard nui.fillX().fillY().backendGap(4).backendPadding(0)
       if not hideTabBarWhenSingle or self.children.len > 1:
         nui.layoutHorizontal("tab-bar"):
           discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backendGap(4).backendPadding(4)
@@ -255,7 +265,7 @@ proc renderTabLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
         if idx in 0..self.children.high and self.children[idx] != nil:
           self.children[idx].render(nui)
         else:
-          discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel)
+          discard nui.fillX().fillY()
 
 proc renderCenterLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} =
   {.cast(gcsafe).}:
@@ -264,12 +274,13 @@ proc renderCenterLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].
     if self.children.len != 5:
       nui.node:
         nui.debugName("center-layout")
-        discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel)
+        discard nui.fillX().fillY()
       return
     nui.node:
       nui.debugName("center-layout")
       discard nui.fillX().fillY()
       let layoutSize = nui.previousLayoutSize()
+      let splitterSpace = nui.splitterReservedSpace()
       var rects: array[5, Rect]
       var remaining = rect(0, 0, 1, 1)
       var leftGap = 0.0'f32
@@ -281,23 +292,23 @@ proc renderCenterLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].
       var topRatioExtent = layoutSize.y
       var bottomRatioExtent = layoutSize.y
       if self.left != nil:
-        leftGap = splitGap(remaining.w, layoutSize.x, SplitterHandleWidth)
+        leftGap = splitGap(remaining.w, layoutSize.x, splitterSpace)
         leftRatioExtent = remaining.w.float32 * layoutSize.x - leftGap
-        (rects[0], remaining) = splitVAligned(remaining, self.splitRatios[0], layoutSize.x, SplitterHandleWidth)
+        (rects[0], remaining) = splitVAligned(remaining, self.splitRatios[0], layoutSize.x, splitterSpace)
       if self.right != nil:
-        rightGap = splitGap(remaining.w, layoutSize.x, SplitterHandleWidth)
+        rightGap = splitGap(remaining.w, layoutSize.x, splitterSpace)
         rightRatioExtent = remaining.w.float32 * layoutSize.x - rightGap
-        let (centerPart, rightPart) = splitVAligned(remaining, self.splitRatios[1], layoutSize.x, SplitterHandleWidth)
+        let (centerPart, rightPart) = splitVAligned(remaining, self.splitRatios[1], layoutSize.x, splitterSpace)
         remaining = centerPart
         rects[1] = rightPart
       if self.top != nil:
-        topGap = splitGap(remaining.h, layoutSize.y, SplitterHandleWidth)
+        topGap = splitGap(remaining.h, layoutSize.y, splitterSpace)
         topRatioExtent = remaining.h.float32 * layoutSize.y - topGap
-        (rects[2], remaining) = splitHAligned(remaining, self.splitRatios[2], layoutSize.y, SplitterHandleWidth)
+        (rects[2], remaining) = splitHAligned(remaining, self.splitRatios[2], layoutSize.y, splitterSpace)
       if self.bottom != nil:
-        bottomGap = splitGap(remaining.h, layoutSize.y, SplitterHandleWidth)
+        bottomGap = splitGap(remaining.h, layoutSize.y, splitterSpace)
         bottomRatioExtent = remaining.h.float32 * layoutSize.y - bottomGap
-        let (centerPart, bottomPart) = splitHAligned(remaining, self.splitRatios[3], layoutSize.y, SplitterHandleWidth)
+        let (centerPart, bottomPart) = splitHAligned(remaining, self.splitRatios[3], layoutSize.y, splitterSpace)
         remaining = centerPart
         rects[3] = bottomPart
       rects[4] = remaining
@@ -309,12 +320,12 @@ proc renderCenterLayoutNui(self: View, nui: var UiBuilder) {.gcsafe, raises: [].
         if c != nil:
           let r = rects[i]
           nui.node:
-            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).padding(0).finishAnchors()
+            discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).padding(0).finishAnchors()
             c.render(nui)
       if self.center == nil:
         let r = rects[4]
         nui.node:
-          discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).fillBackground().styleIndex(UiStyleIndexPanel).finishAnchors()
+          discard nui.anchors(nuiVecMath.vec2(r.x.float32, r.y.float32), nuiVecMath.vec2((r.x + r.w).float32, (r.y + r.h).float32)).finishAnchors()
       if self.left != nil:
         let boundary = splitterCenter(rects[0].x + rects[0].w, leftGap, layoutSize.x)
         let delta = nui.buildSplitHandle("center-left-splitter", boundary,
