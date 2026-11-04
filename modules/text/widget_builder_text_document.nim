@@ -2333,8 +2333,12 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
     self.resetDirty()
     let bgColor = nui.themeStyle(
       if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel)[].fillColor
+    var panelOptions = ViewPanelOptions(fitContentY: fitContentY)
+    if self.renderHeader and self.services != nil:
+      let layout = self.services.getServiceChecked(LayoutService)
+      panelOptions = panelOptions.withViewActions(layout, layout.getViewForEditor(self).get(nil))
     nui.viewPanel("text-root", self.active, self.renderHeader,
-        ViewPanelOptions(fitContentY: fitContentY)):
+        panelOptions):
       # Header – replicates `createHeader` logic from widget_library (mode, dirty, file, dir + right side)
       discard nui.backendGap(8)
       let modeText = if self.mode.len == 0: "-" else: self.mode

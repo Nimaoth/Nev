@@ -499,7 +499,8 @@ when implModule:
         charWidth = 1.0'f32
         lineHeight = 1.0'f32
 
-      nui.viewPanel("undo-tree", self.active, true):
+      nui.viewPanel("undo-tree", self.active, true,
+          ViewPanelOptions().withViewActions(layout, self)):
         nui.node:
           discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
             .text(title)

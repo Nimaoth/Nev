@@ -1518,7 +1518,8 @@ when implModule and defined(profiler):
       try:
         self.renderCommandPoolCursor = 0
         self.resetDirty()
-        nui.viewPanel("profiler-root", self.active, true, ViewPanelOptions(padding: 4)):
+        nui.viewPanel("profiler-root", self.active, true,
+            ViewPanelOptions(padding: 4).withViewActions(getServiceChecked(LayoutService), self)):
           let memLabel =
             if self.activeTabIndex == 0: "[Memory]"
             else: " Memory "

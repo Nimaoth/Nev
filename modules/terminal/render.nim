@@ -6,10 +6,13 @@ import misc/input_api as input_api
 import theme, view, config_provider, platform
 import app/theme_styles
 import types_impl, core_settings
+import layout/layout
+import document_editor
 
 from std/colors as colors import nil
 
 import nuigi
+from nuigi/widgets import button
 import nuigi/core/vecmath as nuiMath
 import nuigi/core/arena
 import nuigi/core/array_view
@@ -316,11 +319,83 @@ proc requestTerminalViewportNui(b: var UiBuilder, nodeIdx, userData: int) {.nimc
     firstRow: visible.first, lastRow: visible.last, scrollOffset: offset,
     viewportRows: viewportRows, historyStart: terminal.historyStart, followTail: storage.followTail))
 
+proc renderLiveTerminalNui(self: TerminalView, nui: var UiBuilder,
+    outWidth, outHeight, outCellWidth, outCellHeight: var int) {.gcsafe, raises: [].} =
+  nui.node("terminal-body"):
+    discard nui.fillX().fillY().fillBackground().styleIndex(
+      if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel).padding(0).maskChildren()
+    let bodyIndex = nui.currentNodeIndex
+    let existing = nui.nodeStorageGet(nui.currentNode)
+    let storage = if existing != nil and existing of TerminalInputNuiStorage:
+      cast[TerminalInputNuiStorage](existing)
+    else:
+      TerminalInputNuiStorage()
+    if storage.view != self:
+      storage.pressedButtons = {}
+      storage.initialized = false
+      storage.followTail = true
+    storage.view = self
+    nui.nodeStorage(nui.currentNode, storage)
+    if self.terminal != nil:
+      let terminal = self.terminal
+      let style = nui.themeTextStyle(UiStyleIndexDefaultMono)
+      var tmpText = UiNodeText(text: "M".uiString, fontId: style.fontId, fontSize: style.fontSize)
+      let arr = nui.getTextArrangement(tmpText.addr, -1)
+      let charW = if arr != nil and arr.size.x > 0: arr.size.x else: 8.0'f32
+      let charH = if arr != nil and arr.size.y > 0: arr.size.y else: 16.0'f32
+      let previousCellHeight = storage.cellHeight
+      storage.cellWidth = charW
+      storage.cellHeight = charH
+      storage.fontId = style.fontId
+      storage.fontSize = style.fontSize
+      outCellWidth = max(1, charW.int)
+      outCellHeight = max(1, charH.int)
+      let scrollbarWidth = if nui.backendType == UiBackendType.Terminal: 1.0'f32 else: 10.0'f32
+      outWidth = max(1, ((nui.currentNode.size.x - scrollbarWidth) / charW).int)
+      outHeight = max(1, (nui.currentNode.size.y / charH).int)
+      let previousList = storage.list
+      if previousList != nil:
+        if storage.alternateScreen != terminal.alternateScreen or
+            (storage.historyLength > 0 and terminal.historyLength == 0):
+          storage.followTail = true
+        if previousCellHeight != charH:
+          if not storage.followTail and previousCellHeight > 0:
+            previousList.scrollOffsetY *= charH / previousCellHeight
+          previousList.clearMeasuredHeights()
+        if storage.followTail:
+          previousList.scrollOffsetY = max(0.0'f32,
+            (terminal.historyLength + terminal.height).float32 * charH - nui.currentNode.size.y)
+        else:
+          previousList.shiftScrollOffset(-float32(terminal.historyStart - storage.historyStart) * charH)
+        if terminal.pendingScrollRows != 0:
+          previousList.scrollByY(terminal.pendingScrollRows.float32 * charH)
+          terminal.pendingScrollRows = 0
+        previousList.scrollSpeed = if terminal.mouseTracking or terminal.alternateScreen: 0 else: charH
+      storage.historyLength = terminal.historyLength
+      storage.historyStart = terminal.historyStart
+      storage.alternateScreen = terminal.alternateScreen
+      storage.list = nui.dynamicVirtualList(terminal.historyLength + terminal.height,
+        charH, buildTerminalRowNui, bodyIndex)
+      if not storage.initialized:
+        storage.list.scrollOffsetY = max(0.0'f32,
+          (terminal.historyLength + terminal.height).float32 * charH - nui.currentNode.size.y)
+        storage.initialized = true
+      if terminal.mouseTracking or terminal.alternateScreen:
+        storage.list.scrollSpeed = 0
+      else:
+        storage.list.scrollSpeed = charH
+      discard nui.deferBuild(handleTerminalInputNui)
+      discard nui.deferBuild(requestTerminalViewportNui)
+
 proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder,
     outWidth, outHeight, outCellWidth, outCellHeight: var int) {.gcsafe, raises: [].} =
   {.cast(gcsafe).}:
     self.resetDirty()
-    nui.viewPanel("terminal-root", self.active, true):
+    var panelOptions = ViewPanelOptions()
+    if not self.isInPreview and self.terminals != nil:
+      panelOptions = panelOptions.withViewActions(self.terminals.layout, self)
+    nui.viewPanel("terminal-root", self.active, true,
+        panelOptions):
       template addSection(txt: string) =
         nui.node:
           discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(txt)
@@ -343,69 +418,17 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder,
         else:
           addSection(self.terminal.command)
     do:
-      nui.node("terminal-body"):
-        discard nui.fillX().fillY().fillBackground().styleIndex(
-          if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel).padding(0).maskChildren()
-        let bodyIndex = nui.currentNodeIndex
-        let existing = nui.nodeStorageGet(nui.currentNode)
-        let storage = if existing != nil and existing of TerminalInputNuiStorage:
-          cast[TerminalInputNuiStorage](existing)
-        else:
-          TerminalInputNuiStorage()
-        if storage.view != self:
-          storage.pressedButtons = {}
-          storage.initialized = false
-          storage.followTail = true
-        storage.view = self
-        nui.nodeStorage(nui.currentNode, storage)
-        if self.terminal == nil:
-          return
-        let terminal = self.terminal
-        let style = nui.themeTextStyle(UiStyleIndexDefaultMono)
-        var tmpText = UiNodeText(text: "M".uiString, fontId: style.fontId, fontSize: style.fontSize)
-        let arr = nui.getTextArrangement(tmpText.addr, -1)
-        let charW = if arr != nil and arr.size.x > 0: arr.size.x else: 8.0'f32
-        let charH = if arr != nil and arr.size.y > 0: arr.size.y else: 16.0'f32
-        let previousCellHeight = storage.cellHeight
-        storage.cellWidth = charW
-        storage.cellHeight = charH
-        storage.fontId = style.fontId
-        storage.fontSize = style.fontSize
-        outCellWidth = max(1, charW.int)
-        outCellHeight = max(1, charH.int)
-        let scrollbarWidth = if nui.backendType == UiBackendType.Terminal: 1.0'f32 else: 10.0'f32
-        outWidth = max(1, ((nui.currentNode.size.x - scrollbarWidth) / charW).int)
-        outHeight = max(1, (nui.currentNode.size.y / charH).int)
-        let previousList = storage.list
-        if previousList != nil:
-          if storage.alternateScreen != terminal.alternateScreen or
-              (storage.historyLength > 0 and terminal.historyLength == 0):
-            storage.followTail = true
-          if previousCellHeight != charH:
-            if not storage.followTail and previousCellHeight > 0:
-              previousList.scrollOffsetY *= charH / previousCellHeight
-            previousList.clearMeasuredHeights()
-          if storage.followTail:
-            previousList.scrollOffsetY = max(0.0'f32,
-              (terminal.historyLength + terminal.height).float32 * charH - nui.currentNode.size.y)
-          else:
-            previousList.shiftScrollOffset(-float32(terminal.historyStart - storage.historyStart) * charH)
-          if terminal.pendingScrollRows != 0:
-            previousList.scrollByY(terminal.pendingScrollRows.float32 * charH)
-            terminal.pendingScrollRows = 0
-          previousList.scrollSpeed = if terminal.mouseTracking or terminal.alternateScreen: 0 else: charH
-        storage.historyLength = terminal.historyLength
-        storage.historyStart = terminal.historyStart
-        storage.alternateScreen = terminal.alternateScreen
-        storage.list = nui.dynamicVirtualList(terminal.historyLength + terminal.height,
-          charH, buildTerminalRowNui, bodyIndex)
-        if not storage.initialized:
-          storage.list.scrollOffsetY = max(0.0'f32,
-            (terminal.historyLength + terminal.height).float32 * charH - nui.currentNode.size.y)
-          storage.initialized = true
-        if terminal.mouseTracking or terminal.alternateScreen:
-          storage.list.scrollSpeed = 0
-        else:
-          storage.list.scrollSpeed = charH
-        discard nui.deferBuild(handleTerminalInputNui)
-        discard nui.deferBuild(requestTerminalViewportNui)
+      if not self.isInPreview and self.onToggleBufferEditor != nil:
+        let terminalView = self
+        let toggle = self.onToggleBufferEditor
+        let label = if self.loadingBufferEditor: "Loading..."
+          elif self.bufferEditor != nil: "Terminal"
+          else: "Text"
+        if nui.button(label) and not self.loadingBufferEditor:
+          nui.enqueueNextFrame(proc() {.closure, gcsafe, raises: [].} =
+            toggle(terminalView))
+    do:
+      if self.bufferEditor != nil:
+        self.bufferEditor.renderNui(nui)
+      else:
+        renderLiveTerminalNui(self, nui, outWidth, outHeight, outCellWidth, outCellHeight)

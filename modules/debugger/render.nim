@@ -34,7 +34,8 @@ template debuggerChrome(nui: var UiBuilder, view: View, rootName,
     titleText: string, body: untyped) =
   ## Shared Panel root + Header bar chrome (mirrors renderView in widget_library).
   block:
-    nui.viewPanel(rootName, view.active, true, ViewPanelOptions(padding: 4)):
+    nui.viewPanel(rootName, view.active, true,
+        ViewPanelOptions(padding: 4).withViewActions(getServiceChecked(LayoutService), view)):
       nui.node:
         discard nui.fit().textStyleIndex(
           int(UiStyleIndexHeaderText)).text(titleText)

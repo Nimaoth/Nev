@@ -5,6 +5,7 @@ import nimsumtree/[rope, arc]
 import view, input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, misc/channel, register
 from scripting_api import SshOptions, RunInTerminalOptions, CreateTerminalOptions
 import types
+import document_editor
 
 when defined(enableLibssh):
   static:
@@ -318,6 +319,9 @@ type
     closeOnTerminate*: bool
     slot*: string
     open*: bool = true
+    bufferEditor*: DocumentEditor
+    loadingBufferEditor*: bool
+    onToggleBufferEditor*: proc(view: TerminalView) {.gcsafe, raises: [].}
     onClick*: proc (view: TerminalView, button: input_api.MouseButton, pressed: bool, modifiers: Modifiers, col: int, row: int) {.gcsafe, raises: [].}
     onScroll*: proc(view: TerminalView, deltaY: int, modifiers: Modifiers) {.gcsafe, raises: [].}
     onDrag*: proc(view: TerminalView, button: input_api.MouseButton, col: int, row: int, modifiers: Modifiers) {.gcsafe, raises: [].}

@@ -39,6 +39,7 @@ when implModule:
   import input_handler/input_handler, config_provider, layout/layout, theme, vterm, misc/input_api, selector_popup/builder, vfs, vfs_service
   import core_settings
   import text_editor_component, config_component, register, service, command_service
+  import document_editor, document
   import types_impl
   import render
   import nuigi/debug/profiler
@@ -2459,11 +2460,20 @@ when implModule:
   proc handleAction(self: TerminalServiceImpl, view: TerminalView, action: string, arg: string): Option[string]
   proc handleInput(self: TerminalServiceImpl, view: TerminalView, text: string)
   proc handleKey(self: TerminalServiceImpl, view: TerminalView, input: int64, modifiers: Modifiers, noKitty: bool = false)
+  proc toggleBufferEditor*(self: TerminalView)
+
+  proc closeBufferEditor(self: TerminalView) =
+    if self.bufferEditor != nil:
+      let editor = self.bufferEditor
+      self.bufferEditor = nil
+      editor.active = false
+      self.terminals.services.getServiceChecked(DocumentEditorService).closeEditor(editor)
 
   proc closeTerminalView*(self: TerminalView) =
     if not self.open:
       return
     self.open = false
+    self.closeBufferEditor()
     self.terminals.terminals.del(self.terminal.id)
     asyncSpawn self.terminal.terminate()
 
@@ -2471,12 +2481,16 @@ when implModule:
     if self.active:
       return
     self.active = true
+    if self.bufferEditor != nil:
+      self.bufferEditor.active = true
     self.markDirtyBase()
 
   proc deactivateTerminalView*(self: TerminalView) =
     if not self.active:
       return
     self.active = false
+    if self.bufferEditor != nil:
+      self.bufferEditor.active = false
     self.markDirtyBase()
 
   template withActiveView*(self: TerminalServiceImpl, view: TerminalView, body: untyped): untyped =
@@ -2511,6 +2525,8 @@ when implModule:
     return self.eventHandlers[context]
 
   proc getEventHandlers*(self: TerminalView, inject: Table[string, EventHandler]): seq[EventHandler] =
+    if self.bufferEditor != nil:
+      return self.bufferEditor.getEventHandlers(inject)
     let config = self.terminals.config.runtime
     result = @[self.getEventHandler(config.getTerminalBaseMode())]
     if self.modeEventHandler != nil:
@@ -2668,7 +2684,11 @@ when implModule:
             cellWidth: int
             cellHeight: int
           renderTerminalNui(tv, nui, width, height, cellWidth, cellHeight)
-          tv.setSize(width, height, cellWidth, cellHeight)
+          if tv.bufferEditor == nil:
+            tv.setSize(width, height, cellWidth, cellHeight)
+      view.onToggleBufferEditor = toggleBufferEditor
+      view.getActiveEditorImpl = proc(self: View): Option[DocumentEditor] =
+        self.TerminalView.bufferEditor.option
       view.closeImpl = proc(self: View) = closeTerminalView(self.TerminalView)
       view.activateImpl = proc(self: View) = activateTerminalView(self.TerminalView)
       view.deactivateImpl = proc(self: View) = deactivateTerminalView(self.TerminalView)
@@ -2734,7 +2754,11 @@ when implModule:
             cellWidth: int
             cellHeight: int
           renderTerminalNui(tv, nui, width, height, cellWidth, cellHeight)
-          tv.setSize(width, height, cellWidth, cellHeight)
+          if tv.bufferEditor == nil:
+            tv.setSize(width, height, cellWidth, cellHeight)
+      view.onToggleBufferEditor = toggleBufferEditor
+      view.getActiveEditorImpl = proc(self: View): Option[DocumentEditor] =
+        self.TerminalView.bufferEditor.option
       view.closeImpl = proc(self: View) = closeTerminalView(self.TerminalView)
       view.activateImpl = proc(self: View) = activateTerminalView(self.TerminalView)
       view.deactivateImpl = proc(self: View) = deactivateTerminalView(self.TerminalView)
@@ -2899,28 +2923,53 @@ when implModule:
     self.sendTerminalInput(input)
     self.setTerminalMode(mode)
 
-  proc requestEditBuffer(self: TerminalView) {.async.} =
+  proc requestEditBuffer(self: TerminalView, embedded = false) {.async.} =
+    defer:
+      if embedded:
+        self.loadingBufferEditor = false
+        self.markDirtyBase()
     try:
       var rope: Rope = Rope.new()
       let ropePtr = rope.addr
-      self.terminal.sendEvent(InputEvent(kind: InputEventKind.RequestRope, rope: ropePtr))
-
       var waiting = true
       let handle = self.terminal.onRope.subscribe proc(r: ptr Rope) =
         if r != ropePtr:
           return
         waiting = false
+      defer:
+        self.terminal.onRope.unsubscribe(handle)
+      self.terminal.sendEvent(InputEvent(kind: InputEventKind.RequestRope, rope: ropePtr))
 
       while waiting:
         # todo: use async signals
         await sleepAsync(30.milliseconds)
 
-      self.terminal.onRope.unsubscribe(handle)
+      if not self.open:
+        return
 
-      let path = &"ed://{self.terminal.id}.terminal-output"
+      let path = if embedded: &"ed://{self.terminal.id}.terminal-text"
+        else: &"ed://{self.terminal.id}.terminal-output"
       await self.terminals.services.getServiceChecked(VFSService).vfs.write(path, rope)
 
-      if self.terminals.layout.openFile(path).getSome(editor):
+      if not self.open:
+        return
+      var editor: DocumentEditor
+      if embedded:
+        let editors = self.terminals.services.getServiceChecked(DocumentEditorService)
+        let document = editors.openDocument(path).getOr:
+          log lvlError, "Failed to open terminal text snapshot: ", path
+          return
+        editor = editors.createEditorForDocument(document).getOr:
+          log lvlError, "Failed to create terminal text editor: ", path
+          editors.tryCloseDocument(document)
+          return
+        editor.renderHeader = false
+        editor.active = self.active
+        self.bufferEditor = editor
+        self.markDirtyBase()
+      else:
+        editor = self.terminals.layout.openFile(path).get(nil)
+      if editor != nil:
         let numLines = rope.lines
         let height = self.size.height
         let scrollY = self.terminal.scrollY
@@ -2931,8 +2980,19 @@ when implModule:
         if editor.getConfigComponent().getSome(config):
           config.set("ui.line-numbers", LineNumbers.None)
         te.centerCursor(p, snap = true)
-    except IOError as e:
+    except CatchableError as e:
       log lvlError, &"Failed to create file for terminal buffer: {e.msg}"
+
+  proc toggleBufferEditor*(self: TerminalView) =
+    if not self.open or self.loadingBufferEditor:
+      return
+    if self.bufferEditor != nil:
+      self.closeBufferEditor()
+      self.markDirtyBase()
+    else:
+      self.loadingBufferEditor = true
+      self.markDirtyBase()
+      asyncSpawn self.requestEditBuffer(embedded = true)
 
   proc editTerminalBuffer*(self: TerminalServiceImpl) =
     if self.getActiveView().getSome(view):

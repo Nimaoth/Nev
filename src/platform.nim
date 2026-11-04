@@ -3,6 +3,7 @@ import vmath, chroma
 import misc/[event, timer, custom_async, render_command]
 import vfs, app_options, scripting_api, pixie, misc/input_api, service
 import nuigi
+from nuigi/widgets import button
 
 export input_api, event
 
@@ -39,18 +40,28 @@ proc backendBorderWidth*(builder: var UiBuilder, graphicalValue: float32,
   builder
 
 type
+  ViewPanelCloseAction* = proc(keepHidden: bool) {.closure, gcsafe, raises: [].}
+
   ViewPanelOptions* = object
     ## Root layout options for `viewPanel`. Padding and gap must be known before
     ## the header is built, so they can't be changed from the body.
     fitContentY*: bool          ## Root fits its content height instead of filling the parent
     padding*: float32 = 0       ## Root padding (graphical backends only)
     gap*: float32 = 4           ## Gap between header and body children (graphical backends only)
+    onClose*: ViewPanelCloseAction
+      ## View action; true hides the view, false closes it. Invoked next frame.
+
+proc enqueueViewPanelAction(builder: var UiBuilder, action: ViewPanelCloseAction,
+    keepHidden: bool) {.gcsafe, raises: [].} =
+  builder.enqueueNextFrame(proc() {.closure, gcsafe, raises: [].} =
+    action(keepHidden))
 
 template viewPanel*(builder: var UiBuilder, key: string, active: bool,
-    showHeader: bool, options: ViewPanelOptions, header: untyped, body: untyped) =
+    showHeader: bool, options: ViewPanelOptions, header, buttons, body: untyped) =
   ## Root of a view: a vertical layout using the (active) panel style with an
   ## optional header bar using the (active) header style above the body.
   ## `header` is injected inside the horizontal header node (only when `showHeader`),
+  ## `buttons` is injected before Hide/Close in the hover-only top-right action row.
   ## `body` is injected inside the root node after the header.
   block:
     let viewPanelKey = key
@@ -65,11 +76,24 @@ template viewPanel*(builder: var UiBuilder, key: string, active: bool,
       else:
         discard builder.fillY()
       if showHeader:
-        builder.layoutHorizontal(viewPanelKey & "-header"):
+        builder.layoutHorizontalReverse(viewPanelKey & "-header"):
           discard builder.fillX().fitY().fillBackground().styleIndex(
             if viewPanelActive: UiStyleIndexHeaderActive else: UiStyleIndexHeader)
             .backendPadding(6).backendGap(4).cornerRadii(8, 8, 0, 0)
-          header
+          if builder.wasHovered(includeChildren = true):
+            builder.layoutHorizontal(viewPanelKey & "-buttons"):
+              # Reserve horizontal space without letting hover actions resize the header.
+              discard builder.fit().backendGap(4).ignoreInContentExtent()
+                .anchorsY(0.5, 0.5).pivotY(0.5).finishAnchors()
+              buttons
+              if viewPanelOptions.onClose != nil:
+                if builder.button("-"):
+                  builder.enqueueViewPanelAction(viewPanelOptions.onClose, true)
+                if builder.button("x"):
+                  builder.enqueueViewPanelAction(viewPanelOptions.onClose, false)
+          builder.layoutHorizontal(viewPanelKey & "-header-content"):
+            discard builder.fillX().fitY().backendGap(4)
+            header
       builder.layoutHorizontal(viewPanelKey & "-content"):
         discard builder.fillX().cornerRadii(0, 0, 8, 8).backendPadding(4)
         if viewPanelOptions.fitContentY:
@@ -77,6 +101,14 @@ template viewPanel*(builder: var UiBuilder, key: string, active: bool,
         else:
           discard builder.fillY()
         body
+
+template viewPanel*(builder: var UiBuilder, key: string, active: bool,
+    showHeader: bool, options: ViewPanelOptions, header, body: untyped) =
+  builder.viewPanel(key, active, showHeader, options, header, (discard), body)
+
+template viewPanel*(builder: var UiBuilder, key: string, active: bool,
+    showHeader: bool, header, buttons, body: untyped) =
+  builder.viewPanel(key, active, showHeader, ViewPanelOptions(), header, buttons, body)
 
 template viewPanel*(builder: var UiBuilder, key: string, active: bool,
     showHeader: bool, header: untyped, body: untyped) =

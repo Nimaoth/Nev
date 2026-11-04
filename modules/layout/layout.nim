@@ -4,6 +4,7 @@ import std/[options, json]
 import misc/[custom_async, id, util]
 import service, view, popup, selector_popup/builder
 import document, document_editor
+from platform import ViewPanelOptions
 from nuigi import UiBuilder
 from scripting_api import EditorId
 
@@ -145,6 +146,13 @@ proc changeSplitSize*(self: LayoutService, slot: string, size: float, vertical: 
 proc getSlot*(self: LayoutService, view: View): string = layoutGetSlot(self, view)
 proc getParent*(self: LayoutService, view: View): View = layoutGetParent(self, view)
 {.pop.}
+
+proc withViewActions*(options: ViewPanelOptions, self: LayoutService, view: View): ViewPanelOptions {.gcsafe, raises: [].} =
+  ## Editors rendered outside a view (e.g. previews) have no view actions.
+  result = options
+  if view != nil:
+    result.onClose = proc(keepHidden: bool) {.closure, gcsafe, raises: [].} =
+      self.closeView(view, keepHidden = keepHidden, restoreHidden = not keepHidden)
 
 proc showView*(self: LayoutService, viewId: Id, slot: string = "", focus: bool = true, addToHistory: bool = true) =
   if self.getView(viewId).getSome(view):

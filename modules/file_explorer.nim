@@ -405,7 +405,8 @@ when implModule:
         do:
           self.selectRoot(root)
 
-      nui.viewPanel("file-explorer", self.active, true, ViewPanelOptions(padding: 4)):
+      nui.viewPanel("file-explorer", self.active, true,
+          ViewPanelOptions(padding: 4).withViewActions(getServiceChecked(LayoutService), self)):
         nui.node:
           discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
             .text("File Explorer")

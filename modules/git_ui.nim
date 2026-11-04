@@ -569,7 +569,8 @@ when implModule:
       # keeps inline Commands rows with keybinding hints (commandToKeys, dotted
       # leaders, keyword/comment colors); new replaces rules with sectionTitle
       # bars + gaps and hides commands behind the "…" menu (see §24).
-      nui.viewPanel("git-ui", self.active, true, ViewPanelOptions(gap: 2)):
+      nui.viewPanel("git-ui", self.active, true,
+          ViewPanelOptions(gap: 2).withViewActions(getServiceChecked(LayoutService), self)):
         discard nui.backendGap(8)
         nui.node:
           discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
