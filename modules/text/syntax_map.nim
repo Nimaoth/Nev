@@ -662,6 +662,7 @@ proc parseInjections(args: ParseArgs, injections: seq[InjectionJob], outJobs: va
       proc parseInjectionHelper(chunkIndex: int, chunkSize: int, text: ptr Rope,
           injections: ptr seq[InjectionJob], oldSnapshot: ptr SyntaxMapSnapshot, depth: int,
           parser: TSParser, jobs: ptr seq[LayerJob]) {.raises: [].} =
+        prof("parseInjectionHelper")
         for i in (chunkIndex * chunkSize)..<min((chunkIndex + 1) * chunkSize, injections[].len):
           jobs[][i] = parseInjection(text, injections[i].addr, oldSnapshot, depth, parser)
 
@@ -671,6 +672,7 @@ proc parseInjections(args: ParseArgs, injections: seq[InjectionJob], outJobs: va
       assert numChunks * chunkSize >= injections.len
       var parsers = getTsParsers(numChunks)
       try:
+        prof("parseInjectionHelper.awaitAll")
         m.awaitAll:
           for i in 0..<numChunks:
             m.spawn parseInjectionHelper(i, chunkSize, args.text.addr, injections.addr, oldSnapshot, depth, parsers[i], jobs.addr)
