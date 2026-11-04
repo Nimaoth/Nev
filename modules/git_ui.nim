@@ -377,13 +377,12 @@ when implModule:
               if status != None:
                 let index = case status
                   of Added, Untracked:
-                    UiStyleIndexDiffInsertedText
+                    UiStyleIndexTerminalAnsiGreenText
                   of Deleted:
-                    UiStyleIndexDiffRemovedText
+                    UiStyleIndexTerminalAnsiRedText
                   else:
-                    UiStyleIndexDiffChangedText
-                var statusColor = b.themeStyle(index)[].fillColor
-                statusColor.a = 1
+                    UiStyleIndexTerminalAnsiYellowText
+                var statusColor = b.themeTextStyle(index)[].textColor
                 discard b.textColor(statusColor)
         b.node:
           let (_, name) = file.path.splitPath
@@ -538,7 +537,6 @@ when implModule:
         asyncSpawn self.refreshCommitsAsync()
         asyncSpawn self.refreshChangelistsAsync()
 
-      let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
       let headerStyle = if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
       let sectionGap = if nui.backendType == UiBackendType.Terminal:
         1.0'f32
@@ -571,56 +569,52 @@ when implModule:
       # keeps inline Commands rows with keybinding hints (commandToKeys, dotted
       # leaders, keyword/comment colors); new replaces rules with sectionTitle
       # bars + gaps and hides commands behind the "…" menu (see §24).
-      nui.layoutVertical("git-ui"):
-        discard nui.fillX().fillY().styleIndex(panelStyle)
-          .fillBackground().padding(0).backendGap(2)
+      nui.viewPanel("git-ui", self.active, true, ViewPanelOptions(gap: 2)):
+        discard nui.backendGap(8)
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
+            .text("Git")
+        nui.layoutHorizontalReverse:
+          discard nui.fillX().fitY().backendGap(4)
+          let menuButtonIndex = nui.frame.nodes.len
+          if nui.button("…"):
+            self.actionsMenuOpen = not self.actionsMenuOpen
+          let menuButtonNode = nui.frame.nodes[menuButtonIndex]
+          let menuPosition = nui.absoluteNodePosPrev(
+            menuButtonNode.id, menuButtonIndex)
+          nui.menu(self.actionsMenuOpen,
+              menuPosition.x,
+              menuPosition.y + menuButtonNode.size.y):
+            menuLabel("Repository")
+            menuCommand("Refresh", self.gitUiRefresh())
+            menuCommand("Push", self.gitUiPush())
+            menuCommand("Pull", self.gitUiPull())
+            menuCommand("Fetch", self.gitUiFetch())
+            menuCommand("Stash", self.gitUiStash())
+            menuCommand("Stash Pop", self.gitUiStashPop())
+            menuCommand("Reset Soft", self.gitUiResetSoft())
+
+            menuLabel("Commit")
+            menuCommand("Commit", self.gitUiCommit())
+            menuCommand("Amend", self.gitUiCommitAmend())
+            if self.editCommit:
+              menuCommand("Cancel Message Edit", self.gitUiCommitEditCancel())
+              menuCommand("Confirm Message Edit", self.gitUiCommitEditConfirm())
+            else:
+              menuCommand("Edit Message", self.gitUiCommitEditStart())
+
+            menuLabel("Changes")
+            menuCommand("Stage All", self.gitUiStageAll())
+            menuCommand("Stage", self.gitUiStageSelected())
+            menuCommand("Unstage", self.gitUiUnstageSelected())
+            menuCommand("Revert", self.gitUiRevertSelected())
+            menuCommand("Diff", self.gitUiDiffSelected())
+
+            menuLabel("Branches")
+            menuCommand("Checkout Selected", self.gitUiSwitchBranch())
+      do:
         if nui.wasClicked(includeChildren = true):
           getServiceChecked(LayoutService).tryActivateView(self)
-
-        nui.layoutHorizontal("git-ui-header"):
-          discard nui.fillX().fitY().styleIndex(headerStyle)
-            .fillBackground().backendPadding(4).backendGap(8).cornerRadius(0)
-          nui.node:
-            discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
-              .text("Git")
-          nui.layoutHorizontalReverse:
-            discard nui.fillX().fitY().backendGap(4)
-            let menuButtonIndex = nui.frame.nodes.len
-            if nui.button("…"):
-              self.actionsMenuOpen = not self.actionsMenuOpen
-            let menuButtonNode = nui.frame.nodes[menuButtonIndex]
-            let menuPosition = nui.absoluteNodePosPrev(
-              menuButtonNode.id, menuButtonIndex)
-            nui.menu(self.actionsMenuOpen,
-                menuPosition.x,
-                menuPosition.y + menuButtonNode.size.y):
-              menuLabel("Repository")
-              menuCommand("Refresh", self.gitUiRefresh())
-              menuCommand("Push", self.gitUiPush())
-              menuCommand("Pull", self.gitUiPull())
-              menuCommand("Fetch", self.gitUiFetch())
-              menuCommand("Stash", self.gitUiStash())
-              menuCommand("Stash Pop", self.gitUiStashPop())
-              menuCommand("Reset Soft", self.gitUiResetSoft())
-
-              menuLabel("Commit")
-              menuCommand("Commit", self.gitUiCommit())
-              menuCommand("Amend", self.gitUiCommitAmend())
-              if self.editCommit:
-                menuCommand("Cancel Message Edit", self.gitUiCommitEditCancel())
-                menuCommand("Confirm Message Edit", self.gitUiCommitEditConfirm())
-              else:
-                menuCommand("Edit Message", self.gitUiCommitEditStart())
-
-              menuLabel("Changes")
-              menuCommand("Stage All", self.gitUiStageAll())
-              menuCommand("Stage", self.gitUiStageSelected())
-              menuCommand("Unstage", self.gitUiUnstageSelected())
-              menuCommand("Revert", self.gitUiRevertSelected())
-              menuCommand("Diff", self.gitUiDiffSelected())
-
-              menuLabel("Branches")
-              menuCommand("Checkout Selected", self.gitUiSwitchBranch())
 
         # NUI-GAP: old view scrolls manually (onScroll delta.y*textHeight*2,
         # clamp + rawY, custom fillRect thumb with scrollBar colors); new uses

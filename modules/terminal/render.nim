@@ -320,35 +320,32 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder,
     outWidth, outHeight, outCellWidth, outCellHeight: var int) {.gcsafe, raises: [].} =
   {.cast(gcsafe).}:
     self.resetDirty()
-    let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
-    let headerStyle = if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
-    nui.layoutVertical("terminal-root"):
-      discard nui.fillX().fillY().fillBackground().styleIndex(panelStyle).backendPadding(0).backendGap(4)
-      nui.layoutHorizontal("terminal-header"):
-        discard nui.fillX().fitY().fillBackground().styleIndex(headerStyle).backendPadding(4).backendGap(4).cornerRadius(0)
-        template addSection(txt: string) =
-          nui.node:
-            discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(txt)
-        addSection("Terminal")
-        if self.terminal != nil and self.terminal.group != "":
-          addSection(" - ")
-          addSection(self.terminal.group)
-        if self.mode != "":
-          addSection(" - ")
-          addSection(self.mode)
-        if self.terminal != nil and self.terminal.exitCode.isSome:
-          addSection(" - ")
-          addSection($self.terminal.exitCode.get)
+    nui.viewPanel("terminal-root", self.active, true):
+      template addSection(txt: string) =
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(txt)
+      addSection("Terminal")
+      if self.terminal != nil and self.terminal.group != "":
         addSection(" - ")
-        if self.terminal != nil:
-          if self.terminal.ssh.isSome:
-            let opts = self.terminal.ssh.get
-            let port = if opts.port.isSome: ":" & $opts.port.get else: ""
-            addSection("ssh " & opts.username & "@" & opts.address.get("127.0.0.1") & port)
-          else:
-            addSection(self.terminal.command)
+        addSection(self.terminal.group)
+      if self.mode != "":
+        addSection(" - ")
+        addSection(self.mode)
+      if self.terminal != nil and self.terminal.exitCode.isSome:
+        addSection(" - ")
+        addSection($self.terminal.exitCode.get)
+      addSection(" - ")
+      if self.terminal != nil:
+        if self.terminal.ssh.isSome:
+          let opts = self.terminal.ssh.get
+          let port = if opts.port.isSome: ":" & $opts.port.get else: ""
+          addSection("ssh " & opts.username & "@" & opts.address.get("127.0.0.1") & port)
+        else:
+          addSection(self.terminal.command)
+    do:
       nui.node("terminal-body"):
-        discard nui.fillX().fillY().fillBackground().styleIndex(panelStyle).padding(0).maskChildren()
+        discard nui.fillX().fillY().fillBackground().styleIndex(
+          if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel).padding(0).maskChildren()
         let bodyIndex = nui.currentNodeIndex
         let existing = nui.nodeStorageGet(nui.currentNode)
         let storage = if existing != nil and existing of TerminalInputNuiStorage:

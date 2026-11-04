@@ -405,33 +405,28 @@ when implModule:
         do:
           self.selectRoot(root)
 
-      nui.layoutVertical("file-explorer"):
-        discard nui.fillX().fillY().styleIndex(UiStyleIndexPanel)
-          .fillBackground().backendPadding(4).backendGap(4)
+      nui.viewPanel("file-explorer", self.active, true, ViewPanelOptions(padding: 4)):
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
+            .text("File Explorer")
+        nui.layoutHorizontalReverse:
+          discard nui.fillX().fitY().backendGap(4)
+          if nui.button("Refresh"):
+            self.fileExplorerRefresh()
+          let rootMenuButtonIndex = nui.frame.nodes.len
+          if nui.button("…"):
+            self.rootMenuOpen = not self.rootMenuOpen
+          let rootMenuButtonNode = nui.frame.nodes[rootMenuButtonIndex]
+          let rootMenuPosition = nui.absoluteNodePosPrev(
+            rootMenuButtonNode.id, rootMenuButtonIndex)
+          nui.menu(self.rootMenuOpen,
+              rootMenuPosition.x,
+              rootMenuPosition.y + rootMenuButtonNode.size.y):
+            rootMenuItem("Virtual File System", VirtualFileSystemRoot)
+            rootMenuItem("Workspace", WorkspaceRoot)
+      do:
         if nui.wasClicked(includeChildren = true):
           getServiceChecked(LayoutService).tryActivateView(self)
-
-        nui.layoutHorizontal("file-explorer-header"):
-          discard nui.fillX().fitY().styleIndex(UiStyleIndexHeader)
-            .fillBackground().backendPadding(4).backendGap(4)
-          nui.node:
-            discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
-              .text("File Explorer")
-          nui.layoutHorizontalReverse:
-            discard nui.fillX().fitY().backendGap(4)
-            if nui.button("Refresh"):
-              self.fileExplorerRefresh()
-            let rootMenuButtonIndex = nui.frame.nodes.len
-            if nui.button("…"):
-              self.rootMenuOpen = not self.rootMenuOpen
-            let rootMenuButtonNode = nui.frame.nodes[rootMenuButtonIndex]
-            let rootMenuPosition = nui.absoluteNodePosPrev(
-              rootMenuButtonNode.id, rootMenuButtonIndex)
-            nui.menu(self.rootMenuOpen,
-                rootMenuPosition.x,
-                rootMenuPosition.y + rootMenuButtonNode.size.y):
-              rootMenuItem("Virtual File System", VirtualFileSystemRoot)
-              rootMenuItem("Workspace", WorkspaceRoot)
 
         nui.layoutVertical("file-explorer-tree"):
           discard nui.fillX().fillY()

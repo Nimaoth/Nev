@@ -39,6 +39,50 @@ proc backendBorderWidth*(builder: var UiBuilder, graphicalValue: float32,
   builder
 
 type
+  ViewPanelOptions* = object
+    ## Root layout options for `viewPanel`. Padding and gap must be known before
+    ## the header is built, so they can't be changed from the body.
+    fitContentY*: bool          ## Root fits its content height instead of filling the parent
+    padding*: float32 = 0       ## Root padding (graphical backends only)
+    gap*: float32 = 4           ## Gap between header and body children (graphical backends only)
+
+template viewPanel*(builder: var UiBuilder, key: string, active: bool,
+    showHeader: bool, options: ViewPanelOptions, header: untyped, body: untyped) =
+  ## Root of a view: a vertical layout using the (active) panel style with an
+  ## optional header bar using the (active) header style above the body.
+  ## `header` is injected inside the horizontal header node (only when `showHeader`),
+  ## `body` is injected inside the root node after the header.
+  block:
+    let viewPanelKey = key
+    let viewPanelActive = active
+    let viewPanelOptions = options
+    builder.layoutVertical(viewPanelKey):
+      discard builder.fillX().fillBackground().styleIndex(
+        if viewPanelActive: UiStyleIndexPanelActive else: UiStyleIndexPanel)
+        .backendPadding(viewPanelOptions.padding).backendGap(viewPanelOptions.gap).cornerRadius(8)
+      if viewPanelOptions.fitContentY:
+        discard builder.fitY()
+      else:
+        discard builder.fillY()
+      if showHeader:
+        builder.layoutHorizontal(viewPanelKey & "-header"):
+          discard builder.fillX().fitY().fillBackground().styleIndex(
+            if viewPanelActive: UiStyleIndexHeaderActive else: UiStyleIndexHeader)
+            .backendPadding(6).backendGap(4).cornerRadii(8, 8, 0, 0)
+          header
+      builder.layoutHorizontal(viewPanelKey & "-content"):
+        discard builder.fillX().cornerRadii(0, 0, 8, 8).backendPadding(4)
+        if viewPanelOptions.fitContentY:
+          discard builder.fitY()
+        else:
+          discard builder.fillY()
+        body
+
+template viewPanel*(builder: var UiBuilder, key: string, active: bool,
+    showHeader: bool, header: untyped, body: untyped) =
+  builder.viewPanel(key, active, showHeader, ViewPanelOptions(), header, body)
+
+type
   RequestRenderImpl* = proc(self: Platform, redrawEverything: bool) {.gcsafe, raises: [].}
   RenderImpl* = proc(self: Platform, rerender: bool) {.gcsafe, raises: [].}
   SizeChangedImpl* = proc(self: Platform): bool {.gcsafe, raises: [].}

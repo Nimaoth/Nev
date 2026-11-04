@@ -181,9 +181,9 @@ when implModule:
         0.0'f32
       else:
         max(8.0'f32, parentWidth * colGapPercent)
-      nui.layoutVertical("dashboard"):
-        discard nui.fillX().fillY().styleIndex(
-          if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel).fillBackground()
+      nui.viewPanel("dashboard", self.active, false, ViewPanelOptions(gap: 0)):
+        discard
+      do:
         if nui.wasClicked(includeChildren = true):
           getServiceChecked(LayoutService).tryActivateView(self)
 

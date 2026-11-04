@@ -1518,24 +1518,20 @@ when implModule and defined(profiler):
       try:
         self.renderCommandPoolCursor = 0
         self.resetDirty()
-        let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
-        let headerStyle = if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
-        nui.layoutVertical("profiler-root"):
-          discard nui.fillX().fillY().fillBackground().styleIndex(panelStyle).backendPadding(4).backendGap(4)
-          nui.layoutHorizontal("profiler-tabs"):
-            discard nui.fillX().fitY().fillBackground().styleIndex(headerStyle).backendPadding(4).backendGap(4)
-            let memLabel =
-              if self.activeTabIndex == 0: "[Memory]"
-              else: " Memory "
-            let leaksLabel =
-              if self.activeTabIndex == 1: "[Leaks]"
-              else: " Leaks "
-            if nui.button(memLabel):
-              self.activeTabIndex = 0
-              self.markDirty()
-            if nui.button(leaksLabel):
-              self.activeTabIndex = 1
-              self.markDirty()
+        nui.viewPanel("profiler-root", self.active, true, ViewPanelOptions(padding: 4)):
+          let memLabel =
+            if self.activeTabIndex == 0: "[Memory]"
+            else: " Memory "
+          let leaksLabel =
+            if self.activeTabIndex == 1: "[Leaks]"
+            else: " Leaks "
+          if nui.button(memLabel):
+            self.activeTabIndex = 0
+            self.markDirty()
+          if nui.button(leaksLabel):
+            self.activeTabIndex = 1
+            self.markDirty()
+        do:
           nui.scrollBox:
             discard nui.fillX().fitY()
             nui.layoutVertical("profiler-content"):

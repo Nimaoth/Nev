@@ -212,7 +212,7 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
     # Stub: create a top-level nuigi container for the new UI.
     # This is built between plat.beginNuiFrame() and plat.endNuiFrame() (desktop_main).
     nui.layoutVerticalReverse("nui-app-root"):
-      discard nui.fillX().fillY()
+      discard nui.fillX().fillY().backendGap(0)
       # Status bar – built with nuigi, mimics old builder's status line
       # layoutHorizontalReverse already creates its own node, so we use it directly as the status bar container
       # NUI-GAP: old status bar separates sections with " | " via section()
@@ -286,7 +286,7 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
       # Main area – renders layout via NUI
       # layoutVertical already creates a node, so we use it directly for the container (no extra nui.node wrapper)
       nui.layoutVertical("nui-main"):
-        discard nui.fillX().height(h).fillBackground().styleIndex(UiStyleIndexPanel).backendPadding(0).backendGap(0)
+        discard nui.fillX().height(h).fillBackground().styleIndex(UiStyleIndexWindowTitleBar).backendBorderWidth(0).backendPadding(6).backendGap(0)
         layout.renderNui(nui)
 
     # NUI-GAP: old popups render via OverlayFunction seq with FlushBorders panels

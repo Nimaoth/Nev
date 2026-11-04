@@ -2331,15 +2331,45 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
 
   {.cast(gcsafe).}:
     self.resetDirty()
-    let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
-    let headerStyle = if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
-    let bgColor = nui.themeStyle(panelStyle)[].fillColor
-    nui.layoutVertical("text-root"):
-      discard nui.fillX().fillBackground().styleIndex(panelStyle).padding(0).backendGap(4)
-      if fitContentY:
-        discard nui.fitY()
-      else:
-        discard nui.fillY()
+    let bgColor = nui.themeStyle(
+      if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel)[].fillColor
+    nui.viewPanel("text-root", self.active, self.renderHeader,
+        ViewPanelOptions(fitContentY: fitContentY)):
+      # Header – replicates `createHeader` logic from widget_library (mode, dirty, file, dir + right side)
+      discard nui.backendGap(8)
+      let modeText = if self.mode.len == 0: "-" else: self.mode
+      let isDirty = if self.document != nil: self.document.lastSavedRevision != self.document.revision else: false
+      let dirtyMarker = if isDirty: "*" else: ""
+      let (directory, filename) = if self.document != nil: self.document.localizedPath.splitPath else: ("", "untitled")
+      let leftText = " " & modeText & " - " & dirtyMarker & filename & " - " & directory & " "
+      nui.node:
+        discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(leftText)
+      # Spacer pushes right side to the end
+      nui.layoutHorizontalReverse:
+        discard nui.fillX().fitY()
+        # Right side – mirrors `createHeader` onRight: customHeader, readOnly, staged, diff, rune, cursor positions
+        let readOnlyText = if self.document != nil and self.document.readOnly: "-readonly- " else: ""
+        let stagedText = if self.document != nil and self.document.staged: "-staged- " else: ""
+        let renderDiff = self.diffDocument != nil and self.diffDocument.isInitialized and self.diffChanges.isSome
+        let diffText = if renderDiff: "-diff- " else: ""
+        let currentRune = if self.document != nil: self.document.runeAt(self.selection.last) else: 0.Rune
+        let currentRuneText = if currentRune == 0.Rune: "\\0"
+                              elif currentRune == '\t'.Rune: "\\t"
+                              elif currentRune == '\n'.Rune: "\\n"
+                              else: $currentRune
+        var currentRuneHexText = currentRune.int.toHex.strip(trailing=false, chars={'0'})
+        if currentRuneHexText.len == 0: currentRuneHexText = "0"
+        proc cursorString(cursor: Cursor): string =
+          if self.document != nil and self.document.isInitialized:
+            $cursor.line & ":" & $cursor.column
+          else: ""
+        let rightText = self.customHeader & " | " & readOnlyText & stagedText & diffText & "'" & currentRuneText & "' (U+" & currentRuneHexText & ") " & cursorString(self.selection.first) & "-" & cursorString(self.selection.last)
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(rightText)
+    do:
+      if nui.themeStyleIndices.hasKey("panel2"):
+        nui.ensureNodeStyle(nui.currentParent).fillColor =
+          nui.themeStyle(if self.active: "panel2-active" else: "panel2").fillColor
       nui.nodeStorageParent()
       nui.getOrCreateTextEditorNuiStorage(nui.currentNode).editor = self
       let rootIndex = nui.currentNodeIndex
@@ -2462,39 +2492,6 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
           createNuiIter(self, storage, nui)
         if storage.renderDiff:
           createNuiDiffIter(self, storage, nui)
-      # Header – replicates `createHeader` logic from widget_library (mode, dirty, file, dir + right side)
-      if self.renderHeader:
-        nui.layoutHorizontal("text-header"):
-          discard nui.fillX().fitY().fillBackground().styleIndex(headerStyle).backendPadding(4).backendGap(8).cornerRadius(0)
-          let modeText = if self.mode.len == 0: "-" else: self.mode
-          let isDirty = if self.document != nil: self.document.lastSavedRevision != self.document.revision else: false
-          let dirtyMarker = if isDirty: "*" else: ""
-          let (directory, filename) = if self.document != nil: self.document.localizedPath.splitPath else: ("", "untitled")
-          let leftText = " " & modeText & " - " & dirtyMarker & filename & " - " & directory & " "
-          nui.node:
-            discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(leftText)
-          # Spacer pushes right side to the end
-          nui.layoutHorizontalReverse:
-            discard nui.fillX().fitY()
-            # Right side – mirrors `createHeader` onRight: customHeader, readOnly, staged, diff, rune, cursor positions
-            let readOnlyText = if self.document != nil and self.document.readOnly: "-readonly- " else: ""
-            let stagedText = if self.document != nil and self.document.staged: "-staged- " else: ""
-            let renderDiff = self.diffDocument != nil and self.diffDocument.isInitialized and self.diffChanges.isSome
-            let diffText = if renderDiff: "-diff- " else: ""
-            let currentRune = if self.document != nil: self.document.runeAt(self.selection.last) else: 0.Rune
-            let currentRuneText = if currentRune == 0.Rune: "\\0"
-                                  elif currentRune == '\t'.Rune: "\\t"
-                                  elif currentRune == '\n'.Rune: "\\n"
-                                  else: $currentRune
-            var currentRuneHexText = currentRune.int.toHex.strip(trailing=false, chars={'0'})
-            if currentRuneHexText.len == 0: currentRuneHexText = "0"
-            proc cursorString(cursor: Cursor): string =
-              if self.document != nil and self.document.isInitialized:
-                $cursor.line & ":" & $cursor.column
-              else: ""
-            let rightText = self.customHeader & " | " & readOnlyText & stagedText & diffText & "'" & currentRuneText & "' (U+" & currentRuneHexText & ") " & cursorString(self.selection.first) & "-" & cursorString(self.selection.last)
-            nui.node:
-              discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(rightText)
       # Body – lines via dynamic virtual list; each line is a horizontal node with one child node per chunk.
       # In fit mode the body uses fitY so the list sizes to its rows (immediate
       # build, no scrollbar when everything fits).

@@ -34,22 +34,16 @@ template debuggerChrome(nui: var UiBuilder, view: View, rootName,
     titleText: string, body: untyped) =
   ## Shared Panel root + Header bar chrome (mirrors renderView in widget_library).
   block:
-    let panelStyle = if view.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
-    let headerStyle = if view.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
-    nui.layoutVertical(rootName):
-      discard nui.fillX().fillY().fillBackground().styleIndex(
-        panelStyle).backendPadding(4).backendGap(4)
+    nui.viewPanel(rootName, view.active, true, ViewPanelOptions(padding: 4)):
+      nui.node:
+        discard nui.fit().textStyleIndex(
+          int(UiStyleIndexHeaderText)).text(titleText)
+    do:
       try:
         if nui.wasClicked(includeChildren = true):
           getServiceChecked(LayoutService).tryActivateView(view)
       except:
         discard
-      nui.layoutHorizontal(rootName & "-header"):
-        discard nui.fillX().fitY().fillBackground().styleIndex(
-          headerStyle).backendPadding(4).backendGap(4)
-        nui.node:
-          discard nui.fit().textStyleIndex(
-            int(UiStyleIndexHeaderText)).text(titleText)
       body
 
 template debuggerEmpty(nui: var UiBuilder, msg: string) =

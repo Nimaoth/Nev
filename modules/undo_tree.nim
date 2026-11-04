@@ -499,11 +499,15 @@ when implModule:
         charWidth = 1.0'f32
         lineHeight = 1.0'f32
 
-      let panelStyle = if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel
-      let headerStyle = if self.active: UiStyleIndexHeaderActive else: UiStyleIndexHeader
-      nui.layoutVertical("undo-tree"):
-        discard nui.fillX().fillY().styleIndex(panelStyle)
-          .fillBackground().backendPadding(0).backendGap(4)
+      nui.viewPanel("undo-tree", self.active, true):
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
+            .text(title)
+        nui.layoutHorizontalReverse:
+          discard nui.fillX().fitY().backendGap(4)
+          if nui.button(if self.autoApply: "Auto: On" else: "Auto: Off"):
+            self.undoTreeToggleAutoApply()
+      do:
         nui.nodeStorageParent()
         let rootIndex = nui.currentNodeIndex
         let storage = nui.getOrCreateUndoTreeNuiStorage(nui.currentNode)
@@ -515,17 +519,6 @@ when implModule:
 
         if nui.wasClicked(includeChildren = true):
           layout.tryActivateView(self)
-
-        nui.layoutHorizontal("undo-tree-header"):
-          discard nui.fillX().fitY().styleIndex(headerStyle)
-            .fillBackground().backendPadding(4).backendGap(4).cornerRadius(0)
-          nui.node:
-            discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
-              .text(title)
-          nui.layoutHorizontalReverse:
-            discard nui.fillX().fitY().backendGap(4)
-            if nui.button(if self.autoApply: "Auto: On" else: "Auto: Off"):
-              self.undoTreeToggleAutoApply()
 
         nui.layoutHorizontal("undo-tree-actions"):
           discard nui.fillX().fitY().backendGap(4)
