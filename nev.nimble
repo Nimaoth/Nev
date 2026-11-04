@@ -40,7 +40,7 @@ requires "https://github.com/Nimaoth/zippy#ab4d3d52e966b725cad2468aa0594da5db7fa
 requires "https://github.com/ba0f3/libssh2.nim#a5cf5180cddf864b1bddbb0d35b3b5c499160176"
 requires "https://github.com/ba0f3/ssh2.nim#b45447fa3892024eb5ceb5d1516beba57bd68d05"
 requires "https://github.com/Nimaoth/nimtreesitter#5de1b7516a3c0c83a4fd0c2ae71c86ebd489594e"
-requires "https://github.com/Nimaoth/nuigi#d8fbdac"
+requires "https://github.com/Nimaoth/nuigi#3d4221453ee94780bc4a7aa5d18bc679ee648334"
 
 import strformat, strutils
 
