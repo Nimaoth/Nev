@@ -169,6 +169,8 @@ for kind, key, val in optParser.getopt():
       echo """Nev build commands (run from the repository root):
   nuigi-deps-static  Build and stage Nuigi's static SDL3 and FreeType archives.
   build-static      Build nev-static using those archives, without HarfBuzz/FriBidi.
+  build-perf        Build nev-perf with .perfprof performance recording enabled.
+  deps              Clone/check out dependencies at the commits in atlas.lock.
   --nuigi-dir:PATH   Nuigi checkout (default: NUIGI_DIR or deps/nuigi).
 Existing build, release and package commands are unchanged."""
       quit 0

@@ -4,7 +4,13 @@
 - Requires OpenGL 4.1 for the GUI version
 - Install Rust and cargo (required for wasmtime)
 - Install Nim version 2.2.6
+- For Windows-targeted builds, install LLVM with `llvm-rc` available on `PATH` to embed the executable icon.
 - Clone the repository
+
+Windows icon-enabled builds link `res/icon.rc`, which includes both the icon and
+the Common Controls visual-styles manifest. These builds use `-d:noRes` to avoid
+also linking Winim's bundled manifest object, whose resource section attributes
+conflict with LLVM's generated resources.
 
 ## Compile errors
 If you get a compile error, try building with `--passC:-Wno-incompatible-pointer-types`, e.g:
@@ -47,6 +53,30 @@ Nev's modules are compiled into the executable rather than loaded from existing
 module DLLs. Other dependencies (notably Wasmtime on Windows) retain their
 normal linking mode; this is not a fully static executable. Existing build and
 packaging commands are unchanged.
+
+### Performance profiling
+
+Build a Nev executable that records frame, event-processing, rendering, and
+async-polling scopes as a `.perfprof` file:
+
+```powershell
+nim .\tools\nev_build.nims build-perf --nuigi-dir:C:\dev\nuigi
+```
+
+The command builds the static Nuigi dependencies and emits `nev-perf.exe` on
+Windows (`nev-perf` on Linux). Run it from its build directory; recordings are
+written to the `sessions` directory beside the executable and finalized when
+Nev exits. Open that directory in Memory Profiler by passing its path as the
+first argument.
+
+Callbacks passed to `spawnAsync` also record scopes named after the callback
+function, nested inside the `runAsync` or `runAsyncVoid` worker scope.
+Malebolgia jobs and application `createThread` entry points likewise record
+scopes named after their functions. Thread-entry scopes cover the thread's
+lifetime, including time spent waiting for work. The profiler's own writer
+thread is not instrumented.
+Each Malebolgia `awaitAll` call also has a named scope covering job submission
+and waiting for completion.
 
 ## Compiling tree sitter grammars to wasm
 - Go into the tree-sitter repositories root directory
