@@ -60,35 +60,41 @@ proc getCommandLineParams(): string =
     return ""
   return commandLineParams[3..^1].join(" ")
 
+proc compileIconResource(windowsTarget = defined(windows)): string =
+  if windowsTarget:
+    mkDir "bin"
+    exec "llvm-rc /nologo /fo bin\\nev.res res\\icon.rc"
+    result = " -d:noRes --passL:bin/nev.res"
+
 task buildDesktop, "Build the desktop version":
-  selfExec fmt"c -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime --passC:-std=gnu11 {compileIconResource()} {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildTerminal, "Build the terminal version":
-  selfExec fmt"c -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {compileIconResource()} {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildTerminalDebug, "Build the terminal version (debug)":
-  selfExec fmt"c -o:nev{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nev{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {compileIconResource()} {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDebug, "Build the debug version":
-  selfExec fmt"c -o:nev{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime --passC:-std=gnu11 --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nev{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime --passC:-std=gnu11 --nimcache:nimcache/debug {compileIconResource()} {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDebugVcc, "Build the debug version":
-  selfExec fmt"c -o:nevd{exe} -d:debug -u:release --linetrace:on --stacktrace:on --debuginfo:on -d:treesitterBuiltins= -d:futureLogging --debugger:native --nimcache:C:/nc -d:enableSystemClipboard=false --cc:vcc --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nevd{exe} -d:debug -u:release --linetrace:on --stacktrace:on --debuginfo:on -d:treesitterBuiltins= -d:futureLogging --debugger:native --nimcache:C:/nc -d:enableSystemClipboard=false --cc:vcc --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime {compileIconResource()} {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopClang, "Build the desktop version":
-  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib -d:enableSystemClipboard=false -d:exposeScriptingApi -d:appBuildWasmtime --lineDir:on --passC:-g --passC:-std=gnu11 --nimcache:nimcache/release_clang {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib -d:enableSystemClipboard=false -d:exposeScriptingApi -d:appBuildWasmtime --lineDir:on --passC:-g --passC:-std=gnu11 --nimcache:nimcache/release_clang {compileIconResource()} {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopDebugClang, "Build the desktop version (debug)":
-  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib -d:enableSystemClipboard=true -d:exposeScriptingApi --passC:-std=gnu11 --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib -d:enableSystemClipboard=true -d:exposeScriptingApi --passC:-std=gnu11 --nimcache:nimcache/debug_clang {compileIconResource()} {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopDebugClangLinux, "Build the desktop version (debug)":
   selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:on --passC:-g --passC:-std=gnu11 --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopDebug, "Build the desktop version (debug)":
-  selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {compileIconResource()} {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopWindows, "Build the desktop version for windows":
-  selfExec fmt"c -o:nev{exe} {crossCompileWinArgs} -d:exposeScriptingApi -d:appBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nev{exe} {crossCompileWinArgs} -d:exposeScriptingApi -d:appBuildWasmtime {compileIconResource(true)} {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDll, "Build the dll version":
   # Disable clipboard for now because it breaks hot reloading

@@ -83,6 +83,12 @@ const staticLibraries = when defined(windows):
   else:
     ["libSDL3.a", "libfreetype.a"]
 
+proc compileIconResource(): string =
+  when defined(windows):
+    mkDir "bin"
+    exec "llvm-rc /nologo /fo bin\\nev.res res\\icon.rc"
+    result = " -d:noRes --passL:bin/nev.res"
+
 proc requireNuigi() =
   if not fileExists(nuigiDir / "build.nim"):
     echo "[ERROR] Nuigi checkout not found at ", nuigiDir,
@@ -119,7 +125,7 @@ proc buildNuigiStaticDependencies() =
     copyStaticLibrary(nuigiDir / "build" / "sdl3_static", staticLibraries[0], staticLibraries[0])
     copyStaticLibrary(nuigiDir / "build" / "freetype_static", staticLibraries[1], staticLibraries[1])
 
-proc buildStatic() =
+proc buildStatic(output = "", extraArgs = "", cacheDir = "nimcache/nev-static") =
   requireNuigi()
   var linkArgs = ""
   for library in staticLibraries:
@@ -139,9 +145,10 @@ proc buildStatic() =
   let staticArgs = "-d:sdlPlatform -d:nuiNoHarfbuzz -u:useDynlib -u:sdl3 -u:freetypeStatic --dynlibOverride:SDL3 --dynlibOverride:freetype"
   let pathArgs = " " & ("--path:" & (nuigiDir / "src")).quoteShell &
     " " & ("--path:" & (nuigiDir / "vendor" / "nimfreetype")).quoteShell
-  let output = when defined(windows): "nev-static.exe" else: "nev-static"
-  exec "nim c -o:" & output & " --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:nimcache/nev-static -d:nimWasmtimeBuild " &
-    staticArgs & pathArgs & linkArgs & " src/desktop_main.nim"
+  let outputPath = if output.len > 0: output
+    else: (when defined(windows): "nev.exe" else: "nev")
+  exec "nim c -o:" & outputPath & " --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:" & cacheDir & " -d:nimWasmtimeBuild " &
+    staticArgs & pathArgs & linkArgs & compileIconResource() & " " & extraArgs & " src/desktop_main.nim"
 
 var optParser = initOptParser("")
 for kind, key, val in optParser.getopt():
@@ -228,13 +235,19 @@ while i < cmds.len:
       exec """nim c -d:release --skipParentCfg --passL:"-o markdown.m.wasm" markdown.nim"""
 
   of "build":
-    exec "nim c -o:nev.exe --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:nimcache/debug_clang ./src/desktop_main.nim"
+    exec "nim c -o:nev.exe --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:nimcache/debug_clang" &
+      compileIconResource() & " ./src/desktop_main.nim"
 
   of "nuigi-deps-static":
     buildNuigiStaticDependencies()
 
   of "build-static":
     buildStatic()
+
+  of "build-perf":
+    buildNuigiStaticDependencies()
+    let output = when defined(windows): "nev-perf.exe" else: "nev-perf"
+    buildStatic(output, "-d:perfProfiler -d:nuigiPerfProfiler", "nimcache/nev-perf")
 
   of "debug-win":
     echo &"Build debug for windows..."
