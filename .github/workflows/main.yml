@@ -111,6 +111,9 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@v4.1.7
 
+      - name: Install stable rust toolchain
+        uses: dtolnay/rust-toolchain@1.81
+
       # If I want a specific rust version
       #- name: Install latest nightly
       #  uses: actions-rs/toolchain@v1.0.6
