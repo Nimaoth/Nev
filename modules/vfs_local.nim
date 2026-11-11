@@ -33,7 +33,7 @@ when implModule:
 
     VFSLocal2* = object
       watcher: Watcher
-      updateRate: int = 200
+      updateRate: int = 100
       cache: Table[string, CachedFile]
 
   proc cacheFile*(self: VFS, path: string) =
@@ -55,11 +55,12 @@ when implModule:
     except OSError:
       discard
 
-  proc process(self: VFS) {.async.} =
+  proc localVfsProcessFileWatchers(self: VFS) {.async.} =
     let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
     while true:
       await sleepAsync(local.updateRate.milliseconds)
       try:
+        prof("process")
         process(local.watcher)
       except Exception as e:
         log lvlError, &"Failed to process file watcher: {e.msg}"
@@ -549,6 +550,6 @@ when implModule:
     result.getMutUnsafe.findFilesImpl = vfsLocalFindFiles
 
     local.watcher = initWatcher()
-    local.updateRate = 200
+    local.updateRate = 100
 
-    asyncSpawn result.process()
+    asyncSpawn result.localVfsProcessFileWatchers()
