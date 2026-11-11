@@ -1416,12 +1416,14 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
         var cachedCaptures = uncachedCaptures.addr
         var cacheHit = false
         if gEnableSyntaxCache and h.cache != nil:
+          prof("checkSyntaxCache")
           h.cache[].leaves.withValue(leafByteRange.a, cachedLeaf):
             if cachedLeaf[].byteRange == leafByteRange and cachedLeaf[].pointRange == leafPointRange:
               cachedCaptures = cachedLeaf[].captures.addr
               cacheHit = true
 
         if not cacheHit:
+          prof("computeSyntax")
           let range = tsRange(
             tsPoint(leafPointRange.a.row.int, leafPointRange.a.column.int),
             tsPoint(leafPointRange.b.row.int, leafPointRange.b.column.int),
@@ -1505,7 +1507,10 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
             )
             # Insertion can move uncachedCaptures; render from the cache-owned sequence.
             cachedCaptures = h.cache[].leaves[leafByteRange.a].captures.addr
+        else:
+          prof("computeSyntax")
 
+        prof("renderCachedCaptures")
         for capture in cachedCaptures[].items:
           if capture.range.b <= currentChunk.point or capture.range.a >= currentChunk.endPoint:
             continue
