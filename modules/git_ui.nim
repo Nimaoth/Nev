@@ -385,7 +385,12 @@ when implModule:
                 var statusColor = b.themeTextStyle(index)[].textColor
                 discard b.textColor(statusColor)
         b.node:
-          let (_, name) = file.path.splitPath
+          # Untracked directories (e.g. nested repositories) end with a separator.
+          let trimmedPath = file.path.strip(leading = false, chars = {'/', '\\'})
+          let name = if trimmedPath.len < file.path.len:
+            trimmedPath.extractFilename & "/"
+          else:
+            file.path.extractFilename
           discard b.fitY().flex(1, 1, 0).maskChildren().textStyleIndex(int(if selected:
             UiStyleIndexMenuItemHoverText else: UiStyleIndexMenuItemText)).text(name)
         var actionHovered = false

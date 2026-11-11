@@ -253,7 +253,7 @@ when implModule:
     log lvlInfo, "getChangedFiles"
 
     try:
-      let lines = runProcessAsync("git", @["--no-optional-locks", "status", "-s"], workingDir=self.root).await
+      let lines = runProcessAsync("git", @["--no-optional-locks", "status", "-s", "--untracked-files=all"], workingDir=self.root).await
 
       var stagedFiles = newSeq[VCSFileInfo]()
       var workingFiles = newSeq[VCSFileInfo]()
