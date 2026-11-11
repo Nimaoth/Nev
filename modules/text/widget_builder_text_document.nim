@@ -2105,7 +2105,7 @@ proc buildTextHoverNui(b: var UiBuilder, nodeIdx: int, userData: int) {.nimcall,
         lineH, popupW, desiredH)
       b.withParent(b.overlays):
         b.pushId(userData.uint64)
-        b.node("text-hover-popup-overlay"):
+        b.layoutVertical("text-hover-popup-overlay"):
           discard b.position(placement.x, placement.y).width(placement.w).fitY()
             .maskChildren().fillBackground()
             .styleIndex(UiStyleIndexPanel).backgroundColor(bgUi)
