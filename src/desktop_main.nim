@@ -301,13 +301,13 @@ of Gui:
 
 import chronos/config
 
-const maxPollPerFrameMs = 2.5
+const maxPollPerFrameMs = 10
 
 proc pollFutures() =
   gAsyncFrameTimer = startTimer()
   try:
     let start = startTimer()
-    var tries = 25
+    var tries = 500
 
     let hasPendingOperations = when chronosFutureTracking:
       pendingFuturesCount() > 0
@@ -316,7 +316,7 @@ proc pollFutures() =
 
     while tries > 0 and start.elapsed.ms < maxPollPerFrameMs and hasPendingOperations:
       dec tries
-      poll()
+      poll(maxPollTimeMs = maxPollPerFrameMs - start.elapsed.ms)
 
   except CatchableError:
     discard
@@ -384,33 +384,45 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
     if eventCounter > 0:
       plat.lastEventTime = startTimer()
 
+    let pollTimer = startTimer()
+    block:
+      withDaTag(daPoll):
+        prof("poll")
+        pollFutures()
+
+    let pollTime = pollTimer.elapsed.ms
+
     var updateTime, renderTime: float
     withDaTag(daRender):
       prof("render")
-      let delta = app.frameTimer.elapsed.ms
-      app.frameTimer = startTimer()
 
-      let updateTimer = startTimer()
-
-      plat.onPreRender.invoke(plat)
-      eventBus.emit(&"platform/prerender", "")
-
-      let size = plat.size
-      let platformRequestedRender = plat.shouldRender()
       var rerender = false
-      if plat.requestedRender or platformRequestedRender:
-        plat.requestedRender = false
-        plat.beginNuiFrame()
-        try:
-          app.render(frameIndex)
-        except:
-          discard
-        plat.endNuiFrame()
-        rerender = true
+      block:
+        prof("ui")
 
-      updateTime = updateTimer.elapsed.ms
+        let delta = app.frameTimer.elapsed.ms
+        app.frameTimer = startTimer()
 
-      renderedLastFrame = rerender
+        let updateTimer = startTimer()
+
+        plat.onPreRender.invoke(plat)
+        eventBus.emit(&"platform/prerender", "")
+
+        let size = plat.size
+        let platformRequestedRender = plat.shouldRender()
+        if plat.requestedRender or platformRequestedRender:
+          plat.requestedRender = false
+          plat.beginNuiFrame()
+          try:
+            app.render(frameIndex)
+          except:
+            discard
+          plat.endNuiFrame()
+          rerender = true
+
+        updateTime = updateTimer.elapsed.ms
+
+        renderedLastFrame = rerender
 
       if rerender or not lowPowerMode:
         let renderTimer = startTimer()
@@ -431,13 +443,6 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
 
     {.gcsafe.}:
       logger().flush()
-
-    let pollTimer = startTimer()
-    withDaTag(daPoll):
-      prof("poll")
-      pollFutures()
-
-    let pollTime = pollTimer.elapsed.ms
 
     var outlierTime = 20.0
 

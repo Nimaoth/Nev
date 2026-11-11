@@ -16,11 +16,13 @@
 
 from nativesockets import Port
 import std/[tables, heapqueue, deques]
+import std/monotimes
 import results
 import chronos/[config, futures, osdefs, oserrno, osutils, timer]
 
 import chronos/internal/[asyncmacro, errors]
 
+import nuigi/debug/profiler
 export Port
 export deques, errors, futures, timer, results
 
@@ -133,13 +135,29 @@ template processTicks(loop: untyped) =
 
 var chronosDontSkipCallbacksAtStart* {.threadvar.}: bool
 
-template processCallbacks(loop: untyped) =
-  while loop.callbacks.len > 0:
-    let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
-    if isSentinel(callable):
-      break
-    if not(isNil(callable.function)):
-      callable.function(callable.udata)
+proc getPollDeadline(maxPollTimeMs: float64): int64 {.inline.} =
+  if maxPollTimeMs < 0 or
+      maxPollTimeMs >= high(int64).float64 / 1_000_000.0:
+    return high(int64)
+
+  let
+    now = getMonoTime().ticks
+    budget = max(0'i64, int64(maxPollTimeMs * 1_000_000.0))
+  if budget > high(int64) - now:
+    high(int64)
+  else:
+    now + budget
+
+template processCallbacks(loop: untyped, deadline: int64) =
+  block:
+    prof("processCallbacks")
+    while loop.callbacks.len > 0 and
+        (deadline == high(int64) or getMonoTime().ticks < deadline):
+      let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
+      if isSentinel(callable):
+        break
+      if not(isNil(callable.function)):
+        callable.function(callable.udata)
 
 proc raiseAsDefect*(exc: ref Exception, msg: string) {.noreturn, noinline.} =
   # Reraise an exception as a Defect, where it's unexpected and can't be handled
@@ -582,17 +600,19 @@ elif defined(windows):
     if res.isErr():
       raise newException(ValueError, osErrorMsg(res.error()))
 
-  proc poll*(timeout: int = 0) =
+  proc poll*(timeout: int = 0,
+             maxPollTimeMs: float64 = high(float64)) =
     let loop = getThreadDispatcher()
     var
       curTime = Moment.now()
       curTimeout = DWORD(timeout)
+      deadline = getPollDeadline(maxPollTimeMs)
       events: array[MaxEventsCount, osdefs.OVERLAPPED_ENTRY]
 
     # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
     # complete pending work of the outer `processCallbacks` call.
     # On non-reentrant `poll` calls, this only removes sentinel element.
-    processCallbacks(loop)
+    processCallbacks(loop, deadline)
 
     # Moving expired timers to `loop.callbacks` and calculate timeout
     loop.processTimersGetTimeout()
@@ -634,19 +654,21 @@ elif defined(windows):
         else:
           int(eventsReceived)
 
-    for i in 0 ..< networkEventsCount:
-      var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
-      customOverlapped.data.errCode =
-        block:
-          let res = cast[uint64](customOverlapped.internal)
-          if res == 0'u64:
-            OSErrorCode(-1)
-          else:
-            OSErrorCode(rtlNtStatusToDosError(res))
-      customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
-      let acb = AsyncCallback(function: customOverlapped.data.cb,
-                              udata: cast[pointer](customOverlapped))
-      loop.callbacks.addLast(acb)
+    block:
+      prof("networkEvents")
+      for i in 0 ..< networkEventsCount:
+        var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
+        customOverlapped.data.errCode =
+          block:
+            let res = cast[uint64](customOverlapped.internal)
+            if res == 0'u64:
+              OSErrorCode(-1)
+            else:
+              OSErrorCode(rtlNtStatusToDosError(res))
+        customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
+        let acb = AsyncCallback(function: customOverlapped.data.cb,
+                                udata: cast[pointer](customOverlapped))
+        loop.callbacks.addLast(acb)
 
     # Moving expired timers to `loop.callbacks`.
     loop.processTimers()
@@ -662,7 +684,7 @@ elif defined(windows):
     # All callbacks which will be added during `processCallbacks` will be
     # scheduled after the sentinel and are processed on next `poll()` call.
     loop.callbacks.addLast(SentinelCallback)
-    processCallbacks(loop)
+    processCallbacks(loop, deadline)
 
     # All callbacks done, skip `processCallbacks` at start.
     if not chronosDontSkipCallbacksAtStart or loop.callbacks.len == 0:
@@ -1015,15 +1037,18 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       ## Remove process' watching using process' descriptor ``procHandle``.
       removeProcess2(procHandle).tryGet()
 
-  proc poll*(timeout: int = 0) {.gcsafe.} =
+  proc poll*(timeout: int = 0,
+             maxPollTimeMs: float64 = high(float64)) {.gcsafe.} =
     ## Perform single asynchronous step.
     let loop = getThreadDispatcher()
-    var curTime = Moment.now()
+    var
+      curTime = Moment.now()
+      deadline = getPollDeadline(maxPollTimeMs)
 
     # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
     # complete pending work of the outer `processCallbacks` call.
     # On non-reentrant `poll` calls, this only removes sentinel element.
-    processCallbacks(loop)
+    processCallbacks(loop, deadline)
 
     # Moving expired timers to `loop.callbacks` and calculate timeout.
     loop.processTimersGetTimeout()
@@ -1074,7 +1099,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     # All callbacks which will be added during `processCallbacks` will be
     # scheduled after the sentinel and are processed on next `poll()` call.
     loop.callbacks.addLast(SentinelCallback)
-    processCallbacks(loop)
+    processCallbacks(loop, deadline)
 
     # All callbacks done, skip `processCallbacks` at start.
     if not chronosDontSkipCallbacksAtStart or loop.callbacks.len == 0:
