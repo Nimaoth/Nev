@@ -29,6 +29,10 @@ when implModule:
   proc previewItemImpl(self: OpenEditorPreviewer, item: FinderItem, editor: DocumentEditor) =
     # logScope lvlInfo, &"previewItem {item}"
 
+    if item.data.startsWith("view:"):
+      self.editor = nil
+      return
+
     self.editor = editor
 
     let editorId = item.data.parseInt.EditorId.catch:

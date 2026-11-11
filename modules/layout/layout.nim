@@ -221,6 +221,37 @@ when implModule:
 
       viewFactories: Table[string, CreateView]
 
+    PlatformSettingsView* = ref object of View
+      platform: Platform
+      layout: LayoutService
+
+  proc newPlatformSettingsView*(platform: Platform, layout: LayoutService): PlatformSettingsView =
+    result = PlatformSettingsView(platform: platform, layout: layout)
+    result.initView()
+    result.kindImpl = proc(view: View): string = "platform-settings"
+    result.descImpl = proc(view: View): string = "Platform Settings"
+    result.displayImpl = proc(view: View): string = "Platform Settings"
+    result.copyImpl = proc(view: View): View = view
+    result.saveLayoutImpl = proc(view: View, discardedViews: HashSet[Id]): JsonNode =
+      (%%*{"kind": "platform-settings"}).toJson
+    result.saveStateImpl = proc(view: View): JsonNode =
+      (%%*{"kind": "platform-settings"}).toJson
+    result.renderNuiImpl = proc(view: View, nui: var UiBuilder) =
+      let self = view.PlatformSettingsView
+      self.resetDirty()
+      nui.viewPanel("platform-settings", self.active, true,
+          ViewPanelOptions().withViewActions(self.layout, self)):
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
+            .text("Platform Settings")
+      do:
+        if self.platform.buildSettingsImpl != nil:
+          self.platform.buildSettingsImpl(self.platform, nui)
+        else:
+          nui.node:
+            discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText))
+              .text("No settings available for this platform")
+
   proc preRender*(self: LayoutService)
 
   proc layoutServicePopups*(self: LayoutService): seq[Popup] =
@@ -333,6 +364,12 @@ when implModule:
     self.commands = self.services.getServiceChecked(CommandService)
 
     discard self.platform.onPreRender.subscribe (_: Platform) => self.preRender()
+
+    if self.platform.buildSettingsImpl != nil:
+      let settingsView = newPlatformSettingsView(self.platform, self)
+      self.addViewFactory "platform-settings", proc(config: JsonNode): View =
+        settingsView
+      self.registerView(settingsView)
 
     self.addViewFactory "editor", proc(config: JsonNode): View {.raises: [ValueError].} =
       type Config = object
@@ -1531,6 +1568,15 @@ when implModule:
   proc chooseOpenCommand(self: LayoutService, preview: Option[bool], scaleX: Option[float], scaleY: Option[float], previewScale: Option[float]) =
     self.chooseOpen(preview.get(true), scaleX.get(0.8), scaleY.get(0.8), previewScale.get(0.6))
 
+  proc openPlatformSettings(self: LayoutService) =
+    let self = self.LayoutServiceImpl
+    let view = self.getOrCreateView((%%*{"kind": "platform-settings"}).toJson)
+    if view == nil:
+      log lvlError, "Platform settings are not available for this platform"
+      return
+    let slot = if "small-left" in self.layout.slots: "#small-left" else: ""
+    self.showView(view, slot = slot)
+
   include generated/layout_commands
 
   proc init_module_layout*() {.cdecl, exportc, dynlib.} =
@@ -1629,6 +1675,15 @@ when implModule:
             details: @[root // relativeDirectory],
           )
 
+      for view in self.mAllViews:
+        if view != nil and not (view of EditorView):
+          let marker = if view == activeView: "# " elif view in hiddenViews: "  " else: ". "
+          items.add FinderItem(
+            displayName: marker & view.display,
+            filterText: view.display,
+            data: "view:" & $view.id2,
+          )
+
       return items
 
     let source = newSyncDataSource(getItems)
@@ -1649,6 +1704,14 @@ when implModule:
     builder.previewer = previewer
 
     builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
+      if item.data.startsWith("view:"):
+        let viewId = item.data[5..^1].parseInt.int32.catch:
+          log lvlError, fmt"Failed to parse view id from data '{item}'"
+          return true
+        if self.getView(viewId).getSome(view):
+          self.showView(view)
+        return true
+
       let editorId = item.data.parseInt.EditorIdNew.catch:
         log lvlError, fmt"Failed to parse editor id from data '{item}'"
         return true
@@ -1660,6 +1723,15 @@ when implModule:
 
     builder.customActions["close-selected"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
       let item = popup.getSelectedItem().getOr:
+        return true
+
+      if item.data.startsWith("view:"):
+        let viewId = item.data[5..^1].parseInt.int32.catch:
+          log lvlError, fmt"Failed to parse view id from data '{item}'"
+          return true
+        if self.getView(viewId).getSome(view):
+          self.closeView(view, restoreHidden = false)
+        source.retrigger()
         return true
 
       let editorId = item.data.parseInt.EditorIdNew.catch:

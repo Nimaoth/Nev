@@ -359,84 +359,74 @@ when implModule and enableTerminal:
       self.nui.overlays = self.nui.currentNode.id
     discard self.nui.beginAttach(base)
 
-  proc buildSettingsWindow(self: TerminalPlatform) =
-    if self.terminal.width < 20 or self.terminal.height < 5:
-      return
-    let windowWidth = max(20, min(52, self.terminal.width)).float32
-    let windowHeight = max(5, min(30, self.terminal.height)).float32
-    self.nui.window("Settings", 0, 0, windowWidth, windowHeight):
-      self.nui.scrollBox:
-        discard self.nui.fillX().fitY()
-        self.nui.layoutVertical:
-          discard self.nui.fillX().fitY().padding(1).gap(1)
+  proc buildSettingsContent(self: TerminalPlatform, builder: var UiBuilder) =
+    builder.scrollBox:
+      discard builder.fillX().fitY()
+      builder.layoutVertical:
+        discard builder.fillX().fitY().padding(1).gap(1)
 
-          self.nui.node:
-            self.nui.debugName("settings-performance-heading")
-            discard self.nui.fillX().fitY().fillBackground()
-              .styleIndex(UiStyleIndexHeader)
-              .textStyleIndex(int(UiStyleIndexHeadingText)).text("Performance")
+        builder.node:
+          builder.debugName("settings-performance-heading")
+          discard builder.fillX().fitY().fillBackground()
+            .styleIndex(UiStyleIndexHeader)
+            .textStyleIndex(int(UiStyleIndexHeadingText)).text("Performance")
 
-          self.nui.node:
-            self.nui.debugName("settings-fps-row")
-            discard self.nui.fillX().fitY()
-              .textStyleIndex(int(UiStyleIndexLabelText))
-              .text("FPS: " & formatFloat(self.fps, ffDecimal, 0))
-          self.nui.node:
-            self.nui.debugName("settings-frame-time-row")
-            discard self.nui.fillX().fitY()
-              .textStyleIndex(int(UiStyleIndexLabelText))
-              .text("Total frame: " &
-                formatFloat(self.frameTimeMs, ffDecimal, 1) & " ms")
-          self.nui.node:
-            self.nui.debugName("settings-processing-time-row")
-            discard self.nui.fillX().fitY()
-              .textStyleIndex(int(UiStyleIndexLabelText))
-              .text("Processing: " &
-                formatFloat(self.processingTimeMs, ffDecimal, 1) & " ms")
+        builder.node:
+          builder.debugName("settings-fps-row")
+          discard builder.fillX().fitY()
+            .textStyleIndex(int(UiStyleIndexLabelText))
+            .text("FPS: " & formatFloat(self.fps, ffDecimal, 0))
+        builder.node:
+          builder.debugName("settings-frame-time-row")
+          discard builder.fillX().fitY()
+            .textStyleIndex(int(UiStyleIndexLabelText))
+            .text("Total frame: " &
+              formatFloat(self.frameTimeMs, ffDecimal, 1) & " ms")
+        builder.node:
+          builder.debugName("settings-processing-time-row")
+          discard builder.fillX().fitY()
+            .textStyleIndex(int(UiStyleIndexLabelText))
+            .text("Processing: " &
+              formatFloat(self.processingTimeMs, ffDecimal, 1) & " ms")
 
-          self.nui.node:
-            self.nui.debugName("settings-rendering-heading")
-            discard self.nui.fillX().fitY().fillBackground()
-              .styleIndex(UiStyleIndexHeader)
-              .textStyleIndex(int(UiStyleIndexHeadingText)).text("Rendering")
+        builder.node:
+          builder.debugName("settings-rendering-heading")
+          discard builder.fillX().fitY().fillBackground()
+            .styleIndex(UiStyleIndexHeader)
+            .textStyleIndex(int(UiStyleIndexHeadingText)).text("Rendering")
 
-          discard self.nui.checkbox("Render on demand",
-            self.settings.renderOnDemand)
-          discard self.nui.checkbox("Demo",
-            self.settings.showDemoWindow)
-          discard self.nui.checkbox("Debug panel",
-            self.settings.showDebugPanel)
+        discard builder.checkbox("Render on demand", self.settings.renderOnDemand)
+        discard builder.checkbox("Demo", self.settings.showDemoWindow)
+        discard builder.checkbox("Debug panel", self.settings.showDebugPanel)
 
-          self.nui.node:
-            self.nui.debugName("settings-input-heading")
-            discard self.nui.fillX().fitY().fillBackground()
-              .styleIndex(UiStyleIndexHeader)
-              .textStyleIndex(int(UiStyleIndexHeadingText)).text("Input")
+        builder.node:
+          builder.debugName("settings-input-heading")
+          discard builder.fillX().fitY().fillBackground()
+            .styleIndex(UiStyleIndexHeader)
+            .textStyleIndex(int(UiStyleIndexHeadingText)).text("Input")
 
-          discard self.nui.checkbox("Record mouse events",
-            self.settings.recordMouseEvents)
+        discard builder.checkbox("Record mouse events", self.settings.recordMouseEvents)
 
-          self.nui.tableLayout([tableColumnFit(), tableColumnFill()], 1, 1):
-            discard self.nui.fillX().fitY()
-            self.nui.node:
-              self.nui.debugName("settings-escape-timeout-label")
-              discard self.nui.fit().textStyleIndex(int(UiStyleIndexLabelText))
-                .text("Escape timeout (ms)")
-            if self.nui.dragFloat(self.settings.escapeTimeoutMs,
-                DefaultEscapeTimeoutMs.float32, 0.0'f32, 1000.0'f32,
-                trackWidth = 16.0'f32):
-              self.settings.escapeTimeoutMs =
-                round(self.settings.escapeTimeoutMs).float32
-              self.terminal.setEscapeTimeout(
-                self.settings.escapeTimeoutMs.int)
+        builder.tableLayout([tableColumnFit(), tableColumnFill()], 1, 1):
+          discard builder.fillX().fitY()
+          builder.node:
+            builder.debugName("settings-escape-timeout-label")
+            discard builder.fit().textStyleIndex(int(UiStyleIndexLabelText))
+              .text("Escape timeout (ms)")
+          if builder.dragFloat(self.settings.escapeTimeoutMs,
+              DefaultEscapeTimeoutMs.float32, 0.0'f32, 1000.0'f32,
+              trackWidth = 16.0'f32):
+            self.settings.escapeTimeoutMs =
+              round(self.settings.escapeTimeoutMs).float32
+            self.terminal.setEscapeTimeout(self.settings.escapeTimeoutMs.int)
 
-          self.nui.collapsingHeader("Terminal events (" & $self.eventHistory.len & ")",
-              self.eventHistoryExpanded):
-            self.nui.node:
-              discard self.nui.fillX().height(10)
-              self.nui.virtualList(self.eventHistoryScroll,
-                self.eventHistory.len, 1.0'f32,
-                buildTerminalEventHistoryItem, cast[int](self))
+        builder.collapsingHeader("Terminal events (" & $self.eventHistory.len & ")",
+            self.eventHistoryExpanded):
+          builder.node:
+            discard builder.fillX().height(10)
+            builder.virtualList(self.eventHistoryScroll,
+              self.eventHistory.len, 1.0'f32,
+              buildTerminalEventHistoryItem, cast[int](self))
 
   proc buildToolWindows(self: TerminalPlatform) =
     let viewportWidth = self.terminal.width.float32
@@ -469,7 +459,6 @@ when implModule and enableTerminal:
 
   proc endNuiFrameTerminalPlatform(self: TerminalPlatform) =
     self.nui.endAttach()
-    self.buildSettingsWindow()
     self.buildToolWindows()
     self.nui.endUiFrame()
 
@@ -540,6 +529,8 @@ when implModule and enableTerminal:
       self.TerminalPlatform.beginNuiFrameTerminalPlatform()
     res.endNuiFrameImpl = proc(self: Platform) =
       self.TerminalPlatform.endNuiFrameTerminalPlatform()
+    res.buildSettingsImpl = proc(self: Platform, builder: var UiBuilder) =
+      self.TerminalPlatform.buildSettingsContent(builder)
     return res
 
   proc init_module_terminal_platform*() {.cdecl, exportc, dynlib.} =

@@ -71,7 +71,6 @@ when implModule:
       antialiasMeshWidth*: float32
       renderOnDemand*: bool
       showDemoWindow*: bool
-      showSettingsWindow*: bool
       showDebugPanel*: bool
       showDebugPanel2*: bool
       showThemeEditor*: bool
@@ -811,7 +810,7 @@ when implModule:
 
   {.pop: raises.}
   {.pop: gcsafe.}
-  # ----- settings window helpers (platform-owned) -----
+  # ----- settings view content -----
   proc buildSettingsMetricRow(self: SdlPlatform, b: var UiBuilder, prefix: string, metric: int, maxY: float32, precision: int) {.raises: [Exception].} =
     try:
       b.layoutHorizontal:
@@ -856,8 +855,8 @@ when implModule:
     except:
       discard
 
-  proc buildSettingsWindow(self: SdlPlatform, b: var UiBuilder) {.raises: [Exception].} =
-    b.window("Settings", 1000.0, 0.0, 420.0, 640.0):
+  proc buildSettingsContent(self: SdlPlatform, b: var UiBuilder) {.raises: [Exception].} =
+    block:
       b.scrollBox():
         discard b.sizeToParentX().fitY()
         b.layoutVertical:
@@ -976,9 +975,6 @@ when implModule:
   proc buildNuiUi(self: SdlPlatform) {.raises: [Exception].} =
     prof("buildNuiUi")
     var b = self.nui.addr
-
-    if self.settings.showSettingsWindow:
-      self.buildSettingsWindow(self.nui)
 
     if self.settings.showDemoWindow:
       self.nui.window("Demo", 400.0, 100.0, 800.0, 900.0):
@@ -1312,7 +1308,6 @@ when implModule:
         antialiasMeshWidth: defaultAntialiasMeshWidth,
         renderOnDemand: true,
         showDemoWindow: false,
-        showSettingsWindow: true,
         showDebugPanel: false,
         showDebugPanel2: false,
         showThemeEditor: false,
@@ -1743,6 +1738,12 @@ when implModule:
     res.shouldRenderImpl = proc(self: Platform): bool = self.SdlPlatform.shouldRenderSdlPlatform()
     res.beginNuiFrameImpl = proc(self: Platform) = self.SdlPlatform.beginNuiFrameSdlPlatform()
     res.endNuiFrameImpl = proc(self: Platform) = self.SdlPlatform.endNuiFrameSdlPlatform()
+    res.buildSettingsImpl = proc(self: Platform, builder: var UiBuilder) {.gcsafe, raises: [].} =
+      {.cast(gcsafe).}:
+        try:
+          self.SdlPlatform.buildSettingsContent(builder)
+        except Exception as error:
+          log lvlError, "Failed to build SDL settings: ", error.msg
     return res
 
   proc init_module_sdl_platform*() {.cdecl, exportc, dynlib.} =

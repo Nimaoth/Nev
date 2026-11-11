@@ -199,6 +199,7 @@ type
   ShouldRenderImpl* = proc(self: Platform): bool {.gcsafe, raises: [].}
   BeginNuiFrameImpl* = proc(self: Platform) {.gcsafe, raises: [].}
   EndNuiFrameImpl* = proc(self: Platform) {.gcsafe, raises: [].}
+  BuildSettingsImpl* = proc(self: Platform, builder: var UiBuilder) {.gcsafe, raises: [].}
 
   Platform* = ref object of RootObj
     nui*: UiBuilder
@@ -256,6 +257,7 @@ type
     shouldRenderImpl*: ShouldRenderImpl
     beginNuiFrameImpl*: BeginNuiFrameImpl
     endNuiFrameImpl*: EndNuiFrameImpl
+    buildSettingsImpl*: BuildSettingsImpl
 
   PlatformService* = ref object of Service
     platform*: Platform
