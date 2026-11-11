@@ -353,6 +353,7 @@ proc renderLiveTerminalNui(self: TerminalView, nui: var UiBuilder,
       let scrollbarWidth = if nui.backendType == UiBackendType.Terminal: 1.0'f32 else: 10.0'f32
       outWidth = max(1, ((nui.currentNode.size.x - scrollbarWidth) / charW).int)
       outHeight = max(1, (nui.currentNode.size.y / charH).int)
+      self.nuiSize = (outWidth, outHeight, outCellWidth, outCellHeight)
       let previousList = storage.list
       if previousList != nil:
         if storage.alternateScreen != terminal.alternateScreen or
@@ -390,8 +391,13 @@ proc renderLiveTerminalNui(self: TerminalView, nui: var UiBuilder,
 proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder,
     outWidth, outHeight, outCellWidth, outCellHeight: var int) {.gcsafe, raises: [].} =
   {.cast(gcsafe).}:
+    let dirty = self.dirty
     self.resetDirty()
-    var panelOptions = ViewPanelOptions()
+    (outWidth, outHeight, outCellWidth, outCellHeight) = self.nuiSize
+    let childDirty = self.bufferEditor != nil and self.bufferEditor.dirty
+    let pendingScroll = self.terminal != nil and self.terminal.pendingScrollRows != 0
+    var panelOptions = ViewPanelOptions(cacheSubtree: true,
+      cacheDirty: dirty or childDirty or pendingScroll)
     if not self.isInPreview and self.terminals != nil:
       panelOptions = panelOptions.withViewActions(self.terminals.layout, self)
     nui.viewPanel("terminal-root", self.active, true,

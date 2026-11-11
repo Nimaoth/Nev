@@ -529,6 +529,7 @@ when implModule:
 
   proc renderGitUiNui*(self: GitUiView, nui: var UiBuilder) {.gcsafe, raises: [].} =
     {.cast(gcsafe).}:
+      let dirty = self.dirty
       self.resetDirty()
       if self.lastUpdate == 0:
         self.lastUpdate = 1
@@ -570,7 +571,10 @@ when implModule:
       # leaders, keyword/comment colors); new replaces rules with sectionTitle
       # bars + gaps and hides commands behind the "…" menu (see §24).
       nui.viewPanel("git-ui", self.active, true,
-          ViewPanelOptions(gap: 2).withViewActions(getServiceChecked(LayoutService), self)):
+          ViewPanelOptions(gap: 2, cacheSubtree: true,
+            cacheDirty: dirty or self.dirty or self.actionsMenuOpen or
+              (self.editCommit and self.commitEditor != nil and self.commitEditor.dirty))
+            .withViewActions(getServiceChecked(LayoutService), self)):
         discard nui.backendGap(8)
         nui.node:
           discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))

@@ -2333,7 +2333,12 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
     self.resetDirty()
     let bgColor = nui.themeStyle(
       if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel)[].fillColor
-    var panelOptions = ViewPanelOptions(fitContentY: fitContentY)
+    let tec = self.textEditorComponent
+    let pendingScroll = tec != nil and (
+      tec.nuiPendingScrollDeltaY != 0 or tec.nuiPendingScrollToY.isSome or
+      tec.nuiPendingScrollTo.isSome or tec.nuiPendingScrollToX.isSome)
+    var panelOptions = ViewPanelOptions(fitContentY: fitContentY,
+      cacheSubtree: true, cacheDirty: dirty or pendingScroll)
     if self.renderHeader and self.services != nil:
       let layout = self.services.getServiceChecked(LayoutService)
       panelOptions = panelOptions.withViewActions(layout, layout.getViewForEditor(self).get(nil))

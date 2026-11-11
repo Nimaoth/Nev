@@ -629,6 +629,20 @@ when implModule:
     self.pushPlotHistory()
 
   # ----- nui init -----
+  proc createNuiCacheTexture(context: pointer, width, height: int): UiImageId
+      {.nimcall, gcsafe, raises: [].} =
+    let self = cast[SdlPlatform](context)
+    let texture = createTexture(self.renderer, PIXELFORMAT_RGBA32,
+      TEXTUREACCESS_TARGET, width.cint, height.cint)
+    if texture == nil:
+      log lvlError, "Failed to create SDL widget cache texture: ", sdl3.getError()
+      return UiImageId(0)
+    cast[UiImageId](texture)
+
+  proc freeNuiCacheTexture(context: pointer, image: UiImageId)
+      {.nimcall, gcsafe, raises: [].} =
+    destroyTexture(cast[Texture](image))
+
   proc ensureNuiInitialized(self: SdlPlatform) {.raises: [Exception].} =
     if self.nuiInitialized:
       return
@@ -651,11 +665,15 @@ when implModule:
     self.nui.openUrlFn = openUrl
     self.nui.readClipboardFn = readClipboard
     self.nui.writeClipboardFn = writeClipboard
+    self.nui.createCacheTextureFn = createNuiCacheTexture
+    self.nui.freeCacheTextureFn = freeNuiCacheTexture
+    self.nui.cacheTextureUserData = cast[pointer](self)
     self.nuiInitialized = true
     self.themeEditor.listFonts = themeEditorListFonts
     self.themeEditor.resolveFont = themeEditorResolveFont
 
   proc syncSdlTextInput(self: SdlPlatform) {.raises: [Exception].} =
+    prof("syncSdlTextInput")
     if self.nui.textInputRequest.active:
       if not self.window.textInputActive():
         discard self.window.startTextInput()
@@ -677,6 +695,7 @@ when implModule:
         discard self.window.startTextInput()
 
   proc syncFontAtlas(self: SdlPlatform) {.raises: [Exception].} =
+    prof("syncFontAtlas")
     if self.fontAtlasTexture == nil:
       self.fontAtlasTexture = createTexture(self.renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STATIC,
         self.fontRender.fontAtlasWidth.cint, self.fontRender.fontAtlasHeight.cint)
@@ -877,6 +896,14 @@ when implModule:
               discard b.text("Render On Demand")
             discard b.checkbox("", self.settings.renderOnDemand)
 
+            var cachingLabel = noneNodeId()
+            b.node():
+              cachingLabel = b.currentNode.id
+              discard b.fit().textStyleIndex(int(UiStyleIndexLabelText))
+                .text("Node Caching")
+            if b.checkbox("", self.nui.cachingEnabled, labelledBy = cachingLabel):
+              self.requestRender()
+
             b.node():
               discard b.fit()
               discard b.copyTextStyleIndex(UiStyleIndexLabelText)
@@ -947,6 +974,7 @@ when implModule:
               else: self.fontRender.flags = {}
 
   proc buildNuiUi(self: SdlPlatform) {.raises: [Exception].} =
+    prof("buildNuiUi")
     var b = self.nui.addr
 
     if self.settings.showSettingsWindow:
@@ -1018,6 +1046,7 @@ when implModule:
 
   proc endNuiFrameSdlPlatform(self: SdlPlatform) {.gcsafe, raises: [].} =
     try:
+      prof("sdlEndNuiFrame")
       {.cast(gcsafe).}:
         self.nui.endAttach() # base
         self.buildNuiUi()
@@ -1036,6 +1065,7 @@ when implModule:
         if self.uiRenderTexture == nil or
             self.uiRenderTextureWidth != outputWidth or
             self.uiRenderTextureHeight != outputHeight:
+          prof("createUiRenderTexture")
           if self.uiRenderTexture != nil:
             destroyTexture(self.uiRenderTexture)
           self.uiRenderTexture = createTexture(self.renderer, PIXELFORMAT_RGBA32,
@@ -1058,26 +1088,33 @@ when implModule:
         self.renderNui()
         self.hadInput = false
     except:
-      discard
+      log lvlError, "Failed to render SDL UI frame: ", getCurrentExceptionMsg()
 
-  proc renderNui(self: SdlPlatform) {.gcsafe, raises: [Exception].} =
-    # Draw the completed nuigi frame into the currently bound SDL target.
-    self.syncSdlTextInput()
-    self.syncFontAtlas()
-    discard self.renderer.setRenderDrawColorFloat(0, 0, 0, 1)
-    discard self.renderer.renderClear()
+  proc renderNuiCommands(self: SdlPlatform) {.gcsafe, raises: [Exception].} =
+    prof("renderNuiCommands")
     # render nuigi commands via SDL Renderer
     let frameOut = self.nui.frameOutput
     # inline renderNewUiRenderer logic using self.renderer and self.nui
     block:
-      proc drawRawVertices(renderer: Renderer, texture: nil Texture, first: ptr UiVertex, count: int) =
+      proc drawRawVertices(renderer: Renderer, texture: nil Texture, first: ptr UiVertex,
+          count: int, premultipliedAlpha = false,
+          samplerMode = TextureSamplerMode.Linear) {.raises: [IOError].} =
         if count <= 0: return
+        if texture != nil:
+          let blend = if premultipliedAlpha: BLENDMODE_BLEND_PREMULTIPLIED else: BLENDMODE_BLEND
+          if not texture.setTextureBlendMode(blend):
+            raise newException(IOError, "Failed to set SDL texture blending: " & $sdl3.getError())
+          let scale = if samplerMode == TextureSamplerMode.Linear: SCALEMODE_LINEAR else: SCALEMODE_NEAREST
+          if not texture.setTextureScaleMode(scale):
+            raise newException(IOError, "Failed to set SDL texture filtering: " & $sdl3.getError())
         let xy = cast[ptr cfloat](first)
         let color = cast[ptr FColor](cast[uint](first) + 16)
         let uv = cast[ptr cfloat](cast[uint](first) + 8)
         let stride = cint(sizeof(UiVertex))
         discard renderer.renderGeometryRaw(texture, xy, stride, color, stride, uv, stride, cint(count), nil, 0, 0)
-      proc renderFilled(renderer: Renderer, transform: UiAffine2, pos, size: nuiMath.Vec2, color: UiColor, texture: nil Texture = nil) =
+      proc renderFilled(renderer: Renderer, transform: UiAffine2, pos, size: nuiMath.Vec2,
+          color: UiColor, texture: nil Texture = nil, premultipliedAlpha = false,
+          samplerMode = TextureSamplerMode.Linear) {.raises: [IOError].} =
         if size.x <= 0 or size.y <= 0: return
         let p0 = transform.transformPoint2(pos)
         let p1 = transform.transformPoint2(pos + nuiMath.vec2(size.x, 0))
@@ -1091,13 +1128,26 @@ when implModule:
           UiVertex(pos: p2, uv: nuiMath.vec2(1,1), color: color),
           UiVertex(pos: p3, uv: nuiMath.vec2(0,1), color: color),
         ]
-        drawRawVertices(renderer, texture, verts[0].addr, 6)
+        drawRawVertices(renderer, texture, verts[0].addr, 6, premultipliedAlpha, samplerMode)
 
       var transformStack: seq[UiAffine2] = @[identityAffine2()]
       var clipStack: seq[sdl3.Rect] = @[]
+      let frameTarget = self.renderer.getRenderTarget()
+      defer:
+        discard self.renderer.setRenderTarget(frameTarget)
       for cmd in frameOut.commands:
         let transform = transformStack[^1]
         case cmd.kind
+        of CmdRenderTarget:
+          assert transformStack.len == 1 and clipStack.len == 0,
+            "Render target switches require balanced transforms and clips"
+          let target = if cmd.imageId.uint64 == 0: frameTarget else: cast[Texture](cmd.imageId)
+          if not self.renderer.setRenderTarget(target):
+            raise newException(IOError, "Failed to bind SDL widget cache texture: " & $sdl3.getError())
+          if cmd.imageId.uint64 != 0:
+            if not self.renderer.setRenderDrawColor(0, 0, 0, 0) or
+                not self.renderer.renderClear():
+              raise newException(IOError, "Failed to clear SDL widget cache texture: " & $sdl3.getError())
         of CmdTransformPush:
           transformStack.add applyNodeRenderTransform(transform, cmd.pivot, cmd.offset, cmd.rotation, cmd.scale)
         of CmdTransformPop:
@@ -1112,7 +1162,8 @@ when implModule:
               texture = self.fontAtlasTexture
             else:
               texture = cast[Texture](cmd.imageId)
-            drawRawVertices(self.renderer, texture, cast[ptr UiVertex](cmd.vertexData), cmd.vertexCount)
+            drawRawVertices(self.renderer, texture, cast[ptr UiVertex](cmd.vertexData),
+              cmd.vertexCount, cmd.premultipliedAlpha, cmd.samplerMode)
         of CmdRectStroke:
           discard self.renderer.setRenderDrawColorFloat(cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a)
           let thickness = min(max(1.0'f32, cmd.thickness), min(cmd.size.x, cmd.size.y) * 0.5'f32)
@@ -1164,8 +1215,17 @@ when implModule:
           var texture: nil Texture = nil
           if cmd.imageId.uint64 == 1: texture = self.fontAtlasTexture
           else: texture = cast[Texture](cmd.imageId)
-          renderFilled(self.renderer, transform, cmd.pos, cmd.size, cmd.color, texture)
+          renderFilled(self.renderer, transform, cmd.pos, cmd.size, cmd.color, texture,
+            cmd.premultipliedAlpha, cmd.samplerMode)
         else: discard
+
+  proc renderNui(self: SdlPlatform) {.gcsafe, raises: [Exception].} =
+    prof("renderNui")
+    self.syncSdlTextInput()
+    self.syncFontAtlas()
+    discard self.renderer.setRenderDrawColorFloat(0, 0, 0, 1)
+    discard self.renderer.renderClear()
+    self.renderNuiCommands()
 
   proc initSdlPlatform(self: SdlPlatform, options: AppOptions) {.gcsafe, raises: [].} =
     log lvlInfo, "Init SDL platform (nuigi/sdl3)"
@@ -1325,6 +1385,8 @@ when implModule:
       if sdlExposeWatchInstalled:
         sdl3.removeEventWatch(sdlExposeWatch, cast[pointer](self))
         sdlExposeWatchInstalled = false
+      if self.nuiInitialized:
+        self.nui.clearWidgetCaches()
       if self.fontAtlasTexture != nil:
         destroyTexture(self.fontAtlasTexture)
         self.fontAtlasTexture = nil
@@ -1512,7 +1574,9 @@ when implModule:
       # The UI was rendered into this texture by endNuiFrameSdlPlatform.
       discard self.renderer.renderTexture(self.uiRenderTexture, nil, nil)
       let processingTimeMs = self.frameTimer.elapsed.ms
-      discard self.renderer.renderPresent()
+      block:
+        prof("present")
+        discard self.renderer.renderPresent()
       if rerender:
         self.finishFrameMetrics(self.frameTimer.elapsed.ms, processingTimeMs)
     except CatchableError as e:

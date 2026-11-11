@@ -315,6 +315,7 @@ type
     modeEventHandler*: EventHandler
     mode*: string
     size*: tuple[width, height, cellPixelWidth, cellPixelHeight: int] # Current size of the view in cells. Might not match 'terminal.width' and 'terminal.height'
+    nuiSize*: tuple[width, height, cellPixelWidth, cellPixelHeight: int]
     terminal*: Terminal
     closeOnTerminate*: bool
     slot*: string

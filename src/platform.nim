@@ -48,6 +48,8 @@ type
     fitContentY*: bool          ## Root fits its content height instead of filling the parent
     padding*: float32 = 0       ## Root padding (graphical backends only)
     gap*: float32 = 4           ## Gap between header and body children (graphical backends only)
+    cacheSubtree*: bool = false
+    cacheDirty*: bool = false
     onClose*: ViewPanelCloseAction
       ## View action; true hides the view, false closes it. Invoked next frame.
 
@@ -55,6 +57,50 @@ proc enqueueViewPanelAction(builder: var UiBuilder, action: ViewPanelCloseAction
     keepHidden: bool) {.gcsafe, raises: [].} =
   builder.enqueueNextFrame(proc() {.closure, gcsafe, raises: [].} =
     action(keepHidden))
+
+type ViewPanelCacheStorage = ref object of UiNodeStorageData
+  hovered: bool
+  animating: bool
+  active: bool
+  showHeader: bool
+  options: ViewPanelOptions
+  styles: seq[UiStyle]
+  textStyles: seq[UiNodeText]
+
+proc recordViewPanelAnimation(builder: var UiBuilder, nodeIndex, rootIndex: int)
+    {.nimcall, gcsafe, raises: [].} =
+  let storage = cast[ViewPanelCacheStorage](
+    builder.nodeStorageGet(builder.frame.nodes[rootIndex].addr))
+  storage.animating = builder.anythingAnimating
+
+proc reuseViewPanel(builder: var UiBuilder, active, showHeader: bool,
+    options: ViewPanelOptions): bool {.gcsafe, raises: [].} =
+  var storage = cast[ViewPanelCacheStorage](builder.nodeStorageGet(builder.currentNode))
+  if storage == nil:
+    storage = ViewPanelCacheStorage()
+    builder.nodeStorage(builder.currentNode, storage)
+  let hovered = builder.wasHovered(includeChildren = true)
+  let input = builder.frameCtx.input
+  let dirty = options.cacheDirty or hovered or storage.hovered or storage.animating or
+    input.mouseDown != {} or input.mousePressed != {} or input.mouseReleased != {} or
+    active != storage.active or showHeader != storage.showHeader or
+    options.fitContentY != storage.options.fitContentY or
+    options.padding != storage.options.padding or options.gap != storage.options.gap or
+    (options.onClose == nil) != (storage.options.onClose == nil) or
+    builder.themeStyles != storage.styles or builder.themeTextStyles != storage.textStyles
+  storage.hovered = hovered
+  storage.active = active
+  storage.showHeader = showHeader
+  storage.options = options
+  if builder.themeStyles != storage.styles:
+    storage.styles = @[]
+    for style in builder.themeStyles:
+      storage.styles.add style
+  if builder.themeTextStyles != storage.textStyles:
+    storage.textStyles = @[]
+    for style in builder.themeTextStyles:
+      storage.textStyles.add style
+  builder.reuseCachedNode(dirty)
 
 template viewPanel*(builder: var UiBuilder, key: string, active: bool,
     showHeader: bool, options: ViewPanelOptions, header, buttons, body: untyped) =
@@ -75,32 +121,41 @@ template viewPanel*(builder: var UiBuilder, key: string, active: bool,
         discard builder.fitY()
       else:
         discard builder.fillY()
-      if showHeader:
-        builder.layoutHorizontalReverse(viewPanelKey & "-header"):
-          discard builder.fillX().fitY().fillBackground().styleIndex(
-            if viewPanelActive: UiStyleIndexHeaderActive else: UiStyleIndexHeader)
-            .backendPadding(6).backendGap(4).cornerRadii(8, 8, 0, 0)
-          if builder.wasHovered(includeChildren = true):
-            builder.layoutHorizontal(viewPanelKey & "-buttons"):
-              # Reserve horizontal space without letting hover actions resize the header.
-              discard builder.fit().backendGap(4).ignoreInContentExtent()
-                .anchorsY(0.5, 0.5).pivotY(0.5).finishAnchors()
-              buttons
-              if viewPanelOptions.onClose != nil:
-                if builder.button("-"):
-                  builder.enqueueViewPanelAction(viewPanelOptions.onClose, true)
-                if builder.button("x"):
-                  builder.enqueueViewPanelAction(viewPanelOptions.onClose, false)
-          builder.layoutHorizontal(viewPanelKey & "-header-content"):
-            discard builder.fillX().fitY().backendGap(4)
-            header
-      builder.layoutHorizontal(viewPanelKey & "-content"):
-        discard builder.fillX().cornerRadii(0, 0, 8, 8).backendPadding(4)
-        if viewPanelOptions.fitContentY:
-          discard builder.fitY()
-        else:
-          discard builder.fillY()
-        body
+      block viewPanelContents:
+        if viewPanelOptions.cacheSubtree and
+            builder.reuseViewPanel(viewPanelActive, showHeader, viewPanelOptions):
+          break viewPanelContents
+        if showHeader:
+          builder.layoutHorizontalReverse(viewPanelKey & "-header"):
+            discard builder.fillX().fitY().fillBackground().styleIndex(
+              if viewPanelActive: UiStyleIndexHeaderActive else: UiStyleIndexHeader)
+              .backendPadding(6).backendGap(4).cornerRadii(8, 8, 0, 0)
+            if builder.wasHovered(includeChildren = true):
+              builder.layoutHorizontal(viewPanelKey & "-buttons"):
+                # Reserve horizontal space without letting hover actions resize the header.
+                discard builder.fit().backendGap(4).ignoreInContentExtent()
+                  .anchorsY(0.5, 0.5).pivotY(0.5).finishAnchors()
+                buttons
+                if viewPanelOptions.onClose != nil:
+                  if builder.button("-"):
+                    builder.enqueueViewPanelAction(viewPanelOptions.onClose, true)
+                  if builder.button("x"):
+                    builder.enqueueViewPanelAction(viewPanelOptions.onClose, false)
+            builder.layoutHorizontal(viewPanelKey & "-header-content"):
+              discard builder.fillX().fitY().backendGap(4)
+              header
+        builder.layoutHorizontal(viewPanelKey & "-content"):
+          discard builder.fillX().cornerRadii(0, 0, 8, 8).backendPadding(4)
+          if viewPanelOptions.fitContentY:
+            discard builder.fitY()
+          else:
+            discard builder.fillY()
+          body
+        if viewPanelOptions.cacheSubtree:
+          let rootIndex = builder.currentNodeIndex
+          builder.node:
+            discard builder.size(0, 0).position(0, 0).ignoreInContentExtent()
+              .noHover().deferBuild(recordViewPanelAnimation, rootIndex)
 
 template viewPanel*(builder: var UiBuilder, key: string, active: bool,
     showHeader: bool, options: ViewPanelOptions, header, body: untyped) =
