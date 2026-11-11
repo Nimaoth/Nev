@@ -147,7 +147,7 @@
     "nuigi.Nimaoth.github.com": {
       "dir": "$deps/nuigi",
       "url": "https://github.com/Nimaoth/nuigi",
-      "commit": "3d4221453ee94780bc4a7aa5d18bc679ee648334",
+      "commit": "2b8296581c005d06619d7e5cba6a0ec5cc49ca2f",
       "version": ""
     },
     "vmath": {
@@ -325,7 +325,7 @@
       "requires \"https://github.com/ba0f3/libssh2.nim#a5cf5180cddf864b1bddbb0d35b3b5c499160176\"",
       "requires \"https://github.com/ba0f3/ssh2.nim#b45447fa3892024eb5ceb5d1516beba57bd68d05\"",
       "requires \"https://github.com/Nimaoth/nimtreesitter#5de1b7516a3c0c83a4fd0c2ae71c86ebd489594e\"",
-      "requires \"https://github.com/Nimaoth/nuigi#3d4221453ee94780bc4a7aa5d18bc679ee648334\"",
+      "requires \"https://github.com/Nimaoth/nuigi#2b8296581c005d06619d7e5cba6a0ec5cc49ca2f\"",
       "",
       "import strformat, strutils",
       "",
