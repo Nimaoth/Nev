@@ -627,8 +627,11 @@ when implModule:
         nui.scrollBox:
           discard nui.fillX().fitY()
           nui.layoutVertical("git-ui-content"):
+            # scrollBox draws its scrollbar over the content only when it
+            # overflows; in the terminal a permanently reserved column would
+            # leave an empty cell next to every row.
             let scrollbarWidth = if nui.backendType == UiBackendType.Terminal:
-              1.0'f32
+              0.0'f32
             else:
               10.0'f32
             discard nui.anchorsX(0, 1).offsetsX(0, -scrollbarWidth).finishAnchors()

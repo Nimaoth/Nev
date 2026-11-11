@@ -286,7 +286,7 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
       # Main area – renders layout via NUI
       # layoutVertical already creates a node, so we use it directly for the container (no extra nui.node wrapper)
       nui.layoutVertical("nui-main"):
-        discard nui.fillX().height(h).fillBackground().styleIndex(UiStyleIndexWindowTitleBar).backendBorderWidth(0).backendPadding(6).backendGap(0)
+        discard nui.fillX().height(h).fillBackground().styleIndex(UiStyleIndexWindowTitleBar).backendBorderWidth(0, 0).backendPadding(6).backendGap(0)
         layout.renderNui(nui)
 
     # NUI-GAP: old popups render via OverlayFunction seq with FlushBorders panels

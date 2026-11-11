@@ -9,12 +9,16 @@ when not defined(nimony):
   proc forceNim2ToIncludeUiBuilderInTheGeneratedCFile3*(): UiBuilder {.exportc.} = UiBuilder()
 
 const SplitterHandleWidth = 2.0'f32
+const TerminalSplitterHandleWidth = 1.0'f32
+
+proc splitterHandleWidth(nui: UiBuilder): float32 =
+  nui.backendSpacing(SplitterHandleWidth, TerminalSplitterHandleWidth)
 const SplitterGap = 1.0'f32 ## Gap between a splitter handle and the views on either side
 
 proc splitterReservedSpace(nui: UiBuilder): float32 =
   ## Total space reserved between two split views: gap, handle, gap.
   ## The gap is dropped in the terminal backend, where units are cells.
-  SplitterHandleWidth + 2.0'f32 * nui.backendSpacing(SplitterGap)
+  nui.splitterHandleWidth() + 2.0'f32 * nui.backendSpacing(SplitterGap)
 
 proc splitGap(areaExtent: float, pixelExtent, requestedWidth: float32): float32 =
   min(max(areaExtent.float32 * pixelExtent, 0.0'f32), requestedWidth)
@@ -58,8 +62,9 @@ proc buildSplitHandle(nui: var UiBuilder, key: string, boundary: float,
   if layoutExtent <= 0:
     return 0
   var delta = 0.0
-  let handleStart = max(0.0'f32, boundary.float32 * layoutExtent - SplitterHandleWidth * 0.5'f32)
-  let handleEnd = min(layoutExtent, boundary.float32 * layoutExtent + SplitterHandleWidth * 0.5'f32)
+  let handleWidth = nui.splitterHandleWidth()
+  let handleStart = max(0.0'f32, boundary.float32 * layoutExtent - handleWidth * 0.5'f32)
+  let handleEnd = min(layoutExtent, boundary.float32 * layoutExtent + handleWidth * 0.5'f32)
   let topLeft = if verticalDivider:
     nuiVecMath.vec2(handleStart / layoutExtent, 0.0'f32)
   else:

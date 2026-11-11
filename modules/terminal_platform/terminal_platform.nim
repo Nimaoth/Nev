@@ -7,14 +7,16 @@ include module_base
 proc newTerminalPlatform*(): Platform {.rtl, raises: [].}
 
 when implModule and enableTerminal:
-  import std/[parseutils, strutils, syncio, typedthreads, unicode]
+  import std/[os, parseutils, strutils, syncio, typedthreads, unicode]
   import vmath
   import misc/[custom_logger, timer]
   from misc/render_command import FontInfo, UINodeFlags
   import app_options, misc/input_api
   import nuigi
   import nuigi/backend/terminal/terminal
+  import nuigi/backend/terminal/terminal_capture
   import nuigi/debug/debug_panel
+  import nuigi/debug/frame_dump
   import nuigi/debug/profiler
   import nuigi/demo/demo_window
   import nuigi/widgets
@@ -51,6 +53,8 @@ when implModule and enableTerminal:
       eventHistoryExpanded: bool
       eventHistoryScroll: float
       debugPanel: DebugPanel
+      captureDir: string
+      captureFrame: int
 
   var inputThread: Thread[ptr TerminalInputThreadState]
   var inputThreadState: TerminalInputThreadState
@@ -185,6 +189,59 @@ when implModule and enableTerminal:
     for styleIndex in low(UiTextStyleIndex) .. high(UiTextStyleIndex):
       builder.themeTextStyle(styleIndex).fontSize = 1.0'f32
 
+  proc configureDebugCapture(self: TerminalPlatform) =
+    ## NEV_TERMINAL_SIZE=<w>x<h> overrides the grid size (useful when stdout is
+    ## not a console). NEV_TERMINAL_DEBUG_DIR=<dir> writes captures of every
+    ## rendered frame to <dir> and injects the bytes of <dir>/input as terminal input.
+    let size = getEnv("NEV_TERMINAL_SIZE").toLowerAscii.split('x')
+    if size.len == 2:
+      try:
+        self.terminal.sizeOverrideWidth = size[0].strip.parseInt
+        self.terminal.sizeOverrideHeight = size[1].strip.parseInt
+      except ValueError:
+        log lvlError, "Invalid NEV_TERMINAL_SIZE, expected <width>x<height>"
+
+    let dir = getEnv("NEV_TERMINAL_DEBUG_DIR")
+    if dir.len > 0:
+      try:
+        createDir(dir)
+        self.captureDir = dir.absolutePath
+        log lvlInfo, "Writing terminal debug captures to ", self.captureDir
+      except CatchableError as error:
+        log lvlError, "Failed to create terminal debug dir '", dir, "': ", error.msg
+
+  proc readInjectedInput(self: TerminalPlatform): string =
+    if self.captureDir.len == 0:
+      return ""
+    let path = self.captureDir / "input"
+    if not fileExists(path):
+      return ""
+    try:
+      result = readFile(path)
+      removeFile(path)
+    except CatchableError as error:
+      log lvlError, "Failed to read injected input: ", error.msg
+      return ""
+
+  proc writeCaptureFile(self: TerminalPlatform, name, content: string) =
+    let path = self.captureDir / name
+    let tempPath = path & ".tmp"
+    try:
+      writeFile(tempPath, content)
+      moveFile(tempPath, path)
+    except CatchableError as error:
+      log lvlError, "Failed to write terminal capture '", path, "': ", error.msg
+
+  proc writeDebugCapture(self: TerminalPlatform) =
+    inc self.captureFrame
+    let title = "frame " & $self.captureFrame
+    self.writeCaptureFile("screen.txt", self.terminal.captureText())
+    self.writeCaptureFile("colors.txt", self.terminal.captureColorMaps())
+    self.writeCaptureFile("screen.html", self.terminal.captureHtml(title))
+    self.writeCaptureFile("layout.txt", self.nui.dumpFrameLayout())
+    # Written last so readers can wait for it to change before reading the others.
+    self.writeCaptureFile("frame.txt", $self.captureFrame)
+
   proc initTerminalPlatform(self: TerminalPlatform, options: AppOptions) =
     try:
       self.noUI = options.noUI
@@ -205,6 +262,7 @@ when implModule and enableTerminal:
 
       self.nui = newTerminalBuilder()
       self.nui.configureTerminalTheme()
+      self.configureDebugCapture()
       self.terminal.init(kittyKeyboardFlags)
       self.settings = TerminalSettings(
         renderOnDemand: true,
@@ -290,7 +348,7 @@ when implModule and enableTerminal:
       let oldWidth = self.terminal.width
       let oldHeight = self.terminal.height
       if self.readInputOnThread:
-        var inputBytes = ""
+        var inputBytes = self.readInjectedInput()
         while true:
           let (available, value) = inputChannel.tryRecv()
           if not available:
@@ -298,7 +356,11 @@ when implModule and enableTerminal:
           inputBytes.add value
         self.input = self.terminal.pollInput(inputBytes)
       else:
-        self.input = self.terminal.pollInput()
+        let injected = self.readInjectedInput()
+        if injected.len > 0:
+          self.input = self.terminal.pollInput(injected & readAvailableInput())
+        else:
+          self.input = self.terminal.pollInput()
       self.recordTerminalEvents()
       let modifiers = self.input.modsDown.toPlatformModifiers
 
@@ -475,6 +537,8 @@ when implModule and enableTerminal:
         let processingTimeMs = self.frameTimer.elapsed.ms
         self.terminal.render(self.nui)
         self.finishFrameMetrics(self.frameTimer.elapsed.ms, processingTimeMs)
+        if self.captureDir.len > 0:
+          self.writeDebugCapture()
     except CatchableError as error:
       log lvlError, "Failed to render terminal UI: ", error.msg
     self.redrawEverything = false
