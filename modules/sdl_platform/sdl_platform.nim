@@ -1046,7 +1046,7 @@ when implModule:
 
   proc endNuiFrameSdlPlatform(self: SdlPlatform) {.gcsafe, raises: [].} =
     try:
-      prof("sdlEndNuiFrame")
+      prof("endNuiFrameSdlPlatform")
       {.cast(gcsafe).}:
         self.nui.endAttach() # base
         self.buildNuiUi()
