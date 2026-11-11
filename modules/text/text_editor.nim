@@ -3298,7 +3298,7 @@ proc createFinderItem(workspace: Workspace, symbol: WorkspaceSymbol, path: strin
     },
   )
 
-proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.async.} =
+proc getWorkspaceSymbolsLspWorkspaceSymbolsDataSource(self: LspWorkspaceSymbolsDataSource): Future[void] {.async.} =
   let symbols = self.languageServer.getWorkspaceSymbolsRaw(self.filename, self.query).await
   var t = startTimer()
   var items = newItemList(symbols.len)
@@ -3311,12 +3311,12 @@ proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.as
 
     if t.elapsed.ms > 5:
       try:
-        await sleepAsync(1.milliseconds)
+        await sleepAsync(0.milliseconds)
         t = startTimer()
       except:
         discard
 
-  # debugf"[getWorkspaceSymbols] {t.elapsed.ms}ms"
+  # debugf"[getWorkspaceSymbolsLspWorkspaceSymbolsDataSource] {t.elapsed.ms}ms"
 
   items.setLen(index)
   self.onItemsChanged.invoke items
@@ -3331,9 +3331,9 @@ proc lspWorkspaceSymbolsDataSourceSetQuery(self: DataSource, query: string) =
   self.query = query
 
   if self.delayedTask.isNil:
-    asyncSpawn self.getWorkspaceSymbols()
+    asyncSpawn self.getWorkspaceSymbolsLspWorkspaceSymbolsDataSource()
     self.delayedTask = startDelayedPaused(500, repeat=false):
-      asyncSpawn self.getWorkspaceSymbols()
+      asyncSpawn self.getWorkspaceSymbolsLspWorkspaceSymbolsDataSource()
   else:
     if self.languageServer.refetchWorkspaceSymbolsOnQueryChange:
       self.delayedTask.reschedule()
