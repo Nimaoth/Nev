@@ -202,13 +202,14 @@ proc collapseTabs*(self: TabMapSnapshot, chunks: var InputChunkIterator, column:
   result = (collapsedBytes + max(column - expandedBytes, 0), expandedChars, 0)
 
 func toTabPoint*(self: TabMapSnapshot, point: InputPoint): TabPoint =
-  if self.buffer.visibleText.summary.tabs == 0:
-    return point.TabPoint
-  else:
-    var chunks = self.input.iter(nil)
-    chunks.seekLine(point.row.int)
-    let expanded = self.expandTabs(chunks, point.column.int)
-    return tabPoint(point.row.int, expanded)
+  {.cast(noSideEffect).}:
+    if self.buffer.visibleText.summary.tabs == 0:
+      return point.TabPoint
+    else:
+      var chunks = self.input.iter(nil)
+      chunks.seekLine(point.row.int)
+      let expanded = self.expandTabs(chunks, point.column.int)
+      return tabPoint(point.row.int, expanded)
 
 proc toTabPoint*(self: TabMapSnapshot, point: Point, bias: Bias = Bias.Right): TabPoint =
   self.toTabPoint(self.input.toOutputPoint(point, bias))

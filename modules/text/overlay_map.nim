@@ -168,6 +168,10 @@ type
     localOffset: int
     atEnd*: bool
 
+    checkedLine: Option[uint32]
+    identityLine: bool
+    identityLineOverlayRow: uint32
+
     subIterKind: OverlayMapChunkKind
     stringOffset: int
     stringRuneOffset: int
@@ -921,6 +925,22 @@ template logIter(msg: untyped) =
     if ({.gcsafe.}: debugOverlayMapNext):
       debugEcho msg
 
+proc checkIdentityLine(self: var OverlayChunkIterator, point: Point) =
+  prof("OverlayMap.checkIdentityLine")
+  self.checkedLine = point.row.some
+  self.identityLine = false
+  if self.overlayMapCursor.item.getSome(item) and item.kind == OverlayMapChunkKind.Identity:
+    let lineStart = inputPoint(point.row, 0)
+    # Include the line end: an insertion at EOL must still take the overlay path.
+    if self.overlayMapCursor.startPos.src <= lineStart and (
+        self.overlayMapCursor.endPos.src.row > point.row or
+        (self.overlayMapCursor.endPos.src == self.overlayMap.buffer.visibleText.endPoint and
+          self.overlayMapCursor.nextItem().isNone)):
+      let mappedStart = self.overlayMapCursor.toOverlayPoint(lineStart)
+      if mappedStart.column == 0:
+        self.identityLine = true
+        self.identityLineOverlayRow = mappedStart.row
+
 proc setupSubIterAfterSeek(self: var OverlayChunkIterator) =
   # Bias to right if at end of non-identity chunk
   logIter &"setupSubIterAfterSeek: {self.overlayPoint} == {self.overlayMapCursor.endPos.dst}"
@@ -952,6 +972,7 @@ proc seek*(self: var OverlayChunkIterator, point: Point) =
   self.styledChunk = InputChunk.none
   self.overlayChunk = OverlayChunk.none
   self.setupSubIterAfterSeek()
+  self.checkIdentityLine(point)
 
 proc seek*(self: var OverlayChunkIterator, overlayPoint: OverlayPoint) =
   logIter &"OverlayChunkIterator.seek {self.overlayPoint} -> {overlayPoint}"
@@ -966,6 +987,7 @@ proc seek*(self: var OverlayChunkIterator, overlayPoint: OverlayPoint) =
   self.styledChunk = InputChunk.none
   self.overlayChunk = OverlayChunk.none
   self.setupSubIterAfterSeek()
+  self.checkIdentityLine(point)
 
 proc seekLine*(self: var OverlayChunkIterator, line: int) =
   self.seek(overlayPoint(line))
@@ -986,17 +1008,26 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
 
     if self.styledChunk.getSome(currentChunk):
       let currentPoint = currentChunk.point + Point(column: self.localOffset.uint32)
-      if not self.overlayMapCursor.didSeek() or currentPoint > self.overlayMapCursor.endPos.src:
-        logIter &"   self.overlayMapCursor.seekForward({currentPoint})"
-        discard self.overlayMapCursor.seekForward(currentPoint.OverlayMapChunkSrc, Bias.Left, ())
+      if not self.identityLine or self.checkedLine != currentPoint.row.some:
+        if not self.overlayMapCursor.didSeek() or currentPoint > self.overlayMapCursor.endPos.src:
+          logIter &"   self.overlayMapCursor.seekForward({currentPoint})"
+          discard self.overlayMapCursor.seekForward(currentPoint.OverlayMapChunkSrc, Bias.Left, ())
 
-      if currentPoint == self.overlayMapCursor.endPos.src and self.overlayMapCursor.startPos.src != self.overlayMapCursor.endPos.src:
-        self.overlayMapCursor.next()
-        logIter &"  overlayMapCursor.next() -> {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}"
+        if currentPoint == self.overlayMapCursor.endPos.src and self.overlayMapCursor.startPos.src != self.overlayMapCursor.endPos.src:
+          self.overlayMapCursor.next()
+          logIter &"  overlayMapCursor.next() -> {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}"
 
-      logIter &"  OverlayChunkIterator.next1 {self.overlayPoint} -> {self.overlayMapCursor.toOverlayPoint(currentPoint)}"
-      self.overlayPoint = self.overlayMapCursor.toOverlayPoint(currentPoint)
-      logIter &"  overlaypoint: {self.overlayPoint}"
+        logIter &"  OverlayChunkIterator.next1 {self.overlayPoint} -> {self.overlayMapCursor.toOverlayPoint(currentPoint)}"
+        self.overlayPoint = self.overlayMapCursor.toOverlayPoint(currentPoint)
+        logIter &"  overlaypoint: {self.overlayPoint}"
+        if self.checkedLine != currentPoint.row.some:
+          self.checkIdentityLine(currentPoint)
+
+      if self.identityLine:
+        self.overlayPoint = overlayPoint(self.identityLineOverlayRow, currentPoint.column)
+        self.localOffset = currentChunk.len + 1
+        self.overlayChunk = OverlayChunk(styledChunk: currentChunk, overlayPoint: self.overlayPoint).some
+        return self.overlayChunk
 
     elif self.overlayMapCursor.atEnd:
       self.atEnd = true

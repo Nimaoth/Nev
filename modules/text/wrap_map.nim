@@ -120,6 +120,10 @@ type
     atEnd*: bool
     callCount: int
 
+    checkedLine: Option[uint32]
+    identityLine: bool
+    identityLineWrapRow: uint32
+
 func buffer*(self: WrapMapSnapshot): lent BufferSnapshot = self.input.buffer
 
 func clone*(self: WrapMapSnapshot): WrapMapSnapshot =
@@ -628,6 +632,20 @@ proc update*(self: WrapMap, input: sink InputMapSnapshot, force: bool = false) =
 
   asyncSpawn self.updateAsync()
 
+proc checkIdentityLine(self: var WrapChunkIterator, point: InputPoint) =
+  prof("WrapMap.checkIdentityLine")
+  self.checkedLine = point.row.some
+  self.identityLine = false
+  if self.wrapMapCursor.item.getSome(item) and item.src != inputPoint():
+    let lineStart = inputPoint(point.row, 0)
+    if self.wrapMapCursor.startPos.src <= lineStart and (
+        self.wrapMapCursor.endPos.src.row > point.row or
+        self.wrapMapCursor.nextItem().isNone):
+      let mappedStart = self.wrapMapCursor.toWrapPoint(lineStart)
+      if mappedStart.column == 0:
+        self.identityLine = true
+        self.identityLineWrapRow = mappedStart.row
+
 proc seek*(self: var WrapChunkIterator, wrapPoint: WrapPoint) =
   assert wrapPoint >= self.wrapPoint
   discard self.wrapMapCursor.seekForward(wrapPoint.WrapMapChunkDst, Bias.Right, ())
@@ -639,6 +657,7 @@ proc seek*(self: var WrapChunkIterator, wrapPoint: WrapPoint) =
   self.localOffset = 0
   self.inputChunk = InputChunk.none
   self.wrapChunk = WrapChunk.none
+  self.checkIdentityLine(inputPoint)
 
 proc seek*(self: var WrapChunkIterator, point: Point) =
   self.inputChunks.seek(point)
@@ -650,6 +669,7 @@ proc seek*(self: var WrapChunkIterator, point: Point) =
   self.localOffset = 0
   self.inputChunk = InputChunk.none
   self.wrapChunk = WrapChunk.none
+  self.checkIdentityLine(self.inputChunks.outputPoint)
 
 proc seekLine*(self: var WrapChunkIterator, line: int) =
   self.seek(wrapPoint(line))
@@ -671,9 +691,19 @@ proc next*(self: var WrapChunkIterator): Option[WrapChunk] =
   assert self.inputChunk.isSome
   let currentChunk = self.inputChunk.get
   let currentInputPoint = currentChunk.outputPoint + inputPoint(0, self.localOffset)
-  discard self.wrapMapCursor.seek(currentInputPoint.WrapMapChunkSrc, Bias.Right, ())
-  if self.wrapMapCursor.item.getSome(item) and item.src == inputPoint():
-    self.wrapMapCursor.next()
+  if not self.identityLine or self.checkedLine != currentInputPoint.row.some:
+    discard self.wrapMapCursor.seek(currentInputPoint.WrapMapChunkSrc, Bias.Right, ())
+    if self.wrapMapCursor.item.getSome(item) and item.src == inputPoint():
+      self.wrapMapCursor.next()
+
+    if self.checkedLine != currentInputPoint.row.some:
+      self.checkIdentityLine(currentInputPoint)
+
+  if self.identityLine:
+    self.wrapPoint = wrapPoint(self.identityLineWrapRow, currentInputPoint.column)
+    self.localOffset = currentChunk.len
+    self.wrapChunk = WrapChunk(inputChunk: currentChunk, wrapPoint: self.wrapPoint).some
+    return self.wrapChunk
 
   self.wrapPoint = self.wrapMapCursor.toWrapPoint(currentInputPoint)
 
