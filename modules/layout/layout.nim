@@ -511,7 +511,7 @@ when implModule:
 
     let activeView = self.layout.activeLeafView()
 
-    if self.mAllViews.len > 0 and self.mAllViews.last != activeView:
+    if activeView != nil and self.mAllViews.len > 0 and self.mAllViews.last != activeView:
       self.mAllViews.removeShift(activeView)
       self.mAllViews.add(activeView)
 
