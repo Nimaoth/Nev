@@ -58,7 +58,7 @@ var useSdlBackend = false
 var logToFile = false
 var logToConsole = true
 var disableLogging = false
-const version = "0.5.1"
+const version = "0.6.0-dev"
 
 const helpText = &"""
     nev {version}  [options] [file]
