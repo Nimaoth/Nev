@@ -17,14 +17,8 @@ logCategory "widget_builder"
 
 import app
 import app/theme_styles
-from nuigi import UiBuilder, UiColor, UiBackendType, rgba, fillX, fillY, fitY, fit, height,
-  backgroundColor, borderColor, borderWidth, padding, gap, text, textColor,
-  wrapText, node, layoutVertical, layoutHorizontal, layoutVerticalReverse,
-  layoutHorizontalReverse, fillBackground, styleIndex, textStyleIndex,
-  anchors, anchorsX, offsets, pivotY, finishAnchors, noHover, size,
-  pushId, popId, themeStyle, themeTextStyle, maskChildren, UiStyleIndex, UiTextStyleIndex
-from nuigi/widgets import TableColumn, tableLayout, tableColumnFit,
-  tableColumnFill
+import nuigi
+import nuigi/widgets
 
 proc toUiColorNui(c: chroma.Color): UiColor =
   rgba(c.r.float32, c.g.float32, c.b.float32, c.a.float32)
@@ -218,7 +212,7 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
       # NUI-GAP: old status bar separates sections with " | " via section()
       # and supports fg/bg theme overloads; new uses gap(8) and DefaultText.
       nui.layoutHorizontalReverse("nui-status-line"):
-        discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backendPadding(4).backendGap(8)
+        discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backendPadding(4).backendGap(8).cornerRadius(0)
         if commands.commandLineMode:
           discard nui.backgroundColor(nui.themeStyle(UiStyleIndexTabBarItemActive)[].fillColor)
         # Left side: status sections from config
@@ -284,13 +278,17 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
       statusBarHeight = nui.lastNode.size.y
       let h = nui.currentNode.size.y - statusBarHeight
       nui.layoutHorizontal("nui-main-row"):
-        discard nui.fillX().height(h).backendGap(0)
+        # The row owns the background and padding so the toolbar shares them
+        # with the main area. styleIndex first, it would reset padding/gap.
+        discard nui.fillX().height(h).styleIndex(UiStyleIndexWindowTitleBar)
+          .fillBackground().backendBorderWidth(0, 0).backendPadding(4)
+          .backendGap(4)
         if runtimeConfig.getUiToolbarEnabled():
           getServiceChecked(ToolbarService).renderNui(nui)
         # Main area – renders layout via NUI
         # layoutVertical already creates a node, so we use it directly for the container (no extra nui.node wrapper)
         nui.layoutVertical("nui-main"):
-          discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexWindowTitleBar).backendBorderWidth(0, 0).backendPadding(6).backendGap(0)
+          discard nui.fillX().fillY().backendGap(0)
           layout.renderNui(nui)
 
     # NUI-GAP: old popups render via OverlayFunction seq with FlushBorders panels

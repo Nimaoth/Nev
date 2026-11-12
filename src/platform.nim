@@ -46,7 +46,7 @@ type
     ## Root layout options for `viewPanel`. Padding and gap must be known before
     ## the header is built, so they can't be changed from the body.
     fitContentY*: bool          ## Root fits its content height instead of filling the parent
-    padding*: float32 = 0       ## Root padding (graphical backends only)
+    padding*: float32 = 1       ## Root padding (graphical backends only)
     gap*: float32 = 4           ## Gap between header and body children (graphical backends only)
     cacheSubtree*: bool = false
     cacheDirty*: bool = false
@@ -129,7 +129,7 @@ template viewPanel*(builder: var UiBuilder, key: string, active: bool,
           builder.layoutHorizontalReverse(viewPanelKey & "-header"):
             discard builder.fillX().fitY().fillBackground().styleIndex(
               if viewPanelActive: UiStyleIndexHeaderActive else: UiStyleIndexHeader)
-              .backendPadding(6).backendGap(4).cornerRadii(8, 8, 0, 0)
+              .backendPadding(6).backendGap(4).cornerRadii(7, 7, 0, 0)
             if builder.wasHovered(includeChildren = true):
               builder.layoutHorizontal(viewPanelKey & "-buttons"):
                 # Reserve horizontal space without letting hover actions resize the header.
