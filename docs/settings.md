@@ -169,6 +169,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `ui.toast.duration` | int | 8000 | How long toasts are displayed for, in milliseconds. |
 | `ui.toast.max` | int | 5 | Max number of toast to show at a time |
 | `ui.toast.style` | "minimal", "box" | "minimal" | Animate toast positions |
+| `ui.toolbar.enabled` | bool | true | Show the toolbar with icon buttons on the left side of the window. |
 | `ui.vsync` | bool | true | Enable vertical sync to prevent screen tearing. |
 | `ui.which-key-delay` | int | 250 | After how many milliseconds the which key window opens. |
 | `ui.which-key-height` | int | 6 | How many rows tall the window showing next possible inputs should be. |

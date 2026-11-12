@@ -37,6 +37,10 @@
     (setting max "int" 5
       "Max number of toast to show at a time"))
 
+  (group ToolbarSettings "ui.toolbar"
+    (setting enabled "bool" true
+      "Show the toolbar with icon buttons on the left side of the window."))
+
   (group UiSettings "ui"
     (setting theme "string" "app://themes/gruvbox-dark.json"
       "VFS path of the theme.")

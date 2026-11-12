@@ -1,3 +1,4 @@
+#use toolbar
 import misc/[timer]
 import app_options, service, platform
 from scripting_api import Backend

@@ -56,6 +56,12 @@ proc getUiToastMax*(s: ConfigStore, def = int.default): int =
 proc setUiToastMax*(s: ConfigStore, value: int) =
   s.set("ui.toast.max", value)
 
+# ToolbarSettings - ui.toolbar
+proc getUiToolbarEnabled*(s: ConfigStore, def = bool.default): bool =
+  s.get("ui.toolbar.enabled", def)
+proc setUiToolbarEnabled*(s: ConfigStore, value: bool) =
+  s.set("ui.toolbar.enabled", value)
+
 # UiSettings - ui
 proc getUiTheme*(s: ConfigStore, def = string.default): string =
   s.get("ui.theme", def)

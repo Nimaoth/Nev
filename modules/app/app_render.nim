@@ -7,7 +7,7 @@ import core_settings
 import popup, view
 import status_line
 from scripting_api import nil
-import vcs, service
+import vcs, service, toolbar
 import nuigi/debug/profiler
 
 {.push gcsafe.}
@@ -283,11 +283,15 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
                 commands.commandLineEditor.renderNui(nui)
       statusBarHeight = nui.lastNode.size.y
       let h = nui.currentNode.size.y - statusBarHeight
-      # Main area – renders layout via NUI
-      # layoutVertical already creates a node, so we use it directly for the container (no extra nui.node wrapper)
-      nui.layoutVertical("nui-main"):
-        discard nui.fillX().height(h).fillBackground().styleIndex(UiStyleIndexWindowTitleBar).backendBorderWidth(0, 0).backendPadding(6).backendGap(0)
-        layout.renderNui(nui)
+      nui.layoutHorizontal("nui-main-row"):
+        discard nui.fillX().height(h).backendGap(0)
+        if runtimeConfig.getUiToolbarEnabled():
+          getServiceChecked(ToolbarService).renderNui(nui)
+        # Main area – renders layout via NUI
+        # layoutVertical already creates a node, so we use it directly for the container (no extra nui.node wrapper)
+        nui.layoutVertical("nui-main"):
+          discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexWindowTitleBar).backendBorderWidth(0, 0).backendPadding(6).backendGap(0)
+          layout.renderNui(nui)
 
     # NUI-GAP: old popups render via OverlayFunction seq with FlushBorders panels
     # flushed per popup; new renders popup.render(nui) directly with no

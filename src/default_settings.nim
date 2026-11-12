@@ -13,6 +13,7 @@ proc fillDefaultSettings*(s: ConfigStore) =
   s.set("ui.toast.duration", 8000)
   s.set("ui.toast.animation", true)
   s.set("ui.toast.max", 5)
+  s.set("ui.toolbar.enabled", true)
   s.set("ui.theme", "app://themes/gruvbox-dark.json")
   s.set("ui.font-family", "app://fonts/DejaVuSansMono.ttf")
   s.set("ui.font-family-bold", "app://fonts/DejaVuSansMono-Bold.ttf")
