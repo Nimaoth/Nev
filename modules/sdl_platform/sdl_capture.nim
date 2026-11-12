@@ -6,6 +6,7 @@
 ## renamed so readers never see partially written files.
 
 import std/[locks, os, typedthreads]
+import misc/atomic_file
 import nuigi/backend/sdl3/sdl3
 
 {.push gcsafe.}
@@ -38,7 +39,7 @@ proc writeFileAtomic(path, content: string): string =
     createDir(path.parentDir)
     let tempPath = path & ".tmp"
     writeFile(tempPath, content)
-    moveFile(tempPath, path)
+    moveFileAtomic(tempPath, path)
     ""
   except CatchableError as e:
     "Failed to write '" & path & "': " & e.msg
@@ -54,7 +55,7 @@ proc processJob(job: CaptureJob): seq[string] =
       createDir(job.path.parentDir)
       let tempPath = job.path & ".tmp"
       if savePNG(converted, tempPath.cstring):
-        moveFile(tempPath, job.path)
+        moveFileAtomic(tempPath, job.path)
       else:
         result.add "Failed to save '" & job.path & "': " & $getError()
     except CatchableError as e:

@@ -9,7 +9,7 @@ proc newTerminalPlatform*(): Platform {.rtl, raises: [].}
 when implModule and enableTerminal:
   import std/[os, parseutils, strutils, syncio, typedthreads, unicode]
   import vmath
-  import misc/[custom_logger, timer]
+  import misc/[atomic_file, custom_logger, timer]
   from misc/render_command import FontInfo, UINodeFlags
   import app_options, misc/input_api
   import nuigi
@@ -228,7 +228,7 @@ when implModule and enableTerminal:
     let tempPath = path & ".tmp"
     try:
       writeFile(tempPath, content)
-      moveFile(tempPath, path)
+      moveFileAtomic(tempPath, path)
     except CatchableError as error:
       log lvlError, "Failed to write terminal capture '", path, "': ", error.msg
 
