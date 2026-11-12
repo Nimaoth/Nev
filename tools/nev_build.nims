@@ -423,6 +423,9 @@ for kind, key, val in optParser.getopt():
   nuigi-deps-static  Build and stage Nuigi's static SDL3 and FreeType archives.
   update-nuigi       Pin Nuigi to the local checkout's HEAD in nev.nimble and atlas.lock.
   build-static      Build nev-static using those archives, without HarfBuzz/FriBidi.
+  build-dynamic     Like build-static, but load modules as DLLs from native_plugins.
+  modules           Rebuild changed modules (DLLs) and regenerate module imports.
+  modules-f         Force a rebuild of all modules.
   build-perf        Build nev-perf with .perfprof performance recording enabled.
   wasmtime          Build Wasmtime and copy its DLL into the repository root (Windows).
   deps              Clone/check out dependencies at the commits in atlas.lock.

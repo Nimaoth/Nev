@@ -33,6 +33,28 @@ repository root on Windows), run `nim .\tools\nev_build.nims wasmtime`. To build
 the debug Wasmtime version, run
 `nim -d:nimWasmtimeBuildDebug .\tools\nev_build.nims wasmtime`.
 
+### Development builds with dynamically loaded modules
+
+For development, build the editor once with modules loaded as DLLs:
+
+```powershell
+nim .\tools\nev_build.nims build-dynamic
+```
+
+This uses the same static Nuigi dependencies as `build-static` (run
+`nuigi-deps-static` first) but compiles with `-d:useDynlib`, so `nev.exe` loads
+the modules from `native_plugins` instead of compiling them in. Then rebuild
+only the modules after changing them:
+
+```powershell
+nim .\tools\nev_build.nims modules
+```
+
+`modules` skips unchanged modules and regenerates `src/module_imports.nim`
+(needed after adding a module or changing its `#use` dependencies). Use
+`modules-f` to force a rebuild of all modules. Re-run `build-dynamic` only when
+code compiled into the executable changes.
+
 ### Restoring locked dependencies without Atlas
 
 Run `nim .\tools\nev_build.nims deps` from the repository root to clone missing

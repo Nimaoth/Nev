@@ -1,6 +1,12 @@
 # Changelog
 
 ## [0.6.0](https://github.com/Nimaoth/Nev/compare/v0.5.1...v0.6.0) (2026-06-04)
+- complete UI rework
+  - better mouse support
+  - file tree
+  - toolbar
+  - usable scrollbars
+  - and much more
 - Added memory profiler (not in release builds)
 - Popups can now be popped and put into the main layout
 - New Git UI with some basic git functionality
