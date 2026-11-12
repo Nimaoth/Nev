@@ -85,6 +85,20 @@ var nuigiPinDir = r"C:\dev\nuigi"
 var depsDir = "deps".absolutePath
 var lockFile = "atlas.lock".absolutePath
 
+type LockedDependency = object
+  name, path, url, commit: string
+
+proc dependencyError(message: string) =
+  echo "[ERROR] ", message
+  quit 1
+
+proc gitOutput(path, args: string): string =
+  let command = "git --no-pager -C " & path.quoteShell & " " & args
+  let (output, code) = gorgeEx(command)
+  if code != 0:
+    dependencyError(command & "\n" & output)
+  output.strip
+
 proc replaceCommit(text, prefix, suffix, commit, description: string): string =
   let start = text.find(prefix)
   if start < 0 or text.find(prefix, start + prefix.len) >= 0:
