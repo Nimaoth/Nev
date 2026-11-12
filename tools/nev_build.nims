@@ -76,6 +76,49 @@ proc copySharedFilesTo(dir: string) =
 var isCINimbleCached = "0"
 var cmds = newSeq[string]()
 var nuigiDir = getEnv("NUIGI_DIR", "deps" / "nuigi").absolutePath
+var nuigiPinDir = r"C:\dev\nuigi"
+proc replaceCommit(text, prefix, suffix, commit, description: string): string =
+  let start = text.find(prefix)
+  if start < 0 or text.find(prefix, start + prefix.len) >= 0:
+    dependencyError("Expected exactly one " & description)
+  let hashStart = start + prefix.len
+  let hashEnd = text.find(suffix, hashStart)
+  if hashEnd < 0:
+    dependencyError("Missing terminator for " & description)
+  let oldHash = text[hashStart ..< hashEnd]
+  if oldHash.len == 0 or oldHash.toLowerAscii.strip(chars = {'0'..'9', 'a'..'f'}).len != 0:
+    dependencyError("Invalid commit hash for " & description)
+  text[0 ..< hashStart] & commit & text[hashEnd .. ^1]
+
+proc updateNuigiPin() =
+  let commit = gitOutput(nuigiPinDir, "rev-parse --verify HEAD")
+  if commit.len != 40 or commit.toLowerAscii.strip(chars = {'0'..'9', 'a'..'f'}).len != 0:
+    dependencyError("Expected a full Git commit hash from " & nuigiPinDir)
+  try:
+    let nimbleFile = "nev.nimble"
+    let nimble = readFile(nimbleFile)
+    let lock = readFile(lockFile)
+    let urlPrefix = "https://github.com/Nimaoth/nuigi#"
+    let newNimble = replaceCommit(nimble, urlPrefix, "\"", commit, "nuigi requirement in " & nimbleFile)
+    var newLock = replaceCommit(lock, urlPrefix, "\\\"", commit, "nuigi requirement in " & lockFile)
+    let entryPrefix = "\"nuigi.Nimaoth.github.com\": {"
+    let entryStart = newLock.find(entryPrefix)
+    if entryStart < 0 or newLock.find(entryPrefix, entryStart + entryPrefix.len) >= 0:
+      dependencyError("Expected exactly one nuigi entry in " & lockFile)
+    let entryEnd = newLock.find('}', entryStart)
+    if entryEnd < 0:
+      dependencyError("Missing terminator for nuigi entry in " & lockFile)
+    let entry = newLock[entryStart .. entryEnd]
+    let updatedEntry = replaceCommit(entry, "\"commit\": \"", "\"", commit, "nuigi commit in " & lockFile)
+    newLock = newLock[0 ..< entryStart] & updatedEntry & newLock[entryEnd + 1 .. ^1]
+    if newNimble != nimble:
+      writeFile(nimbleFile, newNimble)
+    if newLock != lock:
+      writeFile(lockFile, newLock)
+    echo "Nuigi pinned to ", commit, " from ", nuigiPinDir
+  except CatchableError as e:
+    dependencyError("Failed to update nuigi pin: " & e.msg)
+
 
 const staticLibDir = "nimcache" / "nuigi-static" / "libs"
 const staticLibraries = when defined(windows):
@@ -179,6 +222,7 @@ for kind, key, val in optParser.getopt():
     of "help", "h":
       echo """Nev build commands (run from the repository root):
   nuigi-deps-static  Build and stage Nuigi's static SDL3 and FreeType archives.
+  update-nuigi       Pin Nuigi to the local checkout's HEAD in nev.nimble and atlas.lock.
   build-static      Build nev-static using those archives, without HarfBuzz/FriBidi.
   build-perf        Build nev-perf with .perfprof performance recording enabled.
   deps              Clone/check out dependencies at the commits in atlas.lock.
@@ -194,6 +238,9 @@ while i < cmds.len:
   defer:
     inc i
   case cmds[i]
+  of "update-nuigi":
+    updateNuigiPin()
+
   of "ci-release":
     when defined(windows):
       cmds.add @["markdown-parser", "release-win", "package-win"]
@@ -258,7 +305,6 @@ while i < cmds.len:
     buildStatic()
 
   of "build-perf":
-    buildNuigiStaticDependencies()
     let output = when defined(windows): "nev-perf.exe" else: "nev-perf"
     buildStatic(output, "-d:perfProfiler -d:nuigiPerfProfiler", "nimcache/nev-perf")
 
