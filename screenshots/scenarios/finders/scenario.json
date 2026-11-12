@@ -1,0 +1,21 @@
+{
+  "description": "Find workspace files, open documents and matching lines",
+  "source-media": "finders.gif",
+  "size": "1280x720",
+  "file": "README.md",
+  "steps": [
+    ["open", "station.nim"],
+    {"start-recording": "finders"},
+    "choose-file",
+    {"keys": "oper", "interval": 150},
+    {"wait": 800},
+    {"keys": "<ESCAPE>"},
+    "choose-open-document",
+    {"wait": 800},
+    {"keys": "<ESCAPE>"},
+    ".fuzzy-search-lines",
+    {"keys": "sensor", "interval": 150},
+    {"wait": 1000},
+    {"stop-recording": true}
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "description": "Navigate settings stores and toggle merged versus raw settings",
+  "source-media": "settings_browser2.gif",
+  "size": "1280x720",
+  "file": "notes.txt",
+  "settings": {"text.wrap-lines": false},
+  "steps": [
+    {"start-recording": "settings_browser2"},
+    "browse-settings",
+    {"keys": "text.wrap", "interval": 120},
+    {"wait": 800},
+    {"keys": "<C-h>"},
+    {"wait": 800},
+    {"keys": "<C-g>"},
+    {"wait": 800},
+    {"keys": "<C-g><C-f>", "interval": 300},
+    {"wait": 800},
+    {"stop-recording": true}
+  ]
+}

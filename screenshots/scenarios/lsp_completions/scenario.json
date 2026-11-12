@@ -1,0 +1,14 @@
+{
+  "description": "clangd member completions for an example weather reading",
+  "source-media": "lsp_completions.png",
+  "size": "1280x720",
+  "file": "weather.c",
+  "steps": [
+    {"wait": 1800},
+    {"keys": "gg12j0"},
+    [".insert-text", "    reading."],
+    ".get-completions",
+    {"wait": 1200},
+    {"screenshot": "lsp_completions"}
+  ]
+}

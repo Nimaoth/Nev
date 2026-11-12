@@ -1,0 +1,20 @@
+{
+  "description": "Inline diff of a modified example source file against its Git baseline",
+  "source-media": "git_diff.png",
+  "size": "1280x720",
+  "file": "station.nim",
+  "setup": [
+    ["git", "init", "--quiet", "--initial-branch=main"],
+    ["git", "add", "."],
+    ["git", "-c", "user.name=Documentation", "-c", "user.email=docs@example.invalid", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Initial example station\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"]
+  ],
+  "steps": [
+    {"keys": "gg2jcc  reading + offset + 0.5<ESCAPE>", "interval": 70},
+    {"keys": "Go# Recalibrated after the autumn inspection.<ESCAPE>", "interval": 50},
+    "write-file",
+    {"wait": 500},
+    [".start-diff", "", true],
+    {"wait-idle": 600},
+    {"screenshot": "git_diff"}
+  ]
+}

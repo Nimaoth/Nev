@@ -19,7 +19,7 @@ when implModule:
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import service, document_editor, document, text_component, text_editor_component, language_component
   import nimsumtree/rope
-  import ui/node
+  from nuigi import UiBuilder
 
   export previewer
 
@@ -86,9 +86,9 @@ when implModule:
       document.getLanguageComponent().get.setLanguageId(language.get)
     res.tempDocument = document
     res.getPreviewTextImpl = getPreviewTextImpl
-    res.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
+    res.renderNuiImpl = proc(self: Previewer, nui: var UiBuilder) =
       let self = self.DataPreviewer
       if self.editor.isNotNil:
-        result.add self.editor.render(builder)
+        self.editor.renderNui(nui)
 
     return res

@@ -1,0 +1,17 @@
+{
+  "description": "Compare raw Markdown tables with visually aligned columns",
+  "source-media": "markdown-table-alignment.png",
+  "size": "1280x720",
+  "file": "sensors.md",
+  "settings": {"markdown.enabled": true, "markdown.languages": ["markdown"]},
+  "steps": [
+    "split-view",
+    ["wrap-layout", {"kind": "horizontal", "temporary": true, "max-children": 2}],
+    "focus-view-left",
+    [".set-config", "markdown.enabled", false],
+    "focus-view-right",
+    {"keys": "G"},
+    {"wait-idle": 600},
+    {"screenshot": "markdown-table-alignment"}
+  ]
+}

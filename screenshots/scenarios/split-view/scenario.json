@@ -1,0 +1,17 @@
+{
+  "description": "Two files side by side, cursor movement recording",
+  "size": "1280x720",
+  "file": "README.md",
+  "steps": [
+    ["open", "src/shapes.nim"],
+    // wrap-layout pairs the active view with the previously shown one
+    ["wrap-layout", {"kind": "horizontal", "temporary": true, "max-children": 2}],
+    {"wait-idle": 500},
+    {"screenshot": "split"},
+    "focus-view-left",
+    {"start-recording": "move-cursor"},
+    {"keys": "jjjjjjjjwww", "interval": 120},
+    {"wait": 300},
+    {"stop-recording": true},
+  ],
+}

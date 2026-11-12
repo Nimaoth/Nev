@@ -20,7 +20,7 @@ when implModule:
   import platform
   import previewer, finder
   import workspace, vfs, vfs_service
-  import ui/node
+  from nuigi import UiBuilder
   import nimsumtree/[rope, buffer]
   import text_component, text_editor_component, language_server_component, decoration_component, inlay_hint_component, treesitter_component
   import hover_component, move_component, config_component
@@ -121,11 +121,11 @@ when implModule:
       if getServices().isNil: return Debugger.none
       return getServices().getService(Debugger)
 
-  proc renderView(self: StacktraceView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
-  proc renderView(self: ThreadsView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
-  proc renderView(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
-  proc renderView(self: OutputView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
-  proc renderView(self: ToolbarView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction]
+  proc renderViewNui(self: StacktraceView, nui: var UiBuilder, debugger: Debugger)
+  proc renderViewNui(self: ThreadsView, nui: var UiBuilder, debugger: Debugger)
+  proc renderViewNui(self: VariablesView, nui: var UiBuilder, debugger: Debugger)
+  proc renderViewNui(self: OutputView, nui: var UiBuilder, debugger: Debugger)
+  proc renderViewNui(self: ToolbarView, nui: var UiBuilder, debugger: Debugger)
   proc getEventHandlers(view: ThreadsView, inject: Table[string, EventHandler]): seq[EventHandler]
   proc getEventHandlers(view: StacktraceView, inject: Table[string, EventHandler]): seq[EventHandler]
   proc getEventHandlers(view: VariablesView, inject: Table[string, EventHandler]): seq[EventHandler]
@@ -142,10 +142,10 @@ when implModule:
     view.saveStateImpl = proc(self: View): JsonNode = saveState(self.T)
     view.getEventHandlersImpl = proc(self: View, inject: Table[string, EventHandler]): seq[EventHandler] = getEventHandlers(self.T, inject)
 
-    proc renderDebuggerView(view: T, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].} =
-      return view.renderView(builder, debugger)
+    proc renderDebuggerViewNui(view: T, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
+      view.renderViewNui(nui, debugger)
 
-    view.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = renderDebuggerView(self.T, builder)
+    view.renderNuiImpl = proc(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} = renderDebuggerViewNui(self.T, nui, debugger)
     return view
 
   var gCurrentVariablesView: VariablesView = nil
@@ -183,6 +183,7 @@ when implModule:
       self.stackTraces.del(dummyThreadId)
       self.scopes.del((dummyThreadId, dummyFrameId))
       self.variables.del((dummyThreadId, dummyFrameId, watchScopeVarRef))
+      inc self.varCacheVersion
       return
 
     if self.threads.len == 0:
@@ -206,6 +207,7 @@ when implModule:
     for expr in self.watchExpressions:
       variables.variables.add Variable(name: expr, value: "")
     self.variables[(dummyThreadId, dummyFrameId, watchScopeVarRef)] = variables
+    inc self.varCacheVersion
 
   proc updateBreakpointsForFile(self: Debugger, path: string) =
     let doc = self.editors.getDocumentByPath(path)
@@ -261,14 +263,25 @@ when implModule:
     else:
       self.updateBreakpointsForFile(editor.document.filename)
 
-  proc findVariable(self: VariablesView, filter: string) {.async.}
-  proc refilterVariables(self: VariablesView, debugger: Debugger) =
-    inc self.filterVersion
-    self.filteredVariables.clear()
-    self.filteredCursors.setLen(0)
-    if self.variablesFilter.len > 0:
-      asyncSpawn self.findVariable(self.variablesFilter)
-    debugger.platform.requestRender()
+  proc requestVariableChildren*(self: VariablesView, debugger: Debugger,
+      ids: (ThreadId, FrameId), varRef: VariablesReference) =
+    ## Guarded lazy fetch for visible uncached tree rows (file_explorer
+    ## cache-miss pattern: report 0 children this frame, mark dirty on arrival).
+    let key = ids & varRef
+    if key in self.pendingVariableFetches:
+      return
+    self.pendingVariableFetches.incl(key)
+    proc fetchVariableChildren() {.async: (raises: []).} =
+      try:
+        await debugger.updateVariables(varRef, 0)
+      except:
+        discard
+      try:
+        self.pendingVariableFetches.excl(key)
+        self.markDirty()
+      except:
+        discard
+    asyncSpawn fetchVariableChildren()
 
   proc createVariablesView*(debugger: Debugger): VariablesView =
     let self = createDebuggerView[VariablesView](debugger)
@@ -410,34 +423,9 @@ when implModule:
   proc getThreads*(self: Debugger): lent seq[ThreadInfo] =
     return self.threads
 
-  proc getStackTrace*(self: Debugger, threadId: ThreadId): Option[StackTraceResponse] =
-    if self.stackTraces.contains(threadId):
-      return self.stackTraces[threadId].some
-    return StackTraceResponse.none
-
-  proc isCollapsed*(self: VariablesView, ids: (ThreadId, FrameId, VariablesReference)): bool =
-    ids in self.collapsedVariables
-
-  proc deleteLastVariableFilterChar(self: VariablesView) =
-    if self.variablesFilter.len > 0:
-      self.variablesFilter.setLen(self.variablesFilter.len - 1)
-      self.refilterVariables(getDebugger().get)
-
-  proc clearVariableFilter(self: VariablesView) =
-    if self.variablesFilter.len > 0:
-      self.variablesFilter.setLen(0)
-      self.refilterVariables(getDebugger().get)
-
-  proc isSelected*(self: VariablesView, r: VariablesReference, index: int): bool =
-    return self.variablesCursor.path.len > 0 and
-      self.variablesCursor.path[self.variablesCursor.path.high] == (index, r)
-
-  proc isScopeSelected*(self: VariablesView, index: int): bool =
-    return self.variablesCursor.path.len == 0 and self.variablesCursor.scope == index
-
-  proc selectedVariable*(self: VariablesView): Option[tuple[index: int, varRef: VariablesReference]] =
-    if self.variablesCursor.path.len > 0:
-      return self.variablesCursor.path[self.variablesCursor.path.high].some
+  proc getStackTrace*(self: Debugger, threadId: ThreadId): Option[ptr StackTraceResponse] =
+    self.stackTraces.withValue(threadId, val):
+      return val.some
 
   proc currentStackTrace*(self: Debugger): Option[ptr StackTraceResponse] =
     if self.currentThread().getSome(t):
@@ -480,7 +468,7 @@ when implModule:
       self.readOnlyEditors.incl(editor)
 
       if editor.getDecorationComponent().getSome(decos):
-        decos.addCustomHighlight(debuggerCurrentLineId, point(location.row, 0)...point(location.row, uint32.high), "editorError.foreground", color(1, 1, 1, 0.3))
+        decos.addCustomHighlight(debuggerCurrentLineId, point(location.row, 0)...point(location.row, uint32.high), "error-text", color(1, 1, 1, 0.3))
       if editor.getInlayHintComponent().getSome(inlayHints):
         inlayHints.updateInlayHints(now = false)
       self.lastEditor = editor.some
@@ -506,87 +494,6 @@ when implModule:
 
       result.path[result.path.high].index = index.clamp(0, self.variables[ids & varRef].variables.high)
       return
-
-  proc lastChild*(self: VariablesView, debugger: Debugger, cursor: VariableCursor): VariableCursor =
-    let scopes = debugger.currentScopes().getOr:
-      return VariableCursor()
-
-    let ids = debugger.currentVariablesContext().getOr:
-      result = VariableCursor()
-      return
-
-    result = cursor
-    if result.path.len == 0 and result.scope in 0..scopes[].scopes.high:
-      let scope = scopes[].scopes[result.scope]
-
-      if self.isCollapsed(ids & scope.variablesReference):
-        return
-
-      if not debugger.variables.contains(ids & scope.variablesReference):
-        return
-
-      let variables {.cursor.} = debugger.variables[ids & scope.variablesReference]
-      if variables.variables.len == 0:
-        return
-
-      result.path.add (variables.variables.high, scope.variablesReference)
-
-    elif result.path.len == 0 and result.scope == -1:
-      if not debugger.variables.contains(ids & self.evaluation.variablesReference):
-        return
-
-      let variables {.cursor.} = debugger.variables[ids & self.evaluation.variablesReference]
-      if variables.variables.len == 0:
-        return
-
-      result.path.add (variables.variables.high, self.evaluation.variablesReference)
-
-    var maxIter = 1000
-    while result.path.len > 0 and maxIter > 0:
-      let (index, r) = result.path[result.path.high]
-      let variables {.cursor.} = debugger.variables[ids & r]
-      result.path[result.path.high].index =
-        result.path[result.path.high].index.clamp(0, variables.variables.high)
-      if variables.variables.len == 0:
-        return
-      let childRef = variables.variables[index.clamp(0, variables.variables.high)].variablesReference
-      if self.isCollapsed(ids & childRef):
-        return
-      if not debugger.variables.contains(ids & childRef) or debugger.variables[ids & childRef].variables.len == 0:
-        return
-
-      result.path.add (debugger.variables[ids & childRef].variables.high, childRef)
-      dec maxIter
-
-  proc selectFirstVariable*(self: VariablesView) =
-    let debugger = getDebugger().getOr:
-      return
-    if self.variablesCursor.scope == -1:
-      # Evaluation
-      self.variablesCursor.path.setLen(0)
-    else:
-      # Scopes
-      self.variablesCursor = VariableCursor()
-    debugger.platform.requestRender()
-
-  proc selectLastVariable*(self: VariablesView) =
-    let debugger = getDebugger().getOr:
-      return
-    let scopes = debugger.currentScopes().getOr:
-      return
-
-    if self.variablesCursor.scope == -1:
-      # Evaluation
-      self.variablesCursor = self.lastChild(debugger, VariableCursor(scope: -1))
-    else:
-      # Scopes
-      if scopes[].scopes.len == 0 or debugger.variables.len == 0:
-        self.variablesCursor = VariableCursor()
-        debugger.platform.requestRender()
-        return
-
-      self.variablesCursor = self.lastChild(debugger, VariableCursor(scope: scopes[].scopes.high))
-    debugger.platform.requestRender()
 
   proc prevThread*(self: Debugger) =
     if self.threads.len == 0:
@@ -656,391 +563,44 @@ when implModule:
       asyncSpawn self.updateScopes(t.id, self.currentFrameIndex, force=false)
     self.platform.requestRender()
 
+  proc selectThread*(self: Debugger, index: int) =
+    ## Click-to-select equivalent of prevThread/nextThread for the NUI rows.
+    if index < 0 or index >= self.threads.len:
+      return
+
+    self.currentThreadIndex = index
+    self.currentFrameIndex = 0
+
+    if self.currentThread().getSome(t) and not self.stackTraces.contains(t.id):
+      asyncSpawn self.updateStackTrace(t.id.some)
+    self.platform.requestRender()
+
+  proc selectStackFrame*(self: Debugger, index: int) =
+    ## Click-to-select equivalent of prevStackFrame/nextStackFrame for the NUI rows.
+    let thread = self.currentThread().getOr:
+      return
+
+    if not self.stackTraces.contains(thread.id):
+      return
+
+    let stack {.cursor.} = self.stackTraces[thread.id]
+    if index < 0 or index > stack.stackFrames.high:
+      return
+
+    self.currentFrameIndex = index
+
+    for view in self.variableViews:
+      view.variablesCursor = VariableCursor()
+
+    if self.currentThread().getSome(t):
+      asyncSpawn self.updateScopes(t.id, self.currentFrameIndex, force=false)
+    self.platform.requestRender()
+
   proc openFileForCurrentFrame*(self: Debugger, slot: string = "") =
     if self.currentStackFrame().getSome(frame) and
         frame[].source.isSome and
         frame[].source.get.path.getSome(path):
       asyncSpawn self.tryOpenFileInWorkspace(path, point(frame[].line - 1, frame[].column - 1), slot)
-
-  proc prevVariable*(self: VariablesView, skipChildren: bool = false) =
-    let debugger = getDebugger().getOr:
-      return
-    let scopes = debugger.currentScopes().getOr:
-      return
-
-    if self.filteredCursors.len > 0:
-      let i = self.filteredCursors.find(self.variablesCursor)
-      if i != -1:
-        let i2 = (i + self.filteredCursors.len - 1) mod self.filteredCursors.len
-        self.variablesCursor = self.filteredCursors[i2]
-        debugger.platform.requestRender()
-        return
-      else:
-        self.variablesCursor = self.filteredCursors[self.filteredCursors.high]
-        debugger.platform.requestRender()
-        return
-
-    if scopes[].scopes.len == 0 or debugger.variables.len == 0:
-      return
-
-    let ids = debugger.currentVariablesContext().getOr:
-      return
-
-    self.variablesCursor = debugger.clampCursor(self.variablesCursor)
-
-    if self.variablesCursor.path.len == 0:
-      if self.variablesCursor.scope > 0:
-        dec self.variablesCursor.scope
-        if not skipChildren:
-          self.variablesCursor = self.lastChild(debugger, VariableCursor(scope: self.variablesCursor.scope))
-        return
-
-    else:
-      let (index, currentRef) = self.variablesCursor.path[self.variablesCursor.path.high]
-      if not debugger.variables.contains(ids & currentRef):
-        return
-
-      if index > 0:
-        dec self.variablesCursor.path[self.variablesCursor.path.high].index
-        if not skipChildren:
-          self.variablesCursor = self.lastChild(debugger, self.variablesCursor)
-        return
-
-      if not skipChildren:
-        discard self.variablesCursor.path.pop
-
-  proc nextVariable*(self: VariablesView, skipChildren: bool = false) =
-    let debugger = getDebugger().getOr:
-      return
-    let scopes = debugger.currentScopes().getOr:
-      return
-
-    if self.filteredCursors.len > 0:
-      let i = self.filteredCursors.find(self.variablesCursor)
-      if i != -1:
-        let i2 = (i + 1) mod self.filteredCursors.len
-        self.variablesCursor = self.filteredCursors[i2]
-        debugger.platform.requestRender()
-        return
-      else:
-        self.variablesCursor = self.filteredCursors[0]
-        debugger.platform.requestRender()
-        return
-
-    let ids = debugger.currentVariablesContext().getOr:
-      return
-
-    if scopes[].scopes.len == 0 or debugger.variables.len == 0:
-      return
-
-    self.variablesCursor = debugger.clampCursor(self.variablesCursor)
-
-    if self.variablesCursor.path.len == 0:
-      if self.variablesCursor.scope in 0..scopes[].scopes.high:
-        let scope = scopes[].scopes[self.variablesCursor.scope]
-        let collapsed = self.isCollapsed(ids & scope.variablesReference)
-        if not skipChildren and
-            debugger.variables.contains(ids & scope.variablesReference) and
-            debugger.variables[ids & scope.variablesReference].variables.len > 0 and
-            not collapsed:
-          self.variablesCursor.path.add (0, scope.variablesReference)
-          return
-
-        if self.variablesCursor.scope + 1 < scopes[].scopes.len:
-          self.variablesCursor = VariableCursor(scope: self.variablesCursor.scope + 1)
-          return
-      elif self.variablesCursor.scope == -1 and self.evaluation.variablesReference != 0.VariablesReference:
-        self.variablesCursor.path.add (0, self.evaluation.variablesReference)
-        return
-
-    else:
-      var descending = true
-      var cursor = self.variablesCursor
-      while cursor.path.len > 0:
-        let (index, currentRef) = cursor.path[cursor.path.high]
-        if debugger.variables.contains(ids & currentRef):
-          let variables {.cursor.} = debugger.variables[ids & currentRef]
-
-          if index < variables.variables.len:
-            let childrenRef = variables.variables[index].variablesReference
-            let collapsed = self.isCollapsed(ids & childrenRef)
-            if not skipChildren and descending and childrenRef != 0.VariablesReference and
-                debugger.variables.contains(ids & childrenRef) and
-                debugger.variables[ids & childrenRef].variables.len > 0 and
-                not collapsed:
-              cursor.path.add (0, childrenRef)
-              self.variablesCursor = cursor
-              return
-
-            if index < variables.variables.high:
-              inc cursor.path[cursor.path.high].index
-              self.variablesCursor = cursor
-              return
-
-        if skipChildren:
-          return
-
-        descending = false
-        discard cursor.path.pop
-
-      if cursor.scope >= 0 and cursor.scope + 1 < scopes[].scopes.len:
-        cursor = VariableCursor(scope: cursor.scope + 1)
-        self.variablesCursor = cursor
-        return
-
-      if cursor.scope >= 0:
-        self.variablesCursor = self.lastChild(debugger, VariableCursor(
-          scope: scopes[].scopes.high,
-          path: @[(int.high, scopes[].scopes[scopes[].scopes.high].variablesReference)],
-        ))
-
-  proc movePrev*(self: VariablesView, debugger: Debugger, cursor: VariableCursor): Option[VariableCursor] =
-    let scopes = debugger.currentScopes().getOr:
-      return VariableCursor.none
-
-    if scopes[].scopes.len == 0 or debugger.variables.len == 0:
-      return VariableCursor.none
-
-    let ids = debugger.currentVariablesContext().getOr:
-      return VariableCursor.none
-
-    var cursor = debugger.clampCursor(cursor)
-    if cursor.path.len == 0:
-      if cursor.scope > 0:
-        cursor = self.lastChild(debugger, VariableCursor(scope: cursor.scope - 1))
-        return cursor.some
-
-      return VariableCursor.none
-    else:
-      let (index, currentRef) = cursor.path[cursor.path.high]
-      if not debugger.variables.contains(ids & currentRef):
-        return VariableCursor.none
-
-      if index > 0:
-        dec cursor.path[cursor.path.high].index
-        cursor = self.lastChild(debugger, cursor)
-        return cursor.some
-
-      discard cursor.path.pop
-      return cursor.some
-
-  proc moveNext*(self: VariablesView, debugger: Debugger, cursor: VariableCursor): Option[VariableCursor] =
-    let scopes = debugger.currentScopes().getOr:
-      return
-
-    let ids = debugger.currentVariablesContext().getOr:
-      return
-
-    if scopes[].scopes.len == 0 or debugger.variables.len == 0:
-      return
-
-    var cursor = debugger.clampCursor(cursor)
-    if cursor.path.len == 0:
-      if cursor.scope in 0..scopes[].scopes.high:
-        let scope = scopes[].scopes[cursor.scope]
-        let collapsed = self.isCollapsed(ids & scope.variablesReference)
-        if debugger.variables.contains(ids & scope.variablesReference) and
-            debugger.variables[ids & scope.variablesReference].variables.len > 0 and
-            not collapsed:
-          cursor.path.add (0, scope.variablesReference)
-          return cursor.some
-
-        if cursor.scope + 1 < scopes[].scopes.len:
-          cursor = VariableCursor(scope: cursor.scope + 1)
-          return cursor.some
-
-      elif self.variablesCursor.scope == -1 and self.evaluation.variablesReference != 0.VariablesReference:
-        cursor.path.add (0, self.evaluation.variablesReference)
-        return cursor.some
-
-      return VariableCursor.none
-
-    else:
-      var descending = true
-      while cursor.path.len > 0:
-        let (index, currentRef) = cursor.path[cursor.path.high]
-        if not debugger.variables.contains(ids & currentRef):
-          return VariableCursor.none
-
-        let variables {.cursor.} = debugger.variables[ids & currentRef]
-
-        if index < variables.variables.len:
-          let childrenRef = variables.variables[index].variablesReference
-          let collapsed = self.isCollapsed(ids & childrenRef)
-          if descending and childrenRef != 0.VariablesReference and
-              debugger.variables.contains(ids & childrenRef) and
-              debugger.variables[ids & childrenRef].variables.len > 0 and
-              not collapsed:
-            cursor.path.add (0, childrenRef)
-            return cursor.some
-
-          if index < variables.variables.high:
-            inc cursor.path[cursor.path.high].index
-            return cursor.some
-
-        descending = false
-        discard cursor.path.pop
-
-      if cursor.scope != -1 and cursor.scope + 1 < scopes[].scopes.len:
-        cursor = VariableCursor(scope: cursor.scope + 1)
-        return cursor.some
-
-      return VariableCursor.none
-
-  proc expandVariable*(self: VariablesView) {.async.} =
-    let debugger = getDebugger().getOr:
-      return
-    let scopes = debugger.currentScopes().getOr:
-      log lvlError, &"Failed to expand scope, no scope"
-      return
-
-    let ids = debugger.currentVariablesContext().getOr:
-      log lvlError, &"Failed to expand scope, no ids"
-      return
-
-    if scopes[].scopes.len == 0 or debugger.variables.len == 0:
-      log lvlError, &"Failed to expand scope, no scopes or variables"
-      return
-
-    self.variablesCursor = debugger.clampCursor(self.variablesCursor)
-    if self.selectedVariable().getSome(v):
-      if debugger.variables.contains(ids & v.varRef):
-        let va {.cursor.} = debugger.variables[ids & v.varRef].variables[v.index]
-
-        if va.variablesReference != 0.VariablesReference:
-          self.collapsedVariables.excl ids & va.variablesReference
-          self.markDirty()
-          await debugger.updateVariables(va.variablesReference, 0)
-      else:
-        log lvlError, &"Failed to find variable {ids & v.varRef}"
-
-    elif self.variablesCursor.scope in 0..scopes[].scopes.high:
-      self.collapsedVariables.excl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
-
-    self.refilterVariables(debugger)
-    self.markDirty()
-    debugger.platform.requestRender()
-
-  proc expandVariableChildren*(self: VariablesView) {.async.} =
-    let debugger = getDebugger().getOr:
-      return
-    let scopes = debugger.currentScopes().getOr:
-      log lvlError, &"Failed to expand scope, no scope"
-      return
-
-    let ids = debugger.currentVariablesContext().getOr:
-      log lvlError, &"Failed to expand scope, no ids"
-      return
-
-    if scopes[].scopes.len == 0 or debugger.variables.len == 0:
-      log lvlError, &"Failed to expand scope, no scopes or variables"
-      return
-
-    self.variablesCursor = debugger.clampCursor(self.variablesCursor)
-    if self.selectedVariable().getSome(v):
-      if debugger.variables.contains(ids & v.varRef):
-        let va {.cursor.} = debugger.variables[ids & v.varRef].variables[v.index]
-
-        if va.variablesReference != 0.VariablesReference:
-          self.collapsedVariables.excl ids & va.variablesReference
-          self.markDirty()
-
-          if debugger.variables.contains(ids & va.variablesReference):
-            let childrenUpdateFutures = collect:
-              for childVariable in debugger.variables[ids & va.variablesReference].variables:
-                self.collapsedVariables.excl ids & childVariable.variablesReference
-                if childVariable.variablesReference != 0.VariablesReference:
-                  debugger.updateVariables(childVariable.variablesReference, 0)
-            await allFutures(childrenUpdateFutures)
-          else:
-            await debugger.updateVariables(va.variablesReference, 0)
-      else:
-        log lvlError, &"Failed to find variable {ids & v.varRef}"
-
-    elif self.variablesCursor.scope in 0..scopes[].scopes.high:
-      self.collapsedVariables.excl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
-
-    self.markDirty()
-    debugger.platform.requestRender()
-
-  proc collapseVariable*(self: VariablesView) =
-    let debugger = getDebugger().getOr:
-      return
-    let scopes = debugger.currentScopes().getOr:
-      return
-
-    let ids = debugger.currentVariablesContext().getOr:
-      return
-
-    if scopes[].scopes.len == 0 or debugger.variables.len == 0:
-      return
-
-    self.variablesCursor = debugger.clampCursor(self.variablesCursor)
-    if self.selectedVariable().getSome(v):
-      if debugger.variables.contains(ids & v.varRef):
-        let va {.cursor.} = debugger.variables[ids & v.varRef].variables[v.index]
-
-        if va.variablesReference == 0.VariablesReference or
-          (ids & va.variablesReference) in self.collapsedVariables or
-          not debugger.variables.contains(ids & va.variablesReference):
-
-          let currentLen = self.variablesCursor.path.len
-          if currentLen > 0:
-            discard self.variablesCursor.path.pop()
-
-        elif va.variablesReference != 0.VariablesReference:
-          self.collapsedVariables.incl ids & va.variablesReference
-
-    elif self.variablesCursor.scope in 0..scopes[].scopes.high:
-      self.collapsedVariables.incl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
-
-    self.markDirty()
-    debugger.platform.requestRender()
-
-  proc expandOrCollapseVariable*(self: VariablesView) =
-    let debugger = getDebugger().getOr:
-      return
-    let ids = debugger.currentVariablesContext().getOr:
-      return
-    if self.variablesCursor.path.len > 0:
-      let varIndex = self.variablesCursor.path[^1]
-      let key = ids & varIndex.varRef
-      if key in debugger.variables:
-        let vars {.cursor.} = debugger.variables[key]
-        if varIndex.index in 0..vars.variables.high:
-          let va {.cursor.} = vars.variables[varIndex.index]
-          if va.variablesReference != 0.VariablesReference:
-            if self.isCollapsed(ids & va.variablesReference) or (ids & va.variablesReference) notin debugger.variables:
-              asyncSpawn self.expandVariable()
-            else:
-              self.collapseVariable()
-            return
-
-  proc collapseVariableChildren*(self: VariablesView) =
-    let debugger = getDebugger().getOr:
-      return
-    let scopes = debugger.currentScopes().getOr:
-      return
-
-    let ids = debugger.currentVariablesContext().getOr:
-      return
-
-    if scopes[].scopes.len == 0 or debugger.variables.len == 0:
-      return
-
-    self.variablesCursor = debugger.clampCursor(self.variablesCursor)
-    if self.selectedVariable().getSome(v):
-      if debugger.variables.contains(ids & v.varRef):
-        let va {.cursor.} = debugger.variables[ids & v.varRef].variables[v.index]
-
-        if debugger.variables.contains(ids & va.variablesReference):
-          for childVariable in debugger.variables[ids & va.variablesReference].variables:
-            self.collapsedVariables.incl ids & childVariable.variablesReference
-
-    elif self.variablesCursor.scope in 0..scopes[].scopes.high:
-      self.collapsedVariables.incl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
-
-    debugger.platform.requestRender()
 
   proc evaluateHoverAsync(self: Debugger, useMouseHover: bool) {.async.} =
     let frame = self.currentStackFrame()
@@ -1079,7 +639,6 @@ when implModule:
           return
 
         let view = self.createVariablesView()
-        view.renderHeader = false
         view.evaluation = evaluation.result
         view.evaluationName = expression
         view.variablesCursor.scope = -1
@@ -1124,7 +683,6 @@ when implModule:
         self.initWatchScope()
       for view in self.variableViews:
         view.variablesCursor = self.clampCursor(view.variablesCursor)
-        view.baseIndex = self.clampCursor(view.baseIndex)
       self.platform.requestRender()
 
   proc addWatchFromSelection*(self: Debugger) =
@@ -1172,6 +730,7 @@ when implModule:
     self.stackTraces.clear()
     self.variables.clear()
     self.initWatchScope()
+    inc self.varCacheVersion
     self.platform.requestRender()
 
   proc stopDebugSessionDelayedAsync*(self: Debugger) {.async.} =
@@ -1348,29 +907,11 @@ when implModule:
                   for p in view.variablesCursor.path.mitems:
                     if p.varRef == oldChildId.varRef:
                       p.varRef = newChildId.varRef
-
-                  for p in view.baseIndex.path.mitems:
-                    if p.varRef == oldChildId.varRef:
-                      p.varRef = newChildId.varRef
               # else:
               #   debugf"  [skip mapping] child[{i}] '{oldChild.name}': {oldChildId.varRef} -> 0 (new value has no children)"
 
               # Always clean up old reference, even if not mapped
               varsToDelete.add oldChildId.varRef
-
-            # Only map collapsed state if new reference is valid
-            if newChild.variablesReference != 0.VariablesReference:
-              for view in self.variableViews:
-                if view.collapsedVariables.contains(oldChildId):
-                  # debugf"  [mapping] collapsed state: {oldChildId.varRef} -> {newChildId.varRef}"
-                  view.collapsedVariables.excl(oldChildId)
-                  view.collapsedVariables.incl(newChildId)
-            else:
-              # New value has no children, remove from collapsed set entirely
-              for view in self.variableViews:
-                if view.collapsedVariables.contains(oldChildId):
-                  # debugf"  [removing] collapsed state for {oldChildId.varRef} (new value has no children)"
-                  view.collapsedVariables.excl(oldChildId)
 
             if oldChild.name == newChild.name and oldChild.value != newChild.value:
               newChild.valueChanged = true.some
@@ -1384,9 +925,8 @@ when implModule:
         for view in self.variableViews:
           view.variablesCursor = self.clampCursor(view.variablesCursor)
 
-          view.baseIndex = self.clampCursor(view.baseIndex)
-
       self.variables[containerId] = variables.result
+      inc self.varCacheVersion
       # debugf"[updateVariables] Stored {variables.result.variables.len} variables for containerVarRef={containerVarRef}"
       self.platform.requestRender()
 
@@ -1426,14 +966,9 @@ when implModule:
         let futures = collect:
           for i in childrenToUpdate:
             if i in 0..vars.variables.high and vars.variables[i].variablesReference != 0.VariablesReference:
-
-              var notCollapsedInAnyView = false
-              for view in self.variableViews:
-                if not view.collapsedVariables.contains(ids & vars.variables[i].variablesReference):
-                  notCollapsedInAnyView = true
-                  break
-              if notCollapsedInAnyView:
-                self.updateVariables(vars.variables[i].variablesReference, maxDepth - 1, force)
+              # Expansion is owned by the tree widget now; refresh everything
+              # previously cached (the tree lazily refetches the rest).
+              self.updateVariables(vars.variables[i].variablesReference, maxDepth - 1, force)
 
         await futures.allFutures
       else:
@@ -1447,6 +982,7 @@ when implModule:
   proc updateWatches(self: Debugger, threadId: ThreadId, frameId: FrameId) {.async.} =
     if self.watchExpressions.len == 0:
       self.variables.del((threadId, frameId, watchScopeVarRef))
+      inc self.varCacheVersion
       return
 
     if self.debuggerState != DebuggerState.Paused:
@@ -1457,6 +993,7 @@ when implModule:
           value: "",
         )
       self.variables[(threadId, frameId, watchScopeVarRef)] = variables
+      inc self.varCacheVersion
       self.platform.requestRender()
       return
 
@@ -1486,10 +1023,10 @@ when implModule:
 
     for view in self.variableViews:
       view.variablesCursor = self.clampCursor(view.variablesCursor)
-      view.baseIndex = self.clampCursor(view.baseIndex)
 
     if timestamp != self.timestamp: return
     self.variables[(threadId, frameId, watchScopeVarRef)] = variables
+    inc self.varCacheVersion
     self.platform.requestRender()
 
   proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.async.} =
@@ -1533,29 +1070,11 @@ when implModule:
                       for p in view.variablesCursor.path.mitems:
                         if p.varRef == oldId.varRef:
                           p.varRef = newId.varRef
-
-                      for p in view.baseIndex.path.mitems:
-                        if p.varRef == oldId.varRef:
-                          p.varRef = newId.varRef
                   # else:
                   #   debugf"  [skip mapping] scope[{i}] '{oldScope.name}': {oldId.varRef} -> 0 (new scope has no children)"
 
                   # Always clean up old reference
                   scopesToDelete.add oldScope.variablesReference
-
-                # Update collapsed state in all views (only if new reference is valid)
-                if newScope.variablesReference != 0.VariablesReference:
-                  for view in self.variableViews:
-                    if view.collapsedVariables.contains(oldId):
-                      # debugf"  [mapping] scope collapsed state: {oldId.varRef} -> {newId.varRef}"
-                      view.collapsedVariables.excl(oldId)
-                      view.collapsedVariables.incl(newId)
-                else:
-                  # New scope has no children, remove from collapsed set entirely
-                  for view in self.variableViews:
-                    if view.collapsedVariables.contains(oldId):
-                      # debugf"  [removing] scope collapsed state for {oldId.varRef} (new scope has no children)"
-                      view.collapsedVariables.excl(oldId)
 
             # Remove old cached scope data
             # debugf"  [cleanup] Deleting {scopesToDelete.len} old scope references"
@@ -1565,8 +1084,6 @@ when implModule:
             # Validate and fix cursor paths after scope reference mapping
             for view in self.variableViews:
               view.variablesCursor = self.clampCursor(view.variablesCursor)
-
-              view.baseIndex = self.clampCursor(view.baseIndex)
 
           scopes.result.timestamp = self.timestamp
 
@@ -1579,6 +1096,7 @@ when implModule:
             )
 
           self.scopes[(threadId, frame.id)] = scopes.result
+          inc self.varCacheVersion
         self.platform.requestRender()
 
         let futures = collect:
@@ -2227,10 +1745,6 @@ when implModule:
           defer:
             popVariablesView(old)
           debugger.handleAction action, arg
-        onInput:
-          view.variablesFilter.add input
-          view.refilterVariables(debugger)
-          Handled
     result.add view.eventHandler
 
   proc getEventHandlers(view: OutputView, inject: Table[string, EventHandler]): seq[EventHandler] =
@@ -2242,55 +1756,6 @@ when implModule:
   proc getEventHandlers(view: ToolbarView, inject: Table[string, EventHandler]): seq[EventHandler] =
     let debugger = ({.gcsafe.}: gDebugger)
     result.add debugger.eventHandler
-
-  proc findVariable(self: VariablesView, debugger: Debugger, filter: string, vr: VariablesReference, cursor: VariableCursor, filterVersion: int) {.async.} =
-    let thread = debugger.currentThread()
-    if thread.isNone:
-      return
-    let frame = debugger.currentStackFrame()
-    if frame.isNone:
-      return
-    let key = (thread.get.id, frame.get.id, vr)
-    if key in debugger.variables:
-      let variables {.cursor.} = debugger.variables[key]
-      for i, v in variables.variables:
-        var cursor2 = cursor
-        cursor2.path.add((i, vr))
-        if v.name.contains(filter):
-          self.filteredVariables.incl (i, vr)
-          self.filteredCursors.add cursor2
-          debugger.platform.requestRender()
-
-        await self.findVariable(debugger, filter, v.variablesReference, cursor2, filterVersion)
-
-  proc findVariable(self: VariablesView, filter: string) {.async.} =
-    let debugger = getDebugger().getOr:
-      return
-    let scopes = debugger.currentScopes()
-    if scopes.isNone:
-      return
-    let version = self.filterVersion
-    if self.variablesCursor.scope == -1:
-      let vr = self.evaluation.variablesReference
-      var cursor = VariableCursor(scope: -1)
-      await self.findVariable(debugger, filter, vr, cursor, version)
-      if self.filterVersion != version:
-        return
-      if self.filteredCursors.len > 0:
-        let i = self.filteredCursors.find(self.variablesCursor)
-        if i == -1:
-          self.nextVariable()
-    else:
-      for scopeIndex, s in scopes.get.scopes:
-        let vr = s.variablesReference
-        var cursor = VariableCursor(scope: scopeIndex)
-        await self.findVariable(debugger, filter, vr, cursor, version)
-        if self.filterVersion != version:
-          return
-        if self.filteredCursors.len > 0:
-          let i = self.filteredCursors.find(self.variablesCursor)
-          if i == -1:
-            self.nextVariable()
 
   proc getDeclarationsInRange*(document: Document, visibleRange: Range[Point]): Future[seq[tuple[decl: Range[Point], name: Range[Point], value: string]]] {.async.} =
     result = @[]
@@ -2456,50 +1921,6 @@ when implModule:
     let name = fun.name.repr.splitCase.parts.joinCase(Kebab)
     return exposeImpl(newLit(""), name, fun, active=false)
 
-  proc debuggerDeleteLastVariableFilterChar(self: Debugger) =
-    if getVariablesView().getSome(view):
-      view.deleteLastVariableFilterChar()
-
-  proc debuggerClearVariableFilter(self: Debugger) =
-    if getVariablesView().getSome(view):
-      view.clearVariableFilter()
-
-  proc debuggerSelectFirstVariable(self: Debugger) =
-    if getVariablesView().getSome(view):
-      view.selectFirstVariable()
-
-  proc debuggerSelectLastVariable(self: Debugger) =
-    if getVariablesView().getSome(view):
-      view.selectLastVariable()
-
-  proc debuggerPrevVariable(self: Debugger, skipChildren: bool = false) =
-    if getVariablesView().getSome(view):
-      view.prevVariable(skipChildren)
-
-  proc debuggerNextVariable(self: Debugger, skipChildren: bool = false) =
-    if getVariablesView().getSome(view):
-      view.nextVariable(skipChildren)
-
-  proc debuggerExpandVariable(self: Debugger) =
-    if getVariablesView().getSome(view):
-      asyncSpawn view.expandVariable()
-
-  proc debuggerExpandVariableChildren(self: Debugger) =
-    if getVariablesView().getSome(view):
-      asyncSpawn view.expandVariableChildren()
-
-  proc debuggerCollapseVariable(self: Debugger) =
-    if getVariablesView().getSome(view):
-      view.collapseVariable()
-
-  proc debuggerExpandOrCollapseVariable(self: Debugger) =
-    if getVariablesView().getSome(view):
-      view.expandOrCollapseVariable()
-
-  proc debuggerCollapseVariableChildren(self: Debugger) =
-    if getVariablesView().getSome(view):
-      view.collapseVariableChildren()
-
   include generated/debugger_commands
 
   proc init_module_debugger*() {.cdecl, exportc, dynlib.} =
@@ -2523,13 +1944,13 @@ when implModule:
 
   import render
 
-  proc renderView(self: StacktraceView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
-    return self.createUI(builder, debugger)
-  proc renderView(self: ThreadsView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
-    return self.createUI(builder, debugger)
-  proc renderView(self: VariablesView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
-    return self.createUI(builder, debugger)
-  proc renderView(self: OutputView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
-    return self.createUI(builder, debugger)
-  proc renderView(self: ToolbarView, builder: UINodeBuilder, debugger: Debugger): seq[OverlayFunction] =
-    return self.createUI(builder, debugger)
+  proc renderViewNui(self: StacktraceView, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
+    self.createStackTraceUINui(nui, debugger)
+  proc renderViewNui(self: ThreadsView, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
+    self.createThreadsUINui(nui, debugger)
+  proc renderViewNui(self: VariablesView, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
+    self.createVariablesUINui(nui, debugger)
+  proc renderViewNui(self: OutputView, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
+    self.createOutputUINui(nui, debugger)
+  proc renderViewNui(self: ToolbarView, nui: var UiBuilder, debugger: Debugger) {.gcsafe, raises: [].} =
+    self.createToolbarUINui(nui, debugger)

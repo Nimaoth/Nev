@@ -85,7 +85,6 @@
   (command dumpKeymapGraphViz [(context string "")] () "")
   (command setMode [(mode string)] () "")
   (command changeAnimationSpeed [(factor float)] () "")
-  (command logRootNode [] () "")
   (command replayKeys [(register string)] () "")
   (command inputKeys [(input string)] () "")
   (command collectGarbage [] () "")

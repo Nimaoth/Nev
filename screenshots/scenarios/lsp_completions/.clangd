@@ -1,0 +1,6 @@
+CompileFlags:
+  Add: [-std=c11]
+InlayHints:
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true

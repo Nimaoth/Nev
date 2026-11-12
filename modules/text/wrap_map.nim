@@ -2,6 +2,7 @@ import std/[options, atomics, strformat, tables]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils, arena]
 import syntax_map, overlay_map, tab_map, theme
+import nuigi/debug/profiler
 
 {.push warning[Deprecated]:off.}
 import std/[threadpool]
@@ -654,6 +655,7 @@ proc seekLine*(self: var WrapChunkIterator, line: int) =
   self.seek(wrapPoint(line))
 
 proc next*(self: var WrapChunkIterator): Option[WrapChunk] =
+  prof("WrapChunkIterator.next")
   if self.atEnd:
     self.wrapChunk = WrapChunk.none
     return

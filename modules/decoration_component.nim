@@ -2,12 +2,13 @@
 import std/[options, tables]
 import chroma, vmath
 import nimsumtree/rope
-import misc/[event, myjsonutils, render_command, generational_seq]
+import misc/[event, myjsonutils, generational_seq]
 import text/[display_map]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import config_provider
 import core_settings
 import component
+from nuigi import UiBuilder
 
 export component
 
@@ -15,7 +16,7 @@ const currentSourcePath2 = currentSourcePath()
 include module_base
 
 type
-  CustomOverlayRenderer* = proc(id: int, size: Vec2, localOffset: int, commands: var RenderCommands): Vec2 {.gcsafe, raises: [].}
+  CustomOverlayRenderer* = proc(id: int, size: Vec2, localOffset: int, builder: var UiBuilder): Vec2 {.gcsafe, raises: [].}
   CustomRendererId* = distinct uint64
 
 type

@@ -1,0 +1,24 @@
+{
+  "description": "clangd hover, definition navigation, symbols and member completion",
+  "source-media": "lsp.gif",
+  "size": "1280x720",
+  "file": "weather.c",
+  "steps": [
+    {"wait": 1800},
+    {"keys": "gg12j0w"},
+    {"start-recording": "lsp"},
+    ".hover.toggle",
+    {"wait": 1000},
+    ".hover.toggle",
+    {"keys": "gg13j0ww"},
+    ".goto-definition",
+    {"wait": 1000},
+    ".goto-symbol",
+    {"wait": 1000},
+    {"keys": "<ESCAPE>gg12j0"},
+    [".insert-text", "    reading."],
+    ".get-completions",
+    {"wait": 1300},
+    {"stop-recording": true}
+  ]
+}

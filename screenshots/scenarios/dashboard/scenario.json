@@ -1,0 +1,16 @@
+{
+  "description": "Dashboard in a fresh example workspace",
+  "source-media": "dashboard.png",
+  "size": "1280x800",
+  "settings": {
+    "dashboard.sections": {
+      "logo": {"name": "logo", "title": "", "side": -1},
+      "commands": {
+        "name": "commands",
+        "title": "Explore Harbor Observatory",
+        "commands": ["command-line", "choose-file", "explore-files", "browse-keybinds", "browse-settings", "quit"]
+      }
+    }
+  },
+  "steps": [{"wait-idle": 500}, {"screenshot": "dashboard"}]
+}

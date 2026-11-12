@@ -20,7 +20,7 @@ daGlobalTag(daMain)
 import misc/[timer]
 let startupTimer = startTimer()
 
-import std/[parseopt, options, macros, strutils, os, strformat]
+import std/[parseopt, options, macros, strutils, os, strformat, times]
 import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
 import treesitter/treesitter
@@ -258,9 +258,7 @@ when enableTerminal:
 
 when enableGui:
   import misc/[tui]
-  import "../modules/gui_platform"/gui_platform
-  when defined(sdlPlatform):
-    import "../modules/sdl_platform"/sdl_platform
+  import "../modules/sdl_platform"/sdl_platform
 
   if backend.get == Gui:
     let trueColorSupport = myEnableTrueColors()
@@ -294,33 +292,22 @@ of Terminal:
 
 of Gui:
   when enableGui:
-    if useSdlBackend:
-      when defined(sdlPlatform):
-        log(lvlInfo, "Creating SDL renderer (nuigi/sdl3)")
-        plat = newSdlPlatform()
-        plat.backend = Gui
-      else:
-        echo "[error] SDL GUI backend not available in this build"
-        quit(1)
-    else:
-      log(lvlInfo, "Creating GUI renderer")
-      plat = newGuiPlatform()
-      plat.backend = Gui
+    log(lvlInfo, "Creating SDL renderer (nuigi/sdl3)")
+    plat = newSdlPlatform()
+    plat.backend = Gui
   else:
     echo "[error] GUI backend not available in this build"
     quit(1)
 
-import ui/node
-
 import chronos/config
 
-const maxPollPerFrameMs = 2.5
+const maxPollPerFrameMs = 10
 
 proc pollFutures() =
   gAsyncFrameTimer = startTimer()
   try:
     let start = startTimer()
-    var tries = 25
+    var tries = 500
 
     let hasPendingOperations = when chronosFutureTracking:
       pendingFuturesCount() > 0
@@ -329,10 +316,24 @@ proc pollFutures() =
 
     while tries > 0 and start.elapsed.ms < maxPollPerFrameMs and hasPendingOperations:
       dec tries
-      poll()
+      poll(maxPollTimeMs = maxPollPerFrameMs - start.elapsed.ms)
 
   except CatchableError:
     discard
+
+import nuigi/debug/profiler
+
+when defined(perfProfiler):
+  proc startNevPerfProfiling() =
+    let executableName = getAppFilename().extractFilename.changeFileExt("")
+    let profileName = executableName & "-" &
+      now().format("yyyyMMdd-HHmmss") & "-" & $getCurrentProcessId() &
+      ".perfprof"
+    let profilePath = getAppDir() / "sessions" / profileName
+    if startProfiling(profilePath):
+      stderr.writeLine "[perf profiler] Recording to ", profilePath
+    else:
+      stderr.writeLine "[perf profiler] Cannot record to ", profilePath
 
 proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions, frameIndex: var int) =
   var frameTime = 0.0
@@ -355,16 +356,26 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
     defer:
       inc frameIndex
 
+    profilerFrameStart()
+    plat.frameTimer = startTimer()
     let now = totalTime.elapsed.float
     plat.deltaTime = now - lastTime
     lastTime = now
 
     let totalTimer = startTimer()
 
+    when defined(nuigiProfiler) and not defined(nimony):
+      gprof.frameStart = eventHistoryIndex
+    prof("frame")
+    when defined(nuigiProfiler) and not defined(nimony):
+      profilerBeginFrame(false)
+
+
     # handle events
     let eventTimer = startTimer()
     gAsyncFrameTimer = startTimer()
     let eventCounter = block:
+      prof("processEvents")
       withDaTag(daEvent):
         plat.processEvents()
     services.tick()
@@ -373,39 +384,45 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
     if eventCounter > 0:
       plat.lastEventTime = startTimer()
 
+    let pollTimer = startTimer()
+    block:
+      withDaTag(daPoll):
+        prof("poll")
+        pollFutures()
+
+    let pollTime = pollTimer.elapsed.ms
+
     var updateTime, renderTime: float
     withDaTag(daRender):
-      let delta = app.frameTimer.elapsed.ms
-      app.frameTimer = startTimer()
+      prof("render")
 
-      let updateTimer = startTimer()
-
-      plat.builder.frameTime = delta
-      plat.onPreRender.invoke(plat)
-      eventBus.emit(&"platform/prerender", "")
-
-      let size = plat.size
       var rerender = false
-      if size != plat.builder.root.boundsActual.wh or plat.requestedRender:
-        plat.requestedRender = false
-        plat.builder.beginFrame(size, plat.redrawEverything)
-        try:
-          app.render(plat.builder, frameIndex)
-          plat.builder.endFrame()
-        except:
-          discard
-        rerender = true
-      elif plat.builder.animatingNodes.len > 0:
-        plat.builder.frameIndex.inc
-        try:
-          plat.builder.postProcessNodes()
-        except:
-          discard
-        rerender = true
+      block:
+        prof("ui")
 
-      updateTime = updateTimer.elapsed.ms
+        let delta = app.frameTimer.elapsed.ms
+        app.frameTimer = startTimer()
 
-      renderedLastFrame = rerender
+        let updateTimer = startTimer()
+
+        plat.onPreRender.invoke(plat)
+        eventBus.emit(&"platform/prerender", "")
+
+        let size = plat.size
+        let platformRequestedRender = plat.shouldRender()
+        if plat.requestedRender or platformRequestedRender:
+          plat.requestedRender = false
+          plat.beginNuiFrame()
+          try:
+            app.render(frameIndex)
+          except:
+            discard
+          plat.endNuiFrame()
+          rerender = true
+
+        updateTime = updateTimer.elapsed.ms
+
+        renderedLastFrame = rerender
 
       if rerender or not lowPowerMode:
         let renderTimer = startTimer()
@@ -426,12 +443,6 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
 
     {.gcsafe.}:
       logger().flush()
-
-    let pollTimer = startTimer()
-    withDaTag(daPoll):
-      pollFutures()
-
-    let pollTime = pollTimer.elapsed.ms
 
     var outlierTime = 20.0
 
@@ -457,6 +468,7 @@ proc run(app: AppBase, plat: Platform, backend: Backend, appOptions: AppOptions,
     if lastGcTimer.elapsed.ms > config.get("gc.interval", 1000.0) and eventCounter == 0:
       lastGcTimer = startTimer()
       try:
+        prof("GC_FullCollect")
         GC_FullCollect()
       except:
         discard
@@ -521,6 +533,11 @@ profProcessAllocatorEvents()
 import misc/event
 
 proc main() =
+  when defined(perfProfiler):
+    startNevPerfProfiling()
+  defer:
+    stopProfiling()
+
   profProcessAllocatorEvents()
   let app = newApp(backend.get, plat, gServices, gAppOptions)
   log lvlInfo, &"Finished creating app"
@@ -530,18 +547,20 @@ proc main() =
 
   var p = plat
   discard plat.onResize.subscribe proc() {.gcsafe.} =
+    profilerFrameStart()
+    p.frameTimer = startTimer()
     p.onPreRender.invoke(p)
     eventBus.emit(&"platform/prerender", "")
 
     let size = p.size
 
+    p.beginNuiFrame()
     p.requestedRender = false
-    p.builder.beginFrame(size)
     try:
-      app.render(p.builder, frameIndex)
-      p.builder.endFrame()
+      app.render(frameIndex)
     except:
       discard
+    p.endNuiFrame()
 
     p.render(true)
     inc frameIndex

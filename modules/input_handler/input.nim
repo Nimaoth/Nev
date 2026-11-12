@@ -1,5 +1,5 @@
 import std/[strformat, strutils, tables, algorithm, unicode, sequtils, sugar, json, options, math]
-import misc/[custom_logger, array_set, util, regex, bitset]
+import misc/[custom_logger, array_set, util, custom_regex, bitset]
 import misc/input_api
 
 export input_api

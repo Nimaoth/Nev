@@ -1,0 +1,8 @@
+{
+  "description": "Inline hexadecimal color swatches in an example palette",
+  "source-media": "color_preview.png",
+  "size": "1280x720",
+  "file": "palette.json",
+  "settings": {"text.color-highlight.enabled": true},
+  "steps": [{"wait-idle": 500}, {"screenshot": "color_preview"}]
+}

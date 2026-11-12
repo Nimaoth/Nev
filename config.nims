@@ -114,7 +114,10 @@ patchFile("stdlib", "excpt", "patches/excpt")
 patchFile("stdlib", "jsonutils", "src/misc/myjsonutils")
 patchFile("stdlib", "tables", "patches/tables") # Patch tables.nim to remove exceptions
 patchFile("chronos", "asyncengine", "patches/asyncengine") # Patch this to enable 0 timeout poll
+patchFile("chronos", "asyncfutures", "patches/asyncfutures") # Patch this to enable 0 timeout poll
 patchFile("chronos", "threadsync", "patches/threadsync") # Patch this to change asserts to exceptions
+patchFile("fsnotify", "timers", "patches/fsnotify_timers")
+patchFile("fsnotify", "watch", "patches/watch")
 patchFile("npeg", "codegen", "patches/codegen") # Patch this for proper gcsafety
 
 # Patch these things to make global variables dynlib and remove usages of c_malloc, c_free etc

@@ -1,6 +1,6 @@
 #use vfs_service theme
 import std/[options, sequtils, os, json]
-import misc/[custom_async, id, util, regex, event]
+import misc/[custom_async, id, util, custom_regex, event]
 import vfs, vfs_service, service
 import finder
 
@@ -90,6 +90,7 @@ when implModule:
   import malebolgia
   import misc/[timer, async_process, static_array, custom_logger]
   import compilation_config, event_service, platform
+  import nuigi/debug/profiler
 
   logCategory "workspace"
 
@@ -229,6 +230,7 @@ when implModule:
             yield (k, y)
 
   proc scanDirectoryImpl(ignore: ptr Globs, res: ptr Directory) {.gcsafe, raises: [].} =
+    prof("scanDirectoryImpl")
     try:
       var m = createMaster()
       for kind, fileName in walkDirCustom(res.path, relative = true):
@@ -246,9 +248,11 @@ when implModule:
           path.add fileName
           res.children.add(Directory(path: path.ensureMove))
 
-      m.awaitAll:
-        for i in 0..res.children.high:
-          m.spawn scanDirectoryImpl(ignore, res.children[i].addr)
+      block:
+        prof("scanDirectoryImpl.awaitAll")
+        m.awaitAll:
+          for i in 0..res.children.high:
+            m.spawn scanDirectoryImpl(ignore, res.children[i].addr)
 
       for c in res.children:
         res.totalFiles += c.totalFiles
@@ -256,6 +260,7 @@ when implModule:
       discard
 
   proc scanDirectory*(path: string, ignore: ptr Globs): Directory =
+    prof("scanDirectory")
     result.path = path
     scanDirectoryImpl(ignore, result.addr)
 
@@ -275,14 +280,17 @@ when implModule:
 
   proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
       tuple[files: ItemList, time: float] =
+    prof("collectFilesThread")
     try:
       let t = startTimer()
 
       var m = createMaster()
       var dirs = newSeq[Directory](args.roots.len)
-      m.awaitAll:
-        for i in 0..args.roots.high:
-          m.spawn scanDirectory(args.roots[i], args.ignore.addr) -> dirs[i]
+      block:
+        prof("collectFilesThread.awaitAll")
+        m.awaitAll:
+          for i in 0..args.roots.high:
+            m.spawn scanDirectory(args.roots[i], args.ignore.addr) -> dirs[i]
 
       var totalFiles = 0
       for d in dirs:

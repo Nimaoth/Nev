@@ -1,6 +1,7 @@
 import std/[json, strutils, tables, osproc, streams, options, macros]
 import custom_logger, custom_async, util, misc/channel, generational_seq
 import nimsumtree/arc
+import nuigi/debug/profiler
 
 {.push warning[Deprecated]:off.}
 import std/[threadpool]
@@ -395,6 +396,7 @@ proc readLineIncludingLast*(s: Stream, line: var string, last: char): tuple[eof:
   result.eof = false
 
 proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[string], ref Exception) {.gcsafe.} =
+  prof("readProcessOutputThread")
   try:
     when debugAsyncProcess:
       asyncProcessDebugOutput.send(fmt"Start process {args}")

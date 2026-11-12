@@ -1,5 +1,5 @@
 import std/[options, tables]
-import misc/[custom_async, custom_logger, util]
+import misc/[custom_async, custom_logger, util, event]
 import misc/diff
 import workspace
 import service, config_provider, vfs, vfs_service
@@ -64,6 +64,7 @@ type
     versionControlSystems*: seq[VersionControlSystem]
     vfs*: VFS
     detectors*: Table[string, VCSDetector]
+    onVcsRegistered*: Event[VersionControlSystem]
 
 func serviceName*(_: typedesc[VCSService]): string = "VCSService"
 
@@ -138,6 +139,7 @@ when implModule:
       for detector in self.detectors.values:
         for vcs in detector(path):
           self.versionControlSystems.add vcs
+          self.onVcsRegistered.invoke(vcs)
 
     except CatchableError as e:
       log lvlError, &"Failed to detect version control systems: {e.msg}\n{e.getStackTrace()}"

@@ -1,0 +1,21 @@
+{
+  "description": "Compare Markdown heading markers on and off the cursor line",
+  "source-media": "markdown-header-hiding.png",
+  "size": "1280x720",
+  "file": "guide.md",
+  "settings": {
+    "markdown.enabled": true,
+    "markdown.languages": ["markdown"],
+    "markdown.disable-on-cursor-lines-modes": ["vim.normal", "vim.insert"]
+  },
+  "steps": [
+    "split-view",
+    ["wrap-layout", {"kind": "horizontal", "temporary": true, "max-children": 2}],
+    "focus-view-left",
+    {"keys": "ggj"},
+    "focus-view-right",
+    {"keys": "gg"},
+    {"wait-idle": 600},
+    {"screenshot": "markdown-header-hiding"}
+  ]
+}

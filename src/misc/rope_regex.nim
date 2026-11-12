@@ -2,8 +2,9 @@ import std/[options, tables]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import custom_async, custom_unicode, util, regex, timer
+import custom_async, custom_unicode, util, custom_regex, timer
 import treesitter/treesitter
+import nuigi/debug/profiler
 
 import regex/common
 import regex/nodematch
@@ -649,6 +650,7 @@ proc findAll*(text: RopeSlice[int], searchQuery: Regex2): seq[Range[Point]] =
   findAll(text, searchQuery, result)
 
 proc findAllThread(args: tuple[text: ptr RopeSlice[int], query: string, res: ptr seq[Range[Point]]]) =
+  prof("findAllThread")
   try:
     let r = re(args.query)
     findAll(args.text[].clone(), r, args.res[])

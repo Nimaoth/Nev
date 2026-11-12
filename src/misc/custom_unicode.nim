@@ -101,6 +101,10 @@ proc runeIndex*(s: openArray[char], offset: Natural, returnLen: bool = true): Ru
       return
     inc result
 
+proc mapRuneByteOffset*(source, target: openArray[char], offset: Natural): int {.gcsafe, raises: [].} =
+  ## Map a UTF-8 byte boundary between texts with corresponding rune positions.
+  target.runeOffset(source.runeIndex(offset))
+
 proc runeSize*(s: openArray[char], offset: Natural): Natural =
   if s[offset] <= chr(127):
     result = 1

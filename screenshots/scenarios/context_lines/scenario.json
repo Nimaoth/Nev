@@ -1,0 +1,19 @@
+{
+  "description": "Sticky breadcrumbs follow nested scopes as the cursor moves",
+  "source-media": "context_lines.gif",
+  "size": "1100x600",
+  "file": "forecast.nim",
+  "settings": {"context-lines.enabled": true, "context-lines.style": "breadcrumb"},
+  "steps": [
+    {"start-recording": "context_lines"},
+    {"keys": "gg4j", "interval": 180},
+    {"wait": 800},
+    {"keys": "4j", "interval": 200},
+    {"wait": 800},
+    {"keys": "5j", "interval": 200},
+    {"wait": 800},
+    {"keys": "5k", "interval": 200},
+    {"wait": 900},
+    {"stop-recording": true}
+  ]
+}

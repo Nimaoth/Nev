@@ -39,4 +39,5 @@
   (command log-views logViews [] () "")
   (command open openCommand [(path string) (slot "Option[string]")] () "")
   (command choose-open chooseOpenCommand [(preview "Option[bool]") (scaleX "Option[float]") (scaleY "Option[float]") (previewScale "Option[float]")] () "")
+  (command open-platform-settings openPlatformSettings [] () "Open the platform settings view")
 )

@@ -1,10 +1,11 @@
 #use status_line text_editor_component command_service session input_handler
 # text_editor_component is needed for OpenEditorPreviewer. todo: OpenEditorPreviewer shouldn't care about text editors treesitter
 import std/[options, json]
-import misc/[custom_async, id]
+import misc/[custom_async, id, util]
 import service, view, popup, selector_popup/builder
 import document, document_editor
-import ui/node
+from platform import ViewPanelOptions
+from nuigi import UiBuilder
 from scripting_api import EditorId
 
 const currentSourcePath2 = currentSourcePath()
@@ -76,7 +77,7 @@ proc layoutServiceMoveView(self: LayoutService, slot: string)
 proc layoutServiceWrapLayout(self: LayoutService, layout: JsonNode, slot: string = "**")
 proc layoutServiceOpen(self: LayoutService, path: string, slot: string = "")
 proc layoutServiceLayout(self: LayoutService): View
-proc layoutServiceRender(self: LayoutService, builder: UINodeBuilder): seq[OverlayFunction]
+proc layoutServiceRenderNui(self: LayoutService, nui: var UiBuilder)
 proc layoutChangeSplitSize(self: LayoutService, slot: string, size: float, vertical: bool, add: bool = true)
 proc layoutGetSlot(self: LayoutService, view: View): string
 proc layoutGetParent(self: LayoutService, view: View): View
@@ -139,11 +140,19 @@ proc moveView*(self: LayoutService, slot: string) = layoutServiceMoveView(self, 
 proc wrapLayout*(self: LayoutService, layout: JsonNode, slot: string = "**") = layoutServiceWrapLayout(self, layout, slot)
 proc open*(self: LayoutService, path: string, slot: string = "") = layoutServiceOpen(self, path, slot)
 proc rootLayout*(self: LayoutService): View = layoutServiceLayout(self)
-proc render*(self: LayoutService, builder: UINodeBuilder): seq[OverlayFunction] = layoutServiceRender(self, builder)
+proc renderNui*(self: LayoutService, nui: var UiBuilder) = layoutServiceRenderNui(self, nui)
+proc render*(self: LayoutService, nui: var UiBuilder) = layoutServiceRenderNui(self, nui)
 proc changeSplitSize*(self: LayoutService, slot: string, size: float, vertical: bool, add: bool = true) = layoutChangeSplitSize(self, slot, size, vertical, add)
 proc getSlot*(self: LayoutService, view: View): string = layoutGetSlot(self, view)
 proc getParent*(self: LayoutService, view: View): View = layoutGetParent(self, view)
 {.pop.}
+
+proc withViewActions*(options: ViewPanelOptions, self: LayoutService, view: View): ViewPanelOptions {.gcsafe, raises: [].} =
+  ## Editors rendered outside a view (e.g. previews) have no view actions.
+  result = options
+  if view != nil:
+    result.onClose = proc(keepHidden: bool) {.closure, gcsafe, raises: [].} =
+      self.closeView(view, keepHidden = keepHidden, restoreHidden = not keepHidden)
 
 proc showView*(self: LayoutService, viewId: Id, slot: string = "", focus: bool = true, addToHistory: bool = true) =
   if self.getView(viewId).getSome(view):
@@ -166,7 +175,7 @@ proc getViews*(self: LayoutService, T: typedesc): seq[T] =
 
 # Implementation
 when implModule:
-  import std/[tables, sugar, deques, sets]
+  import std/[tables, sugar, deques, sets, strformat]
   import results, vmath
   import platform
   import misc/[custom_logger, rect_utils, myjsonutils, util, jsonex]
@@ -174,6 +183,7 @@ when implModule:
   import finder, previewer
   import input_handler/input_handler, config_provider, vfs, vfs_service, session, layouts, command_service, status_line, theme
   import nimsumtree/arc
+  from nuigi import UiBuilder, UiStyleIndex, UiTextStyleIndex, text, textStyleIndex, fit, node, fillX, fillY, fillBackground, styleIndex, layoutVertical, layoutHorizontal, gap, padding
 
   export layouts
 
@@ -211,6 +221,37 @@ when implModule:
 
       viewFactories: Table[string, CreateView]
 
+    PlatformSettingsView* = ref object of View
+      platform: Platform
+      layout: LayoutService
+
+  proc newPlatformSettingsView*(platform: Platform, layout: LayoutService): PlatformSettingsView =
+    result = PlatformSettingsView(platform: platform, layout: layout)
+    result.initView()
+    result.kindImpl = proc(view: View): string = "platform-settings"
+    result.descImpl = proc(view: View): string = "Platform Settings"
+    result.displayImpl = proc(view: View): string = "Platform Settings"
+    result.copyImpl = proc(view: View): View = view
+    result.saveLayoutImpl = proc(view: View, discardedViews: HashSet[Id]): JsonNode =
+      (%%*{"kind": "platform-settings"}).toJson
+    result.saveStateImpl = proc(view: View): JsonNode =
+      (%%*{"kind": "platform-settings"}).toJson
+    result.renderNuiImpl = proc(view: View, nui: var UiBuilder) =
+      let self = view.PlatformSettingsView
+      self.resetDirty()
+      nui.viewPanel("platform-settings", self.active, true,
+          ViewPanelOptions().withViewActions(self.layout, self)):
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))
+            .text("Platform Settings")
+      do:
+        if self.platform.buildSettingsImpl != nil:
+          self.platform.buildSettingsImpl(self.platform, nui)
+        else:
+          nui.node:
+            discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText))
+              .text("No settings available for this platform")
+
   proc preRender*(self: LayoutService)
 
   proc layoutServicePopups*(self: LayoutService): seq[Popup] =
@@ -245,6 +286,7 @@ when implModule:
   proc layoutServiceAddViewRegisterView(self: LayoutService, view: View, last = true) =
     assert view != nil
     let self = self.LayoutServiceImpl
+    view.requestActivateNuiImpl = proc(view: View) = self.tryActivateView(view)
     if view notin self.mAllViews:
       if last:
         self.mAllViews.add view
@@ -322,6 +364,12 @@ when implModule:
     self.commands = self.services.getServiceChecked(CommandService)
 
     discard self.platform.onPreRender.subscribe (_: Platform) => self.preRender()
+
+    if self.platform.buildSettingsImpl != nil:
+      let settingsView = newPlatformSettingsView(self.platform, self)
+      self.addViewFactory "platform-settings", proc(config: JsonNode): View =
+        settingsView
+      self.registerView(settingsView)
 
     self.addViewFactory "editor", proc(config: JsonNode): View {.raises: [ValueError].} =
       type Config = object
@@ -467,9 +515,21 @@ when implModule:
       self.mAllViews.removeShift(activeView)
       self.mAllViews.add(activeView)
 
-  proc editorViewRender(self: EditorView, builder: UINodeBuilder): seq[OverlayFunction] =
-    self.resetDirty()
-    self.editor.render(builder)
+  proc editorViewRenderNui(self: EditorView, nui: var UiBuilder) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      self.resetDirty()
+      if self.editor != nil:
+        self.editor.renderNui(nui)
+      else:
+        nui.node:
+          discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).padding(0)
+          let filename = if self.document != nil: self.document.filename else: self.path
+          if filename.len > 0:
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(filename)
+          else:
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text("EditorView")
 
   proc editorViewDesc(self: EditorView): string =
     if self.document == nil:
@@ -515,7 +575,7 @@ when implModule:
     if id.isSome:
       self.mId = id.get
 
-    self.renderImpl = proc(self: View, builder: UINodeBuilder): seq[OverlayFunction] = editorViewRender(self.EditorView, builder)
+    self.renderNuiImpl = proc(self: View, nui: var UiBuilder) {.gcsafe, raises: [].} = editorViewRenderNui(self.EditorView, nui)
     # self.closeImpl = proc(self: View) = editorViewClose(self.EditorView)
     self.activateImpl = proc(self: View) = editorViewActivate(self.EditorView)
     self.deactivateImpl = proc(self: View) = editorViewDeactivate(self.EditorView)
@@ -1435,36 +1495,46 @@ when implModule:
       path = self.workspace.getAbsolutePath(path)
     discard self.openFile(path, slot)
 
-  proc layoutServiceRender(self: LayoutService, builder: UINodeBuilder): seq[OverlayFunction] =
-    let self = self.LayoutServiceImpl
-    if self.layout == nil:
-      return
+  proc layoutServiceRenderNui(self: LayoutService, nui: var UiBuilder) {.gcsafe, raises: [].} =
+    {.cast(gcsafe).}:
+      let self = self.LayoutServiceImpl
+      if self.layout == nil:
+        return
 
-    let newActiveView = self.layout.activeLeafView()
-    if newActiveView != self.activeView and newActiveView != nil:
-      if self.activeView != nil:
-        self.activeView.deactivate()
-      newActiveView.activate()
-      self.activeView = newActiveView
-      newActiveView.markDirty(notify=false)
+      let newActiveView = self.layout.activeLeafView()
+      if newActiveView != self.activeView and newActiveView != nil:
+        if self.activeView != nil:
+          self.activeView.deactivate()
+        newActiveView.activate()
+        self.activeView = newActiveView
+        newActiveView.markDirty(notify=false)
 
-    if self.maximizeView:
-      let bounds = builder.currentParent.bounds
-      builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
-        let view = self.layout.activeLeafView()
-        if view != nil:
-          result.add view.createUI(builder)
-        elif self.fallbackView != nil:
-          result.add self.fallbackView.createUI(builder)
-        else:
-          builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
-
-    else:
-      let visibleViews = self.getNumVisibleViews()
-      if visibleViews == 0 and self.fallbackView != nil:
-        result.add self.fallbackView.createUI(builder)
+      if self.maximizeView:
+        nui.layoutVertical("layout-maximized"):
+          discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backendGap(4)
+          let view = self.layout.activeLeafView()
+          if view != nil:
+            view.render(nui)
+          elif self.fallbackView != nil:
+            self.fallbackView.render(nui)
+          else:
+            nui.node:
+              discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text("No view")
       else:
-        result.add self.layout.createUI(builder)
+        let visibleViews = self.getNumVisibleViews()
+        if visibleViews == 0 and self.fallbackView != nil:
+          self.fallbackView.render(nui)
+        else:
+          # Render layout via NUI – if layout has NUI impl, use it, otherwise fallback to simple vertical container
+          if self.layout.renderNuiImpl != nil:
+            self.layout.render(nui)
+          else:
+            nui.layoutVertical("layout-root"):
+              discard nui.fillX().fillY().fillBackground().styleIndex(UiStyleIndexPanel).backendGap(4)
+              for v in self.layout.visibleLeafViews():
+                nui.node:
+                  discard nui.fillX().fillY()
+                  v.render(nui)
 
   proc chooseOpen*(self: LayoutService, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6)
 
@@ -1498,6 +1568,15 @@ when implModule:
   proc chooseOpenCommand(self: LayoutService, preview: Option[bool], scaleX: Option[float], scaleY: Option[float], previewScale: Option[float]) =
     self.chooseOpen(preview.get(true), scaleX.get(0.8), scaleY.get(0.8), previewScale.get(0.6))
 
+  proc openPlatformSettings(self: LayoutService) =
+    let self = self.LayoutServiceImpl
+    let view = self.getOrCreateView((%%*{"kind": "platform-settings"}).toJson)
+    if view == nil:
+      log lvlError, "Platform settings are not available for this platform"
+      return
+    let slot = if "small-left" in self.layout.slots: "#small-left" else: ""
+    self.showView(view, slot = slot)
+
   include generated/layout_commands
 
   proc init_module_layout*() {.cdecl, exportc, dynlib.} =
@@ -1519,7 +1598,7 @@ when implModule:
     let self = getServiceChecked(LayoutServiceImpl)
     registerCommands(cmds)
     if getService(StatusLineService).getSome(statusLine):
-      statusLine.addRenderer "layout", proc(builder: UINodeBuilder): seq[OverlayFunction] =
+      statusLine.addRendererNui "layout", proc(nui: var UiBuilder) {.gcsafe, raises: [].} =
         let layout = self.layout.activeLeafLayout()
         let maximizedText = if self.maximizeView:
           "Fullscreen"
@@ -1531,11 +1610,11 @@ when implModule:
             fmt"{layout.children.len}/{maxText}"
         else:
           ""
-        let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[Layout {self.layoutName} - {layout.desc} - {maximizedText}]")
-        return @[]
+        let desc = if layout != nil: layout.desc else: ""
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(&"[Layout {self.layoutName} - {desc} - {maximizedText}]")
 
-      statusLine.addRenderer "layout.min", proc(builder: UINodeBuilder): seq[OverlayFunction] =
+      statusLine.addRendererNui "layout.min", proc(nui: var UiBuilder) {.gcsafe, raises: [].} =
         let layout = self.layout.activeLeafLayout()
         let maximizedText = if self.maximizeView:
           "Fullscreen"
@@ -1547,9 +1626,8 @@ when implModule:
             fmt"{layout.children.len}/{maxText}"
         else:
           ""
-        let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = &"[{maximizedText}]")
-        return @[]
+        nui.node:
+          discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(&"[{maximizedText}]")
 
   import open_editor_previewer
   proc chooseOpen*(self: LayoutService, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) =
@@ -1597,6 +1675,15 @@ when implModule:
             details: @[root // relativeDirectory],
           )
 
+      for view in self.mAllViews:
+        if view != nil and not (view of EditorView):
+          let marker = if view == activeView: "# " elif view in hiddenViews: "  " else: ". "
+          items.add FinderItem(
+            displayName: marker & view.display,
+            filterText: view.display,
+            data: "view:" & $view.id2,
+          )
+
       return items
 
     let source = newSyncDataSource(getItems)
@@ -1617,6 +1704,14 @@ when implModule:
     builder.previewer = previewer
 
     builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
+      if item.data.startsWith("view:"):
+        let viewId = item.data[5..^1].parseInt.int32.catch:
+          log lvlError, fmt"Failed to parse view id from data '{item}'"
+          return true
+        if self.getView(viewId).getSome(view):
+          self.showView(view)
+        return true
+
       let editorId = item.data.parseInt.EditorIdNew.catch:
         log lvlError, fmt"Failed to parse editor id from data '{item}'"
         return true
@@ -1628,6 +1723,15 @@ when implModule:
 
     builder.customActions["close-selected"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
       let item = popup.getSelectedItem().getOr:
+        return true
+
+      if item.data.startsWith("view:"):
+        let viewId = item.data[5..^1].parseInt.int32.catch:
+          log lvlError, fmt"Failed to parse view id from data '{item}'"
+          return true
+        if self.getView(viewId).getSome(view):
+          self.closeView(view, restoreHidden = false)
+        source.retrigger()
         return true
 
       let editorId = item.data.parseInt.EditorIdNew.catch:

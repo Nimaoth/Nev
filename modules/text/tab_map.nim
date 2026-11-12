@@ -3,6 +3,7 @@ import nimsumtree/[rope, sumtree, buffer, clock]
 import misc/[custom_async, custom_unicode, util, event, rope_utils, arena]
 import syntax_map, overlay_map
 import chroma, theme
+import nuigi/debug/profiler
 
 var debugTabMap* = false
 
@@ -336,6 +337,7 @@ proc seekLine*(self: var TabChunkIterator, line: int) =
   self.seek(tabPoint(line))
 
 proc next*(self: var TabChunkIterator): Option[TabChunk] =
+  prof("TabChunkIterator.next")
   if self.tabChunk.isNone:
     if self.inputChunks.next().getSome(it):
       self.tabChunk = TabChunk(inputChunk: it, tabPoint: self.tabPoint).some

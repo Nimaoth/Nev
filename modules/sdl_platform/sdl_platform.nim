@@ -1,4 +1,4 @@
-#use theme
+#use theme command_service
 import platform
 import compilation_config
 
@@ -7,25 +7,37 @@ include module_base
 
 proc newSdlPlatform*(): Platform {.rtl, raises: [].}
 
-when implModule and defined(sdlPlatform):
+when implModule:
   import std/[options, strformat, strutils, unicode, tables, hashes, os, math]
   import vmath as nevMath except Vec2, vec2, IVec2, ivec2, Vec3, Vec4, Mat4
   import chroma
   import nuigi/core/vecmath as nuiMath
   import misc/[custom_logger, util, event, timer, custom_async, custom_unicode]
-  import ui/node as unode
-  from ui/node import FontInfo, UIBorder, UINodeFlag, UINodeFlags
-  import app_options, vfs, vfs_service, service
+  from misc/render_command import FontInfo, UINodeFlag, UINodeFlags, contains, `==`
+  import app_options, vfs, vfs_service, service, command_service
+  import nimsumtree/arc
+  from std/times import now, format, getTime, toUnix
+  import ./sdl_capture
 
   import nuigi/backend/sdl3/sdl3
   import nuigi
-  import nuigi/core/[timer as nuiTimer, array_view, arena]
+  import nuigi/core/[array_view, arena]
   import nuigi/text/fonts
   import nuigi/rendering/mesh
   import nuigi/widgets, nuigi/widgets/[windows, plot]
-  import nuigi/debug/[debug_panel, profiler, profiler_ui]
+  import nuigi/debug/[debug_panel, profiler, profiler_ui, frame_dump]
   import nuigi/styling/theme_editor
   import nuigi/demo/demo_window
+
+  when defined(windows):
+    proc DwmSetWindowAttribute(
+      hwnd: pointer,
+      attribute: uint32,
+      value: pointer,
+      valueSize: uint32
+    ): int32 {.stdcall, dynlib: "dwmapi", importc.}
+
+    const dwmwaCaptionColor = 35'u32
 
   include nuigi/util/compat2
 
@@ -35,7 +47,7 @@ when implModule and defined(sdlPlatform):
   logCategory "sdl-platform"
 
   const PlotHistoryLen = 256
-  const defaultAntialiasMeshWidth = 0.0'f32
+  const defaultAntialiasMeshWidth = 1.0'f32
 
   type
     SdlInputAccum = object
@@ -61,7 +73,6 @@ when implModule and defined(sdlPlatform):
       antialiasMeshWidth*: float32
       renderOnDemand*: bool
       showDemoWindow*: bool
-      showSettingsWindow*: bool
       showDebugPanel*: bool
       showDebugPanel2*: bool
       showThemeEditor*: bool
@@ -70,6 +81,8 @@ when implModule and defined(sdlPlatform):
     SdlPlatform* = ref object of Platform
       window: Window
       renderer: Renderer
+      lastTitleBarColor: uint32
+      hasLastTitleBarColor: bool
       running*: bool
       winW*: cint
       winH*: cint
@@ -82,28 +95,63 @@ when implModule and defined(sdlPlatform):
       fontInfoVal: FontInfo
       currentMouseButtons*: set[MouseButton]
 
-      # Nuigi state – all demo globals moved onto the platform
-      nui: UiBuilder
+      fontRegular: string
+      fontBold: string
+      fontItalic: string
+      fontBoldItalic: string
+      fallbackFonts*: seq[string]
+      fontRegularId: FontId
+      fontBoldId: FontId
+      fontItalicId: FontId
+      fontBoldItalicId: FontId
+      fontInfoCache: Table[(UINodeFlags, float32), FontInfo]
+      typefaces: Table[string, FontId]
+      lastFontSize: float
+
+      # Nuigi state – all demo globals moved onto the platform (nui now stored in Platform base)
       nuiInitialized: bool
       fontRender: FontRender
       fontAtlasTexture: Texture
+      uiRenderTexture: Texture
+      uiRenderTextureWidth: cint
+      uiRenderTextureHeight: cint
       debugPanel: DebugPanel
       debugPanel2: DebugPanel
       themeEditor: ThemeEditor
       inputAccum: SdlInputAccum
       hadInput: bool
       redrawingUi: bool
-      lastTime: float
       fps: float
       plotHistory: array[3, array[PlotHistoryLen, float32]]
       plotWrite: int
       plotCount: int
       fpsVal: float
       frameVal: float
-      tickVal: float
-      testFont: FontId
+      processingVal: float
       settings: SdlSettings
       customMaterial: MaterialId
+      # Pending printable key press, mirroring gui_platform.lastEvent.
+      # SDL emits KEY_DOWN followed by TEXT_INPUT for printable characters
+      # (e.g. '{' via AltGr+7 on German layouts arrives as KEY_DOWN '7'
+      # with Ctrl+Alt plus TEXT_INPUT "{"). We defer dispatching printable
+      # KEY_DOWN until we know no TEXT_INPUT follows, otherwise the same
+      # keystroke would be handled twice (once as Ctrl+Alt+7, once as "{").
+      pendingKeyPress: Option[(int64, Modifiers)]
+
+      # Screen capture (see sdl_capture.nim and sdl_platform.commands.lisp)
+      pendingScreenshots: seq[string]
+      recording: bool
+      recordingDir: string
+      recordingFrame: int
+      recordingTimer: Timer
+      recordingMaxSeconds: float
+      recordingMaxFrames: int
+      recordingDropped: int
+      recordingIndex: string
+      captureDir: string  ## NEV_SDL_DEBUG_DIR
+      captureDebugFrames: bool  ## Write screen.png/layout.txt every frame (NEV_SDL_DEBUG_FRAMES != 0)
+      ignoreMouse: bool  ## Drop all mouse events (NEV_SDL_IGNORE_MOUSE=1), e.g. while running scenarios
+      captureFrame: int
 
   # Active platform for callbacks that cannot capture (measureText etc.) – stored as pointer to stay gcsafe
   var gActiveNuiPlatform: SdlPlatform = nil
@@ -126,11 +174,215 @@ when implModule and defined(sdlPlatform):
   func toUiColor(c: chroma.Color): UiColor =
     rgba(c.r.float32, c.g.float32, c.b.float32, c.a.float32)
 
+  when defined(windows):
+    proc updateTitleBarColor(self: SdlPlatform, color: UiColor) {.gcsafe, raises: [].} =
+      let r = (max(0.0'f32, min(1.0'f32, color.r)) * 255).uint32
+      let g = (max(0.0'f32, min(1.0'f32, color.g)) * 255).uint32
+      let b = (max(0.0'f32, min(1.0'f32, color.b)) * 255).uint32
+      let colorRef = r or (g shl 8) or (b shl 16)
+      if self.hasLastTitleBarColor and self.lastTitleBarColor == colorRef:
+        return
+
+      let properties = self.window.getWindowProperties()
+      let hwnd = sdl3.getPointerProperty(properties, sdl3.PROP_WINDOW_WIN32_HWND_POINTER, nil)
+      if hwnd == nil:
+        log lvlWarn, "SDL window does not expose its Win32 HWND; cannot set title bar color"
+        self.lastTitleBarColor = colorRef
+        self.hasLastTitleBarColor = true
+        return
+
+      var value = colorRef
+      let result = DwmSetWindowAttribute(hwnd, dwmwaCaptionColor, addr value, sizeof(value).uint32)
+      if result < 0:
+        log lvlWarn, "DwmSetWindowAttribute failed to set title bar color: HRESULT ", result
+      self.lastTitleBarColor = colorRef
+      self.hasLastTitleBarColor = true
+
+  # ---------- font helpers (mirrors gui_platform) ----------
+  proc getFontIdForFlags(self: SdlPlatform, flags: UINodeFlags): FontId {.gcsafe, raises: [].} =
+    if TextItalic in flags and TextBold in flags:
+      if self.fontBoldItalicId != 0: return self.fontBoldItalicId
+      if self.fontBoldId != 0: return self.fontBoldId
+      if self.fontItalicId != 0: return self.fontItalicId
+    elif TextItalic in flags:
+      if self.fontItalicId != 0: return self.fontItalicId
+    elif TextBold in flags:
+      if self.fontBoldId != 0: return self.fontBoldId
+    if self.fontRegularId != 0: return self.fontRegularId
+    return 0
+
+  proc getTextBoundsSdl(self: SdlPlatform, text: string, fontSize: float = -1, flags: UINodeFlags = 0.UINodeFlags): nevMath.Vec2 {.gcsafe, raises: [].} =
+    try:
+      let size = if fontSize < 0: self.fontSizeVal else: fontSize
+      let fid = self.getFontIdForFlags(flags)
+      let arr = self.fontRender.arrangeText(text.toOpenArray(0, text.high), size.float32, fid, -1.0'f32)
+      return nevMath.vec2(arr.size.x, arr.size.y)
+    except:
+      return nevMath.vec2(text.len.float32 * 8, 18)
+
+  proc updateCharWidth(self: SdlPlatform) {.gcsafe, raises: [].} =
+    try:
+      # Mirrors gui_platform.updateCharWidth: measure "#_" repeated
+      let bounds = self.getTextBoundsSdl(repeat("#_", 50))
+      let boundsSingle = self.getTextBoundsSdl("#_")
+      var cw = 8.0
+      var gap = 0.0
+      var lh = 18.0
+      if bounds.x > 0:
+        cw = bounds.x / 100.0
+        gap = (bounds.x / 100.0) - boundsSingle.x / 2.0
+        lh = bounds.y
+        if lh <= 0:
+          lh = self.fontSizeVal * 1.2
+      else:
+        # fallback using font metrics directly
+        let fid = self.getFontIdForFlags(0.UINodeFlags)
+        let arr = self.fontRender.arrangeText("M".toOpenArray(0, 0), self.fontSizeVal.float32, fid, -1.0'f32)
+        let ascent = arr.ascent.float
+        let descent = arr.descent.float
+        lh = max(1.0, (ascent - descent))
+        cw = max(4.0, self.fontSizeVal * 0.6)
+        gap = 0
+      self.charWidthVal = cw
+      self.charGapVal = gap
+      self.lineHeightVal = lh
+    except:
+      discard
+
+  proc clearFontCaches(self: SdlPlatform) {.gcsafe, raises: [].} =
+    self.fontInfoCache.clear()
+
+  proc tryAddFontFromPath(self: SdlPlatform, path: string): FontId {.gcsafe, raises: [].} =
+    if path.len == 0:
+      return -1
+    if path in self.typefaces:
+      return self.typefaces[path]
+    # Try direct filesystem path (for non-VFS paths like C:/WINDOWS/Fonts/...)
+    # For app:// paths we need to defer to async VFS path, but try localize fallback
+    try:
+      if not path.startsWith("app://"):
+        if fileExists(path):
+          let fid = self.fontRender.addFontFace(path)
+          if fid >= 0:
+            self.typefaces[path] = fid
+            return fid
+      else:
+        # Try to localize via VFS if already mounted
+        if not self.vfs.isNil:
+          let local = self.vfs.localize(path)
+          if local != path and fileExists(local):
+            let fid = self.fontRender.addFontFace(local)
+            if fid >= 0:
+              self.typefaces[path] = fid
+              return fid
+          # Also try relative fonts/ fallback (e.g. app://fonts/... -> fonts/...)
+          let rel = path.replace("app://", "")
+          if fileExists(rel):
+            let fid = self.fontRender.addFontFace(rel)
+            if fid >= 0:
+              self.typefaces[path] = fid
+              return fid
+          if fileExists("fonts/" & rel.splitPath.tail):
+            let fid = self.fontRender.addFontFace("fonts/" & rel.splitPath.tail)
+            if fid >= 0:
+              self.typefaces[path] = fid
+              return fid
+    except:
+      discard
+    return -1
+
+  proc loadFontAsync(self: SdlPlatform, path: string): Future[void] {.async: (raises: []).} =
+    if path.len == 0:
+      return
+    if path in self.typefaces:
+      return
+    try:
+      # Prefer VFS read for app:// paths, fallback to sync path
+      if path.startsWith("app://"):
+        let data = await self.vfs.read(path, {Binary})
+        let fid = self.fontRender.addFontFace(path, data)
+        if fid >= 0:
+          self.typefaces[path] = fid
+          if path == self.fontRegular: self.fontRegularId = fid
+          elif path == self.fontBold: self.fontBoldId = fid
+          elif path == self.fontItalic: self.fontItalicId = fid
+          elif path == self.fontBoldItalic: self.fontBoldItalicId = fid
+          self.clearFontCaches()
+          self.updateCharWidth()
+          # keep DefaultMono in sync
+          try:
+            if self.nuiInitialized and path == self.fontRegular and fid != 0:
+              self.nui.themeTextStyle(UiStyleIndexDefaultMono)[].fontId = fid
+              self.nui.themeTextStyle(UiStyleIndexDefaultMono)[].fontSize = self.fontSizeVal.float32
+          except:
+            discard
+          self.requestedRender = true
+          self.redrawEverything = true
+          log lvlInfo, &"Loaded VFS font '{path}' -> id {fid}"
+        else:
+          log lvlError, &"Failed to add VFS font '{path}'"
+      else:
+        let fid = self.tryAddFontFromPath(path)
+        if fid >= 0:
+          if path == self.fontRegular: self.fontRegularId = fid
+          elif path == self.fontBold: self.fontBoldId = fid
+          elif path == self.fontItalic: self.fontItalicId = fid
+          elif path == self.fontBoldItalic: self.fontBoldItalicId = fid
+          self.clearFontCaches()
+          self.updateCharWidth()
+          try:
+            if self.nuiInitialized and path == self.fontRegular and fid != 0:
+              self.nui.themeTextStyle(UiStyleIndexDefaultMono)[].fontId = fid
+              self.nui.themeTextStyle(UiStyleIndexDefaultMono)[].fontSize = self.fontSizeVal.float32
+          except:
+            discard
+          self.requestedRender = true
+          self.redrawEverything = true
+          log lvlInfo, &"Loaded font '{path}' -> id {fid}"
+    except CatchableError as e:
+      log lvlError, &"Failed to load font '{path}': {e.msg}"
+    except:
+      log lvlError, &"Failed to load font '{path}': {getCurrentExceptionMsg()}"
+
+  proc getFontInfoImplSdl(self: SdlPlatform, fontSize: float, flags: UINodeFlags): ptr FontInfo {.gcsafe, raises: [].} =
+    let key = (flags, fontSize.float32)
+    if key in self.fontInfoCache:
+      return self.fontInfoCache[key].addr
+    # compute metrics for this font size/flags using FontRender
+    var lineHeight = 0.0
+    var ascent = 0.0
+    var scale = 1.0
+    var lineGap = self.lineDistanceVal
+    try:
+      let fid = self.getFontIdForFlags(flags)
+      # ensure pixel size is set by arranging a dummy text (triggers ftSetupSize internally)
+      let arr = self.fontRender.arrangeText("M".toOpenArray(0, 0), fontSize.float32, fid, -1.0'f32)
+      ascent = arr.ascent.float
+      let descent = arr.descent.float
+      lineHeight = max(1.0, (ascent - descent).float)
+      # scale similar to gui: fontSize / typeface.scale ; for SDL we treat scale as 1 and use lineHeight derived from Freetype metrics
+      scale = 1.0
+    except:
+      lineHeight = max(1.0, fontSize * 1.2)
+      ascent = fontSize * 0.8
+      scale = 1.0
+    let capturedFontSize = fontSize
+    proc advance(r: Rune): float {.gcsafe, raises: [].} =
+      return capturedFontSize * 0.6
+    self.fontInfoCache[key] = FontInfo(
+      ascent: ascent,
+      lineHeight: lineHeight,
+      lineGap: lineGap,
+      scale: scale,
+      advance: advance,
+    )
+    return self.fontInfoCache[key].addr
+
   # ---------- helpers for fonts / plot ----------
-  proc uiSdlArrangeText(text: openArray[char], fontId: FontId, fontSize: float32, maxWidth: float32): UiTextArrangement {.gcsafe, raises: [].} =
+  proc uiSdlArrangeText(text: openArray[char], fontId: FontId, fontSize: float32, maxWidth: float32, textFlags: UiTextFlags): UiTextArrangement {.gcsafe, raises: [].} =
     {.cast(gcsafe).}:
       if activePlatform() != nil:
-        return activePlatform().fontRender.arrangeText(text, fontSize, fontId, maxWidth)
+        return activePlatform().fontRender.arrangeText(text, fontSize, fontId, maxWidth, textFlags)
     var fr: FontRender
     return fr.arrangeText(text, fontSize, fontId, maxWidth)
 
@@ -157,11 +409,7 @@ when implModule and defined(sdlPlatform):
     gcsafeb:
       if activePlatform() == nil:
         return 0'i16
-      let faces = activePlatform().fontRender.listFontFaces()
-      for i in 0 ..< faces.len:
-        if faces[i][0] == name:
-          return UiFontId(faces[i][1])
-      return 0'i16
+      return max(0'i16, activePlatform().fontRender.findFont(name))
 
   proc plotHistoryFn(x: float32, userData: int): float32 {.gcsafe, raises: [].} =
     {.cast(gcsafe).}:
@@ -383,19 +631,34 @@ when implModule and defined(sdlPlatform):
   proc pushPlotHistory(self: SdlPlatform) =
     self.plotHistory[0][self.plotWrite] = self.fpsVal.float32
     self.plotHistory[1][self.plotWrite] = self.frameVal.float32
-    self.plotHistory[2][self.plotWrite] = self.tickVal.float32
+    self.plotHistory[2][self.plotWrite] = self.processingVal.float32
     self.plotWrite = (self.plotWrite + 1) mod PlotHistoryLen
     if self.plotCount < PlotHistoryLen:
       self.plotCount += 1
 
-  proc finishFrameMetrics(self: SdlPlatform, dt: float64, tickStart: float32) =
-    let tickDt = (nuiTimer.getTicksNS().float64 / NS_PER_MS.float64).float32 - tickStart
+  proc finishFrameMetrics(self: SdlPlatform, frameTimeMs, processingTimeMs: float) =
+    if frameTimeMs > 0:
+      self.fps = mix(self.fps, 1000.0 / frameTimeMs, 0.5)
     self.fpsVal = self.fps
-    self.frameVal = dt * 1000
-    self.tickVal = tickDt
+    self.frameVal = frameTimeMs
+    self.processingVal = processingTimeMs
     self.pushPlotHistory()
 
   # ----- nui init -----
+  proc createNuiCacheTexture(context: pointer, width, height: int): UiImageId
+      {.nimcall, gcsafe, raises: [].} =
+    let self = cast[SdlPlatform](context)
+    let texture = createTexture(self.renderer, PIXELFORMAT_RGBA32,
+      TEXTUREACCESS_TARGET, width.cint, height.cint)
+    if texture == nil:
+      log lvlError, "Failed to create SDL widget cache texture: ", sdl3.getError()
+      return UiImageId(0)
+    cast[UiImageId](texture)
+
+  proc freeNuiCacheTexture(context: pointer, image: UiImageId)
+      {.nimcall, gcsafe, raises: [].} =
+    destroyTexture(cast[Texture](image))
+
   proc ensureNuiInitialized(self: SdlPlatform) {.raises: [Exception].} =
     if self.nuiInitialized:
       return
@@ -418,16 +681,15 @@ when implModule and defined(sdlPlatform):
     self.nui.openUrlFn = openUrl
     self.nui.readClipboardFn = readClipboard
     self.nui.writeClipboardFn = writeClipboard
-    discard self.nui.addThemeTextStyle UiNodeText(
-      text: "hello world".uiString,
-      fontId: self.testFont,
-      fontSize: 16,
-    )
+    self.nui.createCacheTextureFn = createNuiCacheTexture
+    self.nui.freeCacheTextureFn = freeNuiCacheTexture
+    self.nui.cacheTextureUserData = cast[pointer](self)
     self.nuiInitialized = true
     self.themeEditor.listFonts = themeEditorListFonts
     self.themeEditor.resolveFont = themeEditorResolveFont
 
   proc syncSdlTextInput(self: SdlPlatform) {.raises: [Exception].} =
+    prof("syncSdlTextInput")
     if self.nui.textInputRequest.active:
       if not self.window.textInputActive():
         discard self.window.startTextInput()
@@ -439,10 +701,17 @@ when implModule and defined(sdlPlatform):
       )
       discard self.window.setTextInputArea(rect.addr,
         max(0.0'f32, round(self.nui.textInputRequest.cursorOffset)).cint)
-    elif self.window.textInputActive():
-      discard self.window.stopTextInput()
+    else:
+      # Keep SDL text input enabled even when no nuigi widget requests it,
+      # so text editors (which render text themselves and never set
+      # textInputRequest) still receive EVENT_TEXT_INPUT for layout-dependent
+      # characters like '{', '}', '@' (e.g. AltGr combos). This mirrors
+      # gui_platform where runeInputEnabled is always true.
+      if not self.window.textInputActive():
+        discard self.window.startTextInput()
 
   proc syncFontAtlas(self: SdlPlatform) {.raises: [Exception].} =
+    prof("syncFontAtlas")
     if self.fontAtlasTexture == nil:
       self.fontAtlasTexture = createTexture(self.renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STATIC,
         self.fontRender.fontAtlasWidth.cint, self.fontRender.fontAtlasHeight.cint)
@@ -558,7 +827,7 @@ when implModule and defined(sdlPlatform):
 
   {.pop: raises.}
   {.pop: gcsafe.}
-  # ----- settings window helpers (platform-owned) -----
+  # ----- settings view content -----
   proc buildSettingsMetricRow(self: SdlPlatform, b: var UiBuilder, prefix: string, metric: int, maxY: float32, precision: int) {.raises: [Exception].} =
     try:
       b.layoutHorizontal:
@@ -599,12 +868,12 @@ when implModule and defined(sdlPlatform):
             except:
               discard
         b.node:
-          discard b.fit().padding(10).fontId(self.testFont).text(display).alignCenter()
+          discard b.fit().padding(10).text(display).alignCenter()
     except:
       discard
 
-  proc buildSettingsWindow(self: SdlPlatform, b: var UiBuilder) {.raises: [Exception].} =
-    b.window("Settings", 0.0, 0.0, 420.0, 640.0):
+  proc buildSettingsContent(self: SdlPlatform, b: var UiBuilder) {.raises: [Exception].} =
+    block:
       b.scrollBox():
         discard b.sizeToParentX().fitY()
         b.layoutVertical:
@@ -617,8 +886,8 @@ when implModule and defined(sdlPlatform):
             discard b.text("Performance")
 
           self.buildSettingsMetricRow(b, "FPS", metric = 0, maxY = 120, precision = 0)
-          self.buildSettingsMetricRow(b, "Frame", metric = 1, maxY = 8,  precision = 1)
-          self.buildSettingsMetricRow(b, "Tick", metric = 2, maxY = 8,  precision = 1)
+          self.buildSettingsMetricRow(b, "Total frame", metric = 1, maxY = 20, precision = 1)
+          self.buildSettingsMetricRow(b, "Processing", metric = 2, maxY = 8, precision = 1)
 
           b.node():
             discard b.fillX().fitY().padding(2)
@@ -642,6 +911,22 @@ when implModule and defined(sdlPlatform):
               discard b.copyTextStyleIndex(UiStyleIndexLabelText)
               discard b.text("Render On Demand")
             discard b.checkbox("", self.settings.renderOnDemand)
+
+            var cachingLabel = noneNodeId()
+            b.node():
+              cachingLabel = b.currentNode.id
+              discard b.fit().textStyleIndex(int(UiStyleIndexLabelText))
+                .text("Node Caching")
+            if b.checkbox("", self.nui.cachingEnabled, labelledBy = cachingLabel):
+              self.requestRender()
+
+            b.node():
+              discard b.fit()
+              discard b.copyTextStyleIndex(UiStyleIndexLabelText)
+              discard b.text("VSync")
+            var vsync = self.vsync
+            if b.checkbox("", vsync):
+              self.setVsync(vsync)
 
             b.node():
               discard b.fit()
@@ -704,146 +989,9 @@ when implModule and defined(sdlPlatform):
               of 1: self.fontRender.flags = {FontRenderFlag.PixelSnapping}
               else: self.fontRender.flags = {}
 
-  proc handleLegacyRenderCommand(
-    cmd: unode.RenderCommand,
-    renderCommands: ptr unode.RenderCommands,
-    b: var UiBuilder,
-    renderCmds: var ArrayView[UiRenderCommand],
-    offsets: var seq[nuiMath.Vec2],
-    curOffset: var nuiMath.Vec2
-  ) {.gcsafe, raises: [].} =
-    case cmd.kind
-    of unode.RenderCommandKind.Rect:
-      renderCmds.add UiRenderCommand(kind: CmdRectStroke, pos: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset, size: nuiMath.vec2(cmd.bounds.w.float32, cmd.bounds.h.float32), color: toUiColor(cmd.color), thickness: 1)
-    of unode.RenderCommandKind.FilledRect:
-      renderCmds.add UiRenderCommand(kind: CmdRectFill, pos: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset, size: nuiMath.vec2(cmd.bounds.w.float32, cmd.bounds.h.float32), color: toUiColor(cmd.color))
-    of unode.RenderCommandKind.TextRaw:
-      if cmd.len > 0 and cmd.data != nil:
-        var txt = newString(cmd.len)
-        copyMem(txt[0].addr, cmd.data, cmd.len)
-        let textIdx = block:
-          let idx = b.frame.texts.len
-          b.frame.texts.add UiNodeText(text: txt.uiString, fontSize: 16, textColor: toUiColor(cmd.color))
-          (idx + 1).uint16
-        renderCmds.add UiRenderCommand(kind: CmdText, pos: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset, color: toUiColor(cmd.color), textIndex: textIdx)
-    of unode.RenderCommandKind.Text:
-      if cmd.arrangementIndex == uint32.high:
-        if cmd.textLen > 0 and renderCommands != nil:
-          let txt = renderCommands.strings[cmd.textOffset.int ..< cmd.textOffset.int + cmd.textLen.int]
-          let textIdx = block:
-            let idx = b.frame.texts.len
-            b.frame.texts.add UiNodeText(text: txt.uiString, fontSize: 16 * max(0.1'f32, cmd.fontScale.float32), textColor: toUiColor(cmd.color))
-            (idx + 1).uint16
-          renderCmds.add UiRenderCommand(kind: CmdText, pos: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset, color: toUiColor(cmd.color), textIndex: textIdx)
-      else:
-        if renderCommands != nil and cmd.arrangementIndex.int < renderCommands.arrangements.len:
-          let indices = renderCommands.arrangements[cmd.arrangementIndex]
-          let arrangement = renderCommands.arrangement
-          let basePos = nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset
-          let baseColor = toUiColor(cmd.color)
-          let underlineCol = toUiColor(cmd.underlineColor)
-          let fontScale = max(0.1'f32, cmd.fontScale.float32)
-          var txt = newStringOfCap(max(0, indices.runes.b - indices.runes.a + 1) * 4 + 4)
-          for i in indices.runes:
-            if i < 0 or i >= arrangement.runes.len: continue
-            var rune = arrangement.runes[i]
-            if rune == ' '.Rune and unode.TextDrawSpaces in cmd.flags:
-              rune = renderCommands.space
-            if rune.int32 < 32 and rune != ' '.Rune and rune != renderCommands.space:
-              continue
-            txt.add($rune)
-          if txt.len > 0:
-            let textIdx = block:
-              let idx = b.frame.texts.len
-              b.frame.texts.add UiNodeText(text: txt.uiString, fontSize: 16 * fontScale, textColor: baseColor)
-              (idx + 1).uint16
-            # echo basePos, " ", txt
-            renderCmds.add UiRenderCommand(kind: CmdText, pos: basePos, color: baseColor, textIndex: textIdx)
-          if unode.TextUndercurl in cmd.flags:
-            renderCmds.add UiRenderCommand(kind: CmdRectFill, pos: basePos + nuiMath.vec2(0, cmd.bounds.h.float32 - 2), size: nuiMath.vec2(cmd.bounds.w.float32, 2), color: underlineCol)
-    of unode.RenderCommandKind.Image:
-      let imgId = UiImageId(cast[uint64](cmd.textureId))
-      renderCmds.add UiRenderCommand(kind: CmdImage, pos: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset, size: nuiMath.vec2(cmd.bounds.w.float32, cmd.bounds.h.float32), color: toUiColor(cmd.color), imageId: imgId, uv0: nuiMath.vec2(cmd.uv0.x, cmd.uv0.y), uv1: nuiMath.vec2(cmd.uv1.x, cmd.uv1.y))
-    of unode.RenderCommandKind.ScissorStart:
-      renderCmds.add UiRenderCommand(kind: CmdClipPush, pos: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32) + curOffset, size: nuiMath.vec2(cmd.bounds.w.float32, cmd.bounds.h.float32))
-    of unode.RenderCommandKind.ScissorEnd:
-      renderCmds.add UiRenderCommand(kind: CmdClipPop)
-    of unode.RenderCommandKind.TransformStart:
-      offsets.add curOffset
-      curOffset = curOffset + nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32)
-      renderCmds.add UiRenderCommand(kind: CmdTransformPush, offset: nuiMath.vec2(cmd.bounds.x.float32, cmd.bounds.y.float32))
-    of unode.RenderCommandKind.TransformEnd:
-      if offsets.len > 0:
-        curOffset = offsets.pop()
-      renderCmds.add UiRenderCommand(kind: CmdTransformPop)
-    else:
-      discard
-
-  proc convertLegacyNodes(self: SdlPlatform, b: var UiBuilder, n: unode.UINode, offset: nuiMath.Vec2) {.raises: [Exception].} =
-    let nodePos = nuiMath.vec2(n.boundsActual.x.float32, n.boundsActual.y.float32)
-    let nodeSize = nuiMath.vec2(n.boundsActual.w.float32, n.boundsActual.h.float32)
-    let idStr = $n.id
-    b.node(idStr):
-      discard b.position(nodePos)
-      discard b.size(nodeSize)
-      if unode.FillBackground in n.flags:
-        discard b.backgroundColor(toUiColor(n.backgroundColor))
-      if unode.DrawBorder in n.flags and n.border != UIBorder():
-        discard b.borderWidths(n.border.left.float32, n.border.top.float32, n.border.right.float32, n.border.bottom.float32)
-        discard b.borderColor(toUiColor(n.borderColor))
-      if unode.DrawText in n.flags and n.text.len > 0:
-        discard b.text(n.text)
-        discard b.textColor(toUiColor(n.textColor))
-      if unode.MaskContent in n.flags:
-        b.maskChildren()
-      var totalCmds = n.renderCommands.commands.len
-      for _ in n.renderCommands.decodeRenderCommands: inc totalCmds
-      for list in n.renderCommandList:
-        if list != nil:
-          totalCmds += list.commands.len
-          for _ in list[].decodeRenderCommands: inc totalCmds
-      var renderCmds = b.frame.arena[].allocEmptyArray(max(1, totalCmds * 10 + 64), UiRenderCommand)
-      var offsets: seq[nuiMath.Vec2]
-      var curOffset = nodePos * 0 + offset * 0
-      for cmd in n.renderCommands.commands:
-        handleLegacyRenderCommand(cmd, n.renderCommands.addr, b, renderCmds, offsets, curOffset)
-      for cmd in n.renderCommands.decodeRenderCommands:
-        handleLegacyRenderCommand(cmd, n.renderCommands.addr, b, renderCmds, offsets, curOffset)
-      for list in n.renderCommandList:
-        if list != nil:
-          for cmd in list.commands:
-            handleLegacyRenderCommand(cmd, list[].addr, b, renderCmds, offsets, curOffset)
-          for cmd in list[].decodeRenderCommands:
-            handleLegacyRenderCommand(cmd, list[].addr, b, renderCmds, offsets, curOffset)
-      if renderCmds.len > 0:
-        discard b.customRenderCommands(renderCmds)
-      for _, child in n.children:
-        self.convertLegacyNodes(b, child, nodePos + offset)
-
   proc buildNuiUi(self: SdlPlatform) {.raises: [Exception].} =
+    prof("buildNuiUi")
     var b = self.nui.addr
-    # Legacy Nev nodes – absolute positioned under a screen-covering custom root
-    block:
-      let vpW = if self.nui.frame.nodes.len > 0: self.nui.frame.nodes[0].size.x else: self.winW.float32
-      let vpH = if self.nui.frame.nodes.len > 0: self.nui.frame.nodes[0].size.y else: self.winH.float32
-      let rootW = if vpW > 0: vpW else: self.winW.float32
-      let rootH = if vpH > 0: vpH else: self.winH.float32
-      self.nui.node("nev-legacy-root"):
-        discard self.nui.position(nuiMath.vec2(0, 0))
-        discard self.nui.size(rootW, rootH)
-        if self.builder != nil:
-          for _, child in self.builder.root.children:
-            self.convertLegacyNodes(self.nui, child, nuiMath.vec2(0, 0))
-
-    self.nui.node("windows"):
-      discard self.nui.fillX().fillY()
-      self.nui.windowSpace()
-    self.nui.node("overlays"):
-      discard self.nui.fillX().fillY().noHover()
-      self.nui.overlays = self.nui.currentNode.id
-
-    if self.settings.showSettingsWindow:
-      self.buildSettingsWindow(self.nui)
 
     if self.settings.showDemoWindow:
       self.nui.window("Demo", 400.0, 100.0, 800.0, 900.0):
@@ -877,25 +1025,287 @@ when implModule and defined(sdlPlatform):
       self.nui.keepAlive(themeEditorId)
       self.nui.keepAlive("Examples".hashChars.UiNodeId)
 
-  proc renderNui(self: SdlPlatform, outputWidth, outputHeight: int) {.raises: [Exception].} =
-    # Renderer path (wasm-like) – uses SDL Renderer, not GPU
-    self.nui.endUiFrame(buildMeshRenderCommands = true)
-    self.syncSdlTextInput()
-    self.syncFontAtlas()
-    discard self.renderer.setRenderDrawColorFloat(0, 0, 0, 1)
-    discard self.renderer.renderClear()
+  proc beginNuiFrameSdlPlatform(self: SdlPlatform) {.gcsafe, raises: [].} =
+    try:
+      setActivePlatform(self)
+      {.cast(gcsafe).}:
+        self.ensureNuiInitialized()
+      var outputWidth, outputHeight: cint = 0
+      discard self.window.getWindowSize(outputWidth, outputHeight)
+      if outputWidth <= 0 or outputHeight <= 0:
+        return
+      self.nui.antialiasMeshWidth = self.settings.antialiasMeshWidth
+      let faces = self.fontRender.listFontFaces()
+      self.nui.fonts.clear()
+      for (name, id) in faces:
+        self.nui.fonts[name] = id
+      self.fontRender.beginFontRenderFrame()
+      {.cast(gcsafe).}:
+        discard self.nui.beginUiFrame(outputWidth.float32, outputHeight.float32, self.makeInputSnapshot())
+
+      var base = 0
+      self.nui.node("base"):
+        discard self.nui.fillX().fillY().noHover()
+        base = self.nui.currentNodeIndex
+      self.nui.windowSpace()
+      self.nui.node("overlays"):
+        discard self.nui.fillX().fillY().noHover()
+        self.nui.overlays = self.nui.currentNode.id
+      discard self.nui.beginAttach(base)
+    except:
+      discard
+
+  const maxPendingRecordingFrames = 16
+
+  proc captureTimestamp(): string =
+    try:
+      now().format("yyyyMMdd-HHmmss-fff")
+    except CatchableError:
+      $getTime().toUnix
+
+  proc stopRecordingImpl(self: SdlPlatform): string =
+    if not self.recording:
+      return ""
+    self.recording = false
+    let duration = self.recordingTimer.elapsed.float
+    let header = &"# {self.recordingFrame} frames, {self.recordingDropped} dropped, {duration:.3f}s\n# frame seconds file\n"
+    try:
+      createDir(self.recordingDir)
+      writeFile(self.recordingDir / "index.txt", header & self.recordingIndex)
+    except CatchableError as e:
+      log lvlError, &"Failed to write recording index: {e.msg}"
+    log lvlInfo, &"Stopped recording to '{self.recordingDir}': {self.recordingFrame} frames, {self.recordingDropped} dropped, {duration:.3f}s"
+    self.recordingIndex = ""
+    return self.recordingDir
+
+  proc recordingLimitReached(self: SdlPlatform): bool =
+    (self.recordingMaxFrames > 0 and self.recordingFrame >= self.recordingMaxFrames) or
+      (self.recordingMaxSeconds > 0 and self.recordingTimer.elapsed.float >= self.recordingMaxSeconds)
+
+  proc wantsCapture(self: SdlPlatform): bool =
+    self.pendingScreenshots.len > 0 or self.recording or
+      (self.captureDir.len > 0 and self.captureDebugFrames)
+
+  proc captureFrame(self: SdlPlatform) =
+    ## Must be called while the UI render texture is the render target.
+    if self.captureDir.len > 0 and not self.captureDebugFrames:
+      # Only the frame counter, so tools can wait for frames/idle without the
+      # cost of reading back every frame. Not atomic: readers may see an empty file.
+      inc self.captureFrame
+      try:
+        writeFile(self.captureDir / "frame.txt", $self.captureFrame)
+      except CatchableError:
+        discard
+
+    if not self.wantsCapture():
+      return
+    if self.recording and self.recordingLimitReached():
+      discard self.stopRecordingImpl()
+      if not self.wantsCapture():
+        return
+
+    prof("captureFrame")
+    let surface = self.renderer.renderReadPixels(nil)
+    if surface == nil:
+      log lvlError, &"Failed to read back frame for capture: {sdl3.getError()}"
+      return
+
+    var consumers = self.pendingScreenshots.len
+    if self.recording: inc consumers
+    if self.captureDir.len > 0 and self.captureDebugFrames: inc consumers
+
+    # Each consumer takes ownership of a surface; the last one gets the original.
+    proc nextSurface(): ptr Surface =
+      dec consumers
+      if consumers == 0: surface else: duplicateSurface(surface)
+
+    for path in self.pendingScreenshots:
+      if enqueueCapture(nextSurface(), path):
+        log lvlInfo, &"Saving screenshot to '{path}'"
+    self.pendingScreenshots.setLen(0)
+
+    if self.recording:
+      let name = &"frame-{self.recordingFrame:06}.png"
+      let elapsed = self.recordingTimer.elapsed.float
+      if enqueueCapture(nextSurface(), self.recordingDir / name, maxPending = maxPendingRecordingFrames):
+        self.recordingIndex.add &"{self.recordingFrame} {elapsed:.4f} {name}\n"
+        inc self.recordingFrame
+      else:
+        inc self.recordingDropped
+
+    if self.captureDir.len > 0 and self.captureDebugFrames:
+      inc self.captureFrame
+      var layout = ""
+      {.cast(gcsafe).}:
+        try:
+          layout = self.nui.dumpFrameLayout()
+        except Exception as e:
+          layout = "Failed to dump layout: " & e.msg
+      # frame.txt is written last so readers can wait for it to change.
+      discard enqueueCapture(nextSurface(), self.captureDir / "screen.png", @[
+        (self.captureDir / "layout.txt", layout),
+        (self.captureDir / "frame.txt", $self.captureFrame),
+      ])
+
+    for error in takeCaptureErrors():
+      log lvlError, error
+
+  proc getSdlPlatform(): SdlPlatform {.raises: [ValueError].} =
+    let platform = getServiceChecked(PlatformService).platform
+    if platform == nil or not (platform of SdlPlatform):
+      raise newException(ValueError, "SDL platform is not active")
+    return platform.SdlPlatform
+
+  proc sdlScreenshot(self: SdlPlatform, path: string = ""): string =
+    let path = if path.len > 0: path else: "screenshots" / &"screenshot-{captureTimestamp()}.png"
+    let absPath = try: path.absolutePath except CatchableError: path
+    self.pendingScreenshots.add absPath
+    self.requestRenderSdlPlatform(true)
+    return absPath
+
+  proc sdlStartRecording(self: SdlPlatform, dir: string = "", seconds: float = 0, maxFrames: int = 0): string =
+    discard self.stopRecordingImpl()
+    let dir = if dir.len > 0: dir else: "screenshots" / &"recording-{captureTimestamp()}"
+    self.recordingDir = try: dir.absolutePath except CatchableError: dir
+    try:
+      createDir(self.recordingDir)
+    except CatchableError as e:
+      log lvlError, &"Failed to create recording dir '{self.recordingDir}': {e.msg}"
+      return ""
+    self.recording = true
+    self.recordingFrame = 0
+    self.recordingDropped = 0
+    self.recordingIndex = ""
+    self.recordingMaxSeconds = seconds
+    self.recordingMaxFrames = maxFrames
+    self.recordingTimer = startTimer()
+    log lvlInfo, &"Recording frames to '{self.recordingDir}' (seconds: {seconds}, maxFrames: {maxFrames})"
+    self.requestRenderSdlPlatform(true)
+    return self.recordingDir
+
+  proc sdlStopRecording(self: SdlPlatform): string =
+    self.stopRecordingImpl()
+
+  proc configureDebugCapture(self: SdlPlatform) =
+    ## NEV_SDL_DEBUG_DIR=<dir> writes screen.png, layout.txt and frame.txt for every
+    ## rendered frame and executes the commands in <dir>/commands (one per line).
+    ## NEV_SDL_DEBUG_FRAMES=0 only writes frame.txt (used by tools/screenshot_scenarios).
+    ## NEV_SDL_IGNORE_MOUSE=1 drops all mouse events so hovering the window can't affect the UI.
+    self.ignoreMouse = getEnv("NEV_SDL_IGNORE_MOUSE") == "1"
+    let dir = getEnv("NEV_SDL_DEBUG_DIR")
+    if dir.len > 0:
+      self.captureDebugFrames = getEnv("NEV_SDL_DEBUG_FRAMES", "1") != "0"
+      try:
+        createDir(dir)
+        self.captureDir = dir.absolutePath
+        log lvlInfo, "Writing SDL debug captures to ", self.captureDir
+      except CatchableError as error:
+        log lvlError, "Failed to create SDL debug dir '", dir, "': ", error.msg
+
+  proc runInjectedCommands(self: SdlPlatform) =
+    if self.captureDir.len == 0:
+      return
+    let path = self.captureDir / "commands"
+    if not fileExists(path):
+      return
+    var content = ""
+    try:
+      content = readFile(path)
+      removeFile(path)
+    except CatchableError as error:
+      log lvlError, "Failed to read injected commands: ", error.msg
+      return
+    let commands = getServiceChecked(CommandService)
+    var results = ""
+    for line in content.splitLines:
+      let command = line.strip
+      if command.len == 0 or command.startsWith("#"):
+        continue
+      let res = commands.executeCommand(command, record = false)
+      results.add command & "\n  -> " & res.get("") & "\n"
+    try:
+      let resultsPath = self.captureDir / "commands.log"
+      let f = open(resultsPath, fmAppend)
+      defer: f.close()
+      f.write(results)
+    except CatchableError as error:
+      log lvlError, "Failed to write commands.log: ", error.msg
+    self.requestRenderSdlPlatform(true)
+
+  proc renderNui(self: SdlPlatform) {.gcsafe, raises: [Exception].}
+
+  proc endNuiFrameSdlPlatform(self: SdlPlatform) {.gcsafe, raises: [].} =
+    try:
+      prof("endNuiFrameSdlPlatform")
+      {.cast(gcsafe).}:
+        self.nui.endAttach() # base
+        self.buildNuiUi()
+        when defined(windows):
+          self.updateTitleBarColor(self.nui.themeStyle(UiStyleIndexWindowTitleBar)[].fillColor)
+        self.nui.endUiFrame(buildMeshRenderCommands = true)
+
+        if self.renderer == nil or self.window == nil or self.redrawingUi:
+          return
+
+        var outputWidth, outputHeight: cint = 0
+        discard self.window.getWindowSize(outputWidth, outputHeight)
+        if outputWidth <= 0 or outputHeight <= 0:
+          return
+
+        if self.uiRenderTexture == nil or
+            self.uiRenderTextureWidth != outputWidth or
+            self.uiRenderTextureHeight != outputHeight:
+          prof("createUiRenderTexture")
+          if self.uiRenderTexture != nil:
+            destroyTexture(self.uiRenderTexture)
+          self.uiRenderTexture = createTexture(self.renderer, PIXELFORMAT_RGBA32,
+            TEXTUREACCESS_TARGET, outputWidth, outputHeight)
+          self.uiRenderTextureWidth = outputWidth
+          self.uiRenderTextureHeight = outputHeight
+          if self.uiRenderTexture == nil:
+            log lvlError, &"Failed to create SDL UI render texture: {sdl3.getError()}"
+            return
+          discard self.uiRenderTexture.setTextureBlendMode(BLENDMODE_NONE)
+
+        self.redrawingUi = true
+        defer: self.redrawingUi = false
+        if not self.renderer.setRenderTarget(self.uiRenderTexture):
+          log lvlError, &"Failed to set SDL UI render target: {sdl3.getError()}"
+          return
+        defer:
+          discard self.renderer.setRenderTarget(nil)
+
+        self.renderNui()
+        self.captureFrame()
+        self.hadInput = false
+    except:
+      log lvlError, "Failed to render SDL UI frame: ", getCurrentExceptionMsg()
+
+  proc renderNuiCommands(self: SdlPlatform) {.gcsafe, raises: [Exception].} =
+    prof("renderNuiCommands")
     # render nuigi commands via SDL Renderer
     let frameOut = self.nui.frameOutput
     # inline renderNewUiRenderer logic using self.renderer and self.nui
     block:
-      proc drawRawVertices(renderer: Renderer, texture: nil Texture, first: ptr UiVertex, count: int) =
+      proc drawRawVertices(renderer: Renderer, texture: nil Texture, first: ptr UiVertex,
+          count: int, premultipliedAlpha = false,
+          samplerMode = TextureSamplerMode.Linear) {.raises: [IOError].} =
         if count <= 0: return
+        if texture != nil:
+          let blend = if premultipliedAlpha: BLENDMODE_BLEND_PREMULTIPLIED else: BLENDMODE_BLEND
+          if not texture.setTextureBlendMode(blend):
+            raise newException(IOError, "Failed to set SDL texture blending: " & $sdl3.getError())
+          let scale = if samplerMode == TextureSamplerMode.Linear: SCALEMODE_LINEAR else: SCALEMODE_NEAREST
+          if not texture.setTextureScaleMode(scale):
+            raise newException(IOError, "Failed to set SDL texture filtering: " & $sdl3.getError())
         let xy = cast[ptr cfloat](first)
         let color = cast[ptr FColor](cast[uint](first) + 16)
         let uv = cast[ptr cfloat](cast[uint](first) + 8)
         let stride = cint(sizeof(UiVertex))
         discard renderer.renderGeometryRaw(texture, xy, stride, color, stride, uv, stride, cint(count), nil, 0, 0)
-      proc renderFilled(renderer: Renderer, transform: UiAffine2, pos, size: nuiMath.Vec2, color: UiColor, texture: nil Texture = nil) =
+      proc renderFilled(renderer: Renderer, transform: UiAffine2, pos, size: nuiMath.Vec2,
+          color: UiColor, texture: nil Texture = nil, premultipliedAlpha = false,
+          samplerMode = TextureSamplerMode.Linear) {.raises: [IOError].} =
         if size.x <= 0 or size.y <= 0: return
         let p0 = transform.transformPoint2(pos)
         let p1 = transform.transformPoint2(pos + nuiMath.vec2(size.x, 0))
@@ -909,13 +1319,26 @@ when implModule and defined(sdlPlatform):
           UiVertex(pos: p2, uv: nuiMath.vec2(1,1), color: color),
           UiVertex(pos: p3, uv: nuiMath.vec2(0,1), color: color),
         ]
-        drawRawVertices(renderer, texture, verts[0].addr, 6)
+        drawRawVertices(renderer, texture, verts[0].addr, 6, premultipliedAlpha, samplerMode)
 
       var transformStack: seq[UiAffine2] = @[identityAffine2()]
       var clipStack: seq[sdl3.Rect] = @[]
+      let frameTarget = self.renderer.getRenderTarget()
+      defer:
+        discard self.renderer.setRenderTarget(frameTarget)
       for cmd in frameOut.commands:
         let transform = transformStack[^1]
         case cmd.kind
+        of CmdRenderTarget:
+          assert transformStack.len == 1 and clipStack.len == 0,
+            "Render target switches require balanced transforms and clips"
+          let target = if cmd.imageId.uint64 == 0: frameTarget else: cast[Texture](cmd.imageId)
+          if not self.renderer.setRenderTarget(target):
+            raise newException(IOError, "Failed to bind SDL widget cache texture: " & $sdl3.getError())
+          if cmd.imageId.uint64 != 0:
+            if not self.renderer.setRenderDrawColor(0, 0, 0, 0) or
+                not self.renderer.renderClear():
+              raise newException(IOError, "Failed to clear SDL widget cache texture: " & $sdl3.getError())
         of CmdTransformPush:
           transformStack.add applyNodeRenderTransform(transform, cmd.pivot, cmd.offset, cmd.rotation, cmd.scale)
         of CmdTransformPop:
@@ -930,7 +1353,8 @@ when implModule and defined(sdlPlatform):
               texture = self.fontAtlasTexture
             else:
               texture = cast[Texture](cmd.imageId)
-            drawRawVertices(self.renderer, texture, cast[ptr UiVertex](cmd.vertexData), cmd.vertexCount)
+            drawRawVertices(self.renderer, texture, cast[ptr UiVertex](cmd.vertexData),
+              cmd.vertexCount, cmd.premultipliedAlpha, cmd.samplerMode)
         of CmdRectStroke:
           discard self.renderer.setRenderDrawColorFloat(cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a)
           let thickness = min(max(1.0'f32, cmd.thickness), min(cmd.size.x, cmd.size.y) * 0.5'f32)
@@ -982,8 +1406,17 @@ when implModule and defined(sdlPlatform):
           var texture: nil Texture = nil
           if cmd.imageId.uint64 == 1: texture = self.fontAtlasTexture
           else: texture = cast[Texture](cmd.imageId)
-          renderFilled(self.renderer, transform, cmd.pos, cmd.size, cmd.color, texture)
+          renderFilled(self.renderer, transform, cmd.pos, cmd.size, cmd.color, texture,
+            cmd.premultipliedAlpha, cmd.samplerMode)
         else: discard
+
+  proc renderNui(self: SdlPlatform) {.gcsafe, raises: [Exception].} =
+    prof("renderNui")
+    self.syncSdlTextInput()
+    self.syncFontAtlas()
+    discard self.renderer.setRenderDrawColorFloat(0, 0, 0, 1)
+    discard self.renderer.renderClear()
+    self.renderNuiCommands()
 
   proc initSdlPlatform(self: SdlPlatform, options: AppOptions) {.gcsafe, raises: [].} =
     log lvlInfo, "Init SDL platform (nuigi/sdl3)"
@@ -994,8 +1427,16 @@ when implModule and defined(sdlPlatform):
         log lvlError, &"SDL_Init failed: {sdl3.getError()}"
         quit(1)
 
-      const initialW = 1280.cint
-      const initialH = 720.cint
+      var initialW = 1920.cint
+      var initialH = 1080.cint
+      let sizeOverride = getEnv("NEV_SDL_WINDOW_SIZE").toLowerAscii.split('x')
+      if sizeOverride.len == 2:
+        try:
+          initialW = sizeOverride[0].strip.parseInt.cint
+          initialH = sizeOverride[1].strip.parseInt.cint
+        except ValueError:
+          log lvlError, "Invalid NEV_SDL_WINDOW_SIZE, expected <width>x<height>"
+      self.configureDebugCapture()
       self.winW = initialW
       self.winH = initialH
       self.vsync = true
@@ -1005,41 +1446,58 @@ when implModule and defined(sdlPlatform):
         log lvlError, &"SDL_CreateWindow failed: {sdl3.getError()}"
         quit(1)
 
+      # Enable SDL text input from the start so editors receive
+      # EVENT_TEXT_INPUT for layout-dependent characters (braces, '@', ...).
+      # syncSdlTextInput keeps it enabled; the IME rect is updated there when
+      # a nuigi widget requests it.
+      try:
+        if not self.window.textInputActive():
+          discard self.window.startTextInput()
+      except:
+        discard
+
       discard setCurrentThreadPriority(THREAD_PRIORITY_TIME_CRITICAL)
 
       self.renderer = sdl3.createRenderer(self.window, nil)
       if self.renderer == nil:
         log lvlWarn, &"SDL_CreateRenderer failed: {sdl3.getError()}, continuing without renderer"
       else:
+        if not self.renderer.setRenderVSync(1):
+          self.vsync = false
+          log lvlWarn, &"Failed to enable SDL renderer VSync: {sdl3.getError()}"
         discard self.renderer.setRenderDrawBlendMode(BLENDMODE_BLEND)
         discard self.renderer.setRenderDrawColor(30, 30, 46, 255)
         discard self.renderer.renderClear()
         discard self.renderer.renderPresent()
 
-      self.builder = unode.newNodeBuilder()
-      self.builder.useInvalidation = true
-      self.builder.defaultBorderWidth = 1
+      # Default font config – mirrors gui_platform defaults
+      self.fontRegular = "app://fonts/DejaVuSansMono.ttf"
+      self.fontBold = "app://fonts/DejaVuSansMono-Bold.ttf"
+      self.fontItalic = "app://fonts/DejaVuSansMono-Oblique.ttf"
+      self.fontBoldItalic = "app://fonts/DejaVuSansMono-BoldOblique.ttf"
+      self.fallbackFonts = @[
+        # "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf",
+        # "app://fonts/NotoEmoji/NotoEmoji.otf"
+      ]
+      self.typefaces = initTable[string, FontId]()
+      self.fontInfoCache = initTable[(UINodeFlags, float32), FontInfo]()
 
       self.fontSizeVal = 16
       self.lineDistanceVal = 1
       self.lineHeightVal = 18
       self.charWidthVal = 8
       self.charGapVal = 0
-      self.builder.charWidth = self.charWidthVal
-      self.builder.lineHeight = self.lineHeightVal
-      self.builder.lineGap = self.lineDistanceVal
+      self.lastFontSize = -1
 
-      proc runeAdvance(r: Rune): float {.gcsafe, raises: [].} = 8.0
+      # Temporary fallback FontInfo until real metrics are computed
+      proc runeAdvanceFallback(r: Rune): float {.gcsafe, raises: [].} = 8.0
       self.fontInfoVal = FontInfo(
         ascent: 14,
         lineHeight: self.lineHeightVal,
         lineGap: self.lineDistanceVal,
         scale: 1.0,
-        advance: runeAdvance,
+        advance: runeAdvanceFallback,
       )
-      self.builder.textWidthImpl = proc(node: unode.UINode): float32 {.gcsafe, raises: [].} = node.text.len.float32 * 8
-      self.builder.textWidthStringImpl = proc(text: string): float32 {.gcsafe, raises: [].} = text.len.float32 * 8
-      self.builder.textBoundsImpl = proc(node: unode.UINode): nevMath.Vec2 {.gcsafe, raises: [].} = nevMath.vec2(node.text.len.float32 * 8, 18)
 
       self.supportsThinCursor = true
       self.focused = true
@@ -1052,8 +1510,7 @@ when implModule and defined(sdlPlatform):
         fontSelected: 0,
         antialiasMeshWidth: defaultAntialiasMeshWidth,
         renderOnDemand: true,
-        showDemoWindow: true,
-        showSettingsWindow: true,
+        showDemoWindow: false,
         showDebugPanel: false,
         showDebugPanel2: false,
         showThemeEditor: false,
@@ -1062,21 +1519,37 @@ when implModule and defined(sdlPlatform):
       self.debugPanel = DebugPanel()
       self.debugPanel2 = DebugPanel()
       self.themeEditor = ThemeEditor()
-      self.lastTime = nuiTimer.getTicksNS().float64 / NS_PER_SECOND.float64
       self.fps = 60.0
-      self.testFont = 0
 
-      # FontRender init – use Texture path (renderer)
-      discard self.fontRender.init({FontRenderFlag.PixelSnapping}, glyphPackingBudgetNs = 100_000_000'u64)
-      # Try system fonts + demo fonts from nuigi assets
+      discard self.fontRender.init({FontRenderFlag.PixelSnapping, FontRenderFlag.SubpixelPhasing}, glyphPackingBudgetNs = 100_000_000'u64)
+
+      # Load default/configured fonts (mirrors gui_platform.setFont logic)
+      # Use sync path where possible, fallback to async VFS for app:// mounts
+      for p in [self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic]:
+        let fid = self.tryAddFontFromPath(p)
+        if fid >= 0:
+          if p == self.fontRegular: self.fontRegularId = fid
+          elif p == self.fontBold: self.fontBoldId = fid
+          elif p == self.fontItalic: self.fontItalicId = fid
+          elif p == self.fontBoldItalic: self.fontBoldItalicId = fid
+          self.typefaces[p] = fid
+        else:
+          # Defer to async VFS load – will update metrics when complete
+          asyncSpawn self.loadFontAsync(p)
+      for p in self.fallbackFonts:
+        let fid = self.tryAddFontFromPath(p)
+        if fid >= 0:
+          self.typefaces[p] = fid
+        else:
+          asyncSpawn self.loadFontAsync(p)
+
       discard self.fontRender.addSystemDefaultFonts()
-      let demoFontPath = "fonts/DejaVuSansMono.ttf"
-      if fileExists(demoFontPath):
-        self.testFont = self.fontRender.addFontFace(demoFontPath)
-        discard self.fontRender.addFontFace("fonts/DejaVuSansMono-Bold.ttf")
-        discard self.fontRender.addFontFace("fonts/DejaVuSansMono-Oblique.ttf")
-      if self.testFont == 0:
-        self.testFont = 0
+
+      setActivePlatform(self)
+      try:
+        self.updateCharWidth()
+      except:
+        discard
 
       {.cast(gcsafe).}:
         setActivePlatform(self)
@@ -1084,9 +1557,13 @@ when implModule and defined(sdlPlatform):
       # Sync theme editor fonts
       self.themeEditor.listFonts = themeEditorListFonts
       self.themeEditor.resolveFont = themeEditorResolveFont
+      try:
+        self.nui.themeTextStyle(UiStyleIndexDefaultMono)[].fontSize = self.fontSizeVal.float32
+      except:
+        discard
 
       if not sdlExposeWatchInstalled:
-        # discard sdl3.addEventWatch(sdlExposeWatch, cast[pointer](self))
+        discard sdl3.addEventWatch(sdlExposeWatch, cast[pointer](self))
         sdlExposeWatchInstalled = true
 
       log lvlInfo, &"SDL window created {initialW}x{initialH} with nuigi"
@@ -1103,12 +1580,21 @@ when implModule and defined(sdlPlatform):
 
   proc deinitSdlPlatform(self: SdlPlatform) =
     try:
+      discard self.stopRecordingImpl()
+      stopCaptureWorker()
+      for error in takeCaptureErrors():
+        log lvlError, error
       if sdlExposeWatchInstalled:
         sdl3.removeEventWatch(sdlExposeWatch, cast[pointer](self))
         sdlExposeWatchInstalled = false
+      if self.nuiInitialized:
+        self.nui.clearWidgetCaches()
       if self.fontAtlasTexture != nil:
         destroyTexture(self.fontAtlasTexture)
         self.fontAtlasTexture = nil
+      if self.uiRenderTexture != nil:
+        destroyTexture(self.uiRenderTexture)
+        self.uiRenderTexture = nil
       if self.renderer != nil:
         sdl3.destroyRenderer(self.renderer)
         self.renderer = nil
@@ -1130,13 +1616,35 @@ when implModule and defined(sdlPlatform):
     except:
       discard
 
+  proc dispatchPendingKeyPress(self: SdlPlatform) {.gcsafe, raises: [].} =
+    # Flush a deferred printable KEY_DOWN as a real key press.
+    # Used when no TEXT_INPUT followed (shortcuts like Ctrl+C, or keys on
+    # layouts where SDL produces no text). Mirrors gui_platform flushing
+    # lastEvent on the next button press / release / processEvents.
+    try:
+      if self.pendingKeyPress.getSome(pending):
+        self.pendingKeyPress = (int64, Modifiers).none
+        self.onKeyPress.invoke((pending[0], pending[1]))
+    except:
+      discard
+
   proc processEventsSdlPlatform(self: SdlPlatform): int {.gcsafe, raises: [].} =
     self.eventCounter = 0
     try:
+      self.runInjectedCommands()
+      if self.recording and self.recordingLimitReached():
+        discard self.stopRecordingImpl()
       # Reset per-frame input for nuigi
       self.beginNuiInputFrame()
       var ev: sdl3.Event
       while sdl3.pollEvent(ev):
+        if self.ignoreMouse:
+          case ev.`type`
+          of EVENT_MOUSE_MOTION, EVENT_MOUSE_BUTTON_DOWN, EVENT_MOUSE_BUTTON_UP, EVENT_MOUSE_WHEEL,
+              sdl3.EVENT_WINDOW_MOUSE_ENTER, sdl3.EVENT_WINDOW_MOUSE_LEAVE:
+            continue
+          else:
+            discard
         inc self.eventCounter
         # Feed to nuigi first (handles gamepad + ui input)
         self.accumulateNuiInput(ev)
@@ -1170,12 +1678,12 @@ when implModule and defined(sdlPlatform):
           self.focused = false
           self.currentMouseButtons = {}
           self.setMods({})
+          self.pendingKeyPress = (int64, Modifiers).none
           self.onFocusChanged.invoke(false)
         of sdl3.EVENT_MOUSE_MOTION:
           let pos = nevMath.vec2(ev.motion.x.float, ev.motion.y.float)
           let delta = nevMath.vec2(ev.motion.xrel.float, ev.motion.yrel.float)
-          if not self.builder.handleMouseMoved(pos, self.currentMouseButtons, self.currentModifiers):
-            self.onMouseMove.invoke((pos, delta, self.currentModifiers, self.currentMouseButtons))
+          self.onMouseMove.invoke((pos, delta, self.currentModifiers, self.currentMouseButtons))
         of sdl3.EVENT_MOUSE_BUTTON_DOWN:
           var button = toPlatformMouseButton(ev.button.button)
           if ev.button.clicks == 2:
@@ -1188,8 +1696,7 @@ when implModule and defined(sdlPlatform):
             # also track as Left for compatibility, but keep distinct button for event
             discard
           let pos = nevMath.vec2(ev.button.x.float, ev.button.y.float)
-          # if not self.builder.handleMousePressed(button, self.currentModifiers, pos):
-          #   self.onMousePress.invoke((button, self.currentModifiers, pos))
+          self.onMousePress.invoke((button, self.currentModifiers, pos))
         of sdl3.EVENT_MOUSE_BUTTON_UP:
           var button = toPlatformMouseButton(ev.button.button)
           if ev.button.clicks == 2:
@@ -1199,31 +1706,44 @@ when implModule and defined(sdlPlatform):
           if button in {MouseButton.Left, MouseButton.Middle, MouseButton.Right}:
             self.currentMouseButtons.excl button
           let pos = nevMath.vec2(ev.button.x.float, ev.button.y.float)
-          # if not self.builder.handleMouseReleased(button, self.currentModifiers, pos):
-          #   self.onMouseRelease.invoke((button, self.currentModifiers, pos))
+          # self.onMouseRelease.invoke((button, self.currentModifiers, pos))
         of sdl3.EVENT_MOUSE_WHEEL:
           let pos = nevMath.vec2(ev.wheel.mouse_x.float, ev.wheel.mouse_y.float)
           let scroll = nevMath.vec2(ev.wheel.x.float, ev.wheel.y.float)
           if scroll.x != 0 or scroll.y != 0:
-            if not self.builder.handleMouseScroll(pos, scroll, self.currentModifiers):
-              self.onScroll.invoke((pos, scroll, self.currentModifiers))
+            self.onScroll.invoke((pos, scroll, self.currentModifiers))
         of sdl3.EVENT_KEY_DOWN:
           let mods = toPlatformModifiers(ev.key.`mod`)
           self.setMods(mods)
           let input = sdlKeyToInput(ev.key.key)
           if input != 0:
-            if not self.builder.handleKeyPressed(input, mods):
+            if input < 0:
+              # Special keys (ENTER, ESCAPE, arrows, F-keys, ...) never
+              # produce TEXT_INPUT, so dispatch immediately. Flush any
+              # older deferred printable first so ordering stays intact.
+              self.dispatchPendingKeyPress()
               self.onKeyPress.invoke((input, mods))
+            else:
+              # Printable candidate: defer until we know whether TEXT_INPUT
+              # follows. If the previous deferred key never got text, it was
+              # a shortcut (e.g. Ctrl+C) -> flush it as a key press now.
+              self.dispatchPendingKeyPress()
+              self.pendingKeyPress = (input, mods).some
         of sdl3.EVENT_KEY_UP:
           let mods = toPlatformModifiers(ev.key.`mod`)
           self.setMods(mods)
           let input = sdlKeyToInput(ev.key.key)
           if input != 0:
-            if not self.builder.handleKeyReleased(input, mods):
-              self.onKeyRelease.invoke((input, mods))
+            # No TEXT_INPUT followed the deferred KEY_DOWN, so this was a
+            # shortcut or otherwise non-textual key -> emit the press now
+            # (mirrors gui_platform emitting lastEvent on button release),
+            # then emit the release itself.
+            self.dispatchPendingKeyPress()
+            self.onKeyRelease.invoke((input, mods))
         of sdl3.EVENT_TEXT_INPUT:
           if ev.text.text != nil:
             let text = $ev.text.text
+            var consumedPending = false
             for r in text.runes:
               if r.int32 in char.low.ord .. char.high.ord:
                 case r.char
@@ -1233,6 +1753,12 @@ when implModule and defined(sdlPlatform):
                 of 13.char: continue
                 of 127.char: continue
                 else: discard
+              if not consumedPending:
+                # The KEY_DOWN that produced this text must not also be
+                # handled as e.g. Ctrl+Alt+7 for '{' -> drop it.
+                # Mirrors gui_platform clearing lastEvent in onRune.
+                self.pendingKeyPress = (int64, Modifiers).none
+                consumedPending = true
               self.onRune.invoke((r.int64, self.currentModifiers))
         of sdl3.EVENT_DROP_FILE:
           if ev.drop.data != nil:
@@ -1240,60 +1766,31 @@ when implModule and defined(sdlPlatform):
             self.onDropFile.invoke((path, ""))
         else:
           discard
+      # Flush a deferred printable that never produced text and never got a
+      # KEY_UP in this batch (e.g. key still held). Mirrors gui_platform
+      # flushing lastEvent at the end of processEvents.
+      self.dispatchPendingKeyPress()
       if self.eventCounter > 0:
         inc self.eventCounter
       return self.eventCounter
     except:
       return self.eventCounter
 
+  proc shouldRenderSdlPlatform(self: SdlPlatform): bool {.gcsafe, raises: [].} =
+    not self.settings.renderOnDemand or self.nui.shouldRender(self.hadInput)
+
   proc renderSdlPlatform(self: SdlPlatform, rerender: bool) {.gcsafe, raises: [].} =
     try:
-      if self.renderer == nil or self.window == nil:
+      if self.renderer == nil or self.window == nil or self.uiRenderTexture == nil:
         return
-      setActivePlatform(self)
-      {.cast(gcsafe).}:
-        self.ensureNuiInitialized()
-
-      # Timing like demo
-      let now = nuiTimer.getTicksNS().float64 / NS_PER_SECOND.float64
-      var dt = now - self.lastTime
-      if dt < 0: dt = 0.016
-      self.lastTime = now
-      if dt != 0:
-        self.fps = mix(self.fps, 1.0 / dt, 0.5)
-      let tickStart = (nuiTimer.getTicksNS().float64 / NS_PER_MS.float64).float32
-
-      # Decide if we should render (respect renderOnDemand)
-      let shouldRender = self.nui.shouldRender(self.hadInput)
-      if self.settings.renderOnDemand and not shouldRender and not rerender:
-        return
-
-      if self.redrawingUi:
-        return
-      self.redrawingUi = true
-      defer: self.redrawingUi = false
-
-      var outputWidth, outputHeight: cint = 0
-      discard self.window.getWindowSize(outputWidth, outputHeight)
-      if outputWidth <= 0 or outputHeight <= 0:
-        return
-
-      # Update antialias from settings
-      self.nui.antialiasMeshWidth = self.settings.antialiasMeshWidth
-
-      # Refresh fonts map for theme editor
-      let faces = self.fontRender.listFontFaces()
-      self.nui.fonts.clear()
-      for (name, id) in faces:
-        self.nui.fonts[name] = id
-
-      {.cast(gcsafe).}:
-        discard self.nui.beginUiFrame(outputWidth.float32, outputHeight.float32, self.makeInputSnapshot())
-        self.buildNuiUi()
-        self.renderNui(outputWidth.int, outputHeight.int)
-      self.finishFrameMetrics(dt, tickStart)
-      discard self.renderer.renderPresent()
-      self.hadInput = false
+      # The UI was rendered into this texture by endNuiFrameSdlPlatform.
+      discard self.renderer.renderTexture(self.uiRenderTexture, nil, nil)
+      let processingTimeMs = self.frameTimer.elapsed.ms
+      block:
+        prof("present")
+        discard self.renderer.renderPresent()
+      if rerender:
+        self.finishFrameMetrics(self.frameTimer.elapsed.ms, processingTimeMs)
     except CatchableError as e:
       log lvlError, &"SDL render failed: {e.msg}"
     except:
@@ -1303,19 +1800,87 @@ when implModule and defined(sdlPlatform):
   {.push raises: [].}
 
   proc fontSizeSetSdlPlatform(self: SdlPlatform, fontSize: float) =
-    self.fontSizeVal = fontSize
+    self.fontSizeVal = max(1.0, fontSize)
+    if self.lastFontSize != self.fontSizeVal:
+      self.lastFontSize = self.fontSizeVal
+      self.clearFontCaches()
+    self.updateCharWidth()
     self.fontInfoVal.lineHeight = self.lineHeightVal
-    self.builder.charWidth = self.charWidthVal
+    self.fontInfoVal.lineGap = self.lineDistanceVal
+    # keep DefaultMono style in sync (used by terminal NUI rendering)
+    try:
+      if self.nuiInitialized:
+        self.nui.themeTextStyle(UiStyleIndexDefaultMono)[].fontSize = self.fontSizeVal.float32
+    except:
+      discard
+    self.requestRenderSdlPlatform(true)
 
   proc lineDistanceSetSdlPlatform(self: SdlPlatform, lineDistance: float) =
     self.lineDistanceVal = lineDistance
-    self.builder.lineGap = lineDistance
+    self.clearFontCaches()
+    self.updateCharWidth()
+    self.fontInfoVal.lineGap = self.lineDistanceVal
+    self.requestRenderSdlPlatform(true)
 
   proc setFontSdlPlatform(self: SdlPlatform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) =
-    discard
+    let changed = fontRegular != self.fontRegular or fontBold != self.fontBold or
+                  fontItalic != self.fontItalic or fontBoldItalic != self.fontBoldItalic or
+                  fallbackFonts != self.fallbackFonts
+    log lvlInfo, &"Update SDL font: {fontRegular}, {fontBold}, {fontItalic}, {fontBoldItalic}, fallbacks: {fallbackFonts}"
+    self.fontRegular = fontRegular
+    self.fontBold = fontBold
+    self.fontItalic = fontItalic
+    self.fontBoldItalic = fontBoldItalic
+    self.fallbackFonts = fallbackFonts
+    # Clear previous mappings – keep system fonts in FontRender but reset our cache
+    self.clearFontCaches()
+    # Try sync load where possible; asyncSpawn VFS loads for app:// paths
+    # Reset ids – they will be reassigned on successful load
+    self.fontRegularId = 0
+    self.fontBoldId = 0
+    self.fontItalicId = 0
+    self.fontBoldItalicId = 0
+    # Don't clear typefaces entirely – retain already loaded system fonts
+    for p in [fontRegular, fontBold, fontItalic, fontBoldItalic]:
+      var fid = self.tryAddFontFromPath(p)
+      if fid < 0:
+        # schedule async VFS load
+        asyncSpawn self.loadFontAsync(p)
+      else:
+        self.typefaces[p] = fid
+        if p == fontRegular: self.fontRegularId = fid
+        elif p == fontBold: self.fontBoldId = fid
+        elif p == fontItalic: self.fontItalicId = fid
+        elif p == fontBoldItalic: self.fontBoldItalicId = fid
+    for p in fallbackFonts:
+      var fid = self.tryAddFontFromPath(p)
+      if fid < 0:
+        asyncSpawn self.loadFontAsync(p)
+      else:
+        self.typefaces[p] = fid
+    self.updateCharWidth()
+    # keep DefaultMono style in sync
+    try:
+      if self.nuiInitialized:
+        let monoId = self.fontRegularId
+        if monoId != 0:
+          self.nui.themeTextStyle(UiStyleIndexDefaultText)[].fontId = monoId
+          self.nui.themeTextStyle(UiStyleIndexDefaultText)[].fontSize = self.fontSizeVal.float32
+          self.nui.themeTextStyle(UiStyleIndexDefaultMono)[].fontId = monoId
+          self.nui.themeTextStyle(UiStyleIndexDefaultMono)[].fontSize = self.fontSizeVal.float32
+    except:
+      discard
+    self.requestRenderSdlPlatform(true)
+    if not changed:
+      # still ensure metrics refreshed even if same font but maybe size changed elsewhere
+      discard
 
   proc getFontInfoSdlPlatform(self: SdlPlatform, fontSize: float, flags: UINodeFlags): ptr FontInfo {.gcsafe, raises: [].} =
-    self.fontInfoVal.addr
+    # Delegate to cached impl (mirrors gui_platform.getFontInfo)
+    try:
+      return self.getFontInfoImplSdl(fontSize, flags)
+    except:
+      return self.fontInfoVal.addr
 
   proc fontSizeSdlPlatform(self: SdlPlatform): float = self.fontSizeVal
   proc lineDistanceSdlPlatform(self: SdlPlatform): float = self.lineDistanceVal
@@ -1324,7 +1889,14 @@ when implModule and defined(sdlPlatform):
   proc charGapSdlPlatform(self: SdlPlatform): float = self.charGapVal
 
   proc setVsyncSdlPlatform(self: SdlPlatform, enabled: bool) {.gcsafe, raises: [].} =
-    self.vsync = enabled
+    if self.renderer == nil:
+      self.vsync = enabled
+      return
+    let interval = if enabled: 1.cint else: RENDERER_VSYNC_DISABLED.cint
+    if self.renderer.setRenderVSync(interval):
+      self.vsync = enabled
+    else:
+      log lvlError, &"Failed to set SDL renderer VSync to {enabled}: {sdl3.getError()}"
 
   proc moveToMonitorSdlPlatform(self: SdlPlatform, index: int) {.gcsafe, raises: [].} =
     discard
@@ -1380,10 +1952,23 @@ when implModule and defined(sdlPlatform):
     res.setClipboardTextImpl = proc(self: Platform, str: string) = self.SdlPlatform.setClipboardTextSdlPlatform(str)
     res.getClipboardTextImpl = proc(self: Platform): Future[Option[string]] {.async: (raises: [])} = self.SdlPlatform.getClipboardTextSdlPlatform().await
     res.setTitleImpl = proc(self: Platform, title: string) = self.SdlPlatform.setTitleSdlPlatform(title)
+    res.shouldRenderImpl = proc(self: Platform): bool = self.SdlPlatform.shouldRenderSdlPlatform()
+    res.beginNuiFrameImpl = proc(self: Platform) = self.SdlPlatform.beginNuiFrameSdlPlatform()
+    res.endNuiFrameImpl = proc(self: Platform) = self.SdlPlatform.endNuiFrameSdlPlatform()
+    res.buildSettingsImpl = proc(self: Platform, builder: var UiBuilder) {.gcsafe, raises: [].} =
+      {.cast(gcsafe).}:
+        try:
+          self.SdlPlatform.buildSettingsContent(builder)
+        except Exception as error:
+          log lvlError, "Failed to build SDL settings: ", error.msg
     return res
 
+  include generated/sdl_platform_commands
+
   proc init_module_sdl_platform*() {.cdecl, exportc, dynlib.} =
-    discard
+    let platform = getServiceChecked(PlatformService).platform
+    if platform != nil and platform of SdlPlatform:
+      registerCommands(getServiceChecked(CommandService))
 
 elif implModule:
   proc init_module_sdl_platform*() {.cdecl, exportc, dynlib.} =

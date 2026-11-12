@@ -1,6 +1,6 @@
 import std/[os, options, unicode, strutils, streams, atomics, sequtils, pathnorm, tables]
 import nimsumtree/[rope, static_array, arc]
-import misc/[custom_async, custom_logger, util, timer, regex, id]
+import misc/[custom_async, custom_logger, util, timer, custom_regex, id]
 import vfs
 
 const currentSourcePath2 = currentSourcePath()
@@ -14,6 +14,7 @@ proc cacheDir*(self: VFS, path: string, ignore: Globs)
 
 when implModule:
   import fsnotify
+  import nuigi/debug/profiler
 
   when not defined(musl):
     import encodings
@@ -32,7 +33,7 @@ when implModule:
 
     VFSLocal2* = object
       watcher: Watcher
-      updateRate: int = 200
+      updateRate: int = 100
       cache: Table[string, CachedFile]
 
   proc cacheFile*(self: VFS, path: string) =
@@ -54,11 +55,12 @@ when implModule:
     except OSError:
       discard
 
-  proc process(self: VFS) {.async.} =
+  proc localVfsProcessFileWatchers(self: VFS) {.async.} =
     let local = cast[ptr VFSLocal2](self.getMutUnsafe.impl)
     while true:
       await sleepAsync(local.updateRate.milliseconds)
       try:
+        prof("process")
         process(local.watcher)
       except Exception as e:
         log lvlError, &"Failed to process file watcher: {e.msg}"
@@ -128,6 +130,7 @@ when implModule:
     return (&"Invalid utf-8 byte at {invalidUtf8Index}", true)
 
   proc loadFileThread(args: tuple[path: string, data: ptr string, invalidUtf8Error: ptr bool, flags: set[ReadFlag]]): bool =
+    prof("loadFileThread")
     try:
       let fileSize = getFileSize(args.path).int
       let s = newFileStream(args.path, fmRead, max(1024, fileSize))
@@ -152,6 +155,7 @@ when implModule:
       return false
 
   proc writeFileThread(args: tuple[path: string, data: string]): (bool, string) =
+    prof("writeFileThread")
     try:
       let dir = args.path.splitPath.head
       if not dirExists(dir):
@@ -162,6 +166,7 @@ when implModule:
       return (false, getCurrentExceptionMsg())
 
   proc writeRopeThread(args: tuple[path: string, data: sink RopeSlice[int]]): (bool, string) =
+    prof("writeRopeThread")
     try:
       let dir = args.path.splitPath.head
       if not dirExists(dir):
@@ -178,6 +183,7 @@ when implModule:
       return (false, getCurrentExceptionMsg())
 
   proc loadFileRopeThread(args: tuple[path: string, data: ptr Rope, err: ptr ref CatchableError, cancel: ptr Atomic[bool], threadDone: ptr Atomic[bool]]) =
+    prof("loadFileRopeThread")
     try:
       let s = newFileStream(args.path, fmRead, 1024 * 1024)
       if s.isNil:
@@ -282,6 +288,7 @@ when implModule:
       discard
 
   proc findFileThread(args: tuple[root: string, filename: string, maxResults: int, res: ptr seq[string], options: ptr FindFilesOptions]) =
+    prof("findFileThread")
     try:
       let filenameRegex = re(args.filename)
       findFilesRec(args.root, "", filenameRegex, args.maxResults, args.res[], args.options[].maxDepth)
@@ -543,6 +550,6 @@ when implModule:
     result.getMutUnsafe.findFilesImpl = vfsLocalFindFiles
 
     local.watcher = initWatcher()
-    local.updateRate = 200
+    local.updateRate = 100
 
-    asyncSpawn result.process()
+    asyncSpawn result.localVfsProcessFileWatchers()

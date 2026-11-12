@@ -5,6 +5,7 @@ import language_server
 from workspace as ws import nil
 import vfs
 import misc/channel
+import nuigi/debug/profiler
 
 import misc/async_process
 import log
@@ -1161,6 +1162,7 @@ proc handleNotifiesConfigurationChanged(client: LSPClient) {.async, gcsafe.} =
   client.log.log lvlInfo, &"handleNotifiesConfigurationChanged: client gone"
 
 proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
+  prof("lspClientRunner")
   daTag(daLspClient)
   logFileName = getAppDir() / &"/logs/lsp.{client.name}.log"
   # try:

@@ -27,10 +27,11 @@ when defined(profiler):
   {.pop.}
 
   template withDaTag*(tag: DaTag, body: untyped): untyped =
-    daIncludeCurrentTagBit(uint64(ord(tag)))
-    defer:
-      daExcludeCurrentTagBit(uint64(ord(tag)))
-    body
+    block:
+      daIncludeCurrentTagBit(uint64(ord(tag)))
+      defer:
+        daExcludeCurrentTagBit(uint64(ord(tag)))
+      body
 
   template daTag*(tag: DaTag): untyped =
     daIncludeCurrentTagBit(uint64(ord(tag)))

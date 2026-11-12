@@ -1,0 +1,19 @@
+{
+  "description": "Switch sticky context between breadcrumb and full-line styles",
+  "source-media": "context_lines2.gif",
+  "size": "1100x600",
+  "file": "forecast.nim",
+  "settings": {"context-lines.enabled": true, "context-lines.style": "breadcrumb"},
+  "steps": [
+    {"keys": "gg8j"},
+    {"start-recording": "context_lines2"},
+    {"wait": 1000},
+    [".set-config", "context-lines.style", "lines"],
+    {"wait": 1200},
+    [".set-config", "context-lines.style", "breadcrumb"],
+    {"wait": 1200},
+    [".set-config", "context-lines.style", "lines"],
+    {"wait": 1000},
+    {"stop-recording": true}
+  ]
+}

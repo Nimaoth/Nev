@@ -1,0 +1,17 @@
+{
+  "description": "Search within a document and across an example workspace",
+  "source-media": "search.gif",
+  "size": "1280x720",
+  "file": "station.nim",
+  "steps": [
+    {"start-recording": "search"},
+    [".open-search-bar", "sensor"],
+    {"wait": 800},
+    {"keys": "<ESCAPE>nn", "interval": 250},
+    ["search-global", "sensor"],
+    {"wait": 1200},
+    {"keys": "<DOWN><DOWN>", "interval": 300},
+    {"wait": 900},
+    {"stop-recording": true}
+  ]
+}

@@ -4,6 +4,7 @@ import src/misc/[timer, array_set]
 var optParser = initOptParser("")
 
 const helpText = """Nev build helper
+  --rebuild-dependents  Also rebuild modules that depend on changed modules.
 """
 
 type
@@ -17,6 +18,7 @@ type
 
 var dry = false
 var force = false
+var rebuildDependents = false
 var parallel = true
 var modulesToBuild = initHashSet[string]()
 var debug = true
@@ -205,6 +207,20 @@ proc getAllModules(): Table[string, ModuleInfo] =
       # echo &"lastSourceMod: {lastSourceModificationTime}, lastDllMod: {dllModificationTime}, {dllModificationTime - lastSourceModificationTime}"
       if lastSourceModificationTime < dllModificationTime:
         modules[name].dirty = false
+
+  if rebuildDependents:
+    var changedModules = initHashSet[string]()
+    for name, module in modules.pairs:
+      if module.dirty:
+        changedModules.incl name
+
+    for name, module in modules.mpairs:
+      if not module.dirty:
+        for dependency in changedModules:
+          if dependency in module.dependencies:
+            module.dirty = true
+            break
+
   return modules
 
 proc runCmdAsync(cmd: string): FlowVar[tuple[output: string, exitCode: int]] =
@@ -255,7 +271,7 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
           for f in features:
             &"-d:feat{f}"
       let allFeatures = features.join(" ")
-      let opt = if not debug or name == "text" or name == "profiler": "speed" else: "none"
+      let opt = if not debug or name == "text" or name == "profiler" or name == "sdl_platform": "speed" else: "none"
       let cmd = &"nim c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependenciesStr} {allFeatures} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:{opt} --lineDir:off -d:mallocImport -d:exposeScriptingApi=true {m.path}"
       if parallel:
         while cmds.len >= 10:
@@ -407,6 +423,8 @@ proc main() =
         parallel = false
       of "force", "f":
         force = true
+      of "rebuild-dependents":
+        rebuildDependents = true
       of "rel", "r":
         debug = false
       of "dry":

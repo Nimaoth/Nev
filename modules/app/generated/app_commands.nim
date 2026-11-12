@@ -586,16 +586,6 @@ proc changeAnimationSpeedWrapper(args: string): string {.gcsafe.} =
     except CatchableError:
       return "Failed to execute command .change-animation-speed: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
-proc logRootNodeWrapper(args: string): string {.gcsafe.} =
-  {.gcsafe.}:
-    try:
-      let args {.used.} = args.parseJsonexArgs()
-      let self: App = ({.gcsafe.}: gApp)
-      logRootNode(self)
-      return ""
-    except CatchableError:
-      return "Failed to execute command .log-root-node: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
-
 proc replayKeysWrapper(args: string): string {.gcsafe.} =
   {.gcsafe.}:
     try:
@@ -793,8 +783,6 @@ proc registerCommands(commands: CommandService) =
     name: "set-mode", execute: setModeWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
     name: "change-animation-speed", execute: changeAnimationSpeedWrapper, active: false,))
-  discard commands.registerCommand(command_service.Command(
-    name: "log-root-node", execute: logRootNodeWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
     name: "replay-keys", execute: replayKeysWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(

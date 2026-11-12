@@ -5,6 +5,7 @@ import misc/diff, syntax_map, overlay_map, wrap_map
 import nimsumtree/sumtree except mapIt
 import theme
 import malebolgia
+import nuigi/debug/profiler
 
 {.push warning[Deprecated]:off.}
 import std/[threadpool]
@@ -238,6 +239,7 @@ proc createIdentityDiffMap(input: sink InputMapSnapshot, version: int = 0): Diff
   )
 
 proc createInlineDiff(self: ptr DiffMapSnapshot, mapping: ptr LineMapping): tuple[diff: RopeDiff[Point], srcBase: Point, dstBase: Point] =
+  prof("createInlineDiff")
   var (srcStartLine, srcEndLine) = if not self.reverse:
     (mapping.source.first, mapping.source.last)
   else:
@@ -263,9 +265,11 @@ proc createInlineDiffs(self: ptr DiffMapSnapshot): seq[tuple[diff: RopeDiff[Poin
   if true:
     try:
       var m = createMaster()
-      m.awaitAll:
-        for i in 0..<mappings[].len:
-          m.spawn createInlineDiff(self, mappings[][i].unsafeAddr) -> result[i]
+      block:
+        prof("createInlineDiffs.awaitAll")
+        m.awaitAll:
+          for i in 0..<mappings[].len:
+            m.spawn createInlineDiff(self, mappings[][i].unsafeAddr) -> result[i]
       return
     except ValueError:
       discard
@@ -467,6 +471,7 @@ proc seekLine*(self: var DiffChunkIterator, line: int) =
   self.seek(diffPoint(line))
 
 proc next*(self: var DiffChunkIterator): Option[DiffChunk] =
+  prof("DiffChunkIterator.next")
   if self.atEnd:
     self.diffChunk = DiffChunk.none
     return

@@ -374,6 +374,17 @@ proc chooseOpenCommandWrapper(args: string): string {.gcsafe.} =
     except CatchableError:
       return "Failed to execute command .choose-open: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
 
+proc openPlatformSettingsWrapper(args: string): string {.gcsafe.} =
+  ## Open the platform settings view
+  {.gcsafe.}:
+    try:
+      let args {.used.} = args.parseJsonexArgs()
+      let self: LayoutServiceImpl = getServiceChecked(LayoutServiceImpl)
+      openPlatformSettings(self)
+      return ""
+    except CatchableError:
+      return "Failed to execute command .open-platform-settings: " & getCurrentExceptionMsg() & " " & getCurrentException().getStackTrace()
+
 proc registerCommands(commands: CommandService) =
   discard commands.registerCommand(command_service.Command(
     name: "change-split-size", execute: layoutChangeSplitSizeCurrentWrapper, active: false,))
@@ -447,3 +458,6 @@ proc registerCommands(commands: CommandService) =
     name: "open", execute: openCommandWrapper, active: false,))
   discard commands.registerCommand(command_service.Command(
     name: "choose-open", execute: chooseOpenCommandWrapper, active: false,))
+  discard commands.registerCommand(command_service.Command(
+    name: "open-platform-settings", execute: openPlatformSettingsWrapper, active: false,
+    description: """Open the platform settings view""",))

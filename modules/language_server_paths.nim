@@ -1,6 +1,6 @@
 #use event_service language_server_component input_handler treesitter lisp
 import std/[options, tables, strutils, os, strformat]
-import misc/[custom_logger, custom_async, util, response, rope_utils, event, regex, rope_regex, myjsonutils]
+import misc/[custom_logger, custom_async, util, response, rope_utils, event, custom_regex, rope_regex, myjsonutils]
 import language_server
 import nimsumtree/[arc, rope]
 import service, event_service, document_editor, config_provider, vfs, vfs_service

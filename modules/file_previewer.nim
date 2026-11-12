@@ -20,7 +20,7 @@ when implModule:
   import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
   import vcs, finder
   import document, text_component, move_component, text_editor_component, command_component
-  import ui/node
+  from nuigi import UiBuilder
 
   logCategory "file-previewer"
 
@@ -67,10 +67,10 @@ when implModule:
     res.previewItemImpl = filePreviewerPreviewItem
     res.delayPreviewImpl = filePreviewerDelayPreview
     res.deinitImpl = filePreviewerDeinit
-    res.renderImpl = proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
+    res.renderNuiImpl = proc(self: Previewer, nui: var UiBuilder) =
       let self = self.FilePreviewer
       if self.editor.isNotNil:
-        result.add self.editor.render(builder)
+        self.editor.renderNui(nui)
 
     return res
 

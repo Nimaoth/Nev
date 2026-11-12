@@ -1,0 +1,16 @@
+{
+  "name": "Harbor",
+  "description": "An example palette for a coastal weather station",
+  "colors": {
+    "deepWater": "#16324F",
+    "seaGlass": "#56BFA7",
+    "sand": "#E8D6A7",
+    "sunrise": "#F28F3B",
+    "warning": "#DB5461",
+    "foam": "#F4FAFF",
+    "nightSky": "#16202A",
+    "rainCloud": "#7D8597",
+    "selection": "#56BFA766",
+    "highlight": "#F28F3B88"
+  }
+}

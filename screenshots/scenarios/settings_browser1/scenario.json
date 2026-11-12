@@ -1,0 +1,17 @@
+{
+  "description": "Find and toggle a text setting in the settings browser",
+  "source-media": "settings_browser1.gif",
+  "size": "1280x720",
+  "file": "notes.txt",
+  "steps": [
+    {"start-recording": "settings_browser1"},
+    "browse-settings",
+    {"keys": "text.wrap-lines", "interval": 100},
+    {"wait": 700},
+    {"keys": "<C-t>"},
+    {"wait": 800},
+    {"keys": "<C-t>"},
+    {"wait": 800},
+    {"stop-recording": true}
+  ]
+}

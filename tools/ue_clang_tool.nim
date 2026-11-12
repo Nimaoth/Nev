@@ -1,6 +1,6 @@
 import std/[os, strutils, strformat, tables, sequtils, options, json, jsonutils]
-# import "../src/misc/regex"
-import "../src/misc"/[regex, timer]
+# import "../src/misc/custom_regex"
+import "../src/misc"/[custom_regex, timer]
 
 type UnrealVersion = enum V4_27, V5_3
 let unrealVersion = V5_3

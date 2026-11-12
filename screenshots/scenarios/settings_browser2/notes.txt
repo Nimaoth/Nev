@@ -1,0 +1,3 @@
+Settings stores form a hierarchy.
+
+Inspect the runtime override, its parent and the merged result.

@@ -1,0 +1,23 @@
+{
+  "description": "Apply, convert and remove inline Markdown formatting",
+  "source-media": "markdown-toggle-commands.gif",
+  "size": "1100x600",
+  "file": "notice.md",
+  "settings": {"markdown.languages": ["markdown"], "text.disable-completions": true},
+  "steps": [
+    {"keys": "gg2j0w"},
+    {"start-recording": "markdown-toggle-commands"},
+    {"wait": 700},
+    ".markdown.toggle-bold",
+    {"wait": 1000},
+    ".markdown.toggle-italic",
+    {"wait": 1000},
+    ".markdown.toggle-italic",
+    {"wait": 1000},
+    ".markdown.toggle-code",
+    {"wait": 1000},
+    ".markdown.toggle-code",
+    {"wait": 800},
+    {"stop-recording": true}
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Edit an example file, preview its Git diff, stage and unstage it",
+  "source-media": "git.gif",
+  "size": "1280x720",
+  "file": "station.nim",
+  "settings": {"text.disable-completions": true},
+  "setup": [
+    ["git", "init", "--quiet", "--initial-branch=main"],
+    ["git", "add", "."],
+    ["git", "-c", "user.name=Documentation", "-c", "user.email=docs@example.invalid", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Initial example station\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"]
+  ],
+  "steps": [
+    {"start-recording": "git"},
+    {"keys": "Go# Publish a fresh reading every five minutes.<ESCAPE>", "interval": 60},
+    "write-file",
+    {"wait": 600},
+    "choose-git-active-files",
+    {"wait": 1000},
+    {"keys": "<C-a>"},
+    {"wait": 1000},
+    {"keys": "<C-u>"},
+    {"wait": 1000},
+    {"stop-recording": true}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "description": "Search the document symbols supplied by clangd",
+  "source-media": "lsp_document_symbols.png",
+  "size": "1280x720",
+  "file": "weather.c",
+  "steps": [
+    {"wait": 1800},
+    ".goto-symbol",
+    {"wait": 1000},
+    {"screenshot": "lsp_document_symbols"}
+  ]
+}

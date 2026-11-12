@@ -1,7 +1,7 @@
 import misc/[util, custom_logger]
 import document_editor
 import finder, view
-import ui/node
+from nuigi import UiBuilder
 
 export previewer, finder
 
@@ -18,7 +18,7 @@ type
     previewItemImpl2*: proc (self: Previewer, item: FinderItem): View {.gcsafe, raises: [].}
     delayPreviewImpl*: proc (self: Previewer) {.gcsafe, raises: [].}
     deinitImpl*: proc (self: Previewer) {.gcsafe, raises: [].}
-    renderImpl*: proc(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] {.gcsafe, raises: [].}
+    renderNuiImpl*: proc(self: Previewer, nui: var UiBuilder) {.gcsafe, raises: [].}
 
 proc activate*(self: Previewer) =
   if self.activateImpl != nil:
@@ -39,7 +39,9 @@ proc deinit*(self: Previewer) =
   if self.deinitImpl != nil:
     self.deinitImpl(self)
 
-proc render*(self: Previewer, builder: UINodeBuilder): seq[OverlayFunction] =
-  if self.renderImpl != nil:
-    return self.renderImpl(self, builder)
-  return @[]
+proc renderNui*(self: Previewer, nui: var UiBuilder) =
+  if self.renderNuiImpl != nil:
+    self.renderNuiImpl(self, nui)
+
+proc render*(self: Previewer, nui: var UiBuilder) =
+  self.renderNui(nui)
