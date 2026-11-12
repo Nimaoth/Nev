@@ -15,12 +15,17 @@ proc cpDir2(src: string, dst: string) =
 
 proc cpFile2(src: string, dst: string, optional: bool = false) =
   let name = src.splitPath[1]
-  if fileExists src:
-    echo "Copy ", name, " to ", dst/name
-    cpFile src, dst/name
-  else:
+  try:
+    if fileExists src:
+      echo "Copy ", src, " to ", dst/name
+      cpFile src, dst/name
+    else:
+      if not optional:
+        echo "[ERROR] File " & src & " does not exist"
+        exitCode = 1
+  except CatchableError as e:
     if not optional:
-      echo "[ERROR] File " & src & " does not exist"
+      echo "[ERROR] Failed to copy file " & src & ": " & e.msg
       exitCode = 1
 
 template catch(exp: untyped, then: untyped): untyped =
@@ -77,6 +82,9 @@ var isCINimbleCached = "0"
 var cmds = newSeq[string]()
 var nuigiDir = getEnv("NUIGI_DIR", "deps" / "nuigi").absolutePath
 var nuigiPinDir = r"C:\dev\nuigi"
+var depsDir = "deps".absolutePath
+var lockFile = "atlas.lock".absolutePath
+
 proc replaceCommit(text, prefix, suffix, commit, description: string): string =
   let start = text.find(prefix)
   if start < 0 or text.find(prefix, start + prefix.len) >= 0:
@@ -125,6 +133,15 @@ const staticLibraries = when defined(windows):
     ["SDL3.lib", "freetype.lib"]
   else:
     ["libSDL3.a", "libfreetype.a"]
+
+proc copyWasmtimeDll() =
+  when defined(windows):
+    let buildType = when defined(nimWasmtimeBuildDebug): "debug" else: "release"
+    let dll = depsDir / "nimwasmtime" / "src" / "wasmtime" /
+      "target" / buildType / "wasmtime.dll"
+    cpFile2 dll, ".", optional=true
+  else:
+    echo "Wasmtime DLL is only required on Windows."
 
 proc compileIconResource(): string =
   when defined(windows):
@@ -219,14 +236,18 @@ for kind, key, val in optParser.getopt():
         echo "[ERROR] --nuigi-dir requires a checkout path."
         quit 1
       nuigiDir = val.absolutePath
+      nuigiPinDir = nuigiDir
+    of "deps-dir", "lock-file":
     of "help", "h":
       echo """Nev build commands (run from the repository root):
   nuigi-deps-static  Build and stage Nuigi's static SDL3 and FreeType archives.
   update-nuigi       Pin Nuigi to the local checkout's HEAD in nev.nimble and atlas.lock.
   build-static      Build nev-static using those archives, without HarfBuzz/FriBidi.
   build-perf        Build nev-perf with .perfprof performance recording enabled.
+  wasmtime          Copy the Wasmtime DLL into the repository root (Windows).
   deps              Clone/check out dependencies at the commits in atlas.lock.
-  --nuigi-dir:PATH   Nuigi checkout (default: NUIGI_DIR or deps/nuigi).
+  --nuigi-dir:PATH   Nuigi checkout (update-nuigi defaults to C:\dev\nuigi;
+                     other commands default to NUIGI_DIR or deps/nuigi).
 Existing build, release and package commands are unchanged."""
       quit 0
 
@@ -238,6 +259,9 @@ while i < cmds.len:
   defer:
     inc i
   case cmds[i]
+  of "wasmtime":
+    copyWasmtimeDll()
+
   of "update-nuigi":
     updateNuigiPin()
 
@@ -321,6 +345,7 @@ while i < cmds.len:
     cpFile2 "nev.exe", releaseWindows, optional=true
     cpFile2 "nevg.exe", releaseWindows, optional=true
     cpFile2 "nevt.exe", releaseWindows, optional=true
+    copyWasmtimeDll()
     cpFile2 "wasmtime.dll", releaseWindows, optional=true
 
     if fileExists(&"{releaseWindows}.zip"):

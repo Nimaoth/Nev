@@ -603,16 +603,3 @@ when enableGui:
   if backend.get == Gui:
     myDisableTrueColors()
 
-# todo: this should be part of the build system
-when defined(windows) and copyWasmtimeDll:
-  import std/[compilesettings]
-  import wasmtime
-
-  static:
-    when nimWasmtimeBuildDebug:
-      const dllIn = wasmDir / "target/debug/wasmtime.dll"
-    else:
-      const dllIn = wasmDir / "target/release/wasmtime.dll"
-    const dllOut = querySetting(SingleValueSetting.outDir) / "wasmtime.dll"
-    echo "[desktop_main.nim] run tools/copy_wasmtime_dll.nims"
-    echo staticExec &"nim \"-d:inDir={dllIn}\" \"-d:outDir={dllOut}\" --hints:off --skipUserCfg --skipProjCfg --skipParentCfg ../tools/copy_wasmtime_dll.nims"
