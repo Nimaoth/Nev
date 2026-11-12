@@ -103,6 +103,7 @@ proc fillDefaultSettings*(s: ConfigStore) =
   s.set("text.inclusive-selection", false)
   s.set("text.cursor-margin-relative", true)
   s.set("text.cursor-margin", 0.15)
+  s.set("text.cursor-blink", true)
   s.set("text.wrap-lines", true)
   s.set("text.wrap-margin", 1)
   s.set("text.default-mode", "")

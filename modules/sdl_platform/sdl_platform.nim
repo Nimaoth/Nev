@@ -1,4 +1,4 @@
-#use theme
+#use theme command_service
 import platform
 import compilation_config
 
@@ -14,8 +14,10 @@ when implModule:
   import nuigi/core/vecmath as nuiMath
   import misc/[custom_logger, util, event, timer, custom_async, custom_unicode]
   from misc/render_command import FontInfo, UINodeFlag, UINodeFlags, contains, `==`
-  import app_options, vfs, vfs_service, service
+  import app_options, vfs, vfs_service, service, command_service
   import nimsumtree/arc
+  from std/times import now, format, getTime, toUnix
+  import ./sdl_capture
 
   import nuigi/backend/sdl3/sdl3
   import nuigi
@@ -23,7 +25,7 @@ when implModule:
   import nuigi/text/fonts
   import nuigi/rendering/mesh
   import nuigi/widgets, nuigi/widgets/[windows, plot]
-  import nuigi/debug/[debug_panel, profiler, profiler_ui]
+  import nuigi/debug/[debug_panel, profiler, profiler_ui, frame_dump]
   import nuigi/styling/theme_editor
   import nuigi/demo/demo_window
 
@@ -135,6 +137,21 @@ when implModule:
       # KEY_DOWN until we know no TEXT_INPUT follows, otherwise the same
       # keystroke would be handled twice (once as Ctrl+Alt+7, once as "{").
       pendingKeyPress: Option[(int64, Modifiers)]
+
+      # Screen capture (see sdl_capture.nim and sdl_platform.commands.lisp)
+      pendingScreenshots: seq[string]
+      recording: bool
+      recordingDir: string
+      recordingFrame: int
+      recordingTimer: Timer
+      recordingMaxSeconds: float
+      recordingMaxFrames: int
+      recordingDropped: int
+      recordingIndex: string
+      captureDir: string  ## NEV_SDL_DEBUG_DIR
+      captureDebugFrames: bool  ## Write screen.png/layout.txt every frame (NEV_SDL_DEBUG_FRAMES != 0)
+      ignoreMouse: bool  ## Drop all mouse events (NEV_SDL_IGNORE_MOUSE=1), e.g. while running scenarios
+      captureFrame: int
 
   # Active platform for callbacks that cannot capture (measureText etc.) – stored as pointer to stay gcsafe
   var gActiveNuiPlatform: SdlPlatform = nil
@@ -1038,6 +1055,183 @@ when implModule:
     except:
       discard
 
+  const maxPendingRecordingFrames = 16
+
+  proc captureTimestamp(): string =
+    try:
+      now().format("yyyyMMdd-HHmmss-fff")
+    except CatchableError:
+      $getTime().toUnix
+
+  proc stopRecordingImpl(self: SdlPlatform): string =
+    if not self.recording:
+      return ""
+    self.recording = false
+    let duration = self.recordingTimer.elapsed.float
+    let header = &"# {self.recordingFrame} frames, {self.recordingDropped} dropped, {duration:.3f}s\n# frame seconds file\n"
+    try:
+      createDir(self.recordingDir)
+      writeFile(self.recordingDir / "index.txt", header & self.recordingIndex)
+    except CatchableError as e:
+      log lvlError, &"Failed to write recording index: {e.msg}"
+    log lvlInfo, &"Stopped recording to '{self.recordingDir}': {self.recordingFrame} frames, {self.recordingDropped} dropped, {duration:.3f}s"
+    self.recordingIndex = ""
+    return self.recordingDir
+
+  proc recordingLimitReached(self: SdlPlatform): bool =
+    (self.recordingMaxFrames > 0 and self.recordingFrame >= self.recordingMaxFrames) or
+      (self.recordingMaxSeconds > 0 and self.recordingTimer.elapsed.float >= self.recordingMaxSeconds)
+
+  proc wantsCapture(self: SdlPlatform): bool =
+    self.pendingScreenshots.len > 0 or self.recording or
+      (self.captureDir.len > 0 and self.captureDebugFrames)
+
+  proc captureFrame(self: SdlPlatform) =
+    ## Must be called while the UI render texture is the render target.
+    if self.captureDir.len > 0 and not self.captureDebugFrames:
+      # Only the frame counter, so tools can wait for frames/idle without the
+      # cost of reading back every frame. Not atomic: readers may see an empty file.
+      inc self.captureFrame
+      try:
+        writeFile(self.captureDir / "frame.txt", $self.captureFrame)
+      except CatchableError:
+        discard
+
+    if not self.wantsCapture():
+      return
+    if self.recording and self.recordingLimitReached():
+      discard self.stopRecordingImpl()
+      if not self.wantsCapture():
+        return
+
+    prof("captureFrame")
+    let surface = self.renderer.renderReadPixels(nil)
+    if surface == nil:
+      log lvlError, &"Failed to read back frame for capture: {sdl3.getError()}"
+      return
+
+    var consumers = self.pendingScreenshots.len
+    if self.recording: inc consumers
+    if self.captureDir.len > 0 and self.captureDebugFrames: inc consumers
+
+    # Each consumer takes ownership of a surface; the last one gets the original.
+    proc nextSurface(): ptr Surface =
+      dec consumers
+      if consumers == 0: surface else: duplicateSurface(surface)
+
+    for path in self.pendingScreenshots:
+      if enqueueCapture(nextSurface(), path):
+        log lvlInfo, &"Saving screenshot to '{path}'"
+    self.pendingScreenshots.setLen(0)
+
+    if self.recording:
+      let name = &"frame-{self.recordingFrame:06}.png"
+      let elapsed = self.recordingTimer.elapsed.float
+      if enqueueCapture(nextSurface(), self.recordingDir / name, maxPending = maxPendingRecordingFrames):
+        self.recordingIndex.add &"{self.recordingFrame} {elapsed:.4f} {name}\n"
+        inc self.recordingFrame
+      else:
+        inc self.recordingDropped
+
+    if self.captureDir.len > 0 and self.captureDebugFrames:
+      inc self.captureFrame
+      var layout = ""
+      {.cast(gcsafe).}:
+        try:
+          layout = self.nui.dumpFrameLayout()
+        except Exception as e:
+          layout = "Failed to dump layout: " & e.msg
+      # frame.txt is written last so readers can wait for it to change.
+      discard enqueueCapture(nextSurface(), self.captureDir / "screen.png", @[
+        (self.captureDir / "layout.txt", layout),
+        (self.captureDir / "frame.txt", $self.captureFrame),
+      ])
+
+    for error in takeCaptureErrors():
+      log lvlError, error
+
+  proc getSdlPlatform(): SdlPlatform {.raises: [ValueError].} =
+    let platform = getServiceChecked(PlatformService).platform
+    if platform == nil or not (platform of SdlPlatform):
+      raise newException(ValueError, "SDL platform is not active")
+    return platform.SdlPlatform
+
+  proc sdlScreenshot(self: SdlPlatform, path: string = ""): string =
+    let path = if path.len > 0: path else: "screenshots" / &"screenshot-{captureTimestamp()}.png"
+    let absPath = try: path.absolutePath except CatchableError: path
+    self.pendingScreenshots.add absPath
+    self.requestRenderSdlPlatform(true)
+    return absPath
+
+  proc sdlStartRecording(self: SdlPlatform, dir: string = "", seconds: float = 0, maxFrames: int = 0): string =
+    discard self.stopRecordingImpl()
+    let dir = if dir.len > 0: dir else: "screenshots" / &"recording-{captureTimestamp()}"
+    self.recordingDir = try: dir.absolutePath except CatchableError: dir
+    try:
+      createDir(self.recordingDir)
+    except CatchableError as e:
+      log lvlError, &"Failed to create recording dir '{self.recordingDir}': {e.msg}"
+      return ""
+    self.recording = true
+    self.recordingFrame = 0
+    self.recordingDropped = 0
+    self.recordingIndex = ""
+    self.recordingMaxSeconds = seconds
+    self.recordingMaxFrames = maxFrames
+    self.recordingTimer = startTimer()
+    log lvlInfo, &"Recording frames to '{self.recordingDir}' (seconds: {seconds}, maxFrames: {maxFrames})"
+    self.requestRenderSdlPlatform(true)
+    return self.recordingDir
+
+  proc sdlStopRecording(self: SdlPlatform): string =
+    self.stopRecordingImpl()
+
+  proc configureDebugCapture(self: SdlPlatform) =
+    ## NEV_SDL_DEBUG_DIR=<dir> writes screen.png, layout.txt and frame.txt for every
+    ## rendered frame and executes the commands in <dir>/commands (one per line).
+    ## NEV_SDL_DEBUG_FRAMES=0 only writes frame.txt (used by tools/screenshot_scenarios).
+    ## NEV_SDL_IGNORE_MOUSE=1 drops all mouse events so hovering the window can't affect the UI.
+    self.ignoreMouse = getEnv("NEV_SDL_IGNORE_MOUSE") == "1"
+    let dir = getEnv("NEV_SDL_DEBUG_DIR")
+    if dir.len > 0:
+      self.captureDebugFrames = getEnv("NEV_SDL_DEBUG_FRAMES", "1") != "0"
+      try:
+        createDir(dir)
+        self.captureDir = dir.absolutePath
+        log lvlInfo, "Writing SDL debug captures to ", self.captureDir
+      except CatchableError as error:
+        log lvlError, "Failed to create SDL debug dir '", dir, "': ", error.msg
+
+  proc runInjectedCommands(self: SdlPlatform) =
+    if self.captureDir.len == 0:
+      return
+    let path = self.captureDir / "commands"
+    if not fileExists(path):
+      return
+    var content = ""
+    try:
+      content = readFile(path)
+      removeFile(path)
+    except CatchableError as error:
+      log lvlError, "Failed to read injected commands: ", error.msg
+      return
+    let commands = getServiceChecked(CommandService)
+    var results = ""
+    for line in content.splitLines:
+      let command = line.strip
+      if command.len == 0 or command.startsWith("#"):
+        continue
+      let res = commands.executeCommand(command, record = false)
+      results.add command & "\n  -> " & res.get("") & "\n"
+    try:
+      let resultsPath = self.captureDir / "commands.log"
+      let f = open(resultsPath, fmAppend)
+      defer: f.close()
+      f.write(results)
+    except CatchableError as error:
+      log lvlError, "Failed to write commands.log: ", error.msg
+    self.requestRenderSdlPlatform(true)
+
   proc renderNui(self: SdlPlatform) {.gcsafe, raises: [Exception].}
 
   proc endNuiFrameSdlPlatform(self: SdlPlatform) {.gcsafe, raises: [].} =
@@ -1082,6 +1276,7 @@ when implModule:
           discard self.renderer.setRenderTarget(nil)
 
         self.renderNui()
+        self.captureFrame()
         self.hadInput = false
     except:
       log lvlError, "Failed to render SDL UI frame: ", getCurrentExceptionMsg()
@@ -1232,8 +1427,16 @@ when implModule:
         log lvlError, &"SDL_Init failed: {sdl3.getError()}"
         quit(1)
 
-      const initialW = 1920.cint
-      const initialH = 1080.cint
+      var initialW = 1920.cint
+      var initialH = 1080.cint
+      let sizeOverride = getEnv("NEV_SDL_WINDOW_SIZE").toLowerAscii.split('x')
+      if sizeOverride.len == 2:
+        try:
+          initialW = sizeOverride[0].strip.parseInt.cint
+          initialH = sizeOverride[1].strip.parseInt.cint
+        except ValueError:
+          log lvlError, "Invalid NEV_SDL_WINDOW_SIZE, expected <width>x<height>"
+      self.configureDebugCapture()
       self.winW = initialW
       self.winH = initialH
       self.vsync = true
@@ -1377,6 +1580,10 @@ when implModule:
 
   proc deinitSdlPlatform(self: SdlPlatform) =
     try:
+      discard self.stopRecordingImpl()
+      stopCaptureWorker()
+      for error in takeCaptureErrors():
+        log lvlError, error
       if sdlExposeWatchInstalled:
         sdl3.removeEventWatch(sdlExposeWatch, cast[pointer](self))
         sdlExposeWatchInstalled = false
@@ -1424,10 +1631,20 @@ when implModule:
   proc processEventsSdlPlatform(self: SdlPlatform): int {.gcsafe, raises: [].} =
     self.eventCounter = 0
     try:
+      self.runInjectedCommands()
+      if self.recording and self.recordingLimitReached():
+        discard self.stopRecordingImpl()
       # Reset per-frame input for nuigi
       self.beginNuiInputFrame()
       var ev: sdl3.Event
       while sdl3.pollEvent(ev):
+        if self.ignoreMouse:
+          case ev.`type`
+          of EVENT_MOUSE_MOTION, EVENT_MOUSE_BUTTON_DOWN, EVENT_MOUSE_BUTTON_UP, EVENT_MOUSE_WHEEL,
+              sdl3.EVENT_WINDOW_MOUSE_ENTER, sdl3.EVENT_WINDOW_MOUSE_LEAVE:
+            continue
+          else:
+            discard
         inc self.eventCounter
         # Feed to nuigi first (handles gamepad + ui input)
         self.accumulateNuiInput(ev)
@@ -1746,8 +1963,12 @@ when implModule:
           log lvlError, "Failed to build SDL settings: ", error.msg
     return res
 
+  include generated/sdl_platform_commands
+
   proc init_module_sdl_platform*() {.cdecl, exportc, dynlib.} =
-    discard
+    let platform = getServiceChecked(PlatformService).platform
+    if platform != nil and platform of SdlPlatform:
+      registerCommands(getServiceChecked(CommandService))
 
 elif implModule:
   proc init_module_sdl_platform*() {.cdecl, exportc, dynlib.} =

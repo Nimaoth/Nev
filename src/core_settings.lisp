@@ -413,6 +413,9 @@ If you use Vim motions then the Vim plugin manages this setting.")
       "How far from the edge to keep the cursor, either percentage of screen height (0-1) or number of lines,
 depending on `text.cursor-margin-relative`.")
 
+    (setting cursor-blink "bool" true
+      "Whether the cursor blinks while the editor is focused.")
+
     (setting wrap-lines "bool" true
       "Enable line wrapping.")
 

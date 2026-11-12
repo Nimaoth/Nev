@@ -428,7 +428,8 @@ proc useInclusiveSelections*(self: TextDocumentEditor): bool =
   self.config.getTextInclusiveSelection()
 
 proc startBlinkCursorTask(self: TextDocumentEditor) =
-  if not self.blinkCursor:
+  if not self.blinkCursor or not self.config.getTextCursorBlink(true):
+    self.cursorVisible = true
     return
 
   if self.blinkCursorTask.isNil:

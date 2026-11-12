@@ -613,6 +613,11 @@ proc getTextCursorMargin*(s: ConfigStore, def = float.default): float =
 proc setTextCursorMargin*(s: ConfigStore, value: float) =
   s.set("text.cursor-margin", value)
 
+proc getTextCursorBlink*(s: ConfigStore, def = bool.default): bool =
+  s.get("text.cursor-blink", def)
+proc setTextCursorBlink*(s: ConfigStore, value: bool) =
+  s.set("text.cursor-blink", value)
+
 proc getTextWrapLines*(s: ConfigStore, def = bool.default): bool =
   s.get("text.wrap-lines", def)
 proc setTextWrapLines*(s: ConfigStore, value: bool) =
