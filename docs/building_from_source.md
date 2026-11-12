@@ -27,6 +27,40 @@ If you get a compile error, try building with `--passC:-Wno-incompatible-pointer
   - For the gui version: `nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false`
   - For the terminal version: `nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true`
 
+The `tools/nev_build.nims` build commands build Wasmtime with Cargo before
+compiling Nev. To build Wasmtime separately (and copy its DLL into the
+repository root on Windows), run `nim .\tools\nev_build.nims wasmtime`. To build
+the debug Wasmtime version, run
+`nim -d:nimWasmtimeBuildDebug .\tools\nev_build.nims wasmtime`.
+
+### Restoring locked dependencies without Atlas
+
+Run `nim .\tools\nev_build.nims deps` from the repository root to clone missing
+dependencies and check out the exact commits in `atlas.lock`. Checkouts already
+at their locked commit are left untouched; missing commits are fetched from the
+locked repository URL. Existing dirty checkouts are rejected if they need to
+change commits. Duplicate destination directories in the lock file are errors,
+reported before any repositories are modified.
+
+To restore into an isolated directory:
+
+```powershell
+nim .\tools\nev_build.nims deps --deps-dir:deps2
+```
+
+`--lock-file:<path>` selects another lock file. This command only restores Git
+checkouts: it does not resolve versions, rewrite the lock file, regenerate
+`nim.cfg`, or modify the embedded Nimble file. An alternate destination such as
+`deps2` is for testing; existing compiler search paths still point to `deps`.
+
+### Updating the Nuigi pin
+
+Run `nim .\tools\nev_build.nims update-nuigi` from the repository root to
+replace the Nuigi commit in `nev.nimble` and both references in `atlas.lock`
+with the current HEAD of `C:\dev\nuigi`. Use `--nuigi-dir:<path>` to select a
+different checkout and `--lock-file:<path>` to select a different lock file.
+This only updates the pins; it does not fetch, publish, or restore dependencies.
+
 ### Static Nuigi dependencies
 
 From the repository root, use the build script to build SDL3 and FreeType as

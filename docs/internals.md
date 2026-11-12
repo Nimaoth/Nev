@@ -70,6 +70,42 @@ This describes how Nev works under the hood, and is mainly useful for contributo
 
 ```
 
+## View headers
+
+Views use `viewPanel` from [platform.nim](../src/platform.nim) for panel and
+header styling. Pass `ViewPanelOptions(...).withViewActions(layout, view)` to
+enable the top-right Hide (`-`) and Close (`x`) buttons. Actions run next frame
+through `LayoutService.closeView`, keeping hidden views available to reopen.
+Editor previews without an owning view omit these actions.
+
+The header and body are untyped code blocks. An optional block between them
+adds custom buttons before Hide and Close; the action row only exists while
+the header or its children are hovered:
+
+```nim
+nui.viewPanel("my-view", self.active, true,
+    ViewPanelOptions().withViewActions(layout, self)):
+  nui.node:
+    discard nui.fit().text("My view")
+do:
+  if nui.button("Refresh"):
+    self.refresh()
+do:
+  self.renderContent(nui)
+```
+
+Omit the middle block when no custom buttons are needed. Both forms also
+support omitting `ViewPanelOptions`.
+The action row reserves horizontal space but is excluded from header content
+height and centered vertically, so showing buttons does not resize the header
+or move the view body.
+
+Terminal headers add a hover-only `Text` button. It replaces the live terminal
+body with a text-editor snapshot of the terminal output in the same view.
+The button becomes `Terminal` to return to the still-running terminal.
+Each switch into text mode captures a fresh snapshot; closing the view also
+disposes of its embedded editor.
+
 ## Modules
 
 Modules allow parts of the editor to be compiled as separate DLLs. This is primarily used for **development speed** -- the CI build is statically linked. Modules can only interact with exposed APIs (with the `apprtl` pragma).
@@ -213,4 +249,3 @@ Important files and types:
 - [plugin_api/v0/plugin_api_guest.nim](../plugin_api/v0/plugin_api_guest.nim) and the files it imports:
   - Generated files based on [wit/v0/api.wit](../wit/v0/api.wit) and [wit/v1/api.wit](../wit/v1/api.wit)
   - These contain bindings for the guest side
-
