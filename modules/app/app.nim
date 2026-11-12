@@ -27,7 +27,7 @@ when implModule:
   import std/[sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
   import nimsumtree/[rope]
   import misc/[id, util, event, myjsonutils, rect_utils, custom_logger, custom_async,
-    delayed_task, regex, custom_unicode, jsonex, generational_seq, fuzzy_matching, rope_utils]
+    delayed_task, custom_regex, custom_unicode, jsonex, generational_seq, fuzzy_matching, rope_utils]
   import workspace
   import config_provider
   import core_settings
