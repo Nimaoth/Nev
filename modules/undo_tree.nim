@@ -521,41 +521,43 @@ when implModule:
         if nui.wasClicked(includeChildren = true):
           layout.tryActivateView(self)
 
-        nui.layoutHorizontal("undo-tree-actions"):
-          discard nui.fillX().fitY().backendGap(4)
-          if nui.button("Apply"):
-            self.undoTreeApplySelected()
-          if nui.button("Current"):
-            self.undoTreeSelectCurrent()
-          if nui.button("Newer"):
-            self.undoTreeNextChange()
-          if nui.button("Older"):
-            self.undoTreePrevChange()
-          if nui.button("Newest"):
-            self.undoTreeLastChange()
-          if nui.button("Oldest"):
-            self.undoTreeFirstChange()
+        nui.layoutVertical:
+          discard nui.fill()
+          nui.layoutHorizontal("undo-tree-actions"):
+            discard nui.fillX().fitY().backendGap(4)
+            if nui.button("Apply"):
+              self.undoTreeApplySelected()
+            if nui.button("Current"):
+              self.undoTreeSelectCurrent()
+            if nui.button("Newer"):
+              self.undoTreeNextChange()
+            if nui.button("Older"):
+              self.undoTreePrevChange()
+            if nui.button("Newest"):
+              self.undoTreeLastChange()
+            if nui.button("Oldest"):
+              self.undoTreeFirstChange()
 
-        # Selection changes are brought into view by listStorage.ensureItemVisible
-        # below, replacing the old explicit scroll calls.
-        nui.node("undo-tree-body"):
-          discard nui.fillX().fillY()
-          if hasTree and self.cachedLines.len > 0:
-            storage.listStorage = nui.dynamicVirtualList(
-              self.cachedLines.len,
-              lineHeight + 4.0'f32,
-              buildUndoTreeRowNui,
-              rootIndex)
-            if storage.listStorage != nil and
-                storage.lastSelected != self.selected and
-                storage.listStorage.ensureItemVisible(
-                  self.selected, storage.listStorage.viewportHeight,
-                  lineHeight * 2.0'f32):
-              storage.lastSelected = self.selected
-          else:
-            nui.node:
-              discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText))
-                .text("No undo history")
+          # Selection changes are brought into view by listStorage.ensureItemVisible
+          # below, replacing the old explicit scroll calls.
+          nui.node("undo-tree-body"):
+            discard nui.fillX().fillY()
+            if hasTree and self.cachedLines.len > 0:
+              storage.listStorage = nui.dynamicVirtualList(
+                self.cachedLines.len,
+                lineHeight + 4.0'f32,
+                buildUndoTreeRowNui,
+                rootIndex)
+              if storage.listStorage != nil and
+                  storage.lastSelected != self.selected and
+                  storage.listStorage.ensureItemVisible(
+                    self.selected, storage.listStorage.viewportHeight,
+                    lineHeight * 2.0'f32):
+                storage.lastSelected = self.selected
+            else:
+              nui.node:
+                discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText))
+                  .text("No undo history")
 
   proc kind(self: UndoTreeView): string = "undotree"
   proc desc(self: UndoTreeView): string = "UndoTree"

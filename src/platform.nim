@@ -144,7 +144,7 @@ template viewPanel*(builder: var UiBuilder, key: string, active: bool,
             builder.layoutHorizontal(viewPanelKey & "-header-content"):
               discard builder.fillX().fitY().backendGap(4)
               header
-        builder.layoutHorizontal(viewPanelKey & "-content"):
+        builder.node(viewPanelKey & "-content"):
           discard builder.fillX().cornerRadii(0, 0, 8, 8).backendPadding(4)
           if viewPanelOptions.fitContentY:
             discard builder.fitY()
