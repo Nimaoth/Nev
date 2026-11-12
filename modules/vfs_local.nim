@@ -1,6 +1,6 @@
 import std/[os, options, unicode, strutils, streams, atomics, sequtils, pathnorm, tables]
 import nimsumtree/[rope, static_array, arc]
-import misc/[custom_async, custom_logger, util, timer, regex, id]
+import misc/[custom_async, custom_logger, util, timer, custom_regex, id]
 import vfs
 
 const currentSourcePath2 = currentSourcePath()

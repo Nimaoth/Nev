@@ -2,7 +2,7 @@ import std/[options, strformat, tables, algorithm, os, sugar]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import misc/[custom_async, custom_unicode, util, regex, timer, rope_utils, arena, array_view, array_table, event, array_set]
+import misc/[custom_async, custom_unicode, util, custom_regex, timer, rope_utils, arena, array_view, array_table, event, array_set]
 import misc/diff, treesitter/[treesitter, treesitter_type_conv]
 from language_server import nil
 import theme

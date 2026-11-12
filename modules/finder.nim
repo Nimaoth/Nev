@@ -158,7 +158,7 @@ var finderFuzzyMatchConfig* {.modrtlvar.} = FuzzyMatchConfig(ignoredChars: {' '}
 
 when implModule:
   import std/[algorithm, sugar, strutils, json, tables]
-  import misc/[regex, timer, util, id, custom_logger, myjsonutils]
+  import misc/[custom_regex, timer, util, id, custom_logger, myjsonutils]
   import malebolgia
   import nuigi/debug/profiler
 

@@ -1,5 +1,5 @@
 import std/[macros, strutils, os, strformat, sequtils, json, sets, tables, atomics, locks, unicode]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils, regex, rope_regex, generational_seq, shared_buffer]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils, custom_regex, rope_regex, generational_seq, shared_buffer]
 import nimsumtree/[rope, sumtree, arc, clock, buffer]
 import service
 import layout/layout

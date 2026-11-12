@@ -1,6 +1,6 @@
 import std/[options, strutils, tables, os, random, strformat, locks]
 import nimsumtree/[rope, arc]
-import misc/[custom_async, util, custom_logger, regex, id]
+import misc/[custom_async, util, custom_logger, custom_regex, id]
 import fsnotify
 
 export fsnotify.PathEvent, fsnotify.FileEventAction

@@ -18,7 +18,7 @@ func serviceName*(_: typedesc[VFSService]): string = "VFSService"
 when implModule:
   import std/[tables, options, json]
   import results
-  import misc/[custom_async, custom_logger, myjsonutils, util, regex]
+  import misc/[custom_async, custom_logger, myjsonutils, util, custom_regex]
   import command_service, vfs_config, app_options
   import vfs_local
 

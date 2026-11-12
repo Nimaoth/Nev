@@ -5,7 +5,7 @@ import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, generational_seq, render_command]
-import misc/[custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex, case_swap]
+import misc/[custom_unicode, delayed_task, myjsonutils, custom_regex, timer, response, rope_utils, rope_regex, jsonex, case_swap]
 import misc/[diff, arena]
 import platform
 import document, document_editor, input_handler/input_handler, vmath, bumpy, text_document

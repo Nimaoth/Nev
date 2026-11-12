@@ -1,6 +1,6 @@
 #use vfs_service theme
 import std/[options, sequtils, os, json]
-import misc/[custom_async, id, util, regex, event]
+import misc/[custom_async, id, util, custom_regex, event]
 import vfs, vfs_service, service
 import finder
 

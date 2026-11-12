@@ -41,7 +41,7 @@ proc getNextFindResult*(self: SearchComponent, cursor: Point, offset: int = 0, i
 # Implementation
 when implModule:
   import std/[sequtils]
-  import misc/[util, custom_logger, id, rope_regex, regex, rope_utils]
+  import misc/[util, custom_logger, id, rope_regex, custom_regex, rope_utils]
   import document_editor, text_component, move_component, decoration_component, text_editor_component, command_service, config_component, service
   import command_line
 
