@@ -28,7 +28,7 @@
         "slider-fill.border": "#F28C26FF",
         "slider-handle.background": "#F28C26FF",
         "slider-handle.border": "#00000000",
-        "scrollbar.background": "#1A1A1CEB",
+        "scrollbar.background": "#222228EB",
         "scrollbar.border": "#00000000",
         "scrollbar-handle.background": "#4D4D57F2",
         "scrollbar-handle.border": "#00000000",
@@ -167,7 +167,7 @@
         "terminal-ansi-bright-white-text.foreground": "#FFFFFFFF",
         "panel-active.background": "#141417FF",
         "panel-active.border": "#383840FF",
-        "header-active.background": "#42424AFF",
+        "header-active.background": "#404048FF",
         "header-active.border": "#383840FF"
     },
     "tokenColors": [
