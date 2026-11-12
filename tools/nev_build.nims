@@ -370,7 +370,7 @@ proc buildNuigiStaticDependencies() =
     copyStaticLibrary(nuigiDir / "build" / "sdl3_static", staticLibraries[0], staticLibraries[0])
     copyStaticLibrary(nuigiDir / "build" / "freetype_static", staticLibraries[1], staticLibraries[1])
 
-proc buildStatic(output = "", extraArgs = "", cacheDir = "nimcache/nev-static") =
+proc buildNev(output = "", extraArgs = "", cacheDir = "nimcache/nev-static") =
   requireNuigi()
   var linkArgs = ""
   for library in staticLibraries:
@@ -512,19 +512,28 @@ while i < cmds.len:
   of "nuigi-deps-static":
     buildNuigiStaticDependencies()
 
+  of "modules":
+    exec "./bin/build.exe "
+
+  of "modules-f":
+    exec "./bin/build.exe -f"
+
+  of "build-dynamic":
+    buildNev("-d:useDynlib")
+
   of "build-static":
-    buildStatic()
+    buildNev()
 
   of "build-perf":
     let output = when defined(windows): "nev-perf.exe" else: "nev-perf"
-    buildStatic(output, "-d:perfProfiler -d:nuigiPerfProfiler", "nimcache/nev-perf")
+    buildNev(output, "-d:perfProfiler -d:nuigiPerfProfiler", "nimcache/nev-perf")
 
   of "debug-win":
     echo &"Build debug for windows..."
     # exec """nim c --out:nev.exe -D:enableGui=true -D:enableTerminal=true -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types "--passL:-ladvapi32.lib -luser32.lib" --passC:-std=gnu11 src/desktop_main.nim"""
     buildAndCopyWasmtime()
     buildNuigiStaticDependencies()
-    buildStatic()
+    buildNev()
 
   of "package-win":
     echo &"Package for windows..."
@@ -560,7 +569,7 @@ while i < cmds.len:
     # exec &"""nim c --out:nev --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=true -D:enableTerminal=true --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} src/desktop_main.nim"""
     buildWasmtime()
     buildNuigiStaticDependencies()
-    buildStatic()
+    buildNev()
 
   of "package-linux":
     echo &"Package for linux..."
