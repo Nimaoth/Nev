@@ -72,6 +72,7 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `text.completion-word-chars` | seq[string or seq[string]] | [["a","z"],["A","Z"],["0","9"],"_"] |  |
 | `text.control-click-command` | string | "goto-definition" | Command to run after control clicking on some text. |
 | `text.control-click-command-args` | any | [] | Arguments to the command which is run when control clicking on some text. |
+| `text.cursor-blink` | bool | true | Whether the cursor blinks while the editor is focused. |
 | `text.cursor-margin` | float | 0.15 | How far from the edge to keep the cursor, either percentage of screen height (0-1) or number of lines, depending on `text.cursor-margin-relative`. |
 | `text.cursor-margin-relative` | bool | true | Whether `text.cursor-margin` is relative to the screen height (0-1) or an absolute number of lines. |
 | `text.default-mode` | string | "" | Default mode to set when opening/creating text documents. |

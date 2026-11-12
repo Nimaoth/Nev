@@ -1,0 +1,21 @@
+{
+  "description": "Preview and switch bundled themes on an example source file",
+  "source-media": "themes.gif",
+  "size": "1280x720",
+  "file": "weather.nim",
+  "steps": [
+    {"start-recording": "themes"},
+    "choose-theme",
+    {"wait": 600},
+    {"keys": "<DOWN><DOWN>", "interval": 400},
+    {"wait": 800},
+    {"keys": "<ESCAPE>"},
+    ["load-theme", "green"],
+    {"wait": 1000},
+    ["load-theme", "tokyo-night-color-theme"],
+    {"wait": 1000},
+    ["load-theme", "nuigi-default"],
+    {"wait": 1000},
+    {"stop-recording": true}
+  ]
+}

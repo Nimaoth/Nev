@@ -1,0 +1,11 @@
+{
+  "description": "Workspace file explorer with nested example files and previews",
+  "source-media": "explore-files.png",
+  "size": "1280x720",
+  "file": "README.md",
+  "steps": [
+    ["explore-files", "ws0://"],
+    {"wait-idle": 400},
+    {"screenshot": "explore-files"}
+  ]
+}

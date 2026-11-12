@@ -1,0 +1,44 @@
+{
+  "description": "Debug a small weather station program using LLDB DAP",
+  "skip": "Debugger initialization is not working in the current build",
+  "source-media": "debug.gif",
+  "size": "1440x900",
+  "file": "weather.c",
+  "setup": [["gcc", "-g", "-O0", "-o", "weather.exe", "weather.c"]],
+  "settings": {
+    "lsp": {},
+    "debugger.type.lldb-dap": {"connection": "stdio", "path": "lldb-dap.exe", "args": []},
+    "debugger.configuration.weather": {
+      "type": "lldb-dap",
+      "request": "launch",
+      "name": "Weather station",
+      "program": "weather.exe",
+      "cwd": ".",
+      "stopOnEntry": false
+    }
+  },
+  "steps": [
+    {"keys": "gg12j"},
+    "toggle-breakpoint",
+    ["show-debugger-variables", false],
+    ["show-debugger-stacktrace", false],
+    ["show-debugger-threads", false],
+    ["show-debugger-output", false],
+    ["focus-view", "*.center"],
+    {"start-recording": "debug"},
+    ["run-configuration", "weather"],
+    {"wait": 2500},
+    "step-over",
+    {"wait": 1000},
+    "step-over",
+    {"wait": 1000},
+    "step-in",
+    {"wait": 1000},
+    ["add-watch", "temperature"],
+    {"wait": 1000},
+    "step-over",
+    {"wait": 1000},
+    {"stop-recording": true},
+    "stop-debug-session"
+  ]
+}

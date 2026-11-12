@@ -3,7 +3,8 @@
 ## Scenarios live in `screenshots/scenarios`, either as `<name>.json` or as
 ## `<name>/scenario.json` (the folder may contain extra files and subdirectories,
 ## which are copied into a fresh workspace for every run). Output goes to
-## `../NevScreenshots/<name>/` (the folder is cleared before each run).
+## `../NevScreenshots/`, with all screenshots and GIFs in that single folder.
+## Only files named by the scenario are replaced; unrelated outputs are preserved.
 ##
 ## Every scenario launches a new `nev -g --skip-user` instance with
 ## NEV_SDL_DEBUG_DIR pointing to a control dir, and drives it by writing commands
@@ -14,6 +15,7 @@
 ## Scenario file (JSON with comments and trailing commas):
 ##   {
 ##     "description": "Two files side by side",
+##     "skip": "Feature unavailable",    // optional: skip this scenario with a reason
 ##     "size": "1280x720",               // window size, or [1280, 720]
 ##     "workspace": "../../..",          // optional: run in this dir (relative to the
 ##                                       //   scenario file) instead of a copy of the scenario folder
@@ -22,6 +24,7 @@
 ##     "settings": {"ui.font-size": 16}, // optional: -p:key=value (text.cursor-blink defaults to false)
 ##     "args": [],                       // optional: extra command line arguments
 ##     "user-config": false,             // optional: load user config (default: --skip-user)
+##     "setup": [["git", "init"]],        // optional: checked external commands in the copied workspace
 ##     "startup-idle": 1000,             // ms without rendering before the first step
 ##     "steps": [
 ##       "focus-view-left",                             // command line
@@ -33,7 +36,7 @@
 ##       {"wait": 500},                                 // ms
 ##       {"wait-idle": 300, "timeout": 5000},           // until nothing rendered for 300ms
 ##       {"screenshot": "overview"},                    // <out>/overview.png
-##       {"start-recording": "typing", "seconds": 5, "max-frames": 0}, // <out>/typing/frame-*.png
+##       {"start-recording": "typing", "seconds": 5, "max-frames": 0}, // <out>/typing.gif with --gif
 ##       {"stop-recording": true},                      // also done automatically at the end
 ##     ]
 ##   }
@@ -49,6 +52,7 @@ const repoRoot = currentSourcePath().parentDir.parentDir
 
 type
   ScenarioError = object of CatchableError
+  ScenarioOutcome = enum scenarioSucceeded, scenarioFailed, scenarioSkipped
 
   Scenario = object
     name: string
@@ -145,6 +149,12 @@ proc toArg(node: JsonNodeEx): string =
   $node
 
 proc quoted(s: string): string = $(%%s)
+
+proc mediaName(step: JsonNodeEx, key: string): string =
+  result = step.getString(key)
+  if result.len == 0 or result in [".", ".."] or
+      result.anyIt(it notin {'a'..'z', 'A'..'Z', '0'..'9', '-', '_', '.'}):
+    fail &"'{key}' must be a filename containing only letters, digits, '-', '_' and '.'"
 
 # --- Process control ----------------------------------------------------------
 
@@ -312,13 +322,19 @@ proc convertToGif(run: var Run, dir, output: string, concatFile: string) =
   removeFile(concatFile)
   echo &"  gif: {output}"
 
+proc clearRawRecording(run: Run, name: string) =
+  for frame in walkFiles(run.outDir / (name & "-frame-*.png")):
+    removeFile(frame)
+  removeFile(run.outDir / (name & ".index.txt"))
+  removeFile(run.outDir / (name & ".ffconcat"))
+
 proc stopRecording(run: var Run, runner: Runner) =
   if run.recording.len == 0:
     return
   let name = run.recording
   run.recording = ""
   discard run.execute("sdl.stop-recording")
-  let dir = run.outDir / name
+  let dir = run.controlDir / name
   run.waitForFile(dir / "index.txt")
   # index.txt is written when the recording stops, frames may still be encoding.
   for line in readFile(dir / "index.txt").splitLines:
@@ -331,6 +347,16 @@ proc stopRecording(run: var Run, runner: Runner) =
   let concatFile = writeConcatFile(dir)
   if runner.gif and concatFile.len > 0:
     run.convertToGif(dir, run.outDir / name & ".gif", concatFile)
+    run.clearRawRecording(name)
+  elif not runner.gif:
+    run.clearRawRecording(name)
+    for frame in walkFiles(dir / "frame-*.png"):
+      moveFile(frame, run.outDir / (name & "-" & frame.extractFilename))
+    let index = readFile(dir / "index.txt").replace(" frame-", " " & name & "-frame-")
+    writeFile(run.outDir / (name & ".index.txt"), index)
+    if concatFile.len > 0:
+      let concat = readFile(concatFile).replace("file 'frame-", "file '" & name & "-frame-")
+      writeFile(run.outDir / (name & ".ffconcat"), concat)
 
 # --- Steps --------------------------------------------------------------------
 
@@ -391,17 +417,18 @@ proc runStep(run: var Run, runner: Runner, step: JsonNodeEx) =
       run.waitIdle(step.getInt("wait-idle", 300), step.getInt("timeout", 5000))
 
     elif step.hasKey("screenshot"):
-      let name = step.getString("screenshot")
+      let name = step.mediaName("screenshot")
       let path = run.outDir / name & ".png"
-      createDir(path.parentDir)
+      removeFile(path)
       discard run.execute("sdl.screenshot " & path.quoted)
       run.waitForFile(path)
       echo &"  screenshot: {path}"
 
     elif step.hasKey("start-recording"):
       run.stopRecording(runner)
-      let name = step.getString("start-recording")
-      let dir = run.outDir / name
+      let name = step.mediaName("start-recording")
+      let dir = run.controlDir / name
+      removeDir(dir)
       let res = run.execute(&"sdl.start-recording {dir.quoted} {step.getFloat(\"seconds\", 0)} {step.getInt(\"max-frames\", 0)}")
       if res.commandResult.len == 0:
         fail &"Failed to start recording '{name}': {res.strip}"
@@ -448,7 +475,7 @@ proc prepareWorkspace(runner: Runner, scenario: Scenario): string =
   else:
     createDir(result)
 
-proc runScenario(runner: Runner, scenario: var Scenario): bool =
+proc runScenario(runner: Runner, scenario: var Scenario): ScenarioOutcome =
   echo &"[{scenario.name}]"
   let start = getMonoTime()
   var run = Run(scenario: scenario, verbose: runner.verbose)
@@ -458,15 +485,35 @@ proc runScenario(runner: Runner, scenario: var Scenario): bool =
     scenario.load()
     run.scenario = scenario
     let json = scenario.json
+    let skip = json.getString("skip")
+    if skip.len > 0:
+      echo &"  SKIPPED: {skip}"
+      return scenarioSkipped
     let (width, height) = parseSize(json.get("size"))
 
-    run.outDir = runner.outRoot / scenario.name
-    removeDir(run.outDir)
+    run.outDir = runner.outRoot
     createDir(run.outDir)
     run.controlDir = runner.workRoot / scenario.name & ".control"
     removeDir(run.controlDir)
     createDir(run.controlDir)
     let workspace = prepareWorkspace(runner, scenario)
+    let setup = json.get("setup")
+    if setup != nil:
+      if json.getString("workspace").len > 0:
+        fail "'setup' requires a copied scenario workspace"
+      if setup.kind != JsonexNodeKind.JArray:
+        fail "'setup' must be an array of command arrays"
+      for command in setup:
+        if command.kind != JsonexNodeKind.JArray or command.elems.len == 0:
+          fail "'setup' commands must be nonempty arrays of strings"
+        var argv: seq[string]
+        for arg in command:
+          if arg.kind != JsonexNodeKind.JString:
+            fail "'setup' arguments must be strings"
+          argv.add arg.str
+        let (output, code) = execCmdEx(quoteShellCommand(argv), workingDir = workspace)
+        if code != 0:
+          fail &"Setup command {argv} failed ({code}): {output}"
 
     var args = @["-g", "--no-attach"]
     if not json.get("user-config").getBool(false):
@@ -527,10 +574,10 @@ proc runScenario(runner: Runner, scenario: var Scenario): bool =
     sleep(50)
     run.reportLogErrors()
     echo &"  done in {start.elapsedMs.float / 1000:.1f}s, {run.warnings} warnings -> {run.outDir}"
-    result = true
+    result = scenarioSucceeded
   except CatchableError as e:
     echo &"  FAILED: {e.msg}"
-    result = false
+    result = scenarioFailed
   finally:
     if started:
       if run.process.running:
@@ -545,7 +592,7 @@ const usage = """
 Usage: screenshot_scenarios [options] [scenario...]
 
 Runs the scenarios in screenshots/scenarios (all if none are given) and writes
-screenshots/recordings to <out>/<scenario>/.
+screenshots/recordings directly to <out>/ (no per-scenario output folders).
 
 Options:
   --list          List scenarios and exit
@@ -594,6 +641,9 @@ proc main(): int =
       try:
         scenario.load()
         description = scenario.json.getString("description")
+        let skip = scenario.json.getString("skip")
+        if skip.len > 0:
+          description.add &" [skipped: {skip}]"
       except CatchableError as e:
         description = "(invalid: " & e.msg & ")"
       echo &"{scenario.name:<30} {description}"
@@ -619,10 +669,16 @@ proc main(): int =
   createDir(runner.workRoot)
 
   var failed: seq[string]
+  var skipped = 0
   for scenario in selected.mitems:
-    if not runner.runScenario(scenario):
+    case runner.runScenario(scenario)
+    of scenarioFailed:
       failed.add scenario.name
-  echo &"{selected.len - failed.len}/{selected.len} scenarios succeeded"
+    of scenarioSkipped:
+      inc skipped
+    of scenarioSucceeded:
+      discard
+  echo &"{selected.len - failed.len - skipped}/{selected.len - skipped} scenarios succeeded, {skipped} skipped"
   if failed.len > 0:
     echo &"Failed: {failed.join(\", \")}"
     return 1

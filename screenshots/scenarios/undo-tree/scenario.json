@@ -1,0 +1,28 @@
+{
+  "description": "Create alternate edit branches and navigate the undo tree",
+  "skip": "Undo-tree rendering is not working in the current build",
+  "source-media": "undo-tree.gif",
+  "size": "1280x720",
+  "file": "notice.txt",
+  "settings": {"text.disable-completions": true},
+  "steps": [
+    {"keys": "ggA - morning update<ESCAPE>", "interval": 70},
+    {"keys": "oWind: calm<ESCAPE>", "interval": 90},
+    {"keys": "oHarbor: open<ESCAPE>", "interval": 90},
+    {"keys": "u"},
+    {"keys": "oHarbor: restricted<ESCAPE>", "interval": 90},
+    "undotree.toggle",
+    {"start-recording": "undo-tree"},
+    {"wait": 1000},
+    "undotree.prev-change",
+    {"wait": 800},
+    "undotree.parent-change",
+    {"wait": 800},
+    "undotree.apply-selected",
+    {"wait": 900},
+    "undotree.last-change",
+    "undotree.apply-selected",
+    {"wait": 1000},
+    {"stop-recording": true}
+  ]
+}

@@ -1,0 +1,5 @@
+12 + 8
+6 * (4 + 3)
+144 / 12
+
+Compute a shipment total, a weekly count and a daily average.

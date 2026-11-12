@@ -1,0 +1,18 @@
+{
+  "description": "Evaluate arithmetic expressions directly in an example document",
+  "source-media": "expression_evaluation.gif",
+  "size": "1100x600",
+  "file": "calculations.txt",
+  "settings": {"text.disable-completions": true},
+  "steps": [
+    {"start-recording": "expression_evaluation"},
+    {"wait": 600},
+    {"keys": "ggv$gxx<ESCAPE>", "interval": 150},
+    {"wait": 700},
+    {"keys": "j0v$gxx<ESCAPE>", "interval": 150},
+    {"wait": 700},
+    {"keys": "j0v$gxx<ESCAPE>", "interval": 150},
+    {"wait": 900},
+    {"stop-recording": true}
+  ]
+}

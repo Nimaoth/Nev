@@ -1,0 +1,4 @@
+Settings can be searched without leaving the editor.
+
+Word wrapping keeps long descriptions readable even in a narrow pane.
+Toggle the setting in the runtime store without changing user files.

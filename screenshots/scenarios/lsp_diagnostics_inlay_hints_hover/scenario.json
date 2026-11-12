@@ -1,0 +1,15 @@
+{
+  "description": "Real clangd diagnostics, parameter inlay hints and symbol hover",
+  "source-media": "lsp_diagnostics_inlay_hints_hover.png",
+  "size": "1280x720",
+  "file": "weather.c",
+  "settings": {"text.inlay-hints-enabled": true},
+  "steps": [
+    {"wait": 2000},
+    ".update-inlay-hints",
+    {"keys": "gg12j0w"},
+    ".hover.toggle",
+    {"wait": 1200},
+    {"screenshot": "lsp_diagnostics_inlay_hints_hover"}
+  ]
+}

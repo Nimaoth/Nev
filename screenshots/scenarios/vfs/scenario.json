@@ -1,0 +1,11 @@
+{
+  "description": "Browse virtual filesystem mounts and the example workspace",
+  "source-media": "vfs.png",
+  "size": "1280x720",
+  "file": "README.md",
+  "steps": [
+    ["explore-files", "", true, false],
+    {"wait-idle": 400},
+    {"screenshot": "vfs"}
+  ]
+}
