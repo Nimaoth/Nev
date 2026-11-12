@@ -2463,12 +2463,13 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
           else: discard
         except:
           discard
-        storage.gutterWidthPx = gutterPx
         try:
           storage.signColumnShow = self.config.getTextSignsShow()
+          if storage.signColumnShow == core_settings.SignColumnShowKind.Number and gutterPx > 0:
+            gutterPx = max(gutterPx, 3 * charW)
           storage.signColumnWidth =
             if storage.signColumnShow == core_settings.SignColumnShowKind.Number:
-              max((gutterPx / charW).int - 2, 0)
+              max((gutterPx / charW).int - 1, 0)
             else:
               self.requiredSignColumnWidth()
           storage.signColumnWidthPx = storage.signColumnWidth.float32 * charW
@@ -2476,6 +2477,7 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
           storage.signColumnShow = core_settings.SignColumnShowKind.No
           storage.signColumnWidth = 0
           storage.signColumnWidthPx = 0.0'f32
+        storage.gutterWidthPx = gutterPx
         # Snapshot both diff iterators and their theme colors for the lists.
         storage.renderDiff = self.diffDocument != nil and
           self.diffDocument.isInitialized and self.diffChanges.isSome and
