@@ -519,7 +519,7 @@ while i < cmds.len:
     exec "./bin/build.exe -f"
 
   of "build-dynamic":
-    buildNev("-d:useDynlib")
+    buildNev(extraArgs="-d:useDynlib", cacheDir="nimcache/nev-dynamic")
 
   of "build-static":
     buildNev()
