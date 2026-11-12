@@ -65,7 +65,7 @@ proc getPreviewSelection*(self: SelectorPopup): Option[Selection] = selectorPopu
 # Implementation
 when implModule:
   import std/[sugar, json, streams, tables]
-  import bumpy
+  import bumpy, chronos
   import misc/[util, rect_utils, event, fuzzy_matching, custom_logger, rope_utils, jsonex]
   import nimsumtree/[rope, buffer]
   import popup, input_handler/input_handler, selector_popup/builder, layout/layout, service, command_service
@@ -333,6 +333,22 @@ when implModule:
       let handled = self.handleItemConfirmed list[self.selected]
       if handled:
         self.layout.popPopup(self)
+
+  proc closeDeferredAsync(self: SelectorPopupImpl) {.async: (raises: []).} =
+    try:
+      await sleepAsync(0.milliseconds)
+    except CancelledError:
+      return
+    if self.textEditor.isNil:
+      return
+    if self.isInLayout:
+      self.layout.closeView(self)
+    else:
+      self.layout.popPopup(self)
+
+  proc closeDeferred*(self: SelectorPopupImpl) =
+    ## Closes the popup on the next async poll, so it is safe to call while rendering.
+    asyncSpawn self.closeDeferredAsync()
 
   proc selectorPopupCancel(self: SelectorPopupImpl) =
     if self.accepted:

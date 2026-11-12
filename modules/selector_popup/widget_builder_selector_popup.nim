@@ -145,92 +145,111 @@ proc selectorPopupCreateUINui*(self: SelectorPopupImpl, nui: var UiBuilder) =
       storage.popup = self
       storage.showScore = showScore
 
-      nui.node("selector-popup-left"):
-        if showPreview:
-          discard nui.anchors(0.0'f32, 0.0'f32,
-            1.0'f32 - previewScale, 1.0'f32).offsets(0, 0, -2, 0)
-            .finishAnchors()
-        else:
+      nui.layoutVertical("selector-popup-frame"):
+        discard nui.fillX().fillY().backendGap(2)
+        let title = if self.title.len > 0: self.title else: self.scope
+        # Reverse layout so the title can fillX as the last child while the
+        # close button stays on the right.
+        nui.layoutHorizontalReverse("selector-popup-header"):
+          discard nui.fillX().fitY().styleIndex(UiStyleIndexHeader)
+            .fillBackground()
+          nui.node("selector-popup-close"):
+            let hovered = nui.wasHovered(includeChildren = true)
+            discard nui.fit().backendPaddingX(6).backendPaddingY(4)
+            # Only change colors on hover; switching style indices would also
+            # change padding/font and make the button jump.
+            if hovered:
+              discard nui.backgroundColor(
+                nui.themeStyle(UiStyleIndexMenuItemHover)[].fillColor)
+                .fillBackground()
+            discard nui.textStyleIndex(int(UiStyleIndexHeaderText)).text("✕")
+            if nui.wasClicked(includeChildren = true):
+              self.closeDeferred()
+          nui.node("selector-popup-title"):
+            discard nui.fillX().fitY().backendPadding(4)
+              .textStyleIndex(int(UiStyleIndexHeaderText)).text(title)
+
+        nui.node("selector-popup-body"):
           discard nui.fillX().fillY()
-        nui.layoutVertical("selector-popup-content"):
-          discard nui.fillX().fillY().backendGap(2)
-          let title = if self.title.len > 0: self.title else: self.scope
-          if title.len > 0:
-            nui.node("selector-popup-title"):
-              discard nui.fillX().fitY().backendPadding(4)
-                .styleIndex(UiStyleIndexHeader).fillBackground()
-                .textStyleIndex(int(UiStyleIndexHeaderText)).text(title)
+          nui.node("selector-popup-left"):
+            if showPreview:
+              discard nui.anchors(0.0'f32, 0.0'f32,
+                1.0'f32 - previewScale, 1.0'f32).offsets(0, 0, -2, 0)
+                .finishAnchors()
+            else:
+              discard nui.fillX().fillY()
+            nui.layoutVertical("selector-popup-content"):
+              discard nui.fillX().fillY().backendGap(2)
+              # Search editor sizes to its content via the text editor fitY mode
+              # (single line, header hidden); no fixed height pin.
+              nui.node("selector-popup-search"):
+                discard nui.fillX().fitY().maskChildren()
+                self.textEditor.renderNui(nui)
 
-          # Search editor sizes to its content via the text editor fitY mode
-          # (single line, header hidden); no fixed height pin.
-          nui.node("selector-popup-search"):
-            discard nui.fillX().fitY().maskChildren()
-            self.textEditor.renderNui(nui)
+              nui.node("selector-popup-results"):
+                discard nui.fillX().fillY()
+                var columns = @[
+                  tableColumnFixed(if nui.backendType == UiBackendType.Terminal:
+                    4.0'f32
+                  else:
+                    38.0'f32),
+                ]
+                if showScore:
+                  columns.add(tableColumnFixed(if nui.backendType == UiBackendType.Terminal:
+                    8.0'f32
+                  else:
+                    76.0'f32))
+                columns.add(tableColumnProportional(2.0'f32))
+                columns.add(tableColumnProportional(1.0'f32))
+                storage.listStorage = nui.listTable(
+                  itemCount,
+                  rowHeight,
+                  columns,
+                  buildSelectorPopupRow,
+                  rootIndex,
+                  columnGap = if nui.backendType == UiBackendType.Terminal:
+                    1.0'f32
+                  else:
+                    6.0'f32)
+                # NUI-GAP: old scrolling keeps scrollOffset/lastRenderedIndex math
+                # (maxLineCount 30 or floor((rowsH-whichKeyPx)/lineH), clamp, asserts),
+                # reuses cachedFinderItems when items.locked, handles onScroll and draws
+                # a custom scrollbar; new only ensureItemVisible + listTable default
+                # (see §24).
+                if self.scrollToSelected and storage.listStorage != nil and
+                    storage.listStorage.ensureItemVisible(
+                      self.selected, storage.listStorage.viewportHeight, 0):
+                  self.scrollToSelected = false
 
-          nui.node("selector-popup-results"):
-            discard nui.fillX().fillY()
-            var columns = @[
-              tableColumnFixed(if nui.backendType == UiBackendType.Terminal:
-                4.0'f32
-              else:
-                38.0'f32),
-            ]
-            if showScore:
-              columns.add(tableColumnFixed(if nui.backendType == UiBackendType.Terminal:
-                8.0'f32
-              else:
-                76.0'f32))
-            columns.add(tableColumnProportional(2.0'f32))
-            columns.add(tableColumnProportional(1.0'f32))
-            storage.listStorage = nui.listTable(
-              itemCount,
-              rowHeight,
-              columns,
-              buildSelectorPopupRow,
-              rootIndex,
-              columnGap = if nui.backendType == UiBackendType.Terminal:
-                1.0'f32
-              else:
-                6.0'f32)
-            # NUI-GAP: old scrolling keeps scrollOffset/lastRenderedIndex math
-            # (maxLineCount 30 or floor((rowsH-whichKeyPx)/lineH), clamp, asserts),
-            # reuses cachedFinderItems when items.locked, handles onScroll and draws
-            # a custom scrollbar; new only ensureItemVisible + listTable default
-            # (see §24).
-            if self.scrollToSelected and storage.listStorage != nil and
-                storage.listStorage.ensureItemVisible(
-                  self.selected, storage.listStorage.viewportHeight, 0):
-              self.scrollToSelected = false
+              nui.layoutHorizontal("selector-popup-status"):
+                discard nui.fillX().fitY().backendPaddingY(2).backendGap(4)
+                nui.node:
+                  var countText = "0/0"
+                  if self.finder != nil and self.finder.filteredItems.isSome:
+                    let filteredItems = self.finder.filteredItems.get
+                    countText = $filteredItems.filteredLen & "/" & $filteredItems.len
+                  discard nui.fit().textStyleIndex(int(UiStyleIndexSmallText))
+                    .text(countText)
+                let isLocked = self.finder != nil and
+                  self.finder.filteredItems.isSome and
+                  self.finder.filteredItems.get.locked
+                if isLocked:
+                  nui.node:
+                    discard nui.fit().textStyleIndex(int(UiStyleIndexSmallText))
+                      .text("...")
 
-          nui.layoutHorizontal("selector-popup-status"):
-            discard nui.fillX().fitY().backendPaddingY(2).backendGap(4)
-            nui.node:
-              var countText = "0/0"
-              if self.finder != nil and self.finder.filteredItems.isSome:
-                let filteredItems = self.finder.filteredItems.get
-                countText = $filteredItems.filteredLen & "/" & $filteredItems.len
-              discard nui.fit().textStyleIndex(int(UiStyleIndexSmallText))
-                .text(countText)
-            let isLocked = self.finder != nil and
-              self.finder.filteredItems.isSome and
-              self.finder.filteredItems.get.locked
-            if isLocked:
-              nui.node:
-                discard nui.fit().textStyleIndex(int(UiStyleIndexSmallText))
-                  .text("...")
-
-      if showPreview:
-        nui.node("selector-popup-preview"):
-          discard nui.anchors(1.0'f32 - previewScale, 0.0'f32,
-            1.0'f32, 1.0'f32).offsets(2, 0, 0, 0).finishAnchors()
-            .styleIndex(UiStyleIndexPanel).fillBackground().backendPadding(4)
-            .maskChildren()
-          if self.previewView != nil:
-            self.previewView.render(nui)
-          elif self.previewer.isSome and self.previewer.get.renderNuiImpl != nil:
-            self.previewer.get.renderNui(nui)
-          elif self.previewEditor != nil:
-            self.previewEditor.renderNui(nui)
+          if showPreview:
+            nui.node("selector-popup-preview"):
+              discard nui.anchors(1.0'f32 - previewScale, 0.0'f32,
+                1.0'f32, 1.0'f32).offsets(2, 0, 0, 0).finishAnchors()
+                .styleIndex(UiStyleIndexPanel).fillBackground().backendPadding(4)
+                .maskChildren()
+              if self.previewView != nil:
+                self.previewView.render(nui)
+              elif self.previewer.isSome and self.previewer.get.renderNuiImpl != nil:
+                self.previewer.get.renderNui(nui)
+              elif self.previewEditor != nil:
+                self.previewEditor.renderNui(nui)
 
   # NUI-GAP: old popup chrome dims inactive/focusPreview (inactiveBrightnessChange,
   # popupBrightnessChange), honors getUiBackgroundTransparent, draws DrawBorder(1)
@@ -250,10 +269,7 @@ proc selectorPopupCreateUINui*(self: SelectorPopupImpl, nui: var UiBuilder) =
         let insetX = max(0.0'f32, (1.0'f32 - self.scale.x.float32) * 0.5'f32)
         let insetY = max(0.0'f32, (1.0'f32 - self.scale.y.float32) * 0.5'f32)
         if not showPreview and self.sizeToContentY:
-          let titleHeight = if self.title.len > 0 or self.scope.len > 0:
-            rowHeight
-          else:
-            0.0'f32
+          let titleHeight = rowHeight
           let desiredHeight = titleHeight + editorHeight +
             min(itemCount, 30).float32 * rowHeight + rowHeight + 12.0'f32
           let maxHeight = max(rowHeight,
