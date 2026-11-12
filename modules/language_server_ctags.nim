@@ -1,7 +1,7 @@
 #use treesitter_component event_service language_server_component input_handler move_component theme
 import std/[strformat, strutils, os, sets, tables, options, json]
 import misc/[delayed_task, id, custom_logger, util, custom_async, timer, async_process, event, response,
-  rope_utils, arena, array_view, array_set]
+  rope_utils, arena, array_view, array_set, myjsonutils]
 import language_server
 import nimsumtree/[arc, rope]
 import service, event_service, document_editor, document, config_provider, vfs, vfs_service
@@ -32,6 +32,7 @@ type
     definitions: seq[CTagsDefinition]
     completions: seq[language_server.CompletionItem]
     symbols: seq[Symbol]
+    symbolsRaw: seq[WorkspaceSymbolRaw]
     moduleCompletions: seq[language_server.CompletionItem]
 
   LanguageServerCTags* = ref object of LanguageServer
@@ -136,6 +137,16 @@ when implModule:
     var allSymbols: seq[Symbol] = newSeqOfCap[language_server.Symbol](total)
     for file in self.files.values:
       allSymbols.add file.symbols
+    return allSymbols
+
+  proc ctagsGetWorkspaceSymbolsRaw(self: LanguageServer, filename: string, query: string): Future[seq[language_server.WorkspaceSymbolRaw]] {.async.} =
+    let self = self.LanguageServerCTags
+    var total: int = 0
+    for file in self.files.values:
+      total += file.symbols.len
+    var allSymbols: seq[language_server.WorkspaceSymbolRaw] = newSeqOfCap[language_server.WorkspaceSymbolRaw](total)
+    for file in self.files.values:
+      allSymbols.add file.symbolsRaw
     return allSymbols
 
   proc ctagsGetHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.async.} =
@@ -323,6 +334,7 @@ when implModule:
     result.getTypeDefinitionImpl = ctagsGetTypeDefinition
     result.getReferencesImpl = ctagsGetReferences
     result.getWorkspaceSymbolsImpl = ctagsGetWorkspaceSymbols
+    result.getWorkspaceSymbolsRawImpl = ctagsGetWorkspaceSymbolsRaw
     result.getCompletionsImpl = ctagsGetCompletions
     result.getHoverImpl = ctagsGetHover
     result.getSignatureHelpImpl = ctagsGetSignatureHelp
@@ -336,6 +348,12 @@ when implModule:
     else:
       log lvlWarn, &"Unknown symbol type '{str}'"
       return SymbolType.Unknown
+
+  proc toLspSymbolKind(symbolKind: SymbolType): SymbolKind =
+    try:
+      return SymbolKind(symbolKind.ord)
+    except:
+      return SymbolKind.Class
 
   proc parseCTags(self: LanguageServerCTags) {.async.} =
     if self.parsing:
@@ -430,6 +448,16 @@ when implModule:
                 name: def.name,
                 symbolType: def.kind,
                 filename: def.path,
+              )
+              let pos = Position(line: cursor[0], character: cursor[1])
+              s[].symbolsRaw.add WorkspaceSymbolRaw(
+                symbol: WorkspaceSymbol(
+                  name: def.name,
+                  kind: def.kind.toLspSymbolKind,
+                  location: WorkspaceLocationVariant(node: Location(uri: def.path, `range`: language_server.Range(start: pos, `end`: pos)).toJson),
+                ),
+                path: def.path,
+                location: cursor.some,
               )
               s[].definitions.add def
 
