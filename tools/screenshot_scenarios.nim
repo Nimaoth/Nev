@@ -10,7 +10,7 @@
 ## NEV_SDL_DEBUG_DIR pointing to a control dir, and drives it by writing commands
 ## to `<control>/commands` and watching `<control>/frame.txt`.
 ##
-## Build: nim c -o:tools/screenshot_scenarios.exe tools/screenshot_scenarios.nim
+## Build: nim c -d:release --undef:useDynlib -o:tools/screenshot_scenarios.exe tools/screenshot_scenarios.nim
 ##
 ## Scenario file (JSON with comments and trailing commas):
 ##   {
@@ -42,6 +42,9 @@
 ##   }
 ##
 ## Failed commands and ERROR lines in nev's log (`<work>/<name>.log`) are reported as warnings.
+
+when defined(useDynlib):
+  {.error: "Build screenshot_scenarios with --undef:useDynlib; it must not import Nev's dynamic runtime.".}
 
 import std/[os, osproc, strutils, strformat, streams, strtabs, parseopt, algorithm,
   sequtils, monotimes, times]

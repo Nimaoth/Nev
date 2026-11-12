@@ -3,8 +3,11 @@
 Build the runner from the repository root:
 
 ```powershell
-nim c -d:release -o:tools\screenshot_scenarios.exe tools\screenshot_scenarios.nim
+nim c -d:release --undef:useDynlib -o:tools\screenshot_scenarios.exe tools\screenshot_scenarios.nim
 ```
+
+The runner is standalone; `--undef:useDynlib` prevents it from importing Nev's
+dynamic runtime, which can fail at startup with `could not import: roots`.
 
 Run all scenarios, or select names:
 
@@ -47,19 +50,13 @@ External tools required:
 - `git` for `git`, `git_changed_files` and `git_diff`.
 - `clangd` for the four `lsp*` scenarios. These use small C programs; the
   diagnostics example deliberately contains a type error.
-- `gcc` and `lldb-dap` for `debug` when it is re-enabled.
+- `clang` and LLVM 18's `lldb-dap` for `debug`. Its scenario currently points
+  to the local LLVM 18 installation; update the adapter path for another machine.
 
 The complete format is documented in
 [screenshot_scenarios.nim](../tools/screenshot_scenarios.nim).
 Editor actions need a leading dot, e.g. `.get-completions`, `.set-config`,
 `.markdown.toggle-bold`. Key names are uppercase, e.g. `<ESCAPE>` and `<DOWN>`.
-
-## Temporarily skipped
-
-`debug` and `undo-tree` retain their fixture definitions but have a `skip`
-reason because those features are not working in the current build. They are
-listed but not run, even when selected explicitly. Remove the `skip` property
-to re-enable them.
 
 No scenarios are created for `markdown-inline-images.png`,
 `markdown-animated-gif.gif`, or `markdown-animated-gif2.gif`: Markdown image

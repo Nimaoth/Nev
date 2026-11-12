@@ -1,13 +1,14 @@
 {
   "description": "Debug a small weather station program using LLDB DAP",
-  "skip": "Debugger initialization is not working in the current build",
+  // "skip": "Debugger initialization is not working in the current build",
   "source-media": "debug.gif",
   "size": "1440x900",
   "file": "weather.c",
-  "setup": [["gcc", "-g", "-O0", "-o", "weather.exe", "weather.c"]],
+  "setup": [["clang", "-g", "-O0", "-o", "weather.exe", "weather.c"]],
   "settings": {
     "lsp": {},
-    "debugger.type.lldb-dap": {"connection": "stdio", "path": "lldb-dap.exe", "args": []},
+    "text.signs.show": "yes",
+    "debugger.type.lldb-dap": {"connection": "stdio", "path": "C:/Users/nimao/Downloads/clang+llvm-18.1.8-x86_64-pc-windows-msvc/clang+llvm-18.1.8-x86_64-pc-windows-msvc/bin/lldb-dap.exe", "args": []},
     "debugger.configuration.weather": {
       "type": "lldb-dap",
       "request": "launch",
@@ -18,7 +19,7 @@
     }
   },
   "steps": [
-    {"keys": "gg12j"},
+    {"keys": "gg6j"},
     "toggle-breakpoint",
     ["show-debugger-variables", false],
     ["show-debugger-stacktrace", false],
@@ -28,17 +29,14 @@
     {"start-recording": "debug"},
     ["run-configuration", "weather"],
     {"wait": 2500},
-    "step-over",
-    {"wait": 1000},
-    "step-over",
-    {"wait": 1000},
-    "step-in",
-    {"wait": 1000},
     ["add-watch", "temperature"],
     {"wait": 1000},
     "step-over",
     {"wait": 1000},
+    "step-over",
+    {"wait": 1000},
     {"stop-recording": true},
+    // {"wait": 100000000},
     "stop-debug-session"
   ]
 }
