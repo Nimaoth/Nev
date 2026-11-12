@@ -112,6 +112,17 @@ proc buildNuigiStaticDependencies() =
     echo "[ERROR] This Nuigi checkout does not support static dependency builds.",
       " Update it or select a newer checkout with --nuigi-dir:<path>."
     quit 1
+  when defined(linux):
+    let sdlSource = nuigiDir / "vendor" / "SDL"
+    if not dirExists(sdlSource):
+      mkDir(nuigiDir / "vendor")
+      withDir nuigiDir / "vendor":
+        exec "git clone https://github.com/libsdl-org/SDL"
+    exec "cmake -S " & sdlSource.quoteShell & " -B " &
+      (nuigiDir / "build" / "sdl3_static").quoteShell &
+      " -DCMAKE_BUILD_TYPE=Release -DSDL_SHARED=OFF -DSDL_STATIC=ON" &
+      " -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF" &
+      " -DSDL_X11_XSCRNSAVER=OFF -DSDL_X11_XTEST=OFF"
   withDir nuigiDir:
     exec "nim c -o:bin/nev-nuigi-build build.nim"
     let builder = ("bin" / "nev-nuigi-build" &
