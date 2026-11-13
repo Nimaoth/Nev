@@ -184,8 +184,12 @@ jobs:
 
       - run: apt-get update
         continue-on-error: true
-      - run: apt-get install gcc-mingw-w64 libx11-xcb-dev curl wget build-essential git musl-tools cmake sudo -y
-        continue-on-error: true
+      - run: |
+          apt-get install -y \
+            gcc-mingw-w64 libx11-xcb-dev curl wget build-essential git musl-tools cmake sudo \
+            clang pkg-config python3 libfreetype6 \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxss-dev libxtst-dev libxkbcommon-dev
 
       - name: Install stable rust toolchain
         uses: dtolnay/rust-toolchain@1.81
@@ -224,7 +228,14 @@ jobs:
 
       - run: "echo 'import wasmtime' > src/temp.nim && nim c -d:nimWasmtimeBuild src/temp.nim"
 
+      - name: Build SDL for tests
+        working-directory: deps/nuigi
+        run: nim c -r -o:bin/nev-nuigi-build build.nim sdl3
+
       - name: Run tests
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/deps/nuigi/bin
+          SDL_VIDEODRIVER: dummy
         run: testament --print category unit
       - name: Build test report
         run: testament html
