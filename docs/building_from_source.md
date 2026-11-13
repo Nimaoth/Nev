@@ -55,6 +55,42 @@ nim .\tools\nev_build.nims modules
 `modules-f` to force a rebuild of all modules. Re-run `build-dynamic` only when
 code compiled into the executable changes.
 
+### Running unit tests
+
+Run the test commands from the repository root. List available tests:
+
+```powershell
+nim .\tools\nev_build.nims test-list
+```
+
+Compile and run a single test by name or by its path under `tests/unit`.
+The `.nim` extension and `tests/unit` prefix are optional:
+
+```powershell
+nim .\tools\nev_build.nims test trect_utils
+nim .\tools\nev_build.nims test input\tinput.nim
+```
+
+To compile and run every unit test, including tests in subdirectories:
+
+```powershell
+nim .\tools\nev_build.nims test-all
+```
+
+The runner prints test output and a pass/fail summary. It continues after
+compilation or test failures and returns a nonzero exit code if any test fails.
+Binaries, per-test logs, and a reusable Nim cache are written to
+`testresults/nev-build` (`bin`, `logs`, and `nimcache`, respectively).
+
+Clear only these generated outputs with:
+
+```powershell
+nim .\tools\nev_build.nims test-clean
+```
+
+Cleanup preserves other test results, including `testresults/unit.json`, and
+tracked expected-output files under `tests/unit`.
+
 ### Restoring locked dependencies without Atlas
 
 Run `nim .\tools\nev_build.nims deps` from the repository root to clone missing

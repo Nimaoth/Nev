@@ -1,4 +1,4 @@
-import std/[os, parseopt, compilesettings, strformat, strutils, json, tables]
+import std/[algorithm, os, parseopt, compilesettings, strformat, strutils, json, tables]
 
 # Helper functions
 
@@ -128,6 +128,107 @@ proc warnIfStaticBuild() =
       echo "[WARN] Unknown executable build type in ", buildInfoPath, ": ", buildType
   except CatchableError as e:
     echo "[WARN] Failed to read executable build metadata ", buildInfoPath, ": ", e.msg
+
+const unitTestRoot = "tests/unit"
+const unitTestOutputRoot = "testresults/nev-build"
+const repoRoot = currentSourcePath().parentDir.parentDir
+
+proc unitTestFiles(): seq[string] =
+  for path in walkDirRec(repoRoot / unitTestRoot):
+    if path.splitFile.ext == ".nim":
+      result.add path
+  result.sort()
+
+proc resolveUnitTest(name: string): string =
+  var relativeName = name.replace('\\', '/')
+  if relativeName.startsWith(unitTestRoot & "/"):
+    relativeName = relativeName[(unitTestRoot.len + 1) .. ^1]
+  if not relativeName.endsWith(".nim"):
+    relativeName.add ".nim"
+  if relativeName.len <= 4 or relativeName.startsWith("/") or
+      relativeName.contains(":"):
+    echo "[ERROR] Provide a unit-test name or a path relative to ", unitTestRoot
+    quit 1
+  for part in relativeName.split('/'):
+    if part.len == 0 or part in [".", ".."]:
+      echo "[ERROR] Unit-test paths must stay under ", unitTestRoot
+      quit 1
+  result = repoRoot / unitTestRoot / relativeName
+  if not fileExists(result):
+    echo "[ERROR] Unit test not found: ", name
+    quit 1
+
+proc unitTestArtifactName(testFile: string): string =
+  var relativeName = relativePath(testFile, repoRoot / unitTestRoot).replace('\\', '/')
+  if relativeName.endsWith(".nim"):
+    relativeName.setLen(relativeName.len - 4)
+  relativeName.replace("/", "_")
+
+proc runFromRepo(command: string): tuple[output: string, exitCode: int] =
+  let shellCommand = when defined(windows):
+    "cmd /c cd /d " & repoRoot.quoteShell & " && " & command
+  else:
+    "sh -c " & ("cd " & repoRoot.quoteShell & " && " & command).quoteShell
+  gorgeEx(shellCommand)
+
+proc runUnitTests(testFiles: openArray[string]) =
+  if testFiles.len == 0:
+    echo "[ERROR] No unit tests found under ", unitTestRoot
+    exitCode = 1
+    return
+
+  let outputRoot = repoRoot / unitTestOutputRoot
+  let binDir = outputRoot / "bin"
+  let logDir = outputRoot / "logs"
+  let cacheDir = outputRoot / "nimcache"
+  mkDir binDir
+  mkDir logDir
+  mkDir cacheDir
+
+  var passed = 0
+  var failed: seq[string]
+  for testFile in testFiles:
+    let artifactName = unitTestArtifactName(testFile)
+    let executable = binDir / (artifactName &
+      (when defined(windows): ".exe" else: ""))
+    let logPath = logDir / (artifactName & ".log")
+    let nimCommand = "nim c " &
+      ("--out:" & executable).quoteShell & " " &
+      ("--nimcache:" & cacheDir).quoteShell & " " &
+      testFile.quoteShell
+    let displayName = relativePath(testFile, repoRoot / unitTestRoot)
+    echo "\n=== Running ", displayName, " ==="
+    let (compileOutput, compileCode) = runFromRepo(nimCommand)
+    var output = compileOutput
+    var code = compileCode
+    if code == 0:
+      let (testOutput, testCode) = runFromRepo(executable.quoteShell)
+      if testOutput.len > 0:
+        if output.len > 0:
+          output.add "\n"
+        output.add testOutput
+      code = testCode
+    if output.len > 0:
+      echo output
+    writeFile(logPath, output)
+    if code == 0:
+      inc passed
+      echo "[PASS] ", displayName
+    else:
+      failed.add displayName
+      echo "[FAIL] ", displayName, " (exit code ", code, "; log: ", logPath, ")"
+
+  echo "\nUnit tests: ", passed, " passed, ", failed.len, " failed."
+  if failed.len > 0:
+    exitCode = 1
+
+proc clearUnitTestOutputs() =
+  let outputRoot = repoRoot / unitTestOutputRoot
+  if dirExists(outputRoot):
+    rmDir(outputRoot)
+    echo "Cleared test binaries, logs, and Nim cache in ", unitTestOutputRoot
+  else:
+    echo "No test outputs to clear."
 
 type LockedDependency = object
   name, path, url, commit: string
@@ -472,6 +573,10 @@ for kind, key, val in optParser.getopt():
   build-dynamic     Like build-static, but load modules as DLLs from native_plugins.
   modules           Rebuild changed modules (DLLs) and regenerate module imports.
   modules-f         Force a rebuild of all modules.
+  test NAME         Compile and run one unit test (name or path under tests/unit).
+  test-all          Compile and run every unit test under tests/unit.
+  test-list         List unit tests under tests/unit.
+  test-clean        Remove binaries, logs, and Nim cache created by test commands.
   build-perf        Build nev-perf with .perfprof performance recording enabled.
   wasmtime          Build Wasmtime and copy its DLL into the repository root (Windows).
   deps              Clone/check out dependencies at the commits in atlas.lock.
@@ -490,6 +595,25 @@ while i < cmds.len:
   defer:
     inc i
   case cmds[i]
+  of "test":
+    if i + 1 >= cmds.len:
+      echo "[ERROR] Usage: test NAME"
+      exitCode = 1
+    else:
+      let testFile = resolveUnitTest(cmds[i + 1])
+      inc i
+      runUnitTests([testFile])
+
+  of "test-all":
+    runUnitTests(unitTestFiles())
+
+  of "test-list":
+    for testFile in unitTestFiles():
+      echo relativePath(testFile, unitTestRoot.absolutePath)
+
+  of "test-clean":
+    clearUnitTestOutputs()
+
   of "wasmtime":
     buildAndCopyWasmtime(nimWasmtimeBuildMusl)
 
