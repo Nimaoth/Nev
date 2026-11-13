@@ -84,6 +84,50 @@ var nuigiDir = getEnv("NUIGI_DIR", "deps" / "nuigi").absolutePath
 var nuigiPinDir = r"C:\dev\nuigi"
 var depsDir = "deps".absolutePath
 var lockFile = "atlas.lock".absolutePath
+const buildInfoPath = ".nev-build-info.json"
+let buildCommandLine = block:
+  var arguments = newSeq[string]()
+  for index in 0 .. paramCount():
+    arguments.add paramStr(index).quoteShell
+  arguments.join(" ")
+
+proc recordSuccessfulBuild(buildType, outputPath: string) =
+  let info = %*{
+    "buildType": buildType,
+    "output": outputPath,
+    "commandLine": buildCommandLine,
+  }
+  try:
+    writeFile(buildInfoPath, info.pretty & "\n")
+  except CatchableError as e:
+    echo "[WARN] Executable build succeeded, but failed to write ", buildInfoPath, ": ", e.msg
+
+proc warnIfStaticBuild() =
+  if not fileExists(buildInfoPath):
+    echo "[WARN] No executable build metadata found; module changes may not be loaded. Run build-dynamic before testing rebuilt modules."
+    return
+  try:
+    let info = parseJson(readFile(buildInfoPath))
+    if info.kind != JObject or not info.hasKey("buildType") or
+        info["buildType"].kind != JString:
+      echo "[WARN] Invalid executable build metadata in ", buildInfoPath
+      return
+    let buildType = info["buildType"].getStr
+    if buildType == "static":
+      let output = if info.hasKey("output") and info["output"].kind == JString:
+          info["output"].getStr
+        else:
+          "the latest executable"
+      let commandLine = if info.hasKey("commandLine") and info["commandLine"].kind == JString:
+          info["commandLine"].getStr
+        else:
+          "<unavailable>"
+      echo "[WARN] Latest executable build is static; rebuilt modules will not be loaded by ",
+        output, ". Build command: ", commandLine
+    elif buildType != "dynamic":
+      echo "[WARN] Unknown executable build type in ", buildInfoPath, ": ", buildType
+  except CatchableError as e:
+    echo "[WARN] Failed to read executable build metadata ", buildInfoPath, ": ", e.msg
 
 type LockedDependency = object
   name, path, url, commit: string
@@ -394,6 +438,8 @@ proc buildNev(output = "", extraArgs = "", cacheDir = "nimcache/nev-static") =
     else: (when defined(windows): "nev.exe" else: "nev")
   exec "nim c -o:" & outputPath & " --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:" & cacheDir & " " &
     wasmtimeCompilerArgs() & " " & staticArgs & pathArgs & linkArgs & compileIconResource() & " " & extraArgs & " src/desktop_main.nim"
+  let buildType = if extraArgs.contains("-d:useDynlib"): "dynamic" else: "static"
+  recordSuccessfulBuild(buildType, outputPath)
 
 var optParser = initOptParser("")
 for kind, key, val in optParser.getopt():
@@ -493,11 +539,13 @@ while i < cmds.len:
     try:
       exec """nim c --out:nev.exe -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib """ &
         wasmtimeCompilerArgs() & " src/desktop_main.nim"
+      recordSuccessfulBuild("static", "nev.exe")
     finally:
       discard
     try:
       exec """nim c --out:nevg.exe -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types "--passL:-ladvapi32.lib -luser32.lib" """ &
         wasmtimeCompilerArgs() & " src/desktop_main.nim"
+      recordSuccessfulBuild("static", "nevg.exe")
     finally:
       discard
 
@@ -511,14 +559,17 @@ while i < cmds.len:
   of "build":
     exec "nim c -o:nev.exe --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:nimcache/debug_clang" &
       compileIconResource() & " " & wasmtimeCompilerArgs() & " ./src/desktop_main.nim"
+    recordSuccessfulBuild("static", "nev.exe")
 
   of "nuigi-deps-static":
     buildNuigiStaticDependencies()
 
   of "modules":
+    warnIfStaticBuild()
     exec "./bin/build.exe "
 
   of "modules-f":
+    warnIfStaticBuild()
     exec "./bin/build.exe -f"
 
   of "build-dynamic":
@@ -561,11 +612,14 @@ while i < cmds.len:
     exec "atlas rep"
     exec """nim c --out:nev --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} """ &
       wasmtimeCompilerArgs() & " src/desktop_main.nim"
+    recordSuccessfulBuild("static", "nev")
     exec """nim c --out:nevg --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} """ &
       wasmtimeCompilerArgs() & " src/desktop_main.nim"
+    recordSuccessfulBuild("static", "nevg")
     buildWasmtime(musl=true)
     exec """nim c --out:nev-musl --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=false -D:enableTerminal=true --app:console -d:musl -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} """ &
       wasmtimeCompilerArgs(musl=true) & " src/desktop_main.nim"
+    recordSuccessfulBuild("static", "nev-musl")
 
   of "debug-linux":
     echo &"Build debug for linux..."
