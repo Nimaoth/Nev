@@ -230,7 +230,7 @@ jobs:
 
       - name: Build SDL for tests
         working-directory: deps/nuigi
-        run: nim c -r -o:bin/nev-nuigi-build build.nim sdl3
+        run: nim c --skipParentCfg -r -o:bin/nev-nuigi-build build.nim sdl3
 
       - name: Run tests
         env:
