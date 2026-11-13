@@ -15,6 +15,8 @@
 
   (enum ToastStyle minimal box)
 
+  (enum CommandLineLocation status-line floating)
+
   (enum DiagnosticsLocation line-end below line-end-or-below)
 
   (group BackgroundSettings "ui.background"
@@ -71,6 +73,16 @@
 
     (setting header-actions-gap "float" 4.0
       "Gap between buttons in the view panel header action row."))
+
+  (group CommandLineSettings "ui.command-line"
+    (setting location "CommandLineLocation" floating
+      "Where the command line is displayed: inside the status line or as a floating overlay.")
+
+    (setting floating-y "float" 0.2
+      "Vertical center of the floating command line as a fraction of screen height (0 is top, 1 is bottom).")
+
+    (setting floating-width "float" 0.4
+      "Width of the floating command line as a fraction of screen width (0 to 1)."))
 
   (group UiSettings "ui"
     (setting theme "string" "app://themes/gruvbox-dark.json"

@@ -201,6 +201,18 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
     let runtimeConfig = self.config.runtime
 
     let statusLine = getServiceChecked(StatusLineService)
+    let commandLineLocation = runtimeConfig.getUiCommandLineLocation()
+    let commandLineEditor = commands.commandLineEditor
+    let commandLineActive =
+      commandLineEditor != nil and commands.commandLineMode
+    if commandLineEditor != nil:
+      let wasActive = commandLineEditor.active
+      commandLineEditor.active = commandLineActive
+      if commandLineEditor.active != wasActive:
+        commandLineEditor.markDirty(notify=false)
+
+    let statusLineMinHeight =
+      getServiceChecked(PlatformService).platform.totalLineHeight.float32
     var statusBarHeight = 0.0'f32
 
     # Stub: create a top-level nuigi container for the new UI.
@@ -212,8 +224,11 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
       # NUI-GAP: old status bar separates sections with " | " via section()
       # and supports fg/bg theme overloads; new uses gap(8) and DefaultText.
       nui.layoutHorizontalReverse("nui-status-line"):
-        discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backendPadding(0).backendGap(8).cornerRadius(0)
-        if commands.commandLineMode:
+        discard nui.fillX().fitY().minHeight(statusLineMinHeight)
+          .fillBackground().styleIndex(UiStyleIndexHeader).backendPadding(0)
+          .backendGap(8).cornerRadius(0)
+        if commandLineActive and
+            commandLineLocation == core_settings.CommandLineLocation.StatusLine:
           discard nui.backgroundColor(nui.themeStyle(UiStyleIndexTabBarItemActive)[].fillColor)
         # Left side: status sections from config
         nui.layoutHorizontal("nui-status-left"):
@@ -255,26 +270,21 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
 
         # Center / right: input history and command line editor
         nui.layoutHorizontal("nui-status-right"):
-          discard nui.fitY().fillX().backendGap(8)
+          discard nui.fitY().fillX().backendGap(4)
           if self.inputHistory.len > 0:
             nui.node:
               discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(self.inputHistory)
-          if commands.commandLineEditor != nil:
-            let wasActive = commands.commandLineEditor.active
-            commands.commandLineEditor.active = commands.commandLineMode
-            if commands.commandLineEditor.active != wasActive:
-              commands.commandLineEditor.markDirty(notify=false)
-            if commands.commandLineMode:
-              nui.node:
-                discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(":")
-              # Embedded editor: sizes to its content via the text editor fitY
-              # mode (single line); no fixed height pin.
-              # NUI-GAP: old command line uses pushMaxBounds(0.75/0.5) + a separate
-              # commandLineOverlays layer flushed last (and warns on nil); new is
-              # embedded in nui-status-right and silently skips nil (see §24).
-              nui.node("nui-commandline"):
-                discard nui.fillX().fitY().maskChildren()
-                commands.commandLineEditor.renderNui(nui)
+          if commandLineActive and
+              commandLineLocation == core_settings.CommandLineLocation.StatusLine:
+            if nui.backendType == UiBackendType.Graphical:
+              nui.node("spacer"):
+                discard nui.width(0)
+            # Embedded editor: sizes to its content via the text editor fitY
+            # mode (single line); no fixed height pin.
+            # Floating mode is rendered as a screen-anchored overlay below.
+            nui.node("nui-commandline"):
+              discard nui.fillX().fitY().maskChildren()
+              commandLineEditor.renderNui(nui)
       statusBarHeight = nui.lastNode.size.y
       let h = nui.currentNode.size.y - statusBarHeight
       nui.layoutHorizontal("nui-main-row"):
@@ -300,6 +310,44 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
 
     self.renderNextPossibleInputsNui(nui, statusBarHeight)
     self.renderToastsNui(nui)
+
+    if commandLineActive and
+        commandLineLocation == core_settings.CommandLineLocation.Floating:
+      let floatingY = max(
+        0.0, min(1.0, runtimeConfig.getUiCommandLineFloatingY())).float32
+      let floatingWidth = max(
+        0.0, min(1.0, runtimeConfig.getUiCommandLineFloatingWidth())).float32
+      let screenSize = nui.frame.nodes[0].size
+      let floatingWidthPx = (screenSize.x * floatingWidth).round()
+      let floatingLeftPx = ((screenSize.x - floatingWidthPx) * 0.5'f32).round()
+      let floatingRightPx = floatingLeftPx + floatingWidthPx
+      nui.node("nui-commandline-floating-overlay"):
+        discard nui.anchors(0, 0, 1, 1).offsets(0, 0, 0, 0)
+          .finishAnchors().noHover()
+        let floatingNodeIndex = nui.frame.nodes.len
+        nui.layoutHorizontal("nui-commandline-floating"):
+          discard nui.styleIndex(UiStyleIndexHeader).fillBackground()
+            .backendBorderWidth(1)
+            .borderColor(nui.themeStyle(UiStyleIndexHeader)[].borderColor)
+            .backendPadding(4).backendGap(4)
+            .anchorsX(0, 0).offsetsX(floatingLeftPx, floatingRightPx)
+            .anchorsY(floatingY, floatingY).pivot(0, 0.5)
+            .fitY().finishAnchors()
+          nui.node("nui-commandline"):
+            discard nui.fillX().fitY().maskChildren()
+            commandLineEditor.renderNui(nui)
+        let floatingNode = nui.frame.nodes[floatingNodeIndex].addr
+        let floatingHeightPx = floatingNode.size.y.round()
+        let floatingTopPx =
+          (screenSize.y * floatingY - floatingHeightPx * 0.5'f32).round()
+        floatingNode.size.y = floatingHeightPx
+        floatingNode.flags.excl FitY
+        let anchor = nui.ensureNodeAnchor(floatingNode).addr
+        anchor.topLeft.y = 0
+        anchor.bottomRight.y = 0
+        anchor.topLeftOffset.y = floatingTopPx
+        anchor.bottomRightOffset.y = floatingTopPx
+        anchor.pivot.y = 0
 
 {.push gcsafe.}
 {.push raises: [].}

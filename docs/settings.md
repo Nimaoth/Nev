@@ -141,6 +141,9 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `text.wrap-margin` | int | 1 | How many characters from the right edge to start wrapping text. |
 | `ui.background.inactive-brightness-change` | float | -0.025 | How much to change the brightness for inactive views. |
 | `ui.background.transparent` | bool | false | If true the background is transparent. |
+| `ui.command-line.floating-width` | float | 0.4 | Width of the floating command line as a fraction of screen width (0 to 1). |
+| `ui.command-line.floating-y` | float | 0.2 | Vertical center of the floating command line as a fraction of screen height (0 is top, 1 is bottom). |
+| `ui.command-line.location` | "status-line", "floating" | "floating" | Where the command line is displayed: inside the status line or as a floating overlay. |
 | `ui.cursor-trail-length` | int | 2 | How long the cursor trail is. Set to 0 to disable cursor trail. |
 | `ui.cursor-trail-speed` | float | 100 | How fast to interpolate the cursor trail position when moving the cursor. Higher means faster. |
 | `ui.diagnostics-location` | "line-end", "below", "line-end-or-below" | "line-end" | Where diagnostics are displayed relative to their source line. 'below' renders them on a separate line below. 'line-end' renders the first diagnostic inline at the end of the line. 'line-end-or-below' renders below on the cursor line, at line-end elsewhere (default). |

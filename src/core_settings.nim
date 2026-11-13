@@ -22,6 +22,8 @@ type UnsavedBehaviour* {.pure.} = enum None = "none", Temp = "temp", Real = "rea
 
 type ToastStyle* {.pure.} = enum Minimal = "minimal", Box = "box"
 
+type CommandLineLocation* {.pure.} = enum StatusLine = "status-line", Floating = "floating"
+
 type DiagnosticsLocation* {.pure.} = enum LineEnd = "line-end", Below = "below", LineEndOrBelow = "line-end-or-below"
 
 # BackgroundSettings - ui.background
@@ -112,6 +114,22 @@ proc getUiViewPanelHeaderActionsGap*(s: ConfigStore, def = float.default): float
   s.get("ui.view-panel.header-actions-gap", def)
 proc setUiViewPanelHeaderActionsGap*(s: ConfigStore, value: float) =
   s.set("ui.view-panel.header-actions-gap", value)
+
+# CommandLineSettings - ui.command-line
+proc getUiCommandLineLocation*(s: ConfigStore, def = CommandLineLocation.default): CommandLineLocation =
+  s.get("ui.command-line.location", def)
+proc setUiCommandLineLocation*(s: ConfigStore, value: CommandLineLocation) =
+  s.set("ui.command-line.location", value)
+
+proc getUiCommandLineFloatingY*(s: ConfigStore, def = float.default): float =
+  s.get("ui.command-line.floating-y", def)
+proc setUiCommandLineFloatingY*(s: ConfigStore, value: float) =
+  s.set("ui.command-line.floating-y", value)
+
+proc getUiCommandLineFloatingWidth*(s: ConfigStore, def = float.default): float =
+  s.get("ui.command-line.floating-width", def)
+proc setUiCommandLineFloatingWidth*(s: ConfigStore, value: float) =
+  s.set("ui.command-line.floating-width", value)
 
 # UiSettings - ui
 proc getUiTheme*(s: ConfigStore, def = string.default): string =
