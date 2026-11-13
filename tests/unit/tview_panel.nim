@@ -137,12 +137,42 @@ proc pointerAt(builder: UiBuilder, text: string): UiInputSnapshot =
 
 type PanelActions = ref object
   calls: seq[bool]
+  splits: seq[string]
 
 proc actionOptions(actions: PanelActions): ViewPanelOptions =
-  ViewPanelOptions(onClose: proc(keepHidden: bool) {.gcsafe, raises: [].} =
-    actions.calls.add keepHidden)
+  result.onClose = proc(keepHidden: bool) {.gcsafe, raises: [].} =
+    actions.calls.add keepHidden
+  result.onSplitVertical = proc() {.gcsafe, raises: [].} =
+    actions.splits.add "vertical"
+  result.onSplitHorizontal = proc() {.gcsafe, raises: [].} =
+    actions.splits.add "horizontal"
 
 suite "View panel header actions":
+  test "header content masks overflowing children without masking actions":
+    for backend in [UiBackendType.Graphical, UiBackendType.Terminal]:
+      var builder = newBuilder(measurePanelText)
+      builder.backendType = backend
+      let options = actionOptions(PanelActions())
+      var input = UiInputSnapshot(mouse: nuiMath.vec2(900, 700))
+      for frame in 0 .. 1:
+        discard builder.beginUiFrame(200, 200, input)
+        builder.viewPanel("narrow-panel", false, true, options):
+          builder.node:
+            discard builder.fit().text("A header title that exceeds the available width")
+        do:
+          discard
+        builder.endUiFrame(buildMeshRenderCommands = false)
+        let title = builder.findText("A header title that exceeds the available width")
+        let content = builder.frame.nodes[title].parent
+        check MaskChildren in builder.frame.nodes[content].flags
+        check builder.frame.nodes[title].size.x > builder.frame.nodes[content].size.x
+        if frame == 0:
+          input.mouse = builder.absoluteNodePos(title) + nuiMath.vec2(1, 1)
+        else:
+          let close = builder.findText("x")
+          require close >= 0
+          check builder.frame.nodes[close].parent != content
+
   test "panel geometry options preserve defaults and accept overrides":
     checkPanelStyle(ViewPanelOptions())
     checkPanelStyle(ViewPanelOptions(padding: 3, cornerRadius: 12,
@@ -187,7 +217,7 @@ suite "View panel header actions":
             builder.frame.nodes[currentTitle].parent].parent
           check builder.frame.nodes[currentHeader].size.y == headerHeight
           check builder.absoluteNodePos(builder.findText("Body")).y == bodyTop
-          for button in ["Custom", "-", "x"]:
+          for button in ["Custom", "|", "=", "-", "x"]:
             let index = builder.findText(button)
             if index >= 0:
               let top = builder.absoluteNodePos(index).y
@@ -219,6 +249,34 @@ suite "View panel header actions":
       check builder.findText("Custom") == -1
       check builder.findText("-") == -1
       check builder.findText("x") == -1
+
+  test "split buttons are optional and defer their respective actions":
+    for backend in [UiBackendType.Graphical, UiBackendType.Terminal]:
+      for label in ["|", "="]:
+        let actions = PanelActions()
+        var options = actionOptions(actions)
+        if label == "|":
+          options.onSplitHorizontal = nil
+        else:
+          options.onSplitVertical = nil
+        var builder = newBuilder(measurePanelText)
+        builder.backendType = backend
+        builder.renderPanel(options, custom = false)
+        check builder.findText(label) == -1
+        builder.renderPanel(options, builder.pointerAt("Title"), custom = false)
+        check builder.findText(label) >= 0
+        check builder.findText(if label == "|": "=" else: "|") == -1
+        var input = builder.pointerAt(label)
+        input.mousePressed = {MouseLeft}
+        input.mouseDown = {MouseLeft}
+        builder.renderPanel(options, input, custom = false)
+        input.mousePressed = {}
+        input.mouseDown = {}
+        input.mouseReleased = {MouseLeft}
+        builder.renderPanel(options, input, custom = false)
+        check actions.splits.len == 0
+        builder.flushNextFrameActions()
+        check actions.splits == @[if label == "|": "vertical" else: "horizontal"]
 
   test "hide and close defer their distinct actions":
     let actions = PanelActions()

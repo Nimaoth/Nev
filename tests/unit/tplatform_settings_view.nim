@@ -86,6 +86,39 @@ proc selectedItem(item: FinderItem): ISelectorPopup =
   ISelectorPopup(getSelectedItem: proc(): Option[FinderItem] = item.some)
 
 suite "Platform settings view":
+  test "split actions wrap the selected visible view in the requested direction":
+    for vertical in [true, false]:
+      var f = newSettingsFixture(UiBackendType.Graphical)
+      f.layout.addView(f.settings)
+      let other = View()
+      f.layout.addView(other, slot = "+")
+      let hidden = View()
+      f.layout.registerView(hidden)
+      let options = ViewPanelOptions().withViewActions(f.layout, f.settings)
+      if vertical:
+        options.onSplitVertical()
+      else:
+        options.onSplitHorizontal()
+      require f.layout.layout.children.len == 2
+      require f.layout.layout.children[0] of Layout
+      let split = f.layout.layout.children[0].Layout
+      check (split of HorizontalLayout) == vertical
+      check (split of VerticalLayout) == not vertical
+      check split.temporary
+      check split.maxChildren == 2
+      check split.children == @[View(f.settings), hidden]
+      check f.layout.layout.children[1] == other
+
+  test "split actions ignore views that are no longer visible":
+    var f = newSettingsFixture(UiBackendType.Graphical)
+    f.layout.addView(f.settings)
+    let options = ViewPanelOptions().withViewActions(f.layout, f.settings)
+    f.layout.closeView(f.settings, keepHidden = true, restoreHidden = false)
+    options.onSplitVertical()
+    options.onSplitHorizontal()
+    check not f.layout.isViewVisible(f.settings)
+    check f.layout.layout.children.len == 0
+
   test "registered view opens, hides, reopens and closes using normal layout actions":
     var f = newSettingsFixture(UiBackendType.Graphical)
     check not f.layout.isViewVisible(f.settings)

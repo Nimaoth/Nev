@@ -147,12 +147,29 @@ proc getSlot*(self: LayoutService, view: View): string = layoutGetSlot(self, vie
 proc getParent*(self: LayoutService, view: View): View = layoutGetParent(self, view)
 {.pop.}
 
+proc splitViewPanel(self: LayoutService, view: View, kind: string) {.gcsafe, raises: [].} =
+  if not self.isViewVisible(view):
+    return
+  self.tryActivateView(view)
+  if self.tryGetCurrentView().get(nil) == view:
+    self.wrapLayout(%*{"kind": kind, "temporary": true, "max-children": 2})
+
+proc splitVerticalAction*(self: LayoutService, view: View): ViewPanelAction {.gcsafe, raises: [].} =
+  result = proc() {.closure, gcsafe, raises: [].} =
+    self.splitViewPanel(view, "horizontal")
+
+proc splitHorizontalAction*(self: LayoutService, view: View): ViewPanelAction {.gcsafe, raises: [].} =
+  result = proc() {.closure, gcsafe, raises: [].} =
+    self.splitViewPanel(view, "vertical")
+
 proc withViewActions*(options: ViewPanelOptions, self: LayoutService, view: View): ViewPanelOptions {.gcsafe, raises: [].} =
   ## Editors rendered outside a view (e.g. previews) have no view actions.
   result = options
   if view != nil:
     result.onClose = proc(keepHidden: bool) {.closure, gcsafe, raises: [].} =
       self.closeView(view, keepHidden = keepHidden, restoreHidden = not keepHidden)
+    result.onSplitVertical = self.splitVerticalAction(view)
+    result.onSplitHorizontal = self.splitHorizontalAction(view)
 
 proc showView*(self: LayoutService, viewId: Id, slot: string = "", focus: bool = true, addToHistory: bool = true) =
   if self.getView(viewId).getSome(view):

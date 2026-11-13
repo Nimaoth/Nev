@@ -49,7 +49,8 @@ proc render(f: var CacheFixture,
     actions = false, cornerRadius = 8.0'f32, contentPadding = 4.0'f32,
     headerCornerRadius = 7.0'f32, contentCornerRadius = 8.0'f32,
     headerPadding = 6.0'f32, headerGap = 4.0'f32,
-    headerContentGap = 4.0'f32, headerActionsGap = 4.0'f32) =
+    headerContentGap = 4.0'f32, headerActionsGap = 4.0'f32,
+    splitVertical = false, splitHorizontal = false) =
   var b = f.builder.addr
   discard b[].beginUiFrame(1000, 800, input)
   b[].node:
@@ -66,6 +67,10 @@ proc render(f: var CacheFixture,
       let editor = f.editor
       options.onClose = proc(keepHidden: bool) {.gcsafe, raises: [].} =
         editor.markDirty()
+    if splitVertical:
+      options.onSplitVertical = proc() {.gcsafe, raises: [].} = discard
+    if splitHorizontal:
+      options.onSplitHorizontal = proc() {.gcsafe, raises: [].} = discard
     b[].viewPanel("text-root", active, showHeader, options):
       inc f.headers
       b[].node:
@@ -89,6 +94,23 @@ proc cached(f: CacheFixture): bool =
     f.builder.frame.nodes[index].flags
 
 suite "View panel subtree cache":
+  test "split action availability invalidates the cache":
+    var f = newCacheFixture()
+    f.render()
+    f.render()
+    check f.cached
+    f.render(splitVertical = true)
+    check not f.cached
+    f.render(splitVertical = true)
+    check f.cached
+    f.render(splitVertical = true, splitHorizontal = true)
+    check not f.cached
+    f.render(splitHorizontal = true)
+    check not f.cached
+    f.render()
+    check not f.cached
+    f.builder.clearWidgetCaches()
+
   test "fresh view-action closures do not invalidate an otherwise clean root":
     var f = newCacheFixture()
     f.render(actions = true)

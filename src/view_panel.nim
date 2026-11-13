@@ -4,6 +4,7 @@ from nuigi/widgets import button
 
 type
   ViewPanelCloseAction* = proc(keepHidden: bool) {.closure, gcsafe, raises: [].}
+  ViewPanelAction* = proc() {.closure, gcsafe, raises: [].}
 
   ViewPanelOptions* = object
     ## Layout options for `viewPanel`. Padding and gaps must be known before the
@@ -23,11 +24,19 @@ type
     cacheDirty*: bool = false
     onClose*: ViewPanelCloseAction
       ## View action; true hides the view, false closes it. Invoked next frame.
+    onSplitVertical*: ViewPanelAction
+      ## Split with a vertical divider. Invoked next frame.
+    onSplitHorizontal*: ViewPanelAction
+      ## Split with a horizontal divider. Invoked next frame.
 
 proc enqueueViewPanelAction(builder: var UiBuilder, action: ViewPanelCloseAction,
     keepHidden: bool) {.gcsafe, raises: [].} =
   builder.enqueueNextFrame(proc() {.closure, gcsafe, raises: [].} =
     action(keepHidden))
+
+proc enqueueViewPanelAction(builder: var UiBuilder, action: ViewPanelAction)
+    {.gcsafe, raises: [].} =
+  builder.enqueueNextFrame(action)
 
 type ViewPanelCacheStorage = ref object of UiNodeStorageData
   hovered: bool
@@ -66,6 +75,8 @@ proc reuseViewPanel(builder: var UiBuilder, active, showHeader: bool,
     options.headerActionsGap != storage.options.headerActionsGap or
     options.contentPadding != storage.options.contentPadding or
     (options.onClose == nil) != (storage.options.onClose == nil) or
+    (options.onSplitVertical == nil) != (storage.options.onSplitVertical == nil) or
+    (options.onSplitHorizontal == nil) != (storage.options.onSplitHorizontal == nil) or
     builder.themeStyles != storage.styles or builder.themeTextStyles != storage.textStyles
   storage.hovered = hovered
   storage.active = active
@@ -102,7 +113,7 @@ template viewPanel*(builder: var UiBuilder, key: string, active: bool,
   ## Root of a view: a vertical layout using the (active) panel style with an
   ## optional header bar using the (active) header style above the body.
   ## `header` is injected inside the horizontal header node (only when `showHeader`),
-  ## `buttons` is injected before Hide/Close in the hover-only top-right action row.
+  ## `buttons` is injected before Split/Hide/Close in the hover-only top-right action row.
   ## `body` is injected inside the root node after the header.
   block:
     let viewPanelKey = key
@@ -137,6 +148,12 @@ template viewPanel*(builder: var UiBuilder, key: string, active: bool,
                   .ignoreInContentExtent()
                   .anchorsY(0.5, 0.5).pivotY(0.5).finishAnchors()
                 buttons
+                if viewPanelOptions.onSplitVertical != nil:
+                  if builder.button("|"):
+                    builder.enqueueViewPanelAction(viewPanelOptions.onSplitVertical)
+                if viewPanelOptions.onSplitHorizontal != nil:
+                  if builder.button("="):
+                    builder.enqueueViewPanelAction(viewPanelOptions.onSplitHorizontal)
                 if viewPanelOptions.onClose != nil:
                   if builder.button("-"):
                     builder.enqueueViewPanelAction(viewPanelOptions.onClose, true)
@@ -144,6 +161,7 @@ template viewPanel*(builder: var UiBuilder, key: string, active: bool,
                     builder.enqueueViewPanelAction(viewPanelOptions.onClose, false)
             builder.layoutHorizontal(viewPanelKey & "-header-content"):
               discard builder.fillX().fitY().backendGap(viewPanelOptions.headerContentGap)
+                .maskChildren()
               header
         builder.node(viewPanelKey & "-content"):
           discard builder.fillX().cornerRadius(0).cornerRadii(0, 0,
