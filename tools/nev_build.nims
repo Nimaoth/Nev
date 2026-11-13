@@ -171,6 +171,25 @@ proc runFromRepo(command: string): tuple[output: string, exitCode: int] =
     "sh -c " & ("cd " & repoRoot.quoteShell & " && " & command).quoteShell
   gorgeEx(shellCommand)
 
+proc unitTestCompilerCommand(testFile, options: string): string =
+  var command = "nim $target $options $file"
+  let source = readFile(testFile).strip()
+  const headerStart = "discard \"\"\""
+  if source.startsWith(headerStart):
+    let headerEnd = source.find("\"\"\"", headerStart.len)
+    if headerEnd < 0:
+      raise newException(ValueError, "Unterminated unit-test header")
+    for line in source[headerStart.len ..< headerEnd].splitLines:
+      let field = line.strip()
+      if field.startsWith("cmd:"):
+        let value = parseJson(field[4 .. ^1].strip())
+        if value.kind != JString:
+          raise newException(ValueError, "Unit-test cmd must be a quoted string")
+        if value.getStr.len > 0:
+          command = value.getStr
+        break
+  command % ["target", "c", "options", options, "file", testFile.quoteShell]
+
 proc runUnitTests(testFiles: openArray[string]) =
   if testFiles.len == 0:
     echo "[ERROR] No unit tests found under ", unitTestRoot
@@ -192,15 +211,21 @@ proc runUnitTests(testFiles: openArray[string]) =
     let executable = binDir / (artifactName &
       (when defined(windows): ".exe" else: ""))
     let logPath = logDir / (artifactName & ".log")
-    let nimCommand = "nim c " &
-      ("--out:" & executable).quoteShell & " " &
-      ("--nimcache:" & cacheDir).quoteShell & " " &
-      testFile.quoteShell
     let displayName = relativePath(testFile, repoRoot / unitTestRoot)
     echo "\n=== Running ", displayName, " ==="
-    let (compileOutput, compileCode) = runFromRepo(nimCommand)
-    var output = compileOutput
-    var code = compileCode
+    var output: string
+    var code = 1
+    try:
+      let options = ("--out:" & executable).quoteShell & " " &
+        ("--nimcache:" & cacheDir).quoteShell
+      let nimCommand = unitTestCompilerCommand(testFile, options)
+      let (compileOutput, compileCode) = runFromRepo(nimCommand)
+      output = "Command: " & nimCommand & "\n" & compileOutput
+      code = compileCode
+    except ValueError as e:
+      output = "[ERROR] Invalid unit-test command: " & e.msg
+    except JsonParsingError as e:
+      output = "[ERROR] Invalid unit-test command: " & e.msg
     if code == 0:
       let (testOutput, testCode) = runFromRepo(executable.quoteShell)
       if testOutput.len > 0:

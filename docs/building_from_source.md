@@ -79,6 +79,12 @@ nim .\tools\nev_build.nims test-all
 
 The runner prints test output and a pass/fail summary. It continues after
 compilation or test failures and returns a nonzero exit code if any test fails.
+Tests may specify compiler arguments in a `cmd` template in their leading
+`discard """` header (for example, `--cc:clang` or `--undef:useDynlib`).
+The runner expands `$target` to `c`, `$options` to its output/cache flags, and
+`$file` to the test path. Custom commands must retain `$options` to keep outputs
+in the runner's directory. Other Testament metadata, including matrices and
+timeouts, is not interpreted.
 Binaries, per-test logs, and a reusable Nim cache are written to
 `testresults/nev-build` (`bin`, `logs`, and `nimcache`, respectively).
 
