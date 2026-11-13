@@ -1,0 +1,144 @@
+{
+    "editor": {
+        "<SPACE>rr": {
+            "description": "Build Nev (nimble buildDesktop)",
+            "command": ["builds.run", "nimble-desktop"],
+        },
+        "<SPACE>rp": {
+            "description": "Build keybindings plugin",
+            "command": ["builds.run", "keybindings-plugin"],
+        },
+        "<SPACE>rd": {
+            "description": "Build Nev debug (nimble buildDesktopDebug)",
+            "command": ["builds.run", "nimble-desktop-debug"],
+        },
+        "<SPACE>rt": {
+            "description": "Run test.nim",
+            "command": ["builds.run", "run-test-nim"],
+        },
+        // "<SPACE>rx": "quit-and-restart",
+        // "<CA-a>": "harpoon-list-add",
+        // "<C-g><C-g><C-n>": "harpoon-list-set 0",
+        // "<C-g><C-g><C-e>": "harpoon-list-set 1",
+        // "<C-g><C-g><C-a>": "harpoon-list-set 2",
+        // "<C-g><C-g><C-t>": "harpoon-list-set 3",
+        // "<C-g><C-n>": "harpoon-list-select 0",
+        // "<C-g><C-e>": "harpoon-list-select 1",
+        // "<C-g><C-a>": "harpoon-list-select 2",
+        // "<C-g><C-t>": "harpoon-list-select 3",
+        "<C-k><C-g>": "reload-theme",
+        "<C-g><C-h>": ".testReplace",
+        "<C-g><C-g>": ".testReplaceLonger",
+        // "<C-g><C-f>": ".format",
+        "<C-g><C-n>": ".testReplaceShort",
+        "<C-g><C-t>": ".testInsert",
+        "<C-g><C-s>": ".testInsertNewLine",
+        "<C-g><C-k>": ".testInsertNewLine2",
+        "<SPACE>gI": "browse-settings true",
+        "<C-g><C-c>": ".clearOverlays",
+        "<SPACE>zc": {
+            "description": "Build Nev modules",
+            "command": ["builds.run", "nev-modules"],
+        },
+        "<SPACE>zC": {
+            "description": "Build Nev modules (force)",
+            "command": ["builds.run", "nev-modules-force"],
+        },
+        "<SPACE>z<C-c>": {
+            "description": "Build Nev modules",
+            "command": ["builds.run", "nev-modules-rebuild-dependents"],
+        },
+        "<SPACE>zp": {
+            "description": "Build Nev profiled",
+            "command": ["builds.run", "nev-perf"],
+        },
+        "<SPACE>zy": {
+            "description": "Clear",
+            "command": [
+                "terminal.run",
+                "powershell",
+                "clear",
+                {
+                    "mode": "normal",
+                    "autoRunCommand": "C:/dev/emsdk/emsdk.ps1 activate",
+                    "closeOnTerminate": false,
+                    "group": "build-run",
+                    "slot": "#build-run-terminal",
+                    "focus": false,
+                }
+            ],
+        },
+        "<SPACE>zb": {
+            "description": "Build Nev static",
+            "command": ["builds.run", "nev-static"],
+        },
+        "<SPACE>zr": {
+            "description": "Build Nev dynamic",
+            "command": ["builds.run", "nev-dynamic"],
+        },
+        "<SPACE>zB": {
+            "description": "Build Nev 2",
+            "command": ["builds.run", "nev-temp-clang"],
+        },
+        "<SPACE>zm": {
+            "description": "Build wasm module",
+            "command": ["builds.run", "wasm-module"],
+        },
+        "<SPACE>zd": {
+            "description": "Build Nev Debug",
+            "command": ["builds.run", "nev-debug"],
+        },
+        "<SPACE>zt": {
+            "description": "Build Nev Terminal",
+            "command": ["builds.run", "nev-terminal-wsl"],
+        },
+        "<SPACE>cr": {
+            "description": "Run Nev",
+            "command": ["builds.run", "run-nev"],
+        },
+        "<SPACE>zg": {
+            "description": "Run Nev",
+            "command": ["builds.run", "run-nev-sdl"],
+        },
+        "<SPACE>zk": {
+            "description": "Debug Nev",
+            "command": ["builds.run", "debug-nev-raddbg"],
+        },
+        "<SPACE>zR": {
+            "description": "Run Nev 2",
+            "command": ["builds.run", "run-nev-test-workspace"],
+        },
+        "<LEADER>znn": {
+            "description": "Build nimony main",
+            "command": ["builds.run", "nimony-check"],
+        },
+        "<LEADER>znr": {
+            "description": "Build nimony main",
+            "command": ["builds.run", "run-nimony"],
+        },
+        "<LEADER>zsg": {
+            "description": "Build settings generator",
+            "command": ["builds.run", "settings-generator"],
+        },
+        "<LEADER>zss": {
+            "description": "Build settings",
+            "command": ["builds.run", "settings"],
+        },
+        "<SPACE>zzn": {
+            "description": "Build Nev CTags",
+            "command": ["builds.run", "ctags-nev"],
+        },
+        "<SPACE>zzd": {
+            "description": "Build deps CTags",
+            "command": ["builds.run", "ctags-deps"],
+        },
+    },
+    "popup.selector.settings": {
+        "<C-h>": "prev-store",
+        "<C-f>": "next-store",
+        "<C-g>": "toggle-merged",
+        "<C-k>": "show-preview-editor-settings",
+        "<C-c>": "delete-setting",
+        "<C-r>": "reload-store"
+    }
+}

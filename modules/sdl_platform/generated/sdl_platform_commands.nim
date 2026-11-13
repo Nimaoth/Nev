@@ -48,10 +48,14 @@ proc registerCommands(commands: CommandService) =
   const namespace = "sdl"
   discard commands.registerCommand(command_service.Command(
     namespace: namespace, name: "screenshot", execute: sdlScreenshotWrapper, active: false,
-    description: """Save the next rendered frame as a PNG and return its path.    Defaults to screenshots/screenshot-<timestamp>.png (relative to the working directory).""",))
+    description: """Save the next rendered frame as a PNG and return its path.
+    Defaults to screenshots/screenshot-<timestamp>.png (relative to the working directory).""",))
   discard commands.registerCommand(command_service.Command(
     namespace: namespace, name: "start-recording", execute: sdlStartRecordingWrapper, active: false,
-    description: """Save every rendered frame as a PNG into `dir` until stop-recording is run, or    `seconds`/`maxFrames` is reached (0 = unlimited). Returns the directory.    Defaults to screenshots/recording-<timestamp>. Frames are only rendered when    something changes; index.txt lists each frame with its time since the start.""",))
+    description: """Save every rendered frame as a PNG into `dir` until stop-recording is run, or
+    `seconds`/`maxFrames` is reached (0 = unlimited). Returns the directory.
+    Defaults to screenshots/recording-<timestamp>. Frames are only rendered when
+    something changes; index.txt lists each frame with its time since the start.""",))
   discard commands.registerCommand(command_service.Command(
     namespace: namespace, name: "stop-recording", execute: sdlStopRecordingWrapper, active: false,
     description: """Stop the current recording and return its directory.""",))

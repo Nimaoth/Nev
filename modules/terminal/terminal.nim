@@ -1,4 +1,5 @@
 #use layout text_editor_component register command_service selector_popup input_handler treesitter
+import std/[options]
 import nimsumtree/[arc]
 import misc/[id]
 import misc/channel, view
@@ -15,8 +16,26 @@ func serviceName*(_: typedesc[TerminalService]): string = "TerminalService"
 proc terminalServiceCreateTerminalViewChannel(self: TerminalService, stdin: Arc[BaseChannel], stdout: Arc[BaseChannel], options: CreateTerminalOptions, id: Id = idNone()): View {.rtl, gcsafe, raises: [].}
 proc terminalServiceCreateTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions, id: Id = idNone()): View {.rtl, gcsafe, raises: [].}
 
+type TerminalTerminatedHandler* = proc(exitCode: Option[int]) {.gcsafe, raises: [].}
+
+proc terminalServiceOnTerminated(self: TerminalService, view: View, handler: TerminalTerminatedHandler): bool {.rtl, gcsafe, raises: [].}
+proc terminalServiceInterrupt(self: TerminalService, view: View) {.rtl, gcsafe, raises: [].}
+proc terminalServiceIsOpen(self: TerminalService, view: View): bool {.rtl, gcsafe, raises: [].}
+
 proc createTerminalView*(self: TerminalService, stdin: Arc[BaseChannel], stdout: Arc[BaseChannel], options: CreateTerminalOptions, id: Id = idNone()): View = terminalServiceCreateTerminalViewChannel(self, stdin, stdout, options, id)
 proc createTerminalView*(self: TerminalService, command: string, options: CreateTerminalOptions, id: Id = idNone()): View = terminalServiceCreateTerminalView(self, command, options, id)
+
+proc onTerminated*(self: TerminalService, view: View, handler: TerminalTerminatedHandler): bool =
+  ## Calls `handler` when the process of the terminal `view` exits. Returns false if `view` is not a terminal view.
+  terminalServiceOnTerminated(self, view, handler)
+
+proc interrupt*(self: TerminalService, view: View) =
+  ## Sends Ctrl+C to the process of the terminal `view`.
+  terminalServiceInterrupt(self, view)
+
+proc isOpen*(self: TerminalService, view: View): bool =
+  ## Whether `view` is a terminal view which hasn't been closed yet.
+  terminalServiceIsOpen(self, view)
 
 when not implModule:
   static:
@@ -52,6 +71,7 @@ when implModule:
     import libssh2, ssh
 
   from std/terminal import Style
+  from std/os import quoteShellWindows
 
   const bufferSize = 10 * 1024 * 1024
 
@@ -1910,6 +1930,11 @@ when implModule:
                   discard GetExitCodeProcess(state.handles.processInfo.hProcess, exitCodeC.addr)
                   exitCode = exitCodeC.int.some
                   state.processTerminated = true
+                  # ConPTY can still have output of the process which wasn't read yet.
+                  for _ in 0..<100:
+                    if WaitForSingleObject(state.handles.outputReadEvent, 50) != WAIT_OBJECT_0:
+                      break
+                    state.handleProcessOutput(buffer)
                   break
 
             state.handleProcessOutput(buffer)
@@ -1936,6 +1961,12 @@ when implModule:
               if wifexited(status) != 0:
                 exitCodeC = wexitstatus(status)
               exitCode = exitCodeC.int.some
+              # Read output of the process which wasn't read yet.
+              for _ in 0..<100:
+                var fd = TPollfd(fd: state.handles.masterFd, events: POLLIN)
+                if poll(fd.addr, 1.Tnfds, 50) <= 0 or (fd.revents and POLLIN) == 0:
+                  break
+                state.handleProcessOutput(buffer)
               break
 
             if (fds[0].revents and POLLIN) != 0:
@@ -2275,7 +2306,11 @@ when implModule:
       var pi: PROCESS_INFORMATION
       ZeroMemory(addr(pi), sizeof((pi)))
 
-      let cmd = newWideCString(command)
+      var commandLine = command
+      for arg in args:
+        commandLine.add " "
+        commandLine.add arg.quoteShellWindows
+      let cmd = newWideCString(commandLine)
       var siEx: STARTUPINFOEX
       ZeroMemory(addr(siEx), sizeof((siEx)))
       siEx.StartupInfo.cb = sizeof((STARTUPINFOEX)).DWORD
@@ -2334,16 +2369,27 @@ when implModule:
       if openpty(addr(master_fd), addr(slave_fd), nil, addr(termp), addr(winp)) == -1:
         raise newOSError(osLastError(), "openpty")
 
+      # Allocate before forking. Without args the command is ignored and bash is started, as before.
+      let argv = if args.len > 0: allocCStringArray(@[command] & args) else: nil
+
       let pid = fork()
       if pid < 0:
+        if argv != nil:
+          deallocCStringArray(argv)
         raise newOSError(osLastError(), "fork")
 
       let inputWriteEventFd = eventfd(0, EFD_NONBLOCK)
 
       if pid == 0:
         discard login_tty(slave_fd)
+        if argv != nil:
+          discard execvp(command.cstring, argv)
+          raise newOSError(osLastError(), "execvp")
         discard execlp("/bin/bash", "bash", nil)
         raise newOSError(osLastError(), "execlp")
+
+      if argv != nil:
+        deallocCStringArray(argv)
 
       let handles = OsHandles(
         inputEventSignal: ThreadSignalPtr.new().value,
@@ -2803,6 +2849,23 @@ when implModule:
     if self.layout.tryGetCurrentView().getSome(v) and v of TerminalView:
       return v.TerminalView.some
     return TerminalView.none
+
+  proc terminalServiceOnTerminated(self: TerminalService, view: View, handler: TerminalTerminatedHandler): bool =
+    if view == nil or not (view of TerminalView) or handler == nil:
+      return false
+    discard view.TerminalView.terminal.onTerminated.subscribe proc(exitCode: Option[int]) =
+      handler(exitCode)
+    return true
+
+  proc terminalServiceInterrupt(self: TerminalService, view: View) =
+    if view == nil or not (view of TerminalView):
+      return
+    let view = view.TerminalView
+    if view.open:
+      self.TerminalServiceImpl.handleKey(view, 'c'.int64, {Modifier.Control}, noKitty = true)
+
+  proc terminalServiceIsOpen(self: TerminalService, view: View): bool =
+    view != nil and view of TerminalView and view.TerminalView.open
 
   proc setMode*(self: TerminalView, mode: string) =
     self.mode = mode

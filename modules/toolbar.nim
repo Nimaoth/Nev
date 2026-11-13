@@ -133,6 +133,7 @@ when implModule:
     self.addEntry("🗐", "Open Files", "choose-open")
     self.addEntry("⎌", "Undo Tree", "undotree.toggle")
     self.addEntry("⎇", "Git", "gitui.toggle")
+    self.addEntry("⚒", "Builds", "builds.toggle")
     self.addEntry("⚙", "Settings", "browse-settings")
     self.addEntry("🖳", "Platform Settings", "open-platform-settings")
     getServices().addService(self)

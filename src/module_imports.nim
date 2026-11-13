@@ -82,6 +82,7 @@ when not defined(useDynlib):
   import "../modules/vcs_commands.nim"
   import "../modules/toolbar.nim"
   import "../modules/app/app.nim"
+  import "../modules/builds.nim"
   import "../modules/git_ui.nim"
 
 proc initModules*() =
@@ -164,10 +165,12 @@ proc initModules*() =
   when declared(init_module_vcs_commands): init_module_vcs_commands()
   when declared(init_module_toolbar): init_module_toolbar()
   when declared(init_module_app): init_module_app()
+  when declared(init_module_builds): init_module_builds()
   when declared(init_module_git_ui): init_module_git_ui()
 
 proc shutdownModules*() =
   when declared(shutdown_module_git_ui): shutdown_module_git_ui()
+  when declared(shutdown_module_builds): shutdown_module_builds()
   when declared(shutdown_module_app): shutdown_module_app()
   when declared(shutdown_module_toolbar): shutdown_module_toolbar()
   when declared(shutdown_module_vcs_commands): shutdown_module_vcs_commands()
@@ -328,5 +331,6 @@ proc loadModulesDynamically*(loadModule: proc(name: string) {.raises: [].}) =
   loadModule("vcs_commands")
   loadModule("toolbar")
   loadModule("app")
+  loadModule("builds")
   loadModule("git_ui")
 

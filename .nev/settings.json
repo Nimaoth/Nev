@@ -164,6 +164,89 @@
         }
     },
 
+    "+builds": {
+        "nev-modules": {
+            "description": "Build Nev modules",
+            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
+            "command": "nim ./tools/nev_build.nims modules --nuigi-dir:C:/dev/nuigi",
+            "group": "build-run"
+        },
+        "nev-modules-force": {
+            "description": "Build Nev modules (force)",
+            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
+            "command": "nim ./tools/nev_build.nims modules-f --nuigi-dir:C:/dev/nuigi",
+            "group": "build-run"
+        },
+        "nev-modules-rebuild-dependents": {
+            "description": "Build Nev modules (rebuild dependents)",
+            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
+            "command": "./bin/build.exe --rebuild-dependents",
+            "group": "build-run"
+        },
+        "nev-dynamic": {
+            "description": "Build Nev dynamic",
+            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
+            "command": "nim ./tools/nev_build.nims build-dynamic --nuigi-dir:C:/dev/nuigi",
+            "group": "build-run"
+        },
+        "nev-static": {
+            "description": "Build Nev static",
+            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
+            "command": "nim ./tools/nev_build.nims build-static --nuigi-dir:C:/dev/nuigi",
+            "group": "build-run"
+        },
+        "nev-perf": {
+            "description": "Build Nev profiled",
+            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
+            "command": "nim ./tools/nev_build.nims build-perf --nuigi-dir:C:/dev/nuigi",
+            "group": "build-run"
+        },
+        "wasm-module": {
+            "description": "Build wasm module",
+            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
+            "command": "nimble buildCustomWasmModule",
+            "group": "build-run"
+        },
+        "nimony-check": {
+            "description": "Check nimony main",
+            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
+            "command": "nimony check src/desktop_main_nimony.nim",
+            "group": "build-run"
+        },
+        "settings-generator": {
+            "description": "Build settings generator",
+            "command": "nim c -o:settings_generator.exe ./tools/settings_generator.nim",
+            "group": "build-run"
+        },
+        "settings": {
+            "description": "Generate settings",
+            "command": "./settings_generator.exe",
+            "group": "build-run"
+        },
+        "ctags-nev": {
+            "description": "Build Nev CTags",
+            "command": "ntagger -f ./tags -p src patches modules",
+            "group": "build-run"
+        },
+        "ctags-deps": {
+            "description": "Build deps CTags",
+            "command": "ntagger -f ./deps/tags -e tests -e experiments -e xio -e bearssl -e bitty -e c2nim -e crunchy -e docopt -e flatty -e graphemes -e httputils -e libssh2 -e mddoc -e nimgen -e opengl -e segmentation -e ssh2 -e supersnappy -e unicodedb -e unicodeplus -e unittest2 -e winim -e xio -e xflywind -e npeg -p deps",
+            "group": "build-run"
+        },
+        "run-nev": {
+            "kind": "run",
+            "description": "Run Nev",
+            "command": "nev --monitor:1",
+            "group": "build-run"
+        },
+        "debug-nev-raddbg": {
+            "kind": "run",
+            "description": "Debug Nev (raddbg)",
+            "command": "C:/Users/nimao/Downloads/raddbg/raddbg.exe --ipc run",
+            "group": "build-run"
+        }
+    },
+
     "x+startup-commands": [
         ".lsp-log-server-debug true",
         ".lsp-log-verbose true"

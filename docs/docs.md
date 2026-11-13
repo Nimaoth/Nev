@@ -526,6 +526,45 @@ With this configuration you can then do the following:
 }
 ```
 
+## Builds
+
+The builds view (`builds.toggle`, or the ⚒ toolbar button) lists the build and run configurations defined in the
+`builds` setting. You can start, stop and rerun them from there and see whether they are running, succeeded or failed.
+
+Each build runs in its own terminal: `<shell> <shell args> "<setup>; <command>"`. When the process exits, the build
+is marked as succeeded or failed based on the exit code. Note that PowerShell reports exit code 1 for any failing
+native command.
+
+Put project specific builds in `.nev/settings.json`. Use `+builds` to add to the builds inherited from other settings files.
+
+```json
+// .nev/settings.json
+{
+  "+builds": {
+    "build": {
+      "description": "Build the project",
+      "kind": "build",          // "build" (default), "run" or "debug"
+      "shell": "powershell",    // Shell from `editor.shells`, default is powershell on Windows, bash otherwise
+      "setup": "./env.ps1",     // Optional, runs before the command
+      "command": "nimble build", // String, or array of strings which are joined with "; "
+      "group": "builds",        // Starting a build closes finished terminals in the same group
+      "slot": "#build-run-terminal", // Layout slot for the terminal
+      "focus": false,           // Focus the terminal when the build starts
+      "mode": "normal"          // Initial terminal mode
+    },
+    "run": { "kind": "run", "command": "./app" }
+  }
+}
+```
+
+Commands:
+- `builds.toggle`: show/hide the builds view
+- `builds.run <name>`: run a build, e.g. `"<SPACE>zb": ["builds.run", "build"]`
+- `builds.stop <name>`: interrupt a build (Ctrl+C); stopping it again kills it
+- `builds.rerun-last`: rerun the last started build
+- `builds.show-terminal <name>`: show the terminal of a build
+- `builds.choose`: pick a build to run from a popup
+
 ## Formatting
 
 Nev supports code formatting through external formatter commands.

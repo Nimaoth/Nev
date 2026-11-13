@@ -299,21 +299,7 @@
     },
 
     "debugger.variables": {
-        "<UP>": "prev-variable",
-        "<S-UP>": ["prev-variable", true], // skip children
-        "<C-p>": "prev-variable",
-        "<DOWN>": "next-variable",
-        "<S-DOWN>": ["next-variable", true], // skip children
-        "<C-n>": "next-variable",
-        "<RIGHT>": "expand-variable",
-        "<S-RIGHT>": "expand-variable-children",
-        "<C-y>": "expand-variable",
-        "<LEFT>": "collapse-variable",
-        "<S-LEFT>": "collapse-variable-children",
-        "<HOME>": "select-first-variable",
-        "<END>": "select-last-variable",
-        "<BACKSPACE>": "delete-last-variable-filter-char",
-        "<ESCAPE>": "clear-variable-filter",
+        // Navigation (including arrows) is owned by the tree widget itself.
         "<DELETE>": "remove-watch-at-cursor",
     },
 
