@@ -212,7 +212,7 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
       # NUI-GAP: old status bar separates sections with " | " via section()
       # and supports fg/bg theme overloads; new uses gap(8) and DefaultText.
       nui.layoutHorizontalReverse("nui-status-line"):
-        discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backendPadding(4).backendGap(8).cornerRadius(0)
+        discard nui.fillX().fitY().fillBackground().styleIndex(UiStyleIndexHeader).backendPadding(0).backendGap(8).cornerRadius(0)
         if commands.commandLineMode:
           discard nui.backgroundColor(nui.themeStyle(UiStyleIndexTabBarItemActive)[].fillColor)
         # Left side: status sections from config

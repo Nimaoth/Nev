@@ -11,6 +11,7 @@ include module_base
 type
   ToolbarEntry* = object
     icon*: string     ## Unicode text rendered as the icon.
+    name*: string     ## Display name shown in the tooltip.
     command*: string  ## Command executed when the entry is clicked.
 
   ToolbarService* = ref object of DynamicService
@@ -20,14 +21,15 @@ func serviceName*(_: typedesc[ToolbarService]): string = "ToolbarService"
 
 # DLL API
 {.push rtl, gcsafe, raises: [].}
-proc toolbarAddEntry(self: ToolbarService, icon: string, command: string)
+proc toolbarAddEntry(self: ToolbarService, icon: string, name: string, command: string)
 proc toolbarRenderNui(self: ToolbarService, nui: var UiBuilder)
 {.pop.}
 
 {.push inline.}
-proc addEntry*(self: ToolbarService, icon: string, command: string) =
-  ## Adds an entry to the bottom of the toolbar. `command` is executed when the icon is clicked.
-  toolbarAddEntry(self, icon, command)
+proc addEntry*(self: ToolbarService, icon: string, name: string, command: string) =
+  ## Adds an entry to the bottom of the toolbar. `command` is executed when the icon is clicked,
+  ## `name` is shown together with the command in the tooltip.
+  toolbarAddEntry(self, icon, name, command)
 
 proc renderNui*(self: ToolbarService, nui: var UiBuilder) =
   ## Renders the toolbar as a vertical list of icons which fills the parent height.
@@ -47,8 +49,8 @@ when implModule:
 
   logCategory "toolbar"
 
-  proc toolbarAddEntry(self: ToolbarService, icon: string, command: string) =
-    self.entries.add ToolbarEntry(icon: icon, command: command)
+  proc toolbarAddEntry(self: ToolbarService, icon: string, name: string, command: string) =
+    self.entries.add ToolbarEntry(icon: icon, name: name, command: command)
 
   proc toolbarRenderNui(self: ToolbarService, nui: var UiBuilder) =
     {.cast(gcsafe).}:
@@ -102,10 +104,13 @@ when implModule:
           let entryPos = nui.absoluteNodePosPrev(hoveredId)
           let gap = if isTerminal: 1.0'f32 else: 4.0'f32
           nui.withParent(nui.overlays):
-            nui.node("toolbar-tooltip"):
+            nui.layoutVertical("toolbar-tooltip"):
+              let entry = self.entries[hoveredIndex].addr
+              if entry.name.len > 0:
+                nui.node:
+                  discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(entry.name)
               nui.node:
-                discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText))
-                  .text(self.entries[hoveredIndex].command)
+                discard nui.fit().textStyleIndex(int(UiStyleIndexSmallText)).text(entry.command)
               discard nui.fit().fillBackground().styleIndex(UiStyleIndexTooltip)
                 .backendBorderWidth(1, 0).backendPaddingX(6, 1).backendPaddingY(4, 0)
                 .offsets(entryPos.x + itemWidth + gap, entryPos.y + itemHeight * 0.5, 0, 0)
@@ -121,13 +126,13 @@ when implModule:
 
   proc init_module_toolbar*() {.cdecl, exportc, dynlib.} =
     let self = ToolbarService()
-    self.addEntry("❯", "commands.command-line")
-    self.addEntry("🖿", "file-explorer.toggle")
-    self.addEntry("🗁", "explore-files")
-    self.addEntry("⌕", "choose-file")
-    self.addEntry("🗐", "choose-open")
-    self.addEntry("⎌", "undotree.toggle")
-    self.addEntry("⎇", "gitui.toggle")
-    self.addEntry("⚙", "browse-settings")
-    self.addEntry("🖳", "open-platform-settings")
+    self.addEntry("❯", "Command Line", "commands.command-line")
+    self.addEntry("🖿", "File Explorer", "file-explorer.toggle")
+    self.addEntry("🗁", "Browse Files", "explore-files")
+    self.addEntry("⌕", "Find File", "choose-file")
+    self.addEntry("🗐", "Open Files", "choose-open")
+    self.addEntry("⎌", "Undo Tree", "undotree.toggle")
+    self.addEntry("⎇", "Git", "gitui.toggle")
+    self.addEntry("⚙", "Settings", "browse-settings")
+    self.addEntry("🖳", "Platform Settings", "open-platform-settings")
     getServices().addService(self)
