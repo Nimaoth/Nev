@@ -549,7 +549,8 @@ proc runScenario(runner: Runner, scenario: var Scenario): ScenarioOutcome =
     let logFile = runner.workRoot / scenario.name & ".log"
     run.logFile = logFile
     if runner.verbose:
-      echo &"  nev {args.join(\" \")} (in {workspace}, log: {logFile})"
+      const space = " "
+      echo &"  nev {args.join(space)} (in {workspace}, log: {logFile})"
     run.process = startProcess(runner.nevExe, workingDir = workspace, args = args, env = env,
       options = {poStdErrToStdOut})
     started = true
@@ -613,6 +614,7 @@ proc main(): int =
     nevExe: repoRoot / "nev".addFileExt(ExeExt),
     outRoot: (repoRoot / ".." / "NevScreenshots").normalizedPath,
     workRoot: getTempDir() / "nev-scenarios",
+    gif: true,
   )
   var names: seq[string]
   var list = false

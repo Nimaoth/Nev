@@ -329,15 +329,22 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
           discard nui.styleIndex(UiStyleIndexHeader).fillBackground()
             .backendBorderWidth(1)
             .borderColor(nui.themeStyle(UiStyleIndexHeader)[].borderColor)
-            .backendPadding(4).backendGap(4)
+            .backendPaddingX(4, 1).backendPaddingY(4).backendGap(4)
             .anchorsX(0, 0).offsetsX(floatingLeftPx, floatingRightPx)
             .anchorsY(floatingY, floatingY).pivot(0, 0.5)
             .fitY().finishAnchors()
+          if nui.backendType == UiBackendType.Terminal:
+            discard nui.height(3).fitY(false)
           nui.node("nui-commandline"):
             discard nui.fillX().fitY().maskChildren()
+            if nui.backendType == UiBackendType.Terminal:
+              discard nui.alignCenter()
             commandLineEditor.renderNui(nui)
         let floatingNode = nui.frame.nodes[floatingNodeIndex].addr
-        let floatingHeightPx = floatingNode.size.y.round()
+        let floatingMinimumHeight =
+          if nui.backendType == UiBackendType.Terminal: 3.0'f32 else: 0.0'f32
+        let floatingHeightPx = max(
+          floatingNode.size.y.round(), floatingMinimumHeight)
         let floatingTopPx =
           (screenSize.y * floatingY - floatingHeightPx * 0.5'f32).round()
         floatingNode.size.y = floatingHeightPx
@@ -348,6 +355,8 @@ proc updateWidgetTreeNui*(self: App, nui: var UiBuilder, frameIndex: int) {.rais
         anchor.topLeftOffset.y = floatingTopPx
         anchor.bottomRightOffset.y = floatingTopPx
         anchor.pivot.y = 0
+        if nui.backendType == UiBackendType.Terminal:
+          discard nui.postProcessChildren(floatingNodeIndex)
 
 {.push gcsafe.}
 {.push raises: [].}

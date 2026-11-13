@@ -1980,6 +1980,16 @@ proc buildTextCompletionsNui(b: var UiBuilder, nodeIdx: int, userData: int) {.ni
       if not self.document.isInitialized or storage.chunkIndex.len == 0:
         return
       let lineH = if storage.lineHeight > 0.0'f32: storage.lineHeight else: textLineHeightHint
+      var completionTextHeight = lineH
+      for textStyleIndex in [
+          UiStyleIndexMenuItemText, UiStyleIndexMenuItemHoverText,
+          UiStyleIndexMutedText]:
+        var textStyle = b.themeTextStyle(textStyleIndex)[]
+        textStyle.text = "M".uiString
+        completionTextHeight = max(completionTextHeight,
+          b.measuredTextSize(textStyle.addr).y)
+      let completionRowHeight = completionTextHeight +
+        max(0.0'f32, b.themeStyle(UiStyleIndexMenuItem)[].paddingY) * 2.0'f32
       # In diff view the cursor lives in the right pane; shift the anchor by
       # the diff split width.
       var diffXOffset = 0.0'f32
@@ -2014,8 +2024,8 @@ proc buildTextCompletionsNui(b: var UiBuilder, nodeIdx: int, userData: int) {.ni
           min(numLinesToShow, max(extent.h.int - 2, 1))
         else:
           numLinesToShow)
-      let popupH = if terminal: visibleRows.float32 + 2.0'f32
-        else: visibleRows.float32 * lineH + 4.0'f32
+      let popupH = visibleRows.float32 * completionRowHeight +
+        (if terminal: 2.0'f32 else: 4.0'f32)
       var listW = 340.0'f32
       var docsW = if docText.len > 0: docsWidthChars * charW else: 0.0'f32
       var popupW = listW + docsW
@@ -2031,7 +2041,7 @@ proc buildTextCompletionsNui(b: var UiBuilder, nodeIdx: int, userData: int) {.ni
       let placement = b.nuiPopupPlacement(nodeIdx, anchor.cx, anchor.cy,
         lineH, popupW, popupH)
       b.withParent(b.overlays):
-        b.pushId(userData.uint64)
+        b.pushId(b.frame.nodes[userData].id.uint64)
         b.node("text-completions-popup-overlay"):
           discard b.position(placement.x, placement.y).height(placement.h)
             .fillBackground().styleIndex(UiStyleIndexMenu).maskChildren()
@@ -2043,13 +2053,20 @@ proc buildTextCompletionsNui(b: var UiBuilder, nodeIdx: int, userData: int) {.ni
             discard b.fitX().fillY().backendGap(2)
             b.node("text-completions-list"):
               discard b.width(listW).fillY().maskChildren()
-              let listStorage = b.listTable(totalRows, lineH, [tableColumnFit(), tableColumnFit()], buildCompletionRowNui, userData)
+              let listStorage = b.listTable(totalRows, completionRowHeight,
+                [tableColumnFit(), tableColumnFit()], buildCompletionRowNui,
+                userData)
+              let scrollTarget =
+                if self.scrollToCompletion.isSome:
+                  self.scrollToCompletion.get
+                else:
+                  -1
+              if scrollTarget >= 0 and scrollTarget < totalRows:
+                discard listStorage.ensureItemVisible(
+                  scrollTarget, b.currentNode.size.y, 0.0'f32)
               # Follow keyboard selection like legacy updateBaseIndexAndScrollOffset:
               # scrollToCompletion is set on selection change and consumed here.
               if self.scrollToCompletion.isSome:
-                let target = self.scrollToCompletion.get
-                if target >= 0 and target < totalRows:
-                  discard listStorage.ensureItemVisible(target, b.currentNode.size.y, 0.0'f32)
                 self.scrollToCompletion = none(int)
             if docsW > 0.0'f32:
               b.node("text-completions-docs"):
