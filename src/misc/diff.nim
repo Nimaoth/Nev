@@ -391,6 +391,7 @@ proc diff*[T](a, b: sink RopeSlice[T], cancel: ptr Atomic[bool] = nil, enableCan
   var startA = 0
   var startB = 0
 
+  var rawEdits: seq[tuple[startA, endA, startB, endB: int]] = @[]
   while indexA < dataA.len or indexB < dataB.len:
     if indexA < dataA.len and indexB < dataB.len and not dataA.modified[indexA] and not dataB.modified[indexB]:
       inc indexA
@@ -406,11 +407,44 @@ proc diff*[T](a, b: sink RopeSlice[T], cancel: ptr Atomic[bool] = nil, enableCan
       inc indexB
 
     if startA < indexA or startB < indexB:
-      let start = a.convert(startA, T)
-      let index = a.convert(indexA, T)
-      let startBPoint = b.convert(startB, T)
-      let indexBPoint = b.convert(indexB, T)
-      result.edits.add (start...index, startBPoint...indexBPoint, dataB.data.slice(startB, indexB).slice(T))
+      rawEdits.add (startA, indexA, startB, indexB)
+
+  # The diff works on bytes, so edits can start/end inside a multi byte utf8 character.
+  # Expand edits to char boundaries. Bytes between edits are equal in a and b, so a and b
+  # are moved by the same amount. Edits which touch after expanding are merged.
+  proc isContinuationByte(c: var RopeCursorWrapper, index: int): bool =
+    if index <= 0 or index >= c.len:
+      return false
+    c.seek(index)
+    return (c.current().uint8 and 0xC0) == 0x80
+
+  var i = 0
+  while i < rawEdits.len:
+    var (sA, eA, sB, eB) = rawEdits[i]
+    inc i
+    while sA > 0 and sB > 0 and (dataA.data.isContinuationByte(sA) or dataB.data.isContinuationByte(sB)):
+      dec sA
+      dec sB
+
+    while true:
+      while eA < dataA.len and eB < dataB.len and (dataA.data.isContinuationByte(eA) or dataB.data.isContinuationByte(eB)):
+        if i < rawEdits.len and eA >= rawEdits[i].startA:
+          break
+        inc eA
+        inc eB
+
+      if i < rawEdits.len and eA >= rawEdits[i].startA:
+        eA = rawEdits[i].endA
+        eB = rawEdits[i].endB
+        inc i
+        continue
+      break
+
+    let start = a.convert(sA, T)
+    let index = a.convert(eA, T)
+    let startBPoint = b.convert(sB, T)
+    let indexBPoint = b.convert(eB, T)
+    result.edits.add (start...index, startBPoint...indexBPoint, dataB.data.slice(sB, eB).slice(T))
 
 proc diffLines*[T](a, b: RopeSlice[T]): seq[LineMapping] =
   var aLines: seq[Hash] = @[] # line hashes
@@ -516,6 +550,7 @@ proc apply*[T](a: RopeSlice[T], diff: RopeDiff[T]): Rope =
   result.add c.suffix().toRope()
 
 when isMainModule:
+  from std/unicode import nil
   proc test[T](a, b: openArray[T]) =
     var diff = diff(a, b)
     var b2 = a.apply(diff)
@@ -533,6 +568,9 @@ when isMainModule:
       echo a, ", ", b, " -> ", b2, ", ", diff
 
     assert $b == $b2
+    for e in diff.edits:
+      assert unicode.validateUtf8($e.text) == -1, "Edit splits utf8 char: " & $diff
+      assert unicode.validateUtf8($a.slice(e.old.a...e.old.b)) == -1, "Edit splits utf8 char: " & $diff
 
   proc randArray(len: int, max: int): seq[int] =
     for i in 0..<len:
@@ -570,6 +608,28 @@ when isMainModule:
       let a = randRope(i)
       let b = randRope(i)
       test(a, b)
+
+  const unicodeChars = ["a", "b", "ä", "ö", "◫", "⌕", "🗂", "🗀", "🔍", "🗐", "📑", "🖥", "🖳"]
+  proc randUnicodeRope(len: int): Rope =
+    var str = ""
+    for i in 0..<len:
+      str.add unicodeChars[rand(unicodeChars.high)]
+    return Rope.new(str)
+
+  for i in 1..40:
+    echo "unicode i: ", i
+    for k in 1..1000:
+      test(randUnicodeRope(i), randUnicodeRope(rand(1..i)))
+
+  test(Rope.new("""addEntry("🗂", "a")
+addEntry("🗁", "b")
+addEntry("🔍", "c")
+addEntry("📑", "d")
+addEntry("🖥", "e")"""), Rope.new("""addEntry("◫", "a")
+addEntry("🗀", "b")
+addEntry("⌕", "c")
+addEntry("🗐", "d")
+addEntry("🖳", "e")"""))
 
   echo diff(Rope.new("hello"), Rope.new("hellope"), nil, false)
   echo diff(Rope.new("hellope"), Rope.new("hello"), nil, false)
