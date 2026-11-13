@@ -56,12 +56,23 @@ when implModule:
         let isTerminal = nui.backendType == UiBackendType.Terminal
         let textStyle = nui.themeTextStyle(UiStyleIndexDefaultText)
         let iconFontSize = if isTerminal: textStyle.fontSize else: textStyle.fontSize * 1.5
+        let iconRefSize = nui.getTextArrangement("M", textStyle.fontId, iconFontSize).size
         let (itemWidth, itemHeight) = if isTerminal:
           (3.0'f32, 1.0'f32)
         else:
-          let lineHeight = max(1.0'f32, nui.getTextArrangement("M", textStyle.fontId, iconFontSize).size.y)
-          let s = (lineHeight * 1.8'f32).int.float32
+          let s = (max(1.0'f32, iconRefSize.y) * 1.8'f32).int.float32
           (s, s)
+
+        template scaledIconFontSize(nui: var UiBuilder, icon: string): float32 =
+          ## Glyphs from fallback fonts have very different sizes, so scale each icon so its
+          ## measured box roughly matches the line height at the icon font size.
+          block:
+            let size = nui.getTextArrangement(icon, textStyle.fontId, textStyle.fontSize).size
+            let extent = max(size.x, size.y)
+            if isTerminal or extent <= 0:
+              iconFontSize
+            else:
+              textStyle.fontSize * clamp(iconRefSize.y / extent, 0.5'f32, 3.0'f32)
 
         var clickedIndex = -1
         var hoveredIndex = -1
@@ -83,7 +94,7 @@ when implModule:
               nui.node:
                 discard nui.fit().alignCenter()
                   .textStyleIndex(int(if hovered: UiStyleIndexMenuItemHoverText else: UiStyleIndexMenuItemText))
-                  .fontSize(iconFontSize).text(entry.icon)
+                  .fontSize(nui.scaledIconFontSize(entry.icon)).text(entry.icon)
             nui.popId()
 
         if hoveredIndex >= 0:
@@ -111,11 +122,12 @@ when implModule:
   proc init_module_toolbar*() {.cdecl, exportc, dynlib.} =
     let self = ToolbarService()
     self.addEntry("❯", "commands.command-line")
-    self.addEntry("🗂", "file-explorer.toggle")
+    self.addEntry("🖿", "file-explorer.toggle")
     self.addEntry("🗁", "explore-files")
-    self.addEntry("🔍", "choose-file")
+    self.addEntry("⌕", "choose-file")
+    self.addEntry("🗐", "choose-open")
     self.addEntry("⎌", "undotree.toggle")
     self.addEntry("⎇", "gitui.toggle")
     self.addEntry("⚙", "browse-settings")
-    self.addEntry("🖥", "open-platform-settings")
+    self.addEntry("🖳", "open-platform-settings")
     getServices().addService(self)
