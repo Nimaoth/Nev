@@ -1,6 +1,6 @@
 discard """
   action: "run"
-  cmd: "nim $target --cc:clang --passC:-Wno-incompatible-function-pointer-types --undef:useDynlib --nimblePath:./nimbleDir/simplePkgs $options $file"
+  cmd: "nim $target --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:nuiNoHarfbuzz --path:deps/nuigi/vendor/nimfreetype --undef:useDynlib --nimblePath:./nimbleDir/simplePkgs $options $file"
   timeout: 500
   targets: "c"
 """
