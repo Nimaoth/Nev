@@ -17,7 +17,7 @@ when implModule and defined(profiler):
   import misc/[render_command]
   import theme
   import vmath, chroma
-  import service, view, layout/layout, input_handler/input_handler, command_service, platform
+  import service, view, layout/layout, input_handler/input_handler, command_service, platform, view_panel, config_provider
 
   from nuigi import UiBuilder, UiStyleIndex, UiTextStyleIndex, UiColor, UiRenderCommand, UiRenderCommandKind, rgba, text, textStyleIndex, fit, fitX, fitY, fillX, fillY, fillBackground, styleIndex, backgroundColor, accentVariation, themeStyle, padding, gap, layoutVertical, layoutHorizontal, node, height, wrapText, customRenderCommands, wasHovered, wasClicked, absoluteNodePos, currentNodeIndex
   from nuigi/widgets import scrollBox, button, dragFloat
@@ -1519,6 +1519,7 @@ when implModule and defined(profiler):
         self.renderCommandPoolCursor = 0
         self.resetDirty()
         nui.viewPanel("profiler-root", self.active, true,
+            getServiceChecked(ConfigService).runtime,
             ViewPanelOptions(padding: 4).withViewActions(getServiceChecked(LayoutService), self)):
           let memLabel =
             if self.activeTabIndex == 0: "[Memory]"

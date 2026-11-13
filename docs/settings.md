@@ -170,6 +170,16 @@ This file documents most settings. Some settings are not documented yet. You mig
 | `ui.toast.max` | int | 5 | Max number of toast to show at a time |
 | `ui.toast.style` | "minimal", "box" | "minimal" | Animate toast positions |
 | `ui.toolbar.enabled` | bool | true | Show the toolbar with icon buttons on the left side of the window. |
+| `ui.view-panel.content-corner-radius` | float | 8 | Corner radius of the bottom corners of the view panel content. |
+| `ui.view-panel.content-padding` | float | 4 | Padding inside the view panel content. |
+| `ui.view-panel.corner-radius` | float | 8 | Corner radius of the view panel root. |
+| `ui.view-panel.gap` | float | 4 | Gap between the view panel header and content. |
+| `ui.view-panel.header-actions-gap` | float | 4 | Gap between buttons in the view panel header action row. |
+| `ui.view-panel.header-content-gap` | float | 8 | Gap between children in the text editor view panel header. |
+| `ui.view-panel.header-corner-radius` | float | 7 | Corner radius of the top corners of the view panel header. |
+| `ui.view-panel.header-gap` | float | 4 | Gap between the view panel header action and content rows. |
+| `ui.view-panel.header-padding` | float | 6 | Padding inside the view panel header. |
+| `ui.view-panel.padding` | float | 1 | Padding around the view panel root. |
 | `ui.vsync` | bool | true | Enable vertical sync to prevent screen tearing. |
 | `ui.which-key-delay` | int | 250 | After how many milliseconds the which key window opens. |
 | `ui.which-key-height` | int | 6 | How many rows tall the window showing next possible inputs should be. |

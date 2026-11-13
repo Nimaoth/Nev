@@ -12,7 +12,7 @@ include module_base
 when implModule:
   import std/sets
   import misc/[custom_logger, util, id, myjsonutils]
-  import text_component, document_editor, document, layout/layout, command_component, input_handler/input_handler, platform
+  import text_component, document_editor, document, layout/layout, command_component, input_handler/input_handler, platform, view_panel, config_provider
   import nimsumtree/[buffer, clock]
   import command_service
   import vmath, chroma
@@ -500,6 +500,7 @@ when implModule:
         lineHeight = 1.0'f32
 
       nui.viewPanel("undo-tree", self.active, true,
+          getServiceChecked(ConfigService).runtime,
           ViewPanelOptions().withViewActions(layout, self)):
         nui.node:
           discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))

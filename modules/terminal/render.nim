@@ -3,7 +3,7 @@ import vmath, bumpy, chroma
 import pixie
 import misc/[util, custom_logger, custom_unicode, tui]
 import misc/input_api as input_api
-import theme, view, config_provider, platform
+import theme, view, config_provider, platform, view_panel, service
 import app/theme_styles
 import types_impl, core_settings
 import layout/layout
@@ -401,7 +401,7 @@ proc renderTerminalNui*(self: TerminalView, nui: var UiBuilder,
     if not self.isInPreview and self.terminals != nil:
       panelOptions = panelOptions.withViewActions(self.terminals.layout, self)
     nui.viewPanel("terminal-root", self.active, true,
-        panelOptions):
+        getServiceChecked(ConfigService).runtime, panelOptions):
       template addSection(txt: string) =
         nui.node:
           discard nui.fit().textStyleIndex(int(UiStyleIndexDefaultText)).text(txt)

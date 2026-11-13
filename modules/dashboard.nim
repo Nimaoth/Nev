@@ -63,7 +63,7 @@ when implModule:
   import nuigi/widgets
   import view, layout/layout, service, input_handler/input_handler, command_service
   import vcs
-  import platform, stats
+  import platform, view_panel, stats
   import session
   import config_provider
 
@@ -181,7 +181,8 @@ when implModule:
         0.0'f32
       else:
         max(8.0'f32, parentWidth * colGapPercent)
-      nui.viewPanel("dashboard", self.active, false, ViewPanelOptions(gap: 0)):
+      nui.viewPanel("dashboard", self.active, false, configStore,
+          ViewPanelOptions(gap: 0)):
         discard
       do:
         if nui.wasClicked(includeChildren = true):

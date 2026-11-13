@@ -41,6 +41,37 @@
     (setting enabled "bool" true
       "Show the toolbar with icon buttons on the left side of the window."))
 
+  (group ViewPanelSettings "ui.view-panel"
+    (setting padding "float" 1.0
+      "Padding around the view panel root.")
+
+    (setting gap "float" 4.0
+      "Gap between the view panel header and content.")
+
+    (setting corner-radius "float" 8.0
+      "Corner radius of the view panel root.")
+
+    (setting header-corner-radius "float" 7.0
+      "Corner radius of the top corners of the view panel header.")
+
+    (setting content-corner-radius "float" 8.0
+      "Corner radius of the bottom corners of the view panel content.")
+
+    (setting header-padding "float" 6.0
+      "Padding inside the view panel header.")
+
+    (setting content-padding "float" 4.0
+      "Padding inside the view panel content.")
+
+    (setting header-gap "float" 4.0
+      "Gap between the view panel header action and content rows.")
+
+    (setting header-content-gap "float" 8.0
+      "Gap between children in the text editor view panel header.")
+
+    (setting header-actions-gap "float" 4.0
+      "Gap between buttons in the view panel header action row."))
+
   (group UiSettings "ui"
     (setting theme "string" "app://themes/gruvbox-dark.json"
       "VFS path of the theme.")

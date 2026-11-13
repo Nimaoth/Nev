@@ -11,7 +11,7 @@ include module_base
 
 when implModule:
   import misc/[custom_async, custom_logger, id, myjsonutils]
-  import layout/layout, command_service, workspace, vfs, vfs_service, platform
+  import layout/layout, command_service, workspace, vfs, vfs_service, platform, view_panel, config_provider
   from nuigi import UiBuilder, UiStyleIndex, UiTextStyleIndex,
     fillX, fillY, fit, fitY, fillBackground, styleIndex, textStyleIndex,
     text, padding, gap, layoutVertical, layoutHorizontal,
@@ -406,6 +406,7 @@ when implModule:
           self.selectRoot(root)
 
       nui.viewPanel("file-explorer", self.active, true,
+          getServiceChecked(ConfigService).runtime,
           ViewPanelOptions(padding: 4).withViewActions(getServiceChecked(LayoutService), self)):
         nui.node:
           discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))

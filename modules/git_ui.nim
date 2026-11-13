@@ -13,7 +13,7 @@ include module_base
 when implModule:
   import std/[sets, math, sequtils, os, osproc, streams]
   import misc/[custom_logger, util, id, myjsonutils, jsonex, rope_utils, async_process, custom_async, delayed_task]
-  import text_component, event_service, document_editor, document, view, layout/layout, command_component, platform
+  import text_component, event_service, document_editor, document, view, layout/layout, command_component, platform, view_panel, config_provider
   import nimsumtree/[buffer, clock, rope]
   import command_service, workspace, config_component, text_editor_component, session
   import vfs
@@ -576,6 +576,7 @@ when implModule:
       # leaders, keyword/comment colors); new replaces rules with sectionTitle
       # bars + gaps and hides commands behind the "…" menu (see §24).
       nui.viewPanel("git-ui", self.active, true,
+          getServiceChecked(ConfigService).runtime,
           ViewPanelOptions(gap: 2, cacheSubtree: true,
             cacheDirty: dirty or self.dirty or self.actionsMenuOpen or
               (self.editCommit and self.commitEditor != nil and self.commitEditor.dirty))

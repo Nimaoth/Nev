@@ -4,7 +4,7 @@ import std/[options, json]
 import misc/[custom_async, id, util]
 import service, view, popup, selector_popup/builder
 import document, document_editor
-from platform import ViewPanelOptions
+import view_panel
 from nuigi import UiBuilder
 from scripting_api import EditorId
 
@@ -240,6 +240,7 @@ when implModule:
       let self = view.PlatformSettingsView
       self.resetDirty()
       nui.viewPanel("platform-settings", self.active, true,
+          getServiceChecked(ConfigService).runtime,
           ViewPanelOptions().withViewActions(self.layout, self)):
         nui.node:
           discard nui.fit().textStyleIndex(int(UiStyleIndexHeaderText))

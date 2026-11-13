@@ -1,6 +1,6 @@
 import std/[strformat, options, tables, sets, strutils]
 import misc/[util, custom_logger]
-import platform
+import platform, view_panel, config_provider
 import view, document_editor, layout/layout, service
 import types_impl, debugger, dap_client
 
@@ -35,6 +35,7 @@ template debuggerChrome(nui: var UiBuilder, view: View, rootName,
   ## Shared Panel root + Header bar chrome (mirrors renderView in widget_library).
   block:
     nui.viewPanel(rootName, view.active, true,
+        getServiceChecked(ConfigService).runtime,
         ViewPanelOptions(padding: 4).withViewActions(getServiceChecked(LayoutService), view)):
       nui.node:
         discard nui.fit().textStyleIndex(

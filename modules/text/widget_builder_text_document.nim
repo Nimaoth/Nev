@@ -3,7 +3,7 @@ import vmath, bumpy, chroma
 import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer, generational_seq, render_command, arena, array_view, diff]
 import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import platform
+import platform, view_panel
 import document_editor, theme, config_provider, layout/layout, service
 import core_settings
 import language_server
@@ -2343,9 +2343,8 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
       let layout = self.services.getServiceChecked(LayoutService)
       panelOptions = panelOptions.withViewActions(layout, layout.getViewForEditor(self).get(nil))
     nui.viewPanel("text-root", self.active, self.renderHeader,
-        panelOptions):
+        self.config, panelOptions):
       # Header – replicates `createHeader` logic from widget_library (mode, dirty, file, dir + right side)
-      discard nui.backendGap(8)
       let modeText = if self.mode.len == 0: "-" else: self.mode
       let isDirty = if self.document != nil: self.document.lastSavedRevision != self.document.revision else: false
       let dirtyMarker = if isDirty: "*" else: ""
@@ -2379,6 +2378,9 @@ proc createUINui*(self: TextDocumentEditor, nui: var UiBuilder) {.gcsafe, raises
       if nui.themeStyleIndices.hasKey("panel2"):
         nui.ensureNodeStyle(nui.currentParent).fillColor =
           nui.themeStyle(if self.active: "panel2-active" else: "panel2").fillColor
+      else:
+        discard nui.fillBackground().styleIndex(
+          if self.active: UiStyleIndexPanelActive else: UiStyleIndexPanel)
       nui.nodeStorageParent()
       nui.getOrCreateTextEditorNuiStorage(nui.currentNode).editor = self
       let rootIndex = nui.currentNodeIndex

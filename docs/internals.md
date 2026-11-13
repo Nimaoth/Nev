@@ -72,7 +72,7 @@ This describes how Nev works under the hood, and is mainly useful for contributo
 
 ## View headers
 
-Views use `viewPanel` from [platform.nim](../src/platform.nim) for panel and
+Views use `viewPanel` from [view_panel.nim](../src/view_panel.nim) for panel and
 header styling. Pass `ViewPanelOptions(...).withViewActions(layout, view)` to
 enable the top-right Hide (`-`) and Close (`x`) buttons. Actions run next frame
 through `LayoutService.closeView`, keeping hidden views available to reopen.
@@ -99,6 +99,14 @@ support omitting `ViewPanelOptions`.
 The action row reserves horizontal space but is excluded from header content
 height and centered vertically, so showing buttons does not resize the header
 or move the view body.
+`ViewPanelOptions.cornerRadius` sets the root radius (default `8`).
+`headerCornerRadius` optionally overrides the header's top radius; by default
+it follows the root radius minus root padding. `contentCornerRadius` controls
+the content's bottom radius (default `8`). The panel padding and gap, plus the
+header/content padding and gaps, are also configurable through `ViewPanelOptions`.
+Passing a `ConfigStore` to `viewPanel` loads these values from `ui.view-panel.*`;
+an additional `ViewPanelOptions` argument can provide per-panel behavior such as
+caching and close actions.
 
 Terminal headers add a hover-only `Text` button. It replaces the live terminal
 body with a text-editor snapshot of the terminal output in the same view.

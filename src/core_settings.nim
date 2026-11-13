@@ -62,6 +62,57 @@ proc getUiToolbarEnabled*(s: ConfigStore, def = bool.default): bool =
 proc setUiToolbarEnabled*(s: ConfigStore, value: bool) =
   s.set("ui.toolbar.enabled", value)
 
+# ViewPanelSettings - ui.view-panel
+proc getUiViewPanelPadding*(s: ConfigStore, def = float.default): float =
+  s.get("ui.view-panel.padding", def)
+proc setUiViewPanelPadding*(s: ConfigStore, value: float) =
+  s.set("ui.view-panel.padding", value)
+
+proc getUiViewPanelGap*(s: ConfigStore, def = float.default): float =
+  s.get("ui.view-panel.gap", def)
+proc setUiViewPanelGap*(s: ConfigStore, value: float) =
+  s.set("ui.view-panel.gap", value)
+
+proc getUiViewPanelCornerRadius*(s: ConfigStore, def = float.default): float =
+  s.get("ui.view-panel.corner-radius", def)
+proc setUiViewPanelCornerRadius*(s: ConfigStore, value: float) =
+  s.set("ui.view-panel.corner-radius", value)
+
+proc getUiViewPanelHeaderCornerRadius*(s: ConfigStore, def = float.default): float =
+  s.get("ui.view-panel.header-corner-radius", def)
+proc setUiViewPanelHeaderCornerRadius*(s: ConfigStore, value: float) =
+  s.set("ui.view-panel.header-corner-radius", value)
+
+proc getUiViewPanelContentCornerRadius*(s: ConfigStore, def = float.default): float =
+  s.get("ui.view-panel.content-corner-radius", def)
+proc setUiViewPanelContentCornerRadius*(s: ConfigStore, value: float) =
+  s.set("ui.view-panel.content-corner-radius", value)
+
+proc getUiViewPanelHeaderPadding*(s: ConfigStore, def = float.default): float =
+  s.get("ui.view-panel.header-padding", def)
+proc setUiViewPanelHeaderPadding*(s: ConfigStore, value: float) =
+  s.set("ui.view-panel.header-padding", value)
+
+proc getUiViewPanelContentPadding*(s: ConfigStore, def = float.default): float =
+  s.get("ui.view-panel.content-padding", def)
+proc setUiViewPanelContentPadding*(s: ConfigStore, value: float) =
+  s.set("ui.view-panel.content-padding", value)
+
+proc getUiViewPanelHeaderGap*(s: ConfigStore, def = float.default): float =
+  s.get("ui.view-panel.header-gap", def)
+proc setUiViewPanelHeaderGap*(s: ConfigStore, value: float) =
+  s.set("ui.view-panel.header-gap", value)
+
+proc getUiViewPanelHeaderContentGap*(s: ConfigStore, def = float.default): float =
+  s.get("ui.view-panel.header-content-gap", def)
+proc setUiViewPanelHeaderContentGap*(s: ConfigStore, value: float) =
+  s.set("ui.view-panel.header-content-gap", value)
+
+proc getUiViewPanelHeaderActionsGap*(s: ConfigStore, def = float.default): float =
+  s.get("ui.view-panel.header-actions-gap", def)
+proc setUiViewPanelHeaderActionsGap*(s: ConfigStore, value: float) =
+  s.set("ui.view-panel.header-actions-gap", value)
+
 # UiSettings - ui
 proc getUiTheme*(s: ConfigStore, def = string.default): string =
   s.get("ui.theme", def)

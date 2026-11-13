@@ -91,6 +91,9 @@ when implModule:
             "text.disable-scrolling": true,
             "text.default-mode": "vim.insert",
             "text.highlight-matches.enable": false,
+            "ui.view-panel.padding": 0,
+            "ui.view-panel.corner-radius": 0,
+            "ui.view-panel.content-padding": 0,
           },
         }).get(nil)
         self.mCommandLineEditor.renderHeader = false
