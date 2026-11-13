@@ -1,6 +1,6 @@
 discard """
   action: "run"
-  cmd: "nim $target --undef:useDynlib --nimblePath:./nimbleDir/simplePkgs $options $file"
+  cmd: "nim $target -d:nuiDebug --undef:useDynlib --nimblePath:./nimbleDir/simplePkgs $options $file"
   timeout: 500
   targets: "c"
 """
