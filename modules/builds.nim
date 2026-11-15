@@ -146,13 +146,13 @@ when implModule:
           state.status = Stopping
           self.finishBuild(state, int.none)
 
-  proc closeTerminal(state: BuildState) =
+  proc closeTerminal(state: BuildState, restoreHidden: bool = false) =
     if state.terminal == nil:
       return
     let terminal = state.terminal
     state.terminal = nil
     if getServiceChecked(TerminalService).isOpen(terminal):
-      getServiceChecked(LayoutService).closeView(terminal, keepHidden = false, restoreHidden = false)
+      getServiceChecked(LayoutService).closeView(terminal, keepHidden = false, restoreHidden = restoreHidden)
 
   proc tickWhileActive(self: BuildsView) {.async: (raises: []).} =
     ## Redraws the view every second while builds are running so the elapsed time updates.
@@ -199,10 +199,10 @@ when implModule:
     if state.isActive:
       state.status = Stopping
       self.finishBuild(state, int.none)
-    state.closeTerminal()
+    state.closeTerminal(restoreHidden = true)
     for other in self.states.values:
       if other != state and other.group == config.group and not other.isActive:
-        other.closeTerminal()
+        other.closeTerminal(restoreHidden = true)
 
     inc state.runId
     let runId = state.runId
