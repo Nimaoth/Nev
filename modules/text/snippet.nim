@@ -231,6 +231,11 @@ const snippetParser = peg("snippet", state: Snippet):
 
   snippet <- *(escaped | (unescaped - '$') | pattern) * snippetEnd
 
+  # Same as npeg's builtin core.Alpha; defined locally because the builtin
+  # pattern library lives in compile-time global state that per-module
+  # incremental compilation (nim m) does not replay across modules.
+  Alpha <- {'A'..'Z', 'a'..'z'}
+
   number <- +{'0'..'9'}
   varName <- >({'_', 'a'..'z', 'A'..'Z'} * *{'_', 'a'..'z', 'A'..'Z', '0'..'9'}):
     state.varName = $1

@@ -142,7 +142,7 @@ proc iter*(wrapMap: var WrapMapSnapshot, arena: ptr Arena, highlighter: Option[H
 func point*(self: WrapChunkIterator): Point {.inline.} = self.inputChunks.point
 template styledChunk*(self: WrapChunk): StyledChunk = self.inputChunk.styledChunk
 func styledChunks*(self: var WrapChunkIterator): var StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
-func styledChunks*(self: WrapChunkIterator): StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
+func styledChunks*(self: WrapChunkIterator): lent StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
 func point*(self: WrapChunk): Point = self.inputChunk.point
 func endPoint*(self: WrapChunk): Point = self.inputChunk.endPoint
 func wrapEndPoint*(self: WrapChunk): WrapPoint = wrapPoint(self.wrapPoint.row, self.wrapPoint.column + self.inputChunk.len.uint32)

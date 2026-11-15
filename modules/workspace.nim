@@ -97,7 +97,7 @@ when implModule:
   when defined(windows):
     import winlean
     const
-      UNI_REPLACEMENT_CHAR = Utf16Char(0xFFFD'i16)
+      UNI_REPLACEMENT_CHAR = cast[Utf16Char](0xFFFD'u16)
       UNI_MAX_BMP = 0x0000FFFF
       UNI_MAX_UTF16 = 0x0010FFFF
       # UNI_MAX_UTF32 = 0x7FFFFFFF

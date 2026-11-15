@@ -150,7 +150,7 @@ proc get*(self: ConfigStore, key: string): JsonNodeEx =
     if override != nil and result != nil:
       result.extendJson(override)
 
-proc get*(self: ConfigStore, key: string, T: typedesc, defaultValue: T): T =
+proc get*[U](self: ConfigStore, key: string, T: typedesc[U], defaultValue: U): U =
   let value = self.get(key)
   if value != nil:
     try:
@@ -167,7 +167,7 @@ proc get*(self: ConfigStore, key: string, T: typedesc, defaultValue: T): T =
   else:
     return defaultValue
 
-proc get*(self: ConfigStore, key: string, T: typedesc): T {.inline.} =
+proc get*[U](self: ConfigStore, key: string, T: typedesc[U]): U {.inline.} =
   self.get(key, T, T.default)
 
 proc get*[T](self: ConfigStore, key: string, defaultValue: T): T {.inline.} =

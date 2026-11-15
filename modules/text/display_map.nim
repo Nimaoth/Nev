@@ -158,7 +158,7 @@ func buffer*(self: DisplayMap): lent BufferSnapshot = self.wrapMap.snapshot.buff
 func point*(self: DisplayChunkIterator): Point = self.diffChunks.point
 template styledChunk*(self: DisplayChunk): StyledChunk = self.diffChunk.styledChunk
 func styledChunks*(self: var DisplayChunkIterator): var StyledChunkIterator {.inline.} = self.diffChunks.styledChunks
-func styledChunks*(self: DisplayChunkIterator): StyledChunkIterator {.inline.} = self.diffChunks.styledChunks
+func styledChunks*(self: DisplayChunkIterator): lent StyledChunkIterator {.inline.} = self.diffChunks.styledChunks
 
 func isNil*(self: DisplayMapSnapshot): bool = self.wrapMap.isNil
 

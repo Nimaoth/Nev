@@ -276,7 +276,7 @@ when implModule:
       return nil
     return store.get(key)
 
-  proc getByPath*(self: ConfigService, path: string, T: typedesc, defaultValue: T): T =
+  proc getByPath*[U](self: ConfigService, path: string, T: typedesc[U], defaultValue: U): U =
     let value = self.getByPath(path)
     if value != nil:
       try:
@@ -288,7 +288,7 @@ when implModule:
     else:
       return defaultValue
 
-  proc getByPath*(self: ConfigService, path: string, T: typedesc): T {.inline.} =
+  proc getByPath*[U](self: ConfigService, path: string, T: typedesc[U]): U {.inline.} =
     self.getByPath(path, T, T.default)
 
   ###########################################################################

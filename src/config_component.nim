@@ -19,7 +19,7 @@ proc configComponentSet(self: ConfigComponent, key: string, value: JsonNodeEx)
 {.pop.}
 
 # Nice wrappers
-proc get*(self: ConfigComponent, key: string, T: typedesc, defaultValue: T): T =
+proc get*[U](self: ConfigComponent, key: string, T: typedesc[U], defaultValue: U): U =
   let value = self.configComponentGetRaw(key)
   if value != nil:
     try:
@@ -36,7 +36,7 @@ proc get*(self: ConfigComponent, key: string, T: typedesc, defaultValue: T): T =
   else:
     return defaultValue
 
-proc get*(self: ConfigComponent, key: string, T: typedesc): T {.inline.} =
+proc get*[U](self: ConfigComponent, key: string, T: typedesc[U]): U {.inline.} =
   self.get(key, T, T.default)
 
 proc get*[T](self: ConfigComponent, key: string, defaultValue: T): T {.inline.} =

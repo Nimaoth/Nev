@@ -139,7 +139,7 @@ proc iter*(diffMap: var DiffMapSnapshot, arena: ptr Arena, highlighter: Option[H
 func point*(self: DiffChunkIterator): Point = self.inputChunks.point
 template styledChunk*(self: DiffChunk): StyledChunk = self.inputChunk.styledChunk
 func styledChunks*(self: var DiffChunkIterator): var StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
-func styledChunks*(self: DiffChunkIterator): StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
+func styledChunks*(self: DiffChunkIterator): lent StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
 
 func isNil*(self: DiffMapSnapshot): bool = self.map.isNil
 

@@ -129,18 +129,18 @@ proc addService*(self: Services, name: string, service: Service, dependencies: s
     # log lvlInfo, &"addService {name}, remaining dependencies: {dependencies}"
     self.dependencies[name] = dependencies
 
-proc getService*(self: Services, T: typedesc, state: Option[ServiceState] = ServiceState.none): Option[T] {.gcsafe, raises: [].} =
+proc getService*[U](self: Services, T: typedesc[U], state: Option[ServiceState] = ServiceState.none): Option[U] {.gcsafe, raises: [].} =
   let service = self.getService(T.serviceName, state)
   if service.isSome and service.get of T:
     return service.get.T.some
   return T.none
 
-proc getServiceChecked*(self: Services, T: typedesc, state: Option[ServiceState] = ServiceState.none): T {.gcsafe, raises: [].} =
+proc getServiceChecked*[U](self: Services, T: typedesc[U], state: Option[ServiceState] = ServiceState.none): U {.gcsafe, raises: [].} =
   let res = self.getService(T, state)
   assert res.isSome, &"getServiceChecked " & T.serviceName & ": Not found"
   return res.get
 
-proc getServiceAsync*(self: Services, T: typedesc): Future[Option[T]] {.gcsafe, async: (raises: []).} =
+proc getServiceAsync*[U](self: Services, T: typedesc[U]): Future[Option[U]] {.gcsafe, async: (raises: []).} =
   var service = self.getService(T.serviceName, ServiceState.Running.some)
   if service.isSome and service.get of T:
     return service.get.T.some
@@ -155,10 +155,10 @@ proc getServiceAsync*(self: Services, T: typedesc): Future[Option[T]] {.gcsafe, 
       return service.get.T.some
   return T.none
 
-proc getService*(T: typedesc, state: Option[ServiceState] = ServiceState.none): Option[T] {.gcsafe, raises: [].} =
+proc getService*[U](T: typedesc[U], state: Option[ServiceState] = ServiceState.none): Option[U] {.gcsafe, raises: [].} =
   return getServices().getService(T, state)
 
-proc getServiceChecked*(T: typedesc, state: Option[ServiceState] = ServiceState.none): T {.gcsafe, raises: [].} =
+proc getServiceChecked*[U](T: typedesc[U], state: Option[ServiceState] = ServiceState.none): U {.gcsafe, raises: [].} =
   return getServices().getServiceChecked(T, state)
 
 proc addService*[T: Service](self: Services, service: T, dependencies: seq[string] = @[]) {.gcsafe, raises: [].} =

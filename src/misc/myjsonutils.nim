@@ -320,7 +320,7 @@ proc fromJson*[T](a: var T, b: JsonNode, opt = Joptions()) {.raises: [ValueError
     # checkJson not appropriate here
     static: doAssert false, "not yet implemented: " & $T
 
-proc jsonTo*(b: JsonNode, T: typedesc, opt = Joptions()): T {.raises: [ValueError].} =
+proc jsonTo*[U](b: JsonNode, T: typedesc[U], opt = Joptions()): U {.raises: [ValueError].} =
   ## reverse of `toJson`
   fromJson(result, b, opt)
 

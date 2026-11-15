@@ -46,18 +46,18 @@ proc write*(self: var BinaryEncoder, v: float64) =
   # todo: make this work in js
   self.write(cast[uint64](v))
 
-proc write*(self: var BinaryEncoder, T: typedesc[SomeUnsignedInt], v: T) =
+proc write*[U: SomeUnsignedInt](self: var BinaryEncoder, T: typedesc[U], v: U) =
   self.write(v)
 
-proc write*(self: var BinaryEncoder, T: typedesc[float32], v: T) =
+proc write*(self: var BinaryEncoder, T: typedesc[float32], v: float32) =
   # todo: make this work in js
   self.write(uint32, cast[uint32](v))
 
-proc write*(self: var BinaryEncoder, T: typedesc[float64], v: T) =
+proc write*(self: var BinaryEncoder, T: typedesc[float64], v: float64) =
   # todo: make this work in js
   self.write(uint64, cast[uint64](v))
 
-proc writeLEB128*(self: var BinaryEncoder, T: typedesc[SomeUnsignedInt], v: T) =
+proc writeLEB128*[U: SomeUnsignedInt](self: var BinaryEncoder, T: typedesc[U], v: U) =
   var v = v
   while true:
     var b = v and 0b0111_1111
@@ -68,7 +68,7 @@ proc writeLEB128*(self: var BinaryEncoder, T: typedesc[SomeUnsignedInt], v: T) =
     if v == 0:
       break
 
-proc writeLEB128*(self: var BinaryEncoder, T: typedesc[SomeSignedInt], v: T) =
+proc writeLEB128*[U: SomeSignedInt](self: var BinaryEncoder, T: typedesc[U], v: U) =
   var v = v
   var more = true
   var negative = v < 0
@@ -132,7 +132,7 @@ proc assertSize(self: var BinaryDecoder, size: int) =
   if self.pos + size > self.len:
     raise newException(ValueError, &"Failed to decode data, out of bounds (requested {size}, got {self.len - self.pos})")
 
-proc read*(self: var BinaryDecoder, T: typedesc[SomeUnsignedInt]): T =
+proc read*[U: SomeUnsignedInt](self: var BinaryDecoder, T: typedesc[U]): U =
   self.assertSize(sizeof(T))
   # todo: endianness and alignment
   result = cast[ptr T](self.buffer[self.pos].addr)[]
@@ -150,7 +150,7 @@ proc read*(self: var BinaryDecoder, T: typedesc[float64]): float64 =
   result = cast[ptr float64](self.buffer[self.pos].addr)[]
   self.pos += sizeof(float64)
 
-proc readLEB128*(self: var BinaryDecoder, T: typedesc[SomeUnsignedInt]): T =
+proc readLEB128*[U: SomeUnsignedInt](self: var BinaryDecoder, T: typedesc[U]): U =
   result = 0
   var shift = 0
   while true:
@@ -162,7 +162,7 @@ proc readLEB128*(self: var BinaryDecoder, T: typedesc[SomeUnsignedInt]): T =
       break
     shift += 7
 
-proc readLEB128*(self: var BinaryDecoder, T: typedesc[SomeSignedInt]): T =
+proc readLEB128*[U: SomeSignedInt](self: var BinaryDecoder, T: typedesc[U]): U =
   result = 0
   var shift = 0
   var byte: byte = 0
