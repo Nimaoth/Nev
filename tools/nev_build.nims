@@ -84,6 +84,8 @@ var nuigiDir = getEnv("NUIGI_DIR", "deps" / "nuigi").absolutePath
 var nuigiPinDir = r"C:\dev\nuigi"
 var depsDir = "deps".absolutePath
 var lockFile = "atlas.lock".absolutePath
+var nimCompiler = "nim"
+var nimCompilerOverridden = false
 const buildInfoPath = ".nev-build-info.json"
 let buildCommandLine = block:
   var arguments = newSeq[string]()
@@ -188,6 +190,8 @@ proc unitTestCompilerCommand(testFile, options: string): string =
         if value.getStr.len > 0:
           command = value.getStr
         break
+  if nimCompilerOverridden and command.startsWith("nim "):
+    command = nimCompiler.quoteShell & command[3 .. ^1]
   command % ["target", "c", "options", options, "file", testFile.quoteShell]
 
 proc runUnitTests(testFiles: openArray[string]) =
@@ -528,7 +532,7 @@ proc buildNuigiStaticDependencies() =
       " -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF" &
       " -DSDL_X11_XSCRNSAVER=OFF -DSDL_X11_XTEST=OFF"
   withDir nuigiDir:
-    exec "nim c -o:bin/nev-nuigi-build build.nim"
+    exec nimCompiler.quoteShell & " c -o:bin/nev-nuigi-build build.nim"
     let builder = ("bin" / "nev-nuigi-build" &
       (when defined(windows): ".exe" else: "")).absolutePath.quoteShell
     exec builder & " sdl3-static"
@@ -562,10 +566,19 @@ proc buildNev(output = "", extraArgs = "", cacheDir = "nimcache/nev-static") =
     " " & ("--path:" & (nuigiDir / "vendor" / "nimfreetype")).quoteShell
   let outputPath = if output.len > 0: output
     else: (when defined(windows): "nev.exe" else: "nev")
-  exec "nim c -o:" & outputPath & " --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:" & cacheDir & " " &
+  exec nimCompiler.quoteShell & " c -o:" & outputPath & " --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:" & cacheDir & " " &
     wasmtimeCompilerArgs() & " " & staticArgs & pathArgs & linkArgs & compileIconResource() & " " & extraArgs & " src/desktop_main.nim"
   let buildType = if extraArgs.contains("-d:useDynlib"): "dynamic" else: "static"
   recordSuccessfulBuild(buildType, outputPath)
+
+proc buildModules(force: bool) =
+  warnIfStaticBuild()
+  let forceArg = if force: " -f" else: ""
+  if nimCompilerOverridden:
+    exec nimCompiler.quoteShell & " c -o:bin/nev-build-helper --nimcache:nimcache/nev-build-helper build.nim"
+    exec "./bin/nev-build-helper" & forceArg & " " & ("--nim:" & nimCompiler).quoteShell
+  else:
+    exec "./bin/build.exe" & forceArg
 
 var optParser = initOptParser("")
 for kind, key, val in optParser.getopt():
@@ -577,6 +590,12 @@ for kind, key, val in optParser.getopt():
     case key
     of "cache":
       isCINimbleCached = val
+    of "nim":
+      if val.len == 0:
+        echo "[ERROR] --nim requires a compiler executable."
+        quit 1
+      nimCompiler = if val.contains('/') or val.contains('\\'): val.absolutePath else: val
+      nimCompilerOverridden = true
     of "nuigi-dir":
       if val.len == 0:
         echo "[ERROR] --nuigi-dir requires a checkout path."
@@ -595,6 +614,7 @@ for kind, key, val in optParser.getopt():
   nuigi-deps-static  Build and stage Nuigi's static SDL3 and FreeType archives.
   update-nuigi       Pin Nuigi to the local checkout's HEAD in nev.nimble and atlas.lock.
   build-static      Build nev-static using those archives, without HarfBuzz/FriBidi.
+  build-static-incremental  Build static Nev with Nim's experimental incremental compiler.
   build-dynamic     Like build-static, but load modules as DLLs from native_plugins.
   modules           Rebuild changed modules (DLLs) and regenerate module imports.
   modules-f         Force a rebuild of all modules.
@@ -607,6 +627,7 @@ for kind, key, val in optParser.getopt():
   deps              Clone/check out dependencies at the commits in atlas.lock.
   --deps-dir:PATH    Dependency destination (default: deps).
   --lock-file:PATH   Dependency lock file (default: atlas.lock).
+  --nim:PATH         Nim compiler executable (default: nim on PATH).
   --nuigi-dir:PATH   Nuigi checkout (update-nuigi defaults to C:\dev\nuigi;
                      other commands default to NUIGI_DIR or deps/nuigi).
 Build commands prepare Wasmtime before invoking the Nim compiler."""
@@ -686,13 +707,13 @@ while i < cmds.len:
     buildAndCopyWasmtime()
     buildNuigiStaticDependencies()
     try:
-      exec """nim c --out:nev.exe -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib """ &
+      exec nimCompiler.quoteShell & """ c --out:nev.exe -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib """ &
         wasmtimeCompilerArgs() & " src/desktop_main.nim"
       recordSuccessfulBuild("static", "nev.exe")
     finally:
       discard
     try:
-      exec """nim c --out:nevg.exe -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types "--passL:-ladvapi32.lib -luser32.lib" """ &
+      exec nimCompiler.quoteShell & """ c --out:nevg.exe -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} --cc:clang --passC:-Wno-incompatible-function-pointer-types "--passL:-ladvapi32.lib -luser32.lib" """ &
         wasmtimeCompilerArgs() & " src/desktop_main.nim"
       recordSuccessfulBuild("static", "nevg.exe")
     finally:
@@ -703,10 +724,10 @@ while i < cmds.len:
     withDir "plugins/markdown":
       # todo: on windows
       # exec """powershell -Command ./emsdk/emsdk.ps1 activate 4.0.10"""
-      exec """nim c -d:release --skipParentCfg --passL:"-o markdown.m.wasm" markdown.nim"""
+      exec nimCompiler.quoteShell & """ c -d:release --skipParentCfg --passL:"-o markdown.m.wasm" markdown.nim"""
 
   of "build":
-    exec "nim c -o:nev.exe --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:nimcache/debug_clang" &
+    exec nimCompiler.quoteShell & " c -o:nev.exe --opt:speed --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:off --passC:-g --passC:-std=gnu11 --nimcache:nimcache/debug_clang" &
       compileIconResource() & " " & wasmtimeCompilerArgs() & " ./src/desktop_main.nim"
     recordSuccessfulBuild("static", "nev.exe")
 
@@ -714,18 +735,19 @@ while i < cmds.len:
     buildNuigiStaticDependencies()
 
   of "modules":
-    warnIfStaticBuild()
-    exec "./bin/build.exe "
+    buildModules(false)
 
   of "modules-f":
-    warnIfStaticBuild()
-    exec "./bin/build.exe -f"
+    buildModules(true)
 
   of "build-dynamic":
     buildNev(extraArgs="-d:useDynlib", cacheDir="nimcache/nev-dynamic")
 
   of "build-static":
     buildNev()
+
+  of "build-static-incremental":
+    buildNev(extraArgs="--incremental:on", cacheDir="nimcache/nev-static-incremental")
 
   of "build-perf":
     let output = when defined(windows): "nev-perf.exe" else: "nev-perf"
@@ -759,14 +781,14 @@ while i < cmds.len:
     buildNuigiStaticDependencies()
     echo &"Build release for windows..."
     exec "atlas rep"
-    exec """nim c --out:nev --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} """ &
+    exec nimCompiler.quoteShell & """ c --out:nev --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} """ &
       wasmtimeCompilerArgs() & " src/desktop_main.nim"
     recordSuccessfulBuild("static", "nev")
-    exec """nim c --out:nevg --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} """ &
+    exec nimCompiler.quoteShell & """ c --out:nevg --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} """ &
       wasmtimeCompilerArgs() & " src/desktop_main.nim"
     recordSuccessfulBuild("static", "nevg")
     buildWasmtime(musl=true)
-    exec """nim c --out:nev-musl --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=false -D:enableTerminal=true --app:console -d:musl -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} """ &
+    exec nimCompiler.quoteShell & """ c --out:nev-musl --cc:clang --passC:-Wno-incompatible-function-pointer-types -D:enableGui=false -D:enableTerminal=true --app:console -d:musl -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached={isCINimbleCached} """ &
       wasmtimeCompilerArgs(musl=true) & " src/desktop_main.nim"
     recordSuccessfulBuild("static", "nev-musl")
 

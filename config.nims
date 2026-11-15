@@ -109,8 +109,13 @@ when defined(windows):
   # Required to change title bar header
   switch("passL", "-ldwmapi")
 
-patchFile("stdlib", "osproc", "patches/osproc")
-patchFile("stdlib", "excpt", "patches/excpt")
+when NimMajor > 2 or (NimMajor == 2 and NimMinor >= 4):
+  patchFile("stdlib", "osproc", "patches/nim24/osproc")
+  patchFile("stdlib", "excpt", "patches/excpt_nim24")
+  patchFile("nimwasmtime", "wit_host_module", "patches/nim24/wit_host_module")
+else:
+  patchFile("stdlib", "osproc", "patches/osproc")
+  patchFile("stdlib", "excpt", "patches/excpt")
 patchFile("stdlib", "jsonutils", "src/misc/myjsonutils")
 patchFile("stdlib", "tables", "patches/tables") # Patch tables.nim to remove exceptions
 patchFile("chronos", "asyncengine", "patches/asyncengine") # Patch this to enable 0 timeout poll
@@ -121,12 +126,20 @@ patchFile("fsnotify", "watch", "patches/watch")
 patchFile("npeg", "codegen", "patches/codegen") # Patch this for proper gcsafety
 
 # Patch these things to make global variables dynlib and remove usages of c_malloc, c_free etc
-patchFile("stdlib", "typedthreads", "patches/typedthreads")
-patchFile("stdlib", "threadimpl", "patches/threadimpl")
-patchFile("stdlib", "orc", "patches/orc")
+when NimMajor > 2 or (NimMajor == 2 and NimMinor >= 4):
+  patchFile("stdlib", "typedthreads", "patches/nim24/typedthreads")
+  patchFile("stdlib", "threadimpl", "patches/threadimpl_nim24")
+  patchFile("stdlib", "orc", "patches/orc_nim24")
+else:
+  patchFile("stdlib", "typedthreads", "patches/typedthreads")
+  patchFile("stdlib", "threadimpl", "patches/threadimpl")
+  patchFile("stdlib", "orc", "patches/orc")
 patchFile("stdlib", "threadpool", "patches/threadpool")
 patchFile("stdlib", "alloc", "patches/alloc")
-patchFile("stdlib", "malloc", "patches/malloc")
+when NimMajor > 2 or (NimMajor == 2 and NimMinor >= 4):
+  patchFile("stdlib", "malloc", "patches/malloc_nim24")
+else:
+  patchFile("stdlib", "malloc", "patches/malloc")
 patchFile("malebolgia", "malebolgia", "patches/malebolgia")
 
 # switches for debugging

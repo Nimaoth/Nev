@@ -5,6 +5,7 @@ var optParser = initOptParser("")
 
 const helpText = """Nev build helper
   --rebuild-dependents  Also rebuild modules that depend on changed modules.
+  --nim:PATH            Nim compiler executable (default: nim on PATH).
 """
 
 type
@@ -23,6 +24,7 @@ var parallel = true
 var modulesToBuild = initHashSet[string]()
 var debug = true
 var logVerbose = false
+var nimCompiler = "nim"
 
 type IdentifierCase* = enum Camel, Pascal, Kebab, Snake, ScreamingSnake
 
@@ -272,7 +274,7 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
             &"-d:feat{f}"
       let allFeatures = features.join(" ")
       let opt = if not debug or name == "text" or name == "profiler" or name == "sdl_platform": "speed" else: "none"
-      let cmd = &"nim c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependenciesStr} {allFeatures} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:{opt} --lineDir:off -d:mallocImport -d:exposeScriptingApi=true {m.path}"
+      let cmd = &"{nimCompiler.quoteShell} c --colors:on --hints:off -o:native_plugins/{name}.dll --nimcache:nimcache/{name} --app:lib -d:useDynlib -d:nevModuleName={name} -d:nevDeps={dependenciesStr} {allFeatures} --path:modules --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib --passC:-std=gnu11 --opt:{opt} --lineDir:off -d:mallocImport -d:exposeScriptingApi=true {m.path}"
       if parallel:
         while cmds.len >= 10:
           for i in countdown(cmds.high, 0):
@@ -404,6 +406,9 @@ proc buildDirtyModules(modules: Table[string, ModuleInfo]) =
   except CatchableError as e:
     echo &"Failed to write module_imports.nim: {e.msg}"
 
+  if numFailed > 0:
+    quit QuitFailure
+
 proc main() =
   var cmd = "build"
 
@@ -425,6 +430,10 @@ proc main() =
         force = true
       of "rebuild-dependents":
         rebuildDependents = true
+      of "nim":
+        if val.len == 0:
+          quit "[ERROR] --nim requires a compiler executable.", QuitFailure
+        nimCompiler = val
       of "rel", "r":
         debug = false
       of "dry":

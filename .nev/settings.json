@@ -167,38 +167,62 @@
     "+builds": {
         "nev-modules": {
             "description": "Build Nev modules",
-            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
             "command": "nim ./tools/nev_build.nims modules --nuigi-dir:C:/dev/nuigi",
             "group": "build-run"
         },
         "nev-modules-force": {
             "description": "Build Nev modules (force)",
-            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
             "command": "nim ./tools/nev_build.nims modules-f --nuigi-dir:C:/dev/nuigi",
             "group": "build-run"
         },
         "nev-modules-rebuild-dependents": {
             "description": "Build Nev modules (rebuild dependents)",
-            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
             "command": "./bin/build.exe --rebuild-dependents",
             "group": "build-run"
         },
         "nev-dynamic": {
             "description": "Build Nev dynamic",
-            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
             "command": "nim ./tools/nev_build.nims build-dynamic --nuigi-dir:C:/dev/nuigi",
             "group": "build-run"
         },
         "nev-static": {
             "description": "Build Nev static",
-            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
             "command": "nim ./tools/nev_build.nims build-static --nuigi-dir:C:/dev/nuigi",
+            "group": "build-run"
+        },
+        "nev-dynamic-nim-2-4": {
+            "description": "Build Nev dynamic with Nim 2.4",
+            "command": "C:/dev/Nim_2.4.0/bin/nim.exe ./tools/nev_build.nims build-dynamic --nuigi-dir:C:/dev/nuigi --nim:C:/dev/Nim_2.4.0/bin/nim.exe",
+            "group": "build-run"
+        },
+        "nev-static-nim-2-4": {
+            "description": "Build Nev static with Nim 2.4",
+            "command": "C:/dev/Nim_2.4.0/bin/nim.exe ./tools/nev_build.nims build-static --nuigi-dir:C:/dev/nuigi --nim:C:/dev/Nim_2.4.0/bin/nim.exe",
+            "group": "build-run"
+        },
+        "nev-static-incremental-nim-2-4": {
+            "description": "Build Nev static incrementally with Nim 2.4",
+            "command": "C:/dev/Nim_2.4.0/bin/nim.exe ./tools/nev_build.nims build-static-incremental --nuigi-dir:C:/dev/nuigi --nim:C:/dev/Nim_2.4.0/bin/nim.exe",
+            "group": "build-run"
+        },
+        "nev-modules-nim-2-4": {
+            "description": "Build Nev modules with Nim 2.4",
+            "command": "C:/dev/Nim_2.4.0/bin/nim.exe ./tools/nev_build.nims modules --nuigi-dir:C:/dev/nuigi --nim:C:/dev/Nim_2.4.0/bin/nim.exe",
+            "group": "build-run"
+        },
+        "nev-modules-force-nim-2-4": {
+            "description": "Build Nev modules with Nim 2.4 (force)",
+            "command": "C:/dev/Nim_2.4.0/bin/nim.exe ./tools/nev_build.nims modules-f --nuigi-dir:C:/dev/nuigi --nim:C:/dev/Nim_2.4.0/bin/nim.exe",
             "group": "build-run"
         },
         "nev-perf": {
             "description": "Build Nev profiled",
-            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
             "command": "nim ./tools/nev_build.nims build-perf --nuigi-dir:C:/dev/nuigi",
+            "group": "build-run"
+        },
+        "nev-perf-nim-2-4": {
+            "description": "Build Nev profiled with Nim 2.4",
+            "command": "C:/dev/Nim_2.4.0/bin/nim.exe ./tools/nev_build.nims build-perf --nuigi-dir:C:/dev/nuigi --nim:C:/dev/Nim_2.4.0/bin/nim.exe",
             "group": "build-run"
         },
         "wasm-module": {
@@ -209,7 +233,6 @@
         },
         "nimony-check": {
             "description": "Check nimony main",
-            "setup": "C:/dev/emsdk/emsdk.ps1 activate",
             "command": "nimony check src/desktop_main_nimony.nim",
             "group": "build-run"
         },
